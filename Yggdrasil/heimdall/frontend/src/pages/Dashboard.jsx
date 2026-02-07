@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, RefreshCw } from 'lucide-react';
+import { Plus, RefreshCw, Search } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import AccountCard from '../components/AccountCard';
 
@@ -7,6 +7,7 @@ const Dashboard = () => {
     const [accounts, setAccounts] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
+    const [searchQuery, setSearchQuery] = useState('');
 
     const fetchAccounts = async () => {
         try {
@@ -29,6 +30,11 @@ const Dashboard = () => {
         return () => clearInterval(interval);
     }, []);
 
+    // Filter accounts based on search query
+    const filteredAccounts = accounts.filter(account =>
+        account.account_name.toLowerCase().includes(searchQuery.toLowerCase())
+    );
+
     return (
         <div className="min-h-screen bg-slate-950 text-white p-8">
             <div className="max-w-7xl mx-auto">
@@ -49,6 +55,26 @@ const Dashboard = () => {
                         Import maFiles
                     </Link>
                 </header>
+
+                {accounts.length > 0 && (
+                    <div className="mb-8">
+                        <div className="relative max-w-md">
+                            <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 text-slate-400" size={20} />
+                            <input
+                                type="text"
+                                placeholder="Search accounts..."
+                                value={searchQuery}
+                                onChange={(e) => setSearchQuery(e.target.value)}
+                                className="w-full pl-12 pr-4 py-3 glass-panel rounded-lg text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all"
+                            />
+                            {searchQuery && (
+                                <span className="absolute right-4 top-1/2 transform -translate-y-1/2 text-xs text-slate-400">
+                                    {filteredAccounts.length} of {accounts.length}
+                                </span>
+                            )}
+                        </div>
+                    </div>
+                )}
 
                 {error && (
                     <div className="bg-red-500/10 border border-red-500/50 text-red-500 p-4 rounded-lg mb-8">
@@ -76,9 +102,23 @@ const Dashboard = () => {
                                     Import maFiles &rarr;
                                 </Link>
                             </div>
+                        ) : filteredAccounts.length === 0 ? (
+                            <div className="text-center py-20 glass-panel rounded-2xl">
+                                <div className="inline-block p-4 bg-slate-800 rounded-full mb-4">
+                                    <Search size={40} className="text-slate-400" />
+                                </div>
+                                <h2 className="text-xl font-semibold mb-2">No Accounts Found</h2>
+                                <p className="text-slate-400 mb-6">No accounts match "{searchQuery}"</p>
+                                <button
+                                    onClick={() => setSearchQuery('')}
+                                    className="text-blue-400 hover:text-blue-300 transition-colors"
+                                >
+                                    Clear Search
+                                </button>
+                            </div>
                         ) : (
                             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-                                {accounts.map((account) => (
+                                {filteredAccounts.map((account) => (
                                     <AccountCard key={account.steamid} account={account} onDelete={fetchAccounts} />
                                 ))}
                             </div>
