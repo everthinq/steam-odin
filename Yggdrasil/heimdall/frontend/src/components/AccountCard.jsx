@@ -1,0 +1,95 @@
+import React, { useState } from 'react';
+import { Copy, Clock, Check, Trash2 } from 'lucide-react';
+
+const AccountCard = ({ account, onDelete }) => {
+    const { account_name, steamid, code, time_remaining } = account;
+
+    const [copied, setCopied] = useState(false);
+    const [deleting, setDeleting] = useState(false);
+
+    const copyCode = () => {
+        navigator.clipboard.writeText(code);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 3000);
+    };
+
+    const handleDelete = async () => {
+        if (!confirm(`Are you sure you want to remove ${account_name}?`)) return;
+
+        setDeleting(true);
+        try {
+            const res = await fetch(`/api/accounts/${steamid}`, { method: 'DELETE' });
+            if (res.ok) {
+                if (onDelete) onDelete();
+                else window.location.reload();
+            }
+        } catch (error) {
+            console.error("Failed to delete", error);
+        } finally {
+            setDeleting(false);
+        }
+    };
+
+    // Calculate progress percentage (30s cycle)
+    const progress = (time_remaining / 30) * 100;
+
+    // Color changes based on time remaining
+    let progressBarColor = 'bg-blue-600';
+    if (time_remaining < 5) progressBarColor = 'bg-red-500';
+    else if (time_remaining < 10) progressBarColor = 'bg-yellow-500';
+
+    return (
+        <div className="glass-card rounded-lg p-6 w-full max-w-sm relative group">
+            <div className="flex justify-between items-start mb-4">
+                <div>
+                    <h3 className="text-xl font-bold text-white max-w-[180px] truncate" title={account_name}>
+                        {account_name}
+                    </h3>
+                    {/* <p className="text-slate-400 text-sm font-mono">{steamid}</p> */}
+                </div>
+                <button
+                    onClick={handleDelete}
+                    disabled={deleting}
+                    className="p-2 rounded-full hover:bg-red-500/20 text-slate-500 hover:text-red-500 transition-colors"
+                    title="Remove Account"
+                >
+                    <Trash2 size={20} />
+                </button>
+            </div>
+
+            <div className="mb-4">
+                <div className="flex justify-between items-center bg-slate-900 rounded-md p-4 border border-slate-700">
+                    <span className="text-3xl font-mono tracking-widest text-white font-bold select-all">
+                        {code || '-----'}
+                    </span>
+                    <button
+                        onClick={copyCode}
+                        disabled={!code || copied}
+                        className={`p-2 rounded-md transition-all duration-300 ${copied
+                            ? 'bg-green-500/20 text-green-400 scale-110'
+                            : 'hover:bg-slate-700 text-slate-300 hover:text-white'
+                            }`}
+                        title={copied ? "Copied!" : "Copy Code"}
+                    >
+                        {copied ? <Check size={20} /> : <Copy size={20} />}
+                    </button>
+                </div>
+            </div>
+
+            <div className="space-y-1">
+                <div className="flex justify-between text-xs text-slate-400">
+                    <span>Expires in</span>
+                    <span>{time_remaining}s</span>
+                </div>
+                <div className="w-full bg-slate-700 rounded-full h-2 overflow-hidden">
+                    <div
+                        className={`h-2 rounded-full transition-all duration-1000 ease-linear ${progressBarColor}`}
+                        style={{ width: `${progress}%` }}
+                    />
+                </div>
+            </div>
+        </div>
+    );
+};
+
+export default AccountCard;

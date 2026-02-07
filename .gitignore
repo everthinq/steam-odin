@@ -195,3 +195,4 @@ secret.key
 secrets.yaml
 credentials.json
 token.txt
+*maFiles/

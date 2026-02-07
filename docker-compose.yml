@@ -11,6 +11,8 @@ services:
     environment:
       - FLASK_ENV=development
       - PORT=5000
+      - HEIMDALL_SECRET_KEY=${HEIMDALL_SECRET_KEY:-change_this_to_a_secure_random_string_in_production}
+    command: python app.py
 
   heimdall-frontend:
     build: ./Yggdrasil/heimdall/frontend
