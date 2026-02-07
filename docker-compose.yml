@@ -1,0 +1,25 @@
+version: '3.8'
+
+services:
+  # HEIMDALL: Authenticator (The Watchman)
+  heimdall-backend:
+    build: ./Yggdrasil/heimdall/backend
+    ports:
+      - "5001:5000"
+    volumes:
+      - ./Yggdrasil/heimdall/backend:/app
+    environment:
+      - FLASK_ENV=development
+      - PORT=5000
+
+  heimdall-frontend:
+    build: ./Yggdrasil/heimdall/frontend
+    ports:
+      - "3000:5173"
+    volumes:
+      - ./Yggdrasil/heimdall/frontend:/app
+      - /app/node_modules
+    environment:
+      - WATCHPACK_POLLING=true
+    depends_on:
+      - heimdall-backend
