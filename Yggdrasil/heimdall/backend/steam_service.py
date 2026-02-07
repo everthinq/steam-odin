@@ -40,6 +40,15 @@ class SteamService:
 
     def remove_account(self, steamid):
         return self.storage.delete_account(steamid)
+    
+    def remove_all_accounts(self):
+        """Remove all accounts and return count"""
+        accounts = self.storage.list_accounts()
+        count = 0
+        for steamid in accounts:
+            if self.storage.delete_account(steamid):
+                count += 1
+        return count
 
     def _query_time(self):
         current_time = time.time()

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, RefreshCw, Search } from 'lucide-react';
+import { Plus, RefreshCw, Search, Trash2 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import AccountCard from '../components/AccountCard';
 
@@ -20,6 +20,23 @@ const Dashboard = () => {
             setError(err.message);
         } finally {
             setLoading(false);
+        }
+    };
+
+    const handleRemoveAll = async () => {
+        if (!confirm(`Are you sure you want to remove ALL ${accounts.length} accounts? This action cannot be undone.`)) {
+            return;
+        }
+
+        try {
+            const response = await fetch('/api/accounts', { method: 'DELETE' });
+            if (response.ok) {
+                await fetchAccounts();
+            } else {
+                throw new Error('Failed to remove accounts');
+            }
+        } catch (err) {
+            setError(err.message);
         }
     };
 
@@ -47,13 +64,24 @@ const Dashboard = () => {
                             The Watchman of Your Steam Guard
                         </p>
                     </div>
-                    <Link
-                        to="/add-account"
-                        className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition-colors font-medium shadow-lg shadow-blue-500/20"
-                    >
-                        <Plus size={20} />
-                        Import maFiles
-                    </Link>
+                    <div className="flex gap-3">
+                        <Link
+                            to="/add-account"
+                            className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition-colors font-medium shadow-lg shadow-blue-500/20"
+                        >
+                            <Plus size={20} />
+                            Import maFiles
+                        </Link>
+                        {accounts.length > 0 && (
+                            <button
+                                onClick={handleRemoveAll}
+                                className="flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg transition-colors font-medium shadow-lg shadow-red-500/20"
+                            >
+                                <Trash2 size={20} />
+                                Remove All
+                            </button>
+                        )}
+                    </div>
                 </header>
 
                 {accounts.length > 0 && (

@@ -30,6 +30,12 @@ def import_account():
         
     return jsonify(result)
 
+@app.route('/api/accounts', methods=['DELETE'])
+def remove_all_accounts():
+    """Remove all accounts"""
+    count = steam_service.remove_all_accounts()
+    return jsonify({"status": "success", "message": f"Removed {count} accounts", "count": count}), 200
+
 @app.route('/api/accounts/<steamid>', methods=['DELETE'])
 def remove_account(steamid):
     """Remove an account"""
