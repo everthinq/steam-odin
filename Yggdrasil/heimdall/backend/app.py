@@ -8,6 +8,19 @@ CORS(app)
 
 steam_service = SteamService()
 
+# Ensure all errors return JSON, not HTML
+@app.errorhandler(404)
+def not_found(error):
+    return jsonify({"error": "Not found"}), 404
+
+@app.errorhandler(500)
+def internal_error(error):
+    return jsonify({"error": "Internal server error"}), 500
+
+@app.errorhandler(Exception)
+def handle_exception(e):
+    return jsonify({"error": f"Unexpected error: {str(e)}"}), 500
+
 @app.route('/api/accounts', methods=['GET'])
 def get_accounts():
     """List all accounts with current Steam Guard codes"""
@@ -19,16 +32,87 @@ def get_accounts():
 
 @app.route('/api/accounts/import', methods=['POST'])
 def import_account():
-    """Import .maFile (Plain JSON)"""
     if not request.json:
          return jsonify({"error": "Missing JSON body"}), 400
          
-    result = steam_service.import_account(request.json)
+    # Capture 'fileName' which is already sent by your AddAccount.jsx
+    filename = request.json.get('fileName')
+    result = steam_service.import_account(request.json, filename=filename)
     
     if 'error' in result:
         return jsonify(result), 400
-        
     return jsonify(result)
+
+@app.route('/api/accounts/authenticate', methods=['POST'])
+def authenticate_account():
+    """Begin a Steam authentication session for an account."""
+    if not request.json:
+        return jsonify({"error": "Missing JSON body"}), 400
+
+    data = request.json
+    username = data.get('account_name') or data.get('username')
+    password = data.get('password')
+
+    if not username:
+        return jsonify({"error": "Missing account_name"}), 400
+    if not password:
+        return jsonify({"error": "Missing password"}), 400
+
+    result = steam_service.begin_auth_session(username, password)
+
+    if not result:
+        return jsonify({"error": "Authentication failed"}), 400
+
+    # Normalize common failure shapes from Steam API into a clear error
+    if isinstance(result, dict):
+        if result.get('error'):
+            return jsonify(result), 400
+
+        # Many Steam auth endpoints return a 'success' flag and message
+        if result.get('success') is False:
+            message = result.get('message') or 'Authentication failed'
+            return jsonify({"error": message, "details": result}), 400
+
+    # Remove internal-only fields before returning (session objects are not JSON serializable)
+    auth_response = {k: v for k, v in result.items() if not k.startswith('_')}
+    return jsonify({"status": "success", "auth": auth_response})
+
+@app.route('/api/accounts/<steamid>/confirmations', methods=['GET'])
+def list_confirmations(steamid):
+    """List pending trade/market confirmations for an account."""
+    try:
+        result = steam_service.get_confirmations(steamid)
+        if not result.get('success'):
+            return jsonify({"error": result.get('message', 'Failed to load confirmations'), "details": result.get('details'), "raw": result.get('raw')}), 400
+        return jsonify({"status": "success", "confirmations": result.get('confirmations', [])})
+    except Exception as e:
+        return jsonify({"error": f"Unexpected error: {str(e)}"}), 500
+
+@app.route('/api/accounts/<steamid>/confirmations/<cid>', methods=['POST'])
+def act_on_confirmation(steamid, cid):
+    """Approve or deny a specific confirmation."""
+    try:
+        if not request.json:
+            return jsonify({"error": "Missing JSON body"}), 400
+
+        body = request.json
+        ck = body.get('ck')
+        operation = body.get('op', 'allow')
+
+        if not ck:
+            return jsonify({"error": "Missing confirmation key (ck)"}), 400
+
+        if operation not in ('allow', 'cancel'):
+            return jsonify({"error": "Invalid operation; must be 'allow' or 'cancel'"}), 400
+
+        result = steam_service.act_on_confirmation(steamid, cid, ck, operation=operation)
+
+        if not result.get('success'):
+            return jsonify({"error": result.get('message', 'Failed to act on confirmation'), "details": result.get('details'), "raw": result.get('raw')}), 400
+
+        return jsonify({"status": "success"})
+    except Exception as e:
+        return jsonify({"error": f"Unexpected error: {str(e)}"}), 500
 
 @app.route('/api/accounts', methods=['DELETE'])
 def remove_all_accounts():

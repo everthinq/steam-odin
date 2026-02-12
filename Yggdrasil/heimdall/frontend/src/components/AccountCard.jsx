@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { Copy, Clock, Check, Trash2 } from 'lucide-react';
 
 const AccountCard = ({ account, onDelete }) => {
@@ -45,7 +46,7 @@ const AccountCard = ({ account, onDelete }) => {
                     <h3 className="text-xl font-bold text-white max-w-[180px] truncate" title={account_name}>
                         {account_name}
                     </h3>
-                    {/* <p className="text-slate-400 text-sm font-mono">{steamid}</p> */}
+                    {<p className="text-slate-400 text-sm font-mono">{steamid}</p> }
                 </div>
                 <button
                     onClick={handleDelete}
@@ -76,16 +77,27 @@ const AccountCard = ({ account, onDelete }) => {
                 </div>
             </div>
 
-            <div className="space-y-1">
-                <div className="flex justify-between text-xs text-slate-400">
-                    <span>Expires in</span>
-                    <span>{time_remaining}s</span>
+            <div className="space-y-3">
+                <div className="space-y-1">
+                    <div className="flex justify-between text-xs text-slate-400">
+                        <span>Expires in</span>
+                        <span>{time_remaining}s</span>
+                    </div>
+                    <div className="w-full bg-slate-700 rounded-full h-2 overflow-hidden">
+                        <div
+                            className={`h-2 rounded-full transition-all duration-1000 ease-linear ${progressBarColor}`}
+                            style={{ width: `${progress}%` }}
+                        />
+                    </div>
                 </div>
-                <div className="w-full bg-slate-700 rounded-full h-2 overflow-hidden">
-                    <div
-                        className={`h-2 rounded-full transition-all duration-1000 ease-linear ${progressBarColor}`}
-                        style={{ width: `${progress}%` }}
-                    />
+
+                <div className="flex justify-end">
+                    <Link
+                        to={`/accounts/${steamid}/confirmations`}
+                        className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 transition-colors"
+                    >
+                        View Confirmations
+                    </Link>
                 </div>
             </div>
         </div>

@@ -28,7 +28,7 @@ class SecureStorage:
         return Fernet(key)
 
     def save_account(self, steamid, data):
-        """Encrypts and saves account data."""
+        """Encrypts and saves account data with persistence logging."""
         json_data = json.dumps(data)
         encrypted_data = self.fernet.encrypt(json_data.encode())
         
@@ -36,13 +36,15 @@ class SecureStorage:
         with open(file_path, 'wb') as f:
             f.write(encrypted_data)
         
+        # ADD THIS LOG LINE
+        print(f"[STORAGE] Successfully persisted encrypted data for SteamID: {steamid}")
         return str(file_path)
 
     def load_account(self, steamid):
         """Loads and decrypts account data."""
         file_path = self.storage_dir / f"{steamid}.maFile"
         if not file_path.exists():
-            return None
+            self.storage_dir.mkdir(exist_ok=True)
         
         with open(file_path, 'rb') as f:
             encrypted_data = f.read()

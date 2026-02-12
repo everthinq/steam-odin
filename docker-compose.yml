@@ -4,14 +4,29 @@ services:
   # HEIMDALL: Authenticator (The Watchman)
   heimdall-backend:
     build: ./Yggdrasil/heimdall/backend
-    ports:
-      - "5001:5000"
+    # Note: With network_mode: "host", ports mapping is ignored.
+    # The app will be accessible directly on host:5000 (or PORT env var)
     volumes:
       - ./Yggdrasil/heimdall/backend:/app
+      - /etc/localtime:/etc/localtime:ro
     environment:
       - FLASK_ENV=development
       - PORT=5000
       - HEIMDALL_SECRET_KEY=${HEIMDALL_SECRET_KEY:-change_this_to_a_secure_random_string_in_production}
+      # Proxy settings to change outbound IP and avoid Steam rate limits (HTTP 429)
+      # Uncomment and set these environment variables to use a proxy/VPN:
+      #
+      # For HTTP/HTTPS proxy:
+      # - HTTP_PROXY=http://proxy-host:port
+      # - HTTPS_PROXY=http://proxy-host:port
+      # - NO_PROXY=localhost,127.0.0.1
+      #
+      # For SOCKS5 proxy (VPN):
+      # - SOCKS_PROXY=socks5://user:pass@proxy-host:port
+      #   or without auth: SOCKS_PROXY=socks5://proxy-host:port
+      #
+      # Example: SOCKS_PROXY=socks5://127.0.0.1:1080 (local SOCKS proxy)
+      # Example: HTTP_PROXY=http://proxy.example.com:8080
     command: python app.py
 
   heimdall-frontend:
