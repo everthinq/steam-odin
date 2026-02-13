@@ -35,9 +35,10 @@ const AccountCard = ({ account, onDelete }) => {
     const progress = (time_remaining / 30) * 100;
 
     // Color changes based on time remaining
-    let progressBarColor = 'bg-blue-600';
-    if (time_remaining < 5) progressBarColor = 'bg-red-500';
-    else if (time_remaining < 10) progressBarColor = 'bg-yellow-500';
+    // Color changes based on time remaining
+    let progressBarColor = 'bg-blue-800'; // Dark Blue
+    if (time_remaining < 5) progressBarColor = 'bg-[#4a040b]'; // Burgundy
+    else if (time_remaining < 10) progressBarColor = 'bg-amber-700'; // Dark Yellow-Orange
 
     return (
         <div className="glass-card rounded-lg p-6 w-full max-w-sm relative group">
@@ -46,7 +47,7 @@ const AccountCard = ({ account, onDelete }) => {
                     <h3 className="text-xl font-bold text-white max-w-[180px] truncate" title={account_name}>
                         {account_name}
                     </h3>
-                    {<p className="text-slate-400 text-sm font-mono">{steamid}</p> }
+                    {<p className="text-slate-400 text-sm font-mono">{steamid}</p>}
                 </div>
                 <button
                     onClick={handleDelete}
@@ -59,16 +60,16 @@ const AccountCard = ({ account, onDelete }) => {
             </div>
 
             <div className="mb-4">
-                <div className="flex justify-between items-center bg-slate-900 rounded-md p-4 border border-slate-700">
-                    <span className="text-3xl font-mono tracking-widest text-white font-bold select-all">
+                <div className="flex justify-between items-center bg-odin-dark/50 rounded-md p-4 border border-white/10 shadow-inner">
+                    <span className="text-3xl font-mono tracking-widest text-asgard-gold font-bold select-all drop-shadow-md">
                         {code || '-----'}
                     </span>
                     <button
                         onClick={copyCode}
                         disabled={!code || copied}
                         className={`p-2 rounded-md transition-all duration-300 ${copied
-                            ? 'bg-green-500/20 text-green-400 scale-110'
-                            : 'hover:bg-slate-700 text-slate-300 hover:text-white'
+                            ? 'bg-bifrost-cyan/20 text-bifrost-cyan scale-110'
+                            : 'hover:bg-odin-blue text-frost-white/60 hover:text-frost-white'
                             }`}
                         title={copied ? "Copied!" : "Copy Code"}
                     >
@@ -79,11 +80,11 @@ const AccountCard = ({ account, onDelete }) => {
 
             <div className="space-y-3">
                 <div className="space-y-1">
-                    <div className="flex justify-between text-xs text-slate-400">
+                    <div className="flex justify-between text-xs text-frost-white/40">
                         <span>Expires in</span>
                         <span>{time_remaining}s</span>
                     </div>
-                    <div className="w-full bg-slate-700 rounded-full h-2 overflow-hidden">
+                    <div className="w-full bg-odin-dark/50 rounded-full h-2 overflow-hidden border border-white/5">
                         <div
                             className={`h-2 rounded-full transition-all duration-1000 ease-linear ${progressBarColor}`}
                             style={{ width: `${progress}%` }}
@@ -94,7 +95,7 @@ const AccountCard = ({ account, onDelete }) => {
                 <div className="flex justify-end">
                     <Link
                         to={`/accounts/${steamid}/confirmations`}
-                        className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 transition-colors"
+                        className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-odin-blue hover:bg-odin-blue/80 text-frost-white/80 hover:text-frost-white transition-colors border border-white/5"
                     >
                         View Confirmations
                     </Link>

@@ -7,7 +7,10 @@ import './index.css';
 function App() {
   return (
     <Router>
-      <div className="bg-slate-950 min-h-screen text-white">
+      <div className="background-container">
+        <div className="background-image" />
+      </div>
+      <div className="min-h-screen text-white relative">
         <Routes>
           <Route path="/" element={<Dashboard />} />
           <Route path="/add-account" element={<AddAccount />} />

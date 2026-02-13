@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, RefreshCw, Search, Trash2, Settings } from 'lucide-react';
+import { Plus, RefreshCw, Search, Trash2, Settings, Eye, EyeOff } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import AccountCard from '../components/AccountCard';
 import GlobalConfirmationsModal from '../components/GlobalConfirmationsModal';
@@ -10,6 +10,7 @@ const Dashboard = () => {
     const [error, setError] = useState(null);
     const [searchQuery, setSearchQuery] = useState('');
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+    const [isVigilMode, setIsVigilMode] = useState(false);
 
     const fetchAccounts = async () => {
         try {
@@ -55,9 +56,26 @@ const Dashboard = () => {
     );
 
     return (
-        <div className="min-h-screen bg-slate-950 text-white p-8">
+        <div className="min-h-screen text-white p-8">
             <GlobalConfirmationsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
-            <div className="max-w-7xl mx-auto">
+
+            {/* Heimdall's Vigil Toggle */}
+            <button
+                onClick={() => setIsVigilMode(!isVigilMode)}
+                className={`fixed top-6 right-6 z-50 p-3 rounded-full transition-all duration-500 group ${isVigilMode
+                        ? 'bg-odin-dark/20 border border-asgard-gold/20 hover:bg-odin-dark/60'
+                        : 'bg-odin-blue/40 border border-white/5 hover:bg-odin-blue/60'
+                    } backdrop-blur-md shadow-2xl hover:scale-110 hover:shadow-asgard-gold/20`}
+                title={isVigilMode ? "Return from Vigil" : "Heimdall's Vigil"}
+            >
+                <div className={`relative ${isVigilMode ? 'text-asgard-gold' : 'text-frost-white/60 group-hover:text-asgard-gold'}`}>
+                    {isVigilMode ? <EyeOff size={24} /> : <Eye size={24} />}
+                    <div className={`absolute inset-0 bg-asgard-gold blur-md transition-opacity duration-500 ${isVigilMode ? 'opacity-50' : 'opacity-0 group-hover:opacity-40'}`} />
+                </div>
+            </button>
+
+            <div className={`max-w-7xl mx-auto transition-all duration-1000 ease-in-out transform ${isVigilMode ? 'opacity-0 pointer-events-none' : 'opacity-100'
+                }`}>
                 <header className="flex justify-between items-center mb-10">
                     <div>
                         <h1 className="text-4xl font-bold bg-gradient-to-r from-cyan-300 via-blue-500 to-purple-600 bg-clip-text text-transparent drop-shadow-lg tracking-wider">
@@ -70,14 +88,14 @@ const Dashboard = () => {
                     <div className="flex gap-3">
                         <Link
                             to="/add-account"
-                            className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition-colors font-medium shadow-lg shadow-blue-500/20"
+                            className="flex items-center gap-2 bg-blue-600/20 hover:bg-blue-600/40 text-blue-200 border border-blue-500/30 backdrop-blur-md px-4 py-2 rounded-lg transition-all hover:scale-105 active:scale-95 font-medium shadow-lg shadow-blue-900/20"
                         >
                             <Plus size={20} />
                             Import maFiles
                         </Link>
                         <button
                             onClick={() => setIsSettingsOpen(true)}
-                            className="flex items-center gap-2 bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg transition-colors font-medium shadow-lg shadow-purple-500/20"
+                            className="flex items-center gap-2 bg-purple-600/20 hover:bg-purple-600/40 text-purple-200 border border-purple-500/30 backdrop-blur-md px-4 py-2 rounded-lg transition-all hover:scale-105 active:scale-95 font-medium shadow-lg shadow-purple-900/20"
                         >
                             <Settings size={20} />
                             Confirmations
@@ -85,7 +103,7 @@ const Dashboard = () => {
                         {accounts.length > 0 && (
                             <button
                                 onClick={handleRemoveAll}
-                                className="flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg transition-colors font-medium shadow-lg shadow-red-500/20"
+                                className="flex items-center gap-2 bg-[#4a040b] hover:bg-[#630611] text-red-100 border border-[#2b0206] px-4 py-2 rounded-lg transition-all hover:scale-105 active:scale-95 font-medium shadow-lg shadow-[#4a040b]/50"
                             >
                                 <Trash2 size={20} />
                                 Remove All

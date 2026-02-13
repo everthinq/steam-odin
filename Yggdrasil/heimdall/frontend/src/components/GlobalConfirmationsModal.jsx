@@ -71,15 +71,15 @@ const GlobalConfirmationsModal = ({ isOpen, onClose }) => {
     if (!isOpen) return null;
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-            <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-lg shadow-2xl relative overflow-hidden">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-odin-dark/80 backdrop-blur-sm">
+            <div className="bg-odin-blue/90 border border-white/10 rounded-2xl w-full max-w-lg shadow-2xl relative overflow-hidden backdrop-blur-xl">
                 {/* Header */}
-                <div className="p-6 border-b border-slate-800 flex justify-between items-center bg-slate-900/50">
+                <div className="p-6 border-b border-white/5 flex justify-between items-center bg-odin-blue/50">
                     <div>
-                        <h2 className="text-xl font-bold text-white tracking-wide">Global Confirmations</h2>
-                        <p className="text-slate-400 text-xs mt-1">Manage automation for all accounts</p>
+                        <h2 className="text-xl font-bold text-asgard-gold tracking-wide">Global Confirmations</h2>
+                        <p className="text-frost-white/60 text-xs mt-1">Manage automation for all accounts</p>
                     </div>
-                    <button onClick={onClose} className="text-slate-400 hover:text-white transition-colors">
+                    <button onClick={onClose} className="text-frost-white/40 hover:text-frost-white transition-colors">
                         <X size={24} />
                     </button>
                 </div>
@@ -88,16 +88,16 @@ const GlobalConfirmationsModal = ({ isOpen, onClose }) => {
                 <div className="p-6 space-y-6">
                     {loading && !settings.check_interval ? (
                         <div className="flex justify-center p-8">
-                            <Loader2 className="animate-spin text-blue-500" size={32} />
+                            <Loader2 className="animate-spin text-asgard-gold" size={32} />
                         </div>
                     ) : (
                         <>
                             {/* Auto-Check Section */}
                             <div className="space-y-4">
-                                <div className="flex items-center justify-between p-4 bg-slate-800/50 rounded-xl border border-slate-700/50">
+                                <div className="flex items-center justify-between p-4 bg-odin-dark/30 rounded-xl border border-white/5">
                                     <div>
-                                        <h3 className="text-white font-medium">Automatic Checking</h3>
-                                        <p className="text-xs text-slate-400">Periodically check for new confirmations</p>
+                                        <h3 className="text-frost-white font-medium">Automatic Checking</h3>
+                                        <p className="text-xs text-frost-white/50">Periodically check for new confirmations</p>
                                     </div>
                                     <label className="relative inline-flex items-center cursor-pointer">
                                         <input
@@ -106,7 +106,7 @@ const GlobalConfirmationsModal = ({ isOpen, onClose }) => {
                                             checked={settings.auto_check_enabled}
                                             onChange={(e) => setSettings({ ...settings, auto_check_enabled: e.target.checked })}
                                         />
-                                        <div className="w-11 h-6 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                                        <div className="w-11 h-6 bg-odin-blue border border-white/10 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-bifrost-cyan peer-checked:border-bifrost-cyan"></div>
                                     </label>
                                 </div>
 
@@ -124,14 +124,14 @@ const GlobalConfirmationsModal = ({ isOpen, onClose }) => {
                                 )}
                             </div>
 
-                            <hr className="border-slate-800" />
+                            <hr className="border-white/5" />
 
                             {/* Auto-Confirm Section */}
                             <div className="space-y-3">
-                                <h3 className="text-sm font-semibold text-slate-300 uppercase tracking-wider mb-2">Auto-Confirmation Rules</h3>
+                                <h3 className="text-sm font-semibold text-asgard-gold uppercase tracking-wider mb-2">Auto-Confirmation Rules</h3>
 
-                                <label className="flex items-center gap-3 p-3 hover:bg-slate-800/30 rounded-lg cursor-pointer transition-colors group">
-                                    <div className={`w-5 h-5 rounded border flex items-center justify-center transition-colors ${settings.auto_confirm_market ? 'bg-blue-600 border-blue-600' : 'border-slate-600 group-hover:border-slate-500'}`}>
+                                <label className="flex items-center gap-3 p-3 hover:bg-white/5 rounded-lg cursor-pointer transition-colors group">
+                                    <div className={`w-5 h-5 rounded border flex items-center justify-center transition-colors ${settings.auto_confirm_market ? 'bg-bifrost-purple border-bifrost-purple' : 'border-white/20 group-hover:border-white/40'}`}>
                                         {settings.auto_confirm_market && <Check size={14} className="text-white" />}
                                     </div>
                                     <input
@@ -140,11 +140,11 @@ const GlobalConfirmationsModal = ({ isOpen, onClose }) => {
                                         checked={settings.auto_confirm_market}
                                         onChange={(e) => setSettings({ ...settings, auto_confirm_market: e.target.checked })}
                                     />
-                                    <span className="text-sm text-slate-300 group-hover:text-white">Auto-confirm Market Listings</span>
+                                    <span className="text-sm text-frost-white/80 group-hover:text-frost-white">Auto-confirm Market Listings</span>
                                 </label>
 
-                                <label className="flex items-center gap-3 p-3 hover:bg-slate-800/30 rounded-lg cursor-pointer transition-colors group">
-                                    <div className={`w-5 h-5 rounded border flex items-center justify-center transition-colors ${settings.auto_confirm_trades ? 'bg-blue-600 border-blue-600' : 'border-slate-600 group-hover:border-slate-500'}`}>
+                                <label className="flex items-center gap-3 p-3 hover:bg-white/5 rounded-lg cursor-pointer transition-colors group">
+                                    <div className={`w-5 h-5 rounded border flex items-center justify-center transition-colors ${settings.auto_confirm_trades ? 'bg-bifrost-purple border-bifrost-purple' : 'border-white/20 group-hover:border-white/40'}`}>
                                         {settings.auto_confirm_trades && <Check size={14} className="text-white" />}
                                     </div>
                                     <input
@@ -153,7 +153,7 @@ const GlobalConfirmationsModal = ({ isOpen, onClose }) => {
                                         checked={settings.auto_confirm_trades}
                                         onChange={(e) => setSettings({ ...settings, auto_confirm_trades: e.target.checked })}
                                     />
-                                    <span className="text-sm text-slate-300 group-hover:text-white">Auto-confirm Trades</span>
+                                    <span className="text-sm text-frost-white/80 group-hover:text-frost-white">Auto-confirm Trades</span>
                                 </label>
                             </div>
 
@@ -162,7 +162,7 @@ const GlobalConfirmationsModal = ({ isOpen, onClose }) => {
                                 <button
                                     onClick={handleCheckNow}
                                     disabled={checking}
-                                    className="flex items-center gap-2 px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
+                                    className="flex items-center gap-2 px-4 py-2 bg-odin-blue hover:bg-odin-blue/80 text-frost-white/70 hover:text-frost-white rounded-lg text-sm font-medium transition-colors disabled:opacity-50 border border-white/5"
                                 >
                                     {checking ? <Loader2 size={16} className="animate-spin" /> : <Play size={16} />}
                                     Check All Now
@@ -170,7 +170,7 @@ const GlobalConfirmationsModal = ({ isOpen, onClose }) => {
 
                                 <button
                                     onClick={handleSave}
-                                    className="flex items-center gap-2 px-6 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white rounded-lg text-sm font-bold shadow-lg shadow-blue-500/20 transition-all active:scale-95"
+                                    className="flex items-center gap-2 px-6 py-2 bg-gradient-to-r from-bifrost-purple to-bifrost-cyan hover:from-bifrost-purple/80 hover:to-bifrost-cyan/80 text-odin-dark rounded-lg text-sm font-bold shadow-lg shadow-bifrost-cyan/20 transition-all active:scale-95"
                                 >
                                     <Save size={16} />
                                     Save Settings

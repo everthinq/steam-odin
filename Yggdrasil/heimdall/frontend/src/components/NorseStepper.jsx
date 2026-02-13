@@ -14,17 +14,17 @@ const NorseStepper = ({ value, onChange, min = 1, max = 3600, step = 10, label =
     return (
         <div className="flex flex-col gap-2">
             <label className="text-slate-400 text-sm font-medium tracking-wide">{label}</label>
-            <div className="flex items-center gap-4 bg-slate-900/50 p-2 rounded-lg border border-slate-700/50">
+            <div className="flex items-center gap-4 bg-odin-blue/50 p-2 rounded-lg border border-white/10 shadow-inner">
                 <button
                     type="button"
                     onClick={decrement}
                     disabled={value <= min}
-                    className="p-2 rounded-md bg-slate-800 hover:bg-slate-700 text-slate-300 disabled:opacity-30 disabled:cursor-not-allowed transition-all active:scale-95 border border-slate-600/50"
+                    className="p-2 rounded-md bg-odin-blue hover:bg-odin-blue/80 text-frost-white/60 hover:text-frost-white disabled:opacity-30 disabled:cursor-not-allowed transition-all active:scale-95 border border-white/5"
                 >
                     <Minus size={16} />
                 </button>
 
-                <div className="flex-1 text-center font-mono text-xl text-blue-300 font-bold tracking-wider relative group">
+                <div className="flex-1 text-center font-mono text-xl text-asgard-gold font-bold tracking-wider relative group">
                     <input
                         type="number"
                         value={value}
@@ -36,17 +36,17 @@ const NorseStepper = ({ value, onChange, min = 1, max = 3600, step = 10, label =
                             if (value < min) onChange(min);
                             if (value > max) onChange(max);
                         }}
-                        className="w-full bg-transparent text-center focus:outline-none appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                        className="w-full bg-transparent text-center focus:outline-none appearance-none [&::-webkit-inner-spin-button]:appearance-none drop-shadow-md text-asgard-gold"
                     />
-                    <span className="text-xs text-slate-500 ml-1 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none">s</span>
-                    <div className="absolute inset-0 bg-blue-500/5 blur-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none" />
+                    <span className="text-xs text-frost-white/40 ml-1 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none">s</span>
+                    <div className="absolute inset-0 bg-asgard-gold/5 blur-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none" />
                 </div>
 
                 <button
                     type="button"
                     onClick={increment}
                     disabled={value >= max}
-                    className="p-2 rounded-md bg-slate-800 hover:bg-slate-700 text-slate-300 disabled:opacity-30 disabled:cursor-not-allowed transition-all active:scale-95 border border-slate-600/50"
+                    className="p-2 rounded-md bg-odin-blue hover:bg-odin-blue/80 text-frost-white/60 hover:text-frost-white disabled:opacity-30 disabled:cursor-not-allowed transition-all active:scale-95 border border-white/5"
                 >
                     <Plus size={16} />
                 </button>

@@ -92,9 +92,44 @@ h6 {
   }
 }
 
+/* Background Image Animation */
+.background-container {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  z-index: -3;
+  /* Behind everything */
+  overflow: hidden;
+}
+
+.background-image {
+  width: 100%;
+  height: 100%;
+  background-image: url('./assets/heimdall.png');
+  background-size: cover;
+  background-position: center 20%;
+  filter: brightness(0.4);
+  /* Darken for readability */
+  animation: bg-breathe 30s ease-in-out infinite alternate;
+}
+
+@keyframes bg-breathe {
+  0% {
+    transform: scale(1);
+  }
+
+  100% {
+    transform: scale(1.05);
+    /* Reduced scale */
+  }
+}
+
 /* Glassmorphism Utilities */
 .glass-panel {
-  background: rgba(15, 23, 42, 0.6);
+  background: rgba(15, 23, 42, 0.4);
+  /* More transparent for image visibility */
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   border: 1px solid rgba(255, 255, 255, 0.1);
@@ -102,7 +137,8 @@ h6 {
 }
 
 .glass-card {
-  background: rgba(30, 41, 59, 0.7);
+  background: rgba(30, 41, 59, 0.5);
+  /* More transparent */
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
   border: 1px solid rgba(255, 255, 255, 0.05);
@@ -110,7 +146,7 @@ h6 {
 }
 
 .glass-card:hover {
-  background: rgba(30, 41, 59, 0.9);
+  background: rgba(30, 41, 59, 0.8);
   border-color: rgba(56, 189, 248, 0.3);
   box-shadow: 0 0 20px rgba(56, 189, 248, 0.15);
   transform: translateY(-2px);
@@ -122,14 +158,14 @@ h6 {
 }
 
 ::-webkit-scrollbar-track {
-  background: #0f172a;
+  background: rgba(15, 23, 42, 0.5);
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #334155;
+  background: rgba(51, 65, 85, 0.8);
   border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #475569;
+  background: rgba(71, 85, 105, 1);
 }

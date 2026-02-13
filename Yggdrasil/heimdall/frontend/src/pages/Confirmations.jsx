@@ -28,7 +28,7 @@ const Confirmations = () => {
         try {
             const res = await fetch(`/api/accounts/${steamid}/confirmations`);
             const data = await res.json();
-            
+
             if (!res.ok) {
                 throw new Error(data.error || data.message || 'Failed to load confirmations');
             }
@@ -64,7 +64,7 @@ const Confirmations = () => {
                 })
             });
             const data = await res.json();
-            
+
             if (!res.ok) {
                 throw new Error(data.error || data.message || 'Failed to update confirmation');
             }
@@ -84,7 +84,7 @@ const Confirmations = () => {
     };
 
     return (
-        <div className="min-h-screen bg-slate-950 text-white p-8 flex flex-col items-center">
+        <div className="min-h-screen text-white p-8 flex flex-col items-center">
             <div className="w-full max-w-4xl">
                 <div className="flex items-center justify-between mb-6">
                     <button
@@ -103,24 +103,24 @@ const Confirmations = () => {
                     </button>
                 </div>
 
-                <div className="glass-panel rounded-2xl p-6 mb-4">
-                    <h2 className="text-2xl font-bold mb-2">Pending Confirmations</h2>
-                    <p className="text-slate-400 text-sm">
+                <div className="glass-panel rounded-2xl p-6 mb-4 border border-white/5 bg-odin-blue/40">
+                    <h2 className="text-2xl font-bold mb-2 text-asgard-gold">Pending Confirmations</h2>
+                    <p className="text-frost-white/60 text-sm">
                         These are trade and market confirmations currently pending for account{' '}
-                        <span className="font-mono text-slate-200">{steamid}</span>. Approving a confirmation
+                        <span className="font-mono text-bifrost-cyan">{steamid}</span>. Approving a confirmation
                         will allow the trade or listing; denying will cancel it.
                     </p>
                 </div>
 
                 {error && (
-                    <div className="mb-4 bg-red-500/10 border border-red-500/50 text-red-400 px-4 py-3 rounded-lg flex items-center gap-2">
+                    <div className="mb-4 bg-red-500/10 border border-red-500/30 text-red-300 px-4 py-3 rounded-lg flex items-center gap-2 backdrop-blur-md">
                         <AlertCircle size={18} />
                         <span className="text-sm">{error}</span>
                     </div>
                 )}
 
                 {infoMessage && (
-                    <div className="mb-4 bg-emerald-500/10 border border-emerald-500/50 text-emerald-400 px-4 py-3 rounded-lg flex items-center gap-2">
+                    <div className="mb-4 bg-bifrost-cyan/10 border border-bifrost-cyan/30 text-bifrost-cyan px-4 py-3 rounded-lg flex items-center gap-2 backdrop-blur-md">
                         <CheckCircle2 size={18} />
                         <span className="text-sm">{infoMessage}</span>
                     </div>
@@ -128,12 +128,12 @@ const Confirmations = () => {
 
                 {loading ? (
                     <div className="flex justify-center items-center h-48">
-                        <RefreshCw className="animate-spin text-blue-500" size={32} />
+                        <RefreshCw className="animate-spin text-asgard-gold" size={32} />
                     </div>
                 ) : confirmations.length === 0 ? (
-                    <div className="glass-panel rounded-2xl p-10 text-center">
-                        <p className="text-lg font-semibold mb-2">No pending confirmations</p>
-                        <p className="text-slate-400 text-sm">
+                    <div className="glass-panel rounded-2xl p-10 text-center border border-white/5 bg-odin-blue/20">
+                        <p className="text-lg font-semibold mb-2 text-frost-white">No pending confirmations</p>
+                        <p className="text-frost-white/40 text-sm">
                             There are currently no trade or market confirmations waiting for this account.
                         </p>
                     </div>
@@ -146,25 +146,25 @@ const Confirmations = () => {
                             return (
                                 <div
                                     key={conf.id}
-                                    className="glass-card rounded-xl p-4 border border-slate-700 flex flex-col gap-3"
+                                    className="glass-card rounded-xl p-4 border border-white/10 flex flex-col gap-3 bg-odin-blue/40 hover:bg-odin-blue/60 transition-colors"
                                 >
                                     <div className="flex justify-between items-start gap-4">
                                         <div>
-                                            <p className="text-sm uppercase tracking-wide text-slate-400">
+                                            <p className="text-sm uppercase tracking-wide text-asgard-gold/80 font-bold">
                                                 {typeLabel}
                                             </p>
-                                            <h3 className="text-lg font-semibold text-white">
+                                            <h3 className="text-lg font-semibold text-frost-white">
                                                 {headline}
                                             </h3>
                                             {summary.length > 0 && (
-                                                <ul className="mt-2 text-xs text-slate-400 space-y-1">
+                                                <ul className="mt-2 text-xs text-frost-white/60 space-y-1">
                                                     {summary.slice(0, 3).map((line, idx) => (
                                                         <li key={idx}>{line}</li>
                                                     ))}
                                                 </ul>
                                             )}
                                         </div>
-                                        <div className="text-right text-[10px] text-slate-500 font-mono">
+                                        <div className="text-right text-[10px] text-frost-white/30 font-mono">
                                             <div>CID: {conf.id}</div>
                                             <div>CK: {conf.nonce}</div>
                                         </div>
@@ -174,7 +174,7 @@ const Confirmations = () => {
                                             type="button"
                                             onClick={() => handleAction(conf, 'allow')}
                                             disabled={actingId !== null}
-                                            className="px-4 py-2 rounded-lg text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 text-white disabled:opacity-60 disabled:cursor-not-allowed"
+                                            className="px-4 py-2 rounded-lg text-xs font-semibold bg-bifrost-cyan/20 hover:bg-bifrost-cyan/40 text-bifrost-cyan border border-bifrost-cyan/30 disabled:opacity-60 disabled:cursor-not-allowed transition-all"
                                         >
                                             Approve
                                         </button>
@@ -182,7 +182,7 @@ const Confirmations = () => {
                                             type="button"
                                             onClick={() => handleAction(conf, 'cancel')}
                                             disabled={actingId !== null}
-                                            className="px-4 py-2 rounded-lg text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-200 disabled:opacity-60 disabled:cursor-not-allowed"
+                                            className="px-4 py-2 rounded-lg text-xs font-semibold bg-odin-dark/40 hover:bg-odin-dark/60 text-frost-white/60 border border-white/10 disabled:opacity-60 disabled:cursor-not-allowed transition-all"
                                         >
                                             Deny
                                         </button>

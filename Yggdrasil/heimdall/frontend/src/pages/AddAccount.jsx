@@ -7,10 +7,10 @@ const AddAccount = () => {
     const [dragging, setDragging] = useState(false);
     const [loading, setLoading] = useState(false);
 
-    const [results, setResults] = useState(null); 
-    const [pendingAccounts, setPendingAccounts] = useState([]); 
-    const [passwords, setPasswords] = useState({}); 
-    const [passwordErrors, setPasswordErrors] = useState({}); 
+    const [results, setResults] = useState(null);
+    const [pendingAccounts, setPendingAccounts] = useState([]);
+    const [passwords, setPasswords] = useState({});
+    const [passwordErrors, setPasswordErrors] = useState({});
     const [authNotice, setAuthNotice] = useState(null);
     const [showPasswordModal, setShowPasswordModal] = useState(false);
     const [importLoading, setImportLoading] = useState(false);
@@ -123,12 +123,12 @@ const AddAccount = () => {
                         fileName: account.fileName,
                         account_password: password
                     };
-                    
+
                     // 1. Import account (Saves and encrypts on backend)
                     const importRes = await importAccount(payload);
-                    
+
                     // FIXED: Always use the SteamID returned by the server
-                    savedSteamid = importRes.steamid; 
+                    savedSteamid = importRes.steamid;
 
                     const username =
                         account.data?.account_name ||
@@ -216,40 +216,40 @@ const AddAccount = () => {
         pendingAccounts.every((_, index) => (passwords[index] || '').trim().length > 0);
 
     return (
-        <div className="min-h-screen bg-slate-950 text-white p-8 flex flex-col items-center justify-center">
+        <div className="min-h-screen text-white p-8 flex flex-col items-center justify-center backdrop-blur-md bg-odin-dark/60 transition-all duration-500">
             <div className="w-full max-w-lg">
                 <Link to="/" className="flex items-center gap-2 text-slate-400 hover:text-white mb-8 transition-colors">
                     <ArrowLeft size={20} />
                     Back to Dashboard
                 </Link>
 
-                <div className="glass-panel rounded-2xl p-8 bg-slate-900/50 border border-slate-800">
-                    <h2 className="text-2xl font-bold mb-2 text-center text-white">Import Steam Guard Files</h2>
-                    <p className="text-slate-400 text-center mb-8 text-sm">
+                <div className="glass-panel rounded-2xl p-8 bg-odin-blue/50 border border-white/10 backdrop-blur-md">
+                    <h2 className="text-2xl font-bold mb-2 text-center text-asgard-gold">Import Steam Guard Files</h2>
+                    <p className="text-frost-white/60 text-center mb-8 text-sm">
                         Upload your <code>.maFile</code>s to begin.
                         <br />
-                        <span className="text-blue-400">Encryption is handled securely by Heimdall.</span>
+                        <span className="text-bifrost-cyan">Encryption is handled securely by Heimdall.</span>
                     </p>
 
                     {authNotice && (
                         <div className="mb-4 text-sm text-center">
-                            <span className={authNotice.includes('failed') ? 'text-red-400' : 'text-green-400'}>
+                            <span className={authNotice.includes('failed') ? 'text-red-400' : 'text-bifrost-cyan'}>
                                 {authNotice}
                             </span>
                         </div>
                     )}
 
                     {results && (
-                        <div className={`mb-6 p-4 rounded-lg border ${results.failed === 0 ? 'bg-green-500/10 border-green-500/50' : 'bg-yellow-500/10 border-yellow-500/50'}`}>
+                        <div className={`mb-6 p-4 rounded-lg border ${results.failed === 0 ? 'bg-bifrost-cyan/10 border-bifrost-cyan/50' : 'bg-asgard-gold/10 border-asgard-gold/50'}`}>
                             <div className="flex items-center gap-2 font-bold mb-2">
-                                {results.failed === 0 ? <CheckCircle className="text-green-500" size={20} /> : <AlertCircle className="text-yellow-500" size={20} />}
-                                <span>Processed {results.total} files</span>
+                                {results.failed === 0 ? <CheckCircle className="text-bifrost-cyan" size={20} /> : <AlertCircle className="text-asgard-gold" size={20} />}
+                                <span className="text-frost-white">Processed {results.total} files</span>
                             </div>
                             <div className="text-sm space-y-1 ml-7">
-                                <p className="text-green-400">Success: {results.success}</p>
+                                <p className="text-bifrost-cyan">Success: {results.success}</p>
                                 {results.failed > 0 && <p className="text-red-400">Failed: {results.failed}</p>}
                             </div>
-                            <button onClick={() => navigate('/')} className="mt-4 w-full bg-slate-700 hover:bg-slate-600 text-white py-2 rounded text-sm transition-colors">
+                            <button onClick={() => navigate('/')} className="mt-4 w-full bg-odin-blue hover:bg-odin-blue/80 text-frost-white py-2 rounded text-sm transition-colors border border-white/10">
                                 Return to Dashboard
                             </button>
                         </div>
@@ -260,13 +260,13 @@ const AddAccount = () => {
                             onDragOver={handleDragOver}
                             onDragLeave={handleDragLeave}
                             onDrop={handleDrop}
-                            className={`border-2 border-dashed rounded-xl p-10 text-center transition-all cursor-pointer relative ${dragging ? 'border-blue-500 bg-blue-500/10' : 'border-slate-700 hover:border-slate-500 bg-slate-950'}`}
+                            className={`border-2 border-dashed rounded-xl p-10 text-center transition-all cursor-pointer relative ${dragging ? 'border-bifrost-cyan bg-bifrost-cyan/10' : 'border-white/10 hover:border-white/30 bg-odin-dark/40'}`}
                         >
                             <input type="file" accept=".maFile,.json" multiple onChange={handleFileSelect} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" />
                             <div className="flex flex-col items-center">
-                                <FileStack size={48} className={`mb-4 ${dragging ? 'text-blue-400' : 'text-slate-500'}`} />
-                                <span className="text-lg font-medium mb-2">{dragging ? 'Drop files here' : 'Click or drop files here'}</span>
-                                <span className="text-sm text-slate-500">Supports multiple .maFile uploads</span>
+                                <FileStack size={48} className={`mb-4 ${dragging ? 'text-bifrost-cyan' : 'text-frost-white/40'}`} />
+                                <span className="text-lg font-medium mb-2 text-frost-white">{dragging ? 'Drop files here' : 'Click or drop files here'}</span>
+                                <span className="text-sm text-frost-white/40">Supports multiple .maFile uploads</span>
                             </div>
                         </div>
                     )}
@@ -274,16 +274,16 @@ const AddAccount = () => {
             </div>
 
             {showPasswordModal && (
-                <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50">
-                    <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 w-full max-w-lg shadow-2xl">
-                        <h3 className="text-xl font-bold mb-4 text-center">Account Passwords Required</h3>
+                <div className="fixed inset-0 bg-odin-dark/90 flex items-center justify-center z-50 backdrop-blur-sm">
+                    <div className="bg-odin-blue/90 border border-white/10 rounded-2xl p-6 w-full max-w-lg shadow-2xl backdrop-blur-xl">
+                        <h3 className="text-xl font-bold mb-4 text-center text-asgard-gold">Account Passwords Required</h3>
                         <form onSubmit={handlePasswordSubmit} className="space-y-4">
                             {pendingAccounts.map((account, index) => (
-                                <div key={index} className="bg-slate-950 p-4 rounded-xl border border-slate-800">
-                                    <p className="font-semibold text-sm mb-2">{account.accountName}</p>
+                                <div key={index} className="bg-odin-dark/50 p-4 rounded-xl border border-white/5">
+                                    <p className="font-semibold text-sm mb-2 text-frost-white">{account.accountName}</p>
                                     <input
                                         type="password"
-                                        className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
+                                        className="w-full bg-odin-blue border border-white/10 rounded-lg px-3 py-2 text-sm focus:border-bifrost-cyan focus:outline-none text-white placeholder-white/30"
                                         placeholder="Steam Password"
                                         value={passwords[index] || ''}
                                         onChange={(e) => handlePasswordChange(index, e.target.value)}
@@ -293,8 +293,8 @@ const AddAccount = () => {
                                 </div>
                             ))}
                             <div className="flex gap-3 justify-end">
-                                <button type="button" onClick={handlePasswordCancel} className="px-4 py-2 bg-slate-800 hover:bg-slate-700 rounded-lg text-sm">Cancel</button>
-                                <button type="submit" disabled={!canSubmitPasswords || importLoading} className="px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:bg-slate-700 rounded-lg text-sm font-bold flex items-center gap-2">
+                                <button type="button" onClick={handlePasswordCancel} className="px-4 py-2 bg-odin-blue hover:bg-odin-blue/80 rounded-lg text-sm text-frost-white border border-white/5">Cancel</button>
+                                <button type="submit" disabled={!canSubmitPasswords || importLoading} className="px-4 py-2 bg-bifrost-cyan/20 hover:bg-bifrost-cyan/40 disabled:bg-odin-dark disabled:text-white/20 border border-bifrost-cyan/30 text-bifrost-cyan rounded-lg text-sm font-bold flex items-center gap-2 transition-all">
                                     {importLoading && <Loader2 className="animate-spin" size={16} />}
                                     {importLoading ? 'Importing...' : 'Complete Import'}
                                 </button>
