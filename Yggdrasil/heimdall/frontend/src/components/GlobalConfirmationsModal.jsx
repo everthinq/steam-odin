@@ -158,11 +158,11 @@ const GlobalConfirmationsModal = ({ isOpen, onClose }) => {
                             </div>
 
                             {/* Actions */}
-                            <div className="pt-4 flex items-center justify-between gap-4">
+                            <div className="pt-4 flex flex-col sm:flex-row items-center justify-between gap-4">
                                 <button
                                     onClick={handleCheckNow}
                                     disabled={checking}
-                                    className="flex items-center gap-2 px-4 py-2 bg-odin-blue hover:bg-odin-blue/80 text-frost-white/70 hover:text-frost-white rounded-lg text-sm font-medium transition-colors disabled:opacity-50 border border-white/5"
+                                    className="w-full sm:w-auto flex justify-center items-center gap-2 px-4 py-2 bg-odin-blue hover:bg-odin-blue/80 text-frost-white/70 hover:text-frost-white rounded-lg text-sm font-medium transition-colors disabled:opacity-50 border border-white/5"
                                 >
                                     {checking ? <Loader2 size={16} className="animate-spin" /> : <Play size={16} />}
                                     Check All Now
@@ -170,7 +170,7 @@ const GlobalConfirmationsModal = ({ isOpen, onClose }) => {
 
                                 <button
                                     onClick={handleSave}
-                                    className="flex items-center gap-2 px-6 py-2 bg-gradient-to-r from-bifrost-purple to-bifrost-cyan hover:from-bifrost-purple/80 hover:to-bifrost-cyan/80 text-odin-dark rounded-lg text-sm font-bold shadow-lg shadow-bifrost-cyan/20 transition-all active:scale-95"
+                                    className="w-full sm:w-auto flex justify-center items-center gap-2 px-6 py-2 bg-gradient-to-r from-bifrost-purple to-bifrost-cyan hover:from-bifrost-purple/80 hover:to-bifrost-cyan/80 text-odin-dark rounded-lg text-sm font-bold shadow-lg shadow-bifrost-cyan/20 transition-all active:scale-95"
                                 >
                                     <Save size={16} />
                                     Save Settings

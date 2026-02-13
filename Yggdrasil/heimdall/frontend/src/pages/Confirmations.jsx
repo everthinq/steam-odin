@@ -84,7 +84,7 @@ const Confirmations = () => {
     };
 
     return (
-        <div className="min-h-screen text-white p-8 flex flex-col items-center">
+        <div className="min-h-screen text-white p-4 md:p-8 flex flex-col items-center">
             <div className="w-full max-w-4xl">
                 <div className="flex items-center justify-between mb-6">
                     <button
@@ -104,10 +104,10 @@ const Confirmations = () => {
                 </div>
 
                 <div className="glass-panel rounded-2xl p-6 mb-4 border border-white/5 bg-odin-blue/40">
-                    <h2 className="text-2xl font-bold mb-2 text-asgard-gold">Pending Confirmations</h2>
+                    <h2 className="text-xl md:text-2xl font-bold mb-2 text-asgard-gold">Pending Confirmations</h2>
                     <p className="text-frost-white/60 text-sm">
                         These are trade and market confirmations currently pending for account{' '}
-                        <span className="font-mono text-bifrost-cyan">{steamid}</span>. Approving a confirmation
+                        <span className="font-mono text-bifrost-cyan break-all">{steamid}</span>. Approving a confirmation
                         will allow the trade or listing; denying will cancel it.
                     </p>
                 </div>
@@ -148,23 +148,23 @@ const Confirmations = () => {
                                     key={conf.id}
                                     className="glass-card rounded-xl p-4 border border-white/10 flex flex-col gap-3 bg-odin-blue/40 hover:bg-odin-blue/60 transition-colors"
                                 >
-                                    <div className="flex justify-between items-start gap-4">
-                                        <div>
+                                    <div className="flex flex-col md:flex-row justify-between items-start gap-2 md:gap-4">
+                                        <div className="flex-1">
                                             <p className="text-sm uppercase tracking-wide text-asgard-gold/80 font-bold">
                                                 {typeLabel}
                                             </p>
-                                            <h3 className="text-lg font-semibold text-frost-white">
+                                            <h3 className="text-base md:text-lg font-semibold text-frost-white break-words">
                                                 {headline}
                                             </h3>
                                             {summary.length > 0 && (
                                                 <ul className="mt-2 text-xs text-frost-white/60 space-y-1">
                                                     {summary.slice(0, 3).map((line, idx) => (
-                                                        <li key={idx}>{line}</li>
+                                                        <li key={idx} className="break-words">{line}</li>
                                                     ))}
                                                 </ul>
                                             )}
                                         </div>
-                                        <div className="text-right text-[10px] text-frost-white/30 font-mono">
+                                        <div className="text-left md:text-right text-[10px] text-frost-white/30 font-mono w-full md:w-auto">
                                             <div>CID: {conf.id}</div>
                                             <div>CK: {conf.nonce}</div>
                                         </div>

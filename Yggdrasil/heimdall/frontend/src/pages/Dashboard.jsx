@@ -56,15 +56,15 @@ const Dashboard = () => {
     );
 
     return (
-        <div className="min-h-screen text-white p-8">
+        <div className="min-h-screen text-white p-4 md:p-8">
             <GlobalConfirmationsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
 
             {/* Heimdall's Vigil Toggle */}
             <button
                 onClick={() => setIsVigilMode(!isVigilMode)}
                 className={`fixed top-6 right-6 z-50 p-3 rounded-full transition-all duration-500 group ${isVigilMode
-                        ? 'bg-odin-dark/20 border border-asgard-gold/20 hover:bg-odin-dark/60'
-                        : 'bg-odin-blue/40 border border-white/5 hover:bg-odin-blue/60'
+                    ? 'bg-odin-dark/20 border border-asgard-gold/20 hover:bg-odin-dark/60'
+                    : 'bg-odin-blue/40 border border-white/5 hover:bg-odin-blue/60'
                     } backdrop-blur-md shadow-2xl hover:scale-110 hover:shadow-asgard-gold/20`}
                 title={isVigilMode ? "Return from Vigil" : "Heimdall's Vigil"}
             >
@@ -76,36 +76,36 @@ const Dashboard = () => {
 
             <div className={`max-w-7xl mx-auto transition-all duration-1000 ease-in-out transform ${isVigilMode ? 'opacity-0 pointer-events-none' : 'opacity-100'
                 }`}>
-                <header className="flex justify-between items-center mb-10">
-                    <div>
-                        <h1 className="text-4xl font-bold bg-gradient-to-r from-cyan-300 via-blue-500 to-purple-600 bg-clip-text text-transparent drop-shadow-lg tracking-wider">
+                <header className="flex flex-col md:flex-row justify-between items-center mb-6 md:mb-10 gap-4 md:gap-0">
+                    <div className="text-center md:text-left">
+                        <h1 className="text-3xl md:text-4xl font-bold bg-gradient-to-r from-cyan-300 via-blue-500 to-purple-600 bg-clip-text text-transparent drop-shadow-lg tracking-wider">
                             Steam Heimdall Authenticator
                         </h1>
-                        <p className="text-slate-400 mt-2 text-lg tracking-wide border-l-2 border-blue-500 pl-3">
+                        <p className="text-slate-400 mt-2 text-base md:text-lg tracking-wide border-l-0 md:border-l-2 border-blue-500 pl-0 md:pl-3">
                             The Watchman of Your Steam Guard
                         </p>
                     </div>
-                    <div className="flex gap-3">
+                    <div className="flex flex-wrap justify-center gap-3 w-full md:w-auto">
                         <Link
                             to="/add-account"
-                            className="flex items-center gap-2 bg-blue-600/20 hover:bg-blue-600/40 text-blue-200 border border-blue-500/30 backdrop-blur-md px-4 py-2 rounded-lg transition-all hover:scale-105 active:scale-95 font-medium shadow-lg shadow-blue-900/20"
+                            className="flex-1 md:flex-none justify-center flex items-center gap-2 bg-blue-600/20 hover:bg-blue-600/40 text-blue-200 border border-blue-500/30 backdrop-blur-md px-4 py-2 rounded-lg transition-all hover:scale-105 active:scale-95 font-medium shadow-lg shadow-blue-900/20 text-sm md:text-base whitespace-nowrap"
                         >
-                            <Plus size={20} />
-                            Import maFiles
+                            <Plus size={18} />
+                            Import
                         </Link>
                         <button
                             onClick={() => setIsSettingsOpen(true)}
-                            className="flex items-center gap-2 bg-purple-600/20 hover:bg-purple-600/40 text-purple-200 border border-purple-500/30 backdrop-blur-md px-4 py-2 rounded-lg transition-all hover:scale-105 active:scale-95 font-medium shadow-lg shadow-purple-900/20"
+                            className="flex-1 md:flex-none justify-center flex items-center gap-2 bg-purple-600/20 hover:bg-purple-600/40 text-purple-200 border border-purple-500/30 backdrop-blur-md px-4 py-2 rounded-lg transition-all hover:scale-105 active:scale-95 font-medium shadow-lg shadow-purple-900/20 text-sm md:text-base whitespace-nowrap"
                         >
-                            <Settings size={20} />
-                            Confirmations
+                            <Settings size={18} />
+                            Confirms
                         </button>
                         {accounts.length > 0 && (
                             <button
                                 onClick={handleRemoveAll}
-                                className="flex items-center gap-2 bg-[#4a040b] hover:bg-[#630611] text-red-100 border border-[#2b0206] px-4 py-2 rounded-lg transition-all hover:scale-105 active:scale-95 font-medium shadow-lg shadow-[#4a040b]/50"
+                                className="flex-1 md:flex-none justify-center flex items-center gap-2 bg-[#4a040b] hover:bg-[#630611] text-red-100 border border-[#2b0206] px-4 py-2 rounded-lg transition-all hover:scale-105 active:scale-95 font-medium shadow-lg shadow--[#4a040b]/50 text-sm md:text-base whitespace-nowrap"
                             >
-                                <Trash2 size={20} />
+                                <Trash2 size={18} />
                                 Remove All
                             </button>
                         )}
@@ -173,7 +173,7 @@ const Dashboard = () => {
                                 </button>
                             </div>
                         ) : (
-                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 md:gap-6">
                                 {filteredAccounts.map((account) => (
                                     <AccountCard key={account.steamid} account={account} onDelete={fetchAccounts} />
                                 ))}

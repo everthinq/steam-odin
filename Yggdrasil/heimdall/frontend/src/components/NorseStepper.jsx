@@ -14,7 +14,7 @@ const NorseStepper = ({ value, onChange, min = 1, max = 3600, step = 10, label =
     return (
         <div className="flex flex-col gap-2">
             <label className="text-slate-400 text-sm font-medium tracking-wide">{label}</label>
-            <div className="flex items-center gap-4 bg-odin-blue/50 p-2 rounded-lg border border-white/10 shadow-inner">
+            <div className="flex items-center gap-2 md:gap-4 bg-odin-blue/50 p-2 rounded-lg border border-white/10 shadow-inner">
                 <button
                     type="button"
                     onClick={decrement}

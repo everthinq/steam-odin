@@ -41,27 +41,27 @@ const AccountCard = ({ account, onDelete }) => {
     else if (time_remaining < 10) progressBarColor = 'bg-amber-700'; // Dark Yellow-Orange
 
     return (
-        <div className="glass-card rounded-lg p-6 w-full max-w-sm relative group">
+        <div className="glass-card rounded-lg p-4 md:p-6 w-full max-w-sm relative group mx-auto">
             <div className="flex justify-between items-start mb-4">
-                <div>
-                    <h3 className="text-xl font-bold text-white max-w-[180px] truncate" title={account_name}>
+                <div className="flex-1 min-w-0 mr-2">
+                    <h3 className="text-lg md:text-xl font-bold text-white truncate" title={account_name}>
                         {account_name}
                     </h3>
-                    {<p className="text-slate-400 text-sm font-mono">{steamid}</p>}
+                    {<p className="text-slate-400 text-xs md:text-sm font-mono truncate">{steamid}</p>}
                 </div>
                 <button
                     onClick={handleDelete}
                     disabled={deleting}
-                    className="p-2 rounded-full hover:bg-red-500/20 text-slate-500 hover:text-red-500 transition-colors"
+                    className="p-2 rounded-full hover:bg-red-500/20 text-slate-500 hover:text-red-500 transition-colors flex-shrink-0"
                     title="Remove Account"
                 >
-                    <Trash2 size={20} />
+                    <Trash2 size={18} />
                 </button>
             </div>
 
             <div className="mb-4">
-                <div className="flex justify-between items-center bg-odin-dark/50 rounded-md p-4 border border-white/10 shadow-inner">
-                    <span className="text-3xl font-mono tracking-widest text-asgard-gold font-bold select-all drop-shadow-md">
+                <div className="flex justify-between items-center bg-odin-dark/50 rounded-md p-3 md:p-4 border border-white/10 shadow-inner">
+                    <span className="text-2xl md:text-3xl font-mono tracking-widest text-asgard-gold font-bold select-all drop-shadow-md">
                         {code || '-----'}
                     </span>
                     <button
@@ -95,7 +95,7 @@ const AccountCard = ({ account, onDelete }) => {
                 <div className="flex justify-end">
                     <Link
                         to={`/accounts/${steamid}/confirmations`}
-                        className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-odin-blue hover:bg-odin-blue/80 text-frost-white/80 hover:text-frost-white transition-colors border border-white/5"
+                        className="text-xs font-mono px-3 py-1.5 rounded-lg bg-odin-blue hover:bg-odin-blue/80 text-frost-white/80 hover:text-frost-white transition-colors border border-white/5"
                     >
                         View Confirmations
                     </Link>

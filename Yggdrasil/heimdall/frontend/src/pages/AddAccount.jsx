@@ -216,16 +216,16 @@ const AddAccount = () => {
         pendingAccounts.every((_, index) => (passwords[index] || '').trim().length > 0);
 
     return (
-        <div className="min-h-screen text-white p-8 flex flex-col items-center justify-center backdrop-blur-md bg-odin-dark/60 transition-all duration-500">
+        <div className="min-h-screen text-white p-4 md:p-8 flex flex-col items-center justify-center backdrop-blur-md bg-odin-dark/60 transition-all duration-500">
             <div className="w-full max-w-lg">
                 <Link to="/" className="flex items-center gap-2 text-slate-400 hover:text-white mb-8 transition-colors">
                     <ArrowLeft size={20} />
                     Back to Dashboard
                 </Link>
 
-                <div className="glass-panel rounded-2xl p-8 bg-odin-blue/50 border border-white/10 backdrop-blur-md">
-                    <h2 className="text-2xl font-bold mb-2 text-center text-asgard-gold">Import Steam Guard Files</h2>
-                    <p className="text-frost-white/60 text-center mb-8 text-sm">
+                <div className="glass-panel rounded-2xl p-6 md:p-8 bg-odin-blue/50 border border-white/10 backdrop-blur-md">
+                    <h2 className="text-xl md:text-2xl font-bold mb-2 text-center text-asgard-gold">Import Steam Guard Files</h2>
+                    <p className="text-frost-white/60 text-center mb-6 md:mb-8 text-sm">
                         Upload your <code>.maFile</code>s to begin.
                         <br />
                         <span className="text-bifrost-cyan">Encryption is handled securely by Heimdall.</span>
@@ -260,7 +260,7 @@ const AddAccount = () => {
                             onDragOver={handleDragOver}
                             onDragLeave={handleDragLeave}
                             onDrop={handleDrop}
-                            className={`border-2 border-dashed rounded-xl p-10 text-center transition-all cursor-pointer relative ${dragging ? 'border-bifrost-cyan bg-bifrost-cyan/10' : 'border-white/10 hover:border-white/30 bg-odin-dark/40'}`}
+                            className={`border-2 border-dashed rounded-xl p-6 md:p-10 text-center transition-all cursor-pointer relative ${dragging ? 'border-bifrost-cyan bg-bifrost-cyan/10' : 'border-white/10 hover:border-white/30 bg-odin-dark/40'}`}
                         >
                             <input type="file" accept=".maFile,.json" multiple onChange={handleFileSelect} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" />
                             <div className="flex flex-col items-center">
@@ -274,8 +274,8 @@ const AddAccount = () => {
             </div>
 
             {showPasswordModal && (
-                <div className="fixed inset-0 bg-odin-dark/90 flex items-center justify-center z-50 backdrop-blur-sm">
-                    <div className="bg-odin-blue/90 border border-white/10 rounded-2xl p-6 w-full max-w-lg shadow-2xl backdrop-blur-xl">
+                <div className="fixed inset-0 bg-odin-dark/90 flex items-center justify-center z-50 backdrop-blur-sm p-4">
+                    <div className="bg-odin-blue/90 border border-white/10 rounded-2xl p-4 md:p-6 w-full max-w-lg shadow-2xl backdrop-blur-xl max-h-[90vh] overflow-y-auto">
                         <h3 className="text-xl font-bold mb-4 text-center text-asgard-gold">Account Passwords Required</h3>
                         <form onSubmit={handlePasswordSubmit} className="space-y-4">
                             {pendingAccounts.map((account, index) => (
