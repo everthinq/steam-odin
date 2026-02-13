@@ -1,13 +1,15 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, RefreshCw, Search, Trash2 } from 'lucide-react';
+import { Plus, RefreshCw, Search, Trash2, Settings } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import AccountCard from '../components/AccountCard';
+import GlobalConfirmationsModal from '../components/GlobalConfirmationsModal';
 
 const Dashboard = () => {
     const [accounts, setAccounts] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
     const [searchQuery, setSearchQuery] = useState('');
+    const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
     const fetchAccounts = async () => {
         try {
@@ -54,6 +56,7 @@ const Dashboard = () => {
 
     return (
         <div className="min-h-screen bg-slate-950 text-white p-8">
+            <GlobalConfirmationsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
             <div className="max-w-7xl mx-auto">
                 <header className="flex justify-between items-center mb-10">
                     <div>
@@ -72,6 +75,13 @@ const Dashboard = () => {
                             <Plus size={20} />
                             Import maFiles
                         </Link>
+                        <button
+                            onClick={() => setIsSettingsOpen(true)}
+                            className="flex items-center gap-2 bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg transition-colors font-medium shadow-lg shadow-purple-500/20"
+                        >
+                            <Settings size={20} />
+                            Confirmations
+                        </button>
                         {accounts.length > 0 && (
                             <button
                                 onClick={handleRemoveAll}

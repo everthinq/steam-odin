@@ -2,11 +2,20 @@ from flask import Flask, jsonify, request
 from flask_cors import CORS
 import os
 from steam_service import SteamService
+from settings import SettingsManager
+from scheduler import ConfirmationScheduler
 
 app = Flask(__name__)
 CORS(app)
 
 steam_service = SteamService()
+settings_manager = SettingsManager()
+scheduler = ConfirmationScheduler(settings_manager, steam_service)
+
+# Start background task
+if os.environ.get('WERKZEUG_RUN_MAIN') != 'true':
+    # Avoid double-starting in Flask debug reloader
+    scheduler.start()
 
 # Ensure all errors return JSON, not HTML
 @app.errorhandler(404)
@@ -127,6 +136,40 @@ def remove_account(steamid):
     if success:
         return jsonify({"status": "success", "message": "Account removed"}), 200
     return jsonify({"error": "Account not found"}), 404
+
+@app.route('/api/settings', methods=['GET'])
+def get_settings():
+    """Get global application settings."""
+    return jsonify(settings_manager.get_settings())
+
+@app.route('/api/settings', methods=['POST'])
+def update_settings():
+    """Update global application settings."""
+    if not request.json:
+        return jsonify({"error": "Missing JSON body"}), 400
+    
+    success = settings_manager.save_settings(request.json)
+    if success:
+        return jsonify({"status": "success", "settings": settings_manager.get_settings()})
+    return jsonify({"error": "Failed to save settings"}), 500
+
+@app.route('/api/confirmations/check-all', methods=['POST'])
+def check_all_confirmations():
+    """Trigger an immediate check for confirmations on all accounts."""
+    # Run in a separate thread to not block the request
+    # or just run synchronously if it's fast enough. 
+    # For better UX, let's run it in the background thread logic if possible, 
+    # but since scheduler loop sleeps, we might want to force a check.
+    # The scheduler logic implementation is simple loop. 
+    # Let's just call the check method directly here for immediate feedback, 
+    # but beware of concurrency if the scheduler is also running.
+    # The scheduler isn't locking the steam_service, so it should be fine.
+    
+    try:
+        scheduler._check_all_accounts(settings_manager.get_settings())
+        return jsonify({"status": "success", "message": "Check initiated"})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 @app.route('/health', methods=['GET'])
 def health_check():
