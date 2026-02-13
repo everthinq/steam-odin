@@ -95,7 +95,7 @@ const Dashboard = () => {
                         </Link>
                         <button
                             onClick={() => setIsSettingsOpen(true)}
-                            className="flex-1 md:flex-none justify-center flex items-center gap-2 bg-purple-600/20 hover:bg-purple-600/40 text-purple-200 border border-purple-500/30 backdrop-blur-md px-4 py-2 rounded-lg transition-all hover:scale-105 active:scale-95 font-medium shadow-lg shadow-purple-900/20 text-sm md:text-base whitespace-nowrap"
+                            className="flex-1 md:flex-none justify-center flex items-center gap-2 bg-emerald-600/20 hover:bg-emerald-600/40 text-emerald-200 border border-emerald-500/30 backdrop-blur-md px-4 py-2 rounded-lg transition-all hover:scale-105 active:scale-95 font-medium shadow-lg shadow-emerald-900/20 text-sm md:text-base whitespace-nowrap"
                         >
                             <Settings size={18} />
                             Confirms

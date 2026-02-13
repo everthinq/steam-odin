@@ -52,7 +52,7 @@ const AccountCard = ({ account, onDelete }) => {
                 <button
                     onClick={handleDelete}
                     disabled={deleting}
-                    className="p-2 rounded-full hover:bg-red-500/20 text-slate-500 hover:text-red-500 transition-colors flex-shrink-0"
+                    className="p-2 rounded-full text-slate-500 hover:text-red-500 hover:bg-red-500/20 transition-all duration-300 ease-out hover:scale-110 active:scale-95 flex-shrink-0 hover:shadow-lg hover:shadow-red-900/20"
                     title="Remove Account"
                 >
                     <Trash2 size={18} />
@@ -95,9 +95,9 @@ const AccountCard = ({ account, onDelete }) => {
                 <div className="flex justify-end">
                     <Link
                         to={`/accounts/${steamid}/confirmations`}
-                        className="text-xs font-mono px-3 py-1.5 rounded-lg bg-odin-blue hover:bg-odin-blue/80 text-frost-white/80 hover:text-frost-white transition-colors border border-white/5"
+                        className="text-xs font-mono bg-emerald-600/20 hover:bg-emerald-600/40 text-emerald-200 border border-emerald-500/30 backdrop-blur-md px-3 py-1.5 rounded-lg transition-all duration-300 ease-out hover:scale-105 active:scale-95 shadow-lg shadow-emerald-900/20"
                     >
-                        View Confirmations
+                        Confirmations
                     </Link>
                 </div>
             </div>
