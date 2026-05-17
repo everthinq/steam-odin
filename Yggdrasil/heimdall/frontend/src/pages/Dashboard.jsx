@@ -20,6 +20,13 @@ const Dashboard = () => {
             setAccounts(data.accounts || []);
             setError(null);
         } catch (err) {
+            // Ignore JSON errors during restart or network glitches
+            if (err.message.includes('JSON') || err.message.includes('Failed to fetch')) {
+                // Optionally just log to console or show "Reconnecting..."
+                console.log("Connection lost, retrying...", err);
+                // Don't set global error for transient network/JSON issues to avoid flashing red box
+                return;
+            }
             setError(err.message);
         } finally {
             setLoading(false);

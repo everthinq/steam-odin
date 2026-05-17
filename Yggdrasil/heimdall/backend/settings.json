@@ -1,5 +1,5 @@
 {
-    "check_interval": 60,
+    "check_interval": 15,
     "auto_check_enabled": true,
     "auto_confirm_market": true,
     "auto_confirm_trades": true

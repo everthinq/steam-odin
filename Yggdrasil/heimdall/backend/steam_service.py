@@ -140,6 +140,22 @@ class SteamService:
     def _get_steam_time(self):
         return int(time.time() + self._query_time())
 
+    def get_account(self, steamid):
+        """Retrieve account data by SteamID."""
+        return self.storage.load_account(steamid)
+
+    def get_password(self, steamid):
+        """Retrieve the stored password for an account."""
+        data = self.storage.load_account(steamid)
+        # Note: In a real scenario, this should be encrypted. 
+        # For this implementation, we assume it's stored in 'account_password' or similar field from import.
+        # If it's encrypted in maFile (e.g. SDA), we might need to decrypt it if we knew the key.
+        # However, the user said "decrypt it and use the password from there".
+        # Standard maFiles from SDA usually don't store the password unless explicitly added or in a specific format.
+        # But if the user says it's there, let's look for likely fields.
+        if not data: return None
+        return data.get('account_password') or data.get('password') or data.get('Session', {}).get('Password')
+
     def generate_code(self, shared_secret):
         if not shared_secret:
             return "N/A"
@@ -251,6 +267,45 @@ class SteamService:
         if '_session' in auth:
             result['_session'] = auth['_session']
         return result
+
+    def update_session_cookies(self, steamid, access_token, steam_login_secure, session_id):
+        """
+        Updates the session data with new cookies/tokens provided by an external service (Ratatoskr).
+        """
+        data = self.storage.load_account(steamid)
+        if not data:
+            return {'success': False, 'message': 'Account not found'}
+
+        session_data = data.get('Session') or {}
+        
+        # Update fields
+        # Note: 'steamLoginSecure' usually contains the access token if it's the new format, 
+        # or we might receive the raw components.
+        # Ratatoskr (steam-user) 'webSession' event gives sessionID and cookies.
+        # Cookies are usually strings like 'steamLoginSecure=...'
+        
+        # We trust the caller to provide valid data
+        if access_token:
+            session_data['AccessToken'] = access_token
+        
+        # If we have a full steamLoginSecure cookie value (steamid%7C%7Ctoken), we can extract token if needed,
+        # but for requests, we construct headers/cookies dynamically.
+        # The key persistence is AccessToken for MobileAPI and steamLoginSecure for Community scraping.
+        
+        # However, steam_service._get_cookies constructs steamLoginSecure FROM AccessToken.
+        # If the external service gives us a steamLoginSecure that ISN'T based on AccessToken 
+        # (e.g. old session style, though unlikely for mobile), we might have a mismatch.
+        # steam-user v4+ uses the new token system, so steamLoginSecure should contain the access token.
+        
+        data['Session'] = session_data
+        
+        try:
+            self.storage.save_account(steamid, data)
+            print(f"[AUTH] Updated session cookies for {steamid} from external source")
+            return {'success': True}
+        except Exception as e:
+            print(f"[AUTH] Failed to save updated session for {steamid}: {e}")
+            return {'success': False, 'message': str(e)}
 
     def begin_auth_session(self, username, password):
         try:

@@ -3,15 +3,19 @@ version: '3.8'
 services:
   # HEIMDALL: Authenticator (The Watchman)
   heimdall-backend:
+    restart: unless-stopped
     build: ./Yggdrasil/heimdall/backend
     # Note: With network_mode: "host", ports mapping is ignored.
     # The app will be accessible directly on host:5000 (or PORT env var)
+    ports:
+      - "5001:5000"
     volumes:
       - ./Yggdrasil/heimdall/backend:/app
       - /etc/localtime:/etc/localtime:ro
     environment:
       - FLASK_ENV=development
       - PORT=5000
+      - RATATOSKR_URL=http://ratatoskr:3000
       - HEIMDALL_SECRET_KEY=${HEIMDALL_SECRET_KEY:-change_this_to_a_secure_random_string_in_production}
       # Proxy settings to change outbound IP and avoid Steam rate limits (HTTP 429)
       # Uncomment and set these environment variables to use a proxy/VPN:
@@ -40,3 +44,15 @@ services:
       - WATCHPACK_POLLING=true
     depends_on:
       - heimdall-backend
+
+  # RATATOSKR: Casemove/Courier Service (Node.js)
+  ratatoskr:
+    build: ./Yggdrasil/ratatoskr
+    ports:
+      - "3001:3000"
+    environment:
+      - PORT=3000
+      - HEIMDALL_API_URL=http://heimdall-backend:5000
+    volumes:
+      - ./Yggdrasil/ratatoskr:/app
+      - /app/node_modules
