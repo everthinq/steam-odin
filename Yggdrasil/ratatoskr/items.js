@@ -679,12 +679,22 @@ class items {
     return this._paintKitCollectionMap;
   }
 
+  isStickerPackLootList(listKey) {
+    return (
+      (listKey.startsWith('sticker_pack_') ||
+        listKey.startsWith('crate_sticker_pack_')) &&
+      !listKey.endsWith('_lootlist')
+    );
+  }
+
   getStickerPackDisplayName(lootListKey) {
     const base = lootListKey.replace(
       /_(rare|mythical|legendary|ancient|uncommon|common|lootlist)$/,
       ''
     );
-    const packId = base.replace(/^sticker_pack_/, '');
+    const packId = base
+      .replace(/^crate_sticker_pack_/, '')
+      .replace(/^sticker_pack_/, '');
     const candidates = [
       `csgo_crate_sticker_pack_${packId}_short`,
       `csgo_crate_sticker_pack_${packId}_capsule`,
@@ -704,9 +714,7 @@ class items {
     this._stickerKitCollectionMap = {};
     const lists = this.csgoItems['client_loot_lists'] || {};
     for (const [listKey, entries] of Object.entries(lists)) {
-      if (!listKey.startsWith('sticker_pack_') || listKey.endsWith('_lootlist')) {
-        continue;
-      }
+      if (!this.isStickerPackLootList(listKey)) continue;
       const packName = this.getStickerPackDisplayName(listKey);
       if (!packName) continue;
       for (const entryKey of Object.keys(entries || {})) {
@@ -724,30 +732,128 @@ class items {
     return first?.sticker_id ?? null;
   }
 
+  buildStickerKitByNameMap() {
+    if (this._stickerKitByName) return this._stickerKitByName;
+    this._stickerKitByName = {};
+    for (const [, kit] of Object.entries(this.csgoItems['sticker_kits'] || {})) {
+      if (kit?.name) this._stickerKitByName[kit.name] = kit;
+    }
+    return this._stickerKitByName;
+  }
+
+  getStickerKitFromItemDef(defIndex) {
+    const itemDef = this.get_def_index(defIndex);
+    if (!itemDef?.item_name) return null;
+    const match = itemDef.item_name.match(/#StickerKit_([^#]+)/i);
+    if (!match) return null;
+    const kitName = match[1].toLowerCase();
+    return this.buildStickerKitByNameMap()[kitName] || null;
+  }
+
+  isContainerOrWeaponItemDef(itemDef) {
+    if (!itemDef) return false;
+    const prefab = (itemDef.prefab || '').toLowerCase();
+    return (
+      prefab.includes('weapon_case') ||
+      prefab.includes('weapon_case_key') ||
+      prefab.includes('sticker_capsule') ||
+      prefab.includes('weapon_base') ||
+      prefab.includes('weapon_') ||
+      prefab.includes('knife')
+    );
+  }
+
+  isLooseStickerOrPatchItem(storageRow) {
+    if (storageRow?.paint_index !== undefined) {
+      return false;
+    }
+
+    const defIndex = storageRow?.def_index;
+    const itemDef = defIndex != null ? this.get_def_index(defIndex) : null;
+
+    if (itemDef?.item_name && /#StickerKit_/i.test(itemDef.item_name)) {
+      return true;
+    }
+
+    if (this.isContainerOrWeaponItemDef(itemDef)) {
+      return false;
+    }
+
+    const stickerId = this.getStickerIdFromRow(storageRow);
+    if (stickerId == null) return false;
+
+    if (!this.getStickerDetails(stickerId)) {
+      return false;
+    }
+
+    if (!itemDef) {
+      return true;
+    }
+
+    const imageUrl = this.handleError(this.itemProcessorImageUrl, [storageRow]);
+    return (
+      typeof imageUrl === 'string' &&
+      (imageUrl.startsWith('econ/stickers/') || imageUrl.startsWith('econ/patches/'))
+    );
+  }
+
+  getItemSetCollectionName(storageRow) {
+    const defIndex = storageRow?.def_index;
+    if (defIndex == null) return '';
+    const itemDef = this.get_def_index(defIndex);
+    const tagSet = itemDef?.tags?.ItemSet?.tag_text;
+    if (!tagSet) return '';
+    const label = this.getTranslation(tagSet);
+    if (!label || label.startsWith('#')) return '';
+    return label;
+  }
+
   getStickerCollectionFromMaterial(stickerKit) {
     const material = stickerKit?.sticker_material;
     if (!material) return '';
     const parts = material.split('/');
     const folder = parts[0] === 'community' && parts[1] ? parts[1] : parts[0];
-    if (!folder || !folder.includes('capsule')) return '';
-    const packSlug = folder.replace(/_capsule$/, '');
-    const candidates = [
-      `csgo_crate_sticker_pack_${packSlug}_capsule`,
-      `csgo_crate_sticker_pack_${packSlug}`,
-    ];
-    for (const key of candidates) {
-      const label = this.getTranslation(`#${key}`);
-      if (label && !label.startsWith('#') && label.toLowerCase() !== key) {
-        return label;
+    if (!folder) return '';
+
+    const packSlugs = [folder];
+    if (folder.includes('capsule')) {
+      packSlugs.push(folder.replace(/_capsule$/, ''));
+    }
+
+    for (const slug of packSlugs) {
+      const candidates = [
+        `csgo_crate_sticker_pack_${slug}_short`,
+        `csgo_crate_sticker_pack_${slug}_capsule`,
+        `csgo_crate_sticker_pack_${slug}`,
+      ];
+      for (const key of candidates) {
+        const label = this.getTranslation(`#${key}`);
+        if (label && !label.startsWith('#') && label.toLowerCase() !== key) {
+          return label;
+        }
       }
     }
     return '';
   }
 
-  getStickerCollectionName(storageRow) {
+  resolveStickerKit(storageRow) {
+    if (!this.isLooseStickerOrPatchItem(storageRow)) return null;
+
     const stickerId = this.getStickerIdFromRow(storageRow);
-    if (stickerId == null) return '';
-    const kit = this.getStickerDetails(stickerId);
+    if (stickerId != null) {
+      const kit = this.getStickerDetails(stickerId);
+      if (kit?.name) return kit;
+    }
+
+    const defIndex = storageRow?.def_index;
+    if (defIndex != null) {
+      return this.getStickerKitFromItemDef(defIndex);
+    }
+    return null;
+  }
+
+  getStickerCollectionName(storageRow) {
+    const kit = this.resolveStickerKit(storageRow);
     if (!kit?.name) return '';
     const map = this.buildStickerKitCollectionMap();
     if (map[kit.name]) return map[kit.name];
@@ -763,7 +869,12 @@ class items {
         if (skinCollection) return skinCollection;
       }
     }
-    return this.getStickerCollectionName(storageRow);
+
+    if (this.isLooseStickerOrPatchItem(storageRow)) {
+      return this.getStickerCollectionName(storageRow);
+    }
+
+    return this.getItemSetCollectionName(storageRow) || '';
   }
 
   checkIfAttributeIsThere(item, attribDefIndex) {

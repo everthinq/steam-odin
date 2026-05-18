@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Copy, Check, Trash2, Package } from 'lucide-react';
+import { Copy, Check, Trash2, Package, Eye, EyeOff } from 'lucide-react';
 
 const AccountCard = ({ account, onDelete }) => {
     const { account_name, steamid, code, time_remaining } = account;
@@ -8,8 +8,14 @@ const AccountCard = ({ account, onDelete }) => {
 
     const [copied, setCopied] = useState(false);
     const [deleting, setDeleting] = useState(false);
+    const [revealed, setRevealed] = useState(false);
+
+    useEffect(() => {
+        setRevealed(false);
+    }, [code]);
 
     const copyCode = () => {
+        if (!revealed || !code) return;
         navigator.clipboard.writeText(code);
         setCopied(true);
         setTimeout(() => setCopied(false), 3000);
@@ -61,20 +67,38 @@ const AccountCard = ({ account, onDelete }) => {
 
             <div className="mb-4">
                 <div className="flex justify-between items-center bg-black/30 rounded-lg p-3 md:p-4 border border-white/5">
-                    <span className="text-2xl md:text-3xl font-mono tracking-widest text-emerald-400 font-bold select-all">
-                        {code || '-----'}
-                    </span>
-                    <button
-                        onClick={copyCode}
-                        disabled={!code || copied}
-                        className={`p-2 rounded-lg transition-all duration-200 ${copied
-                            ? 'bg-emerald-500/20 text-emerald-400'
-                            : 'hover:bg-white/10 text-slate-400 hover:text-white'
+                    <span
+                        className={`text-2xl md:text-3xl font-mono tracking-widest font-bold min-w-[5.5rem] ${revealed
+                            ? 'text-emerald-400 select-all'
+                            : 'text-slate-600 select-none'
                             }`}
-                        title={copied ? "Copied!" : "Copy Code"}
                     >
-                        {copied ? <Check size={20} /> : <Copy size={20} />}
-                    </button>
+                        {revealed ? (code || '-----') : '•••••'}
+                    </span>
+                    <div className="flex items-center gap-1 shrink-0">
+                        <button
+                            type="button"
+                            onClick={() => setRevealed((v) => !v)}
+                            disabled={!code}
+                            className="p-2 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 transition-all duration-200 disabled:opacity-40"
+                            title={revealed ? 'Hide code' : 'Show code'}
+                            aria-label={revealed ? 'Hide code' : 'Show code'}
+                        >
+                            {revealed ? <EyeOff size={20} /> : <Eye size={20} />}
+                        </button>
+                        <button
+                            type="button"
+                            onClick={copyCode}
+                            disabled={!code || copied || !revealed}
+                            className={`p-2 rounded-lg transition-all duration-200 ${copied
+                                ? 'bg-emerald-500/20 text-emerald-400'
+                                : 'hover:bg-white/10 text-slate-400 hover:text-white disabled:opacity-40'
+                                }`}
+                            title={copied ? 'Copied!' : 'Copy code'}
+                        >
+                            {copied ? <Check size={20} /> : <Copy size={20} />}
+                        </button>
+                    </div>
                 </div>
             </div>
 

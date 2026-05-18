@@ -2,6 +2,7 @@ import React from 'react';
 import { X } from 'lucide-react';
 import storageUnitImage from '../assets/ratatoskr/storage-unit.png';
 import SteamMarketLink from './SteamMarketLink';
+import TransferProgressBar from './TransferProgressBar';
 import { getItemImageUrl } from '../utils/ratatoskrImages';
 
 const ItemThumb = ({ item }) => (
@@ -77,7 +78,7 @@ const TransferQueueModal = ({
                                     <SteamMarketLink itemName={entry.item_name} />
                                 </div>
                                 <p className="text-xs text-slate-500 truncate">
-                                    {locationLabel}: {storageName}
+                                    {locationLabel}: {entry.storageName || storageName}
                                     <span className="text-slate-400 ml-2">× {entry.queueQty}</span>
                                 </p>
                             </div>
@@ -95,26 +96,11 @@ const TransferQueueModal = ({
                 )}
             </div>
 
-            {moveProgress && (moveProgress.running || (moveProgress.processed ?? 0) > 0) && (
-                <div className="px-4 py-2 border-t border-white/5 bg-black/20">
-                    <div className="flex justify-between text-[10px] text-slate-500 mb-1">
-                        <span>{moveProgress.running ? 'Transferring…' : 'Done'}</span>
-                        <span className="tabular-nums text-slate-300">
-                            {moveProgress.processed ?? moveProgress.done + moveProgress.failed} / {moveProgress.total}
-                        </span>
-                    </div>
-                    <div className="w-full h-1 bg-black/40 rounded-full overflow-hidden">
-                        <div
-                            className="h-full bg-amber-500 transition-all duration-300"
-                            style={{
-                                width: `${moveProgress.total
-                                    ? Math.min(100, ((moveProgress.processed ?? 0) / moveProgress.total) * 100)
-                                    : 0}%`,
-                            }}
-                        />
-                    </div>
-                </div>
-            )}
+            <TransferProgressBar
+                moveProgress={moveProgress}
+                className="px-4 py-2 border-t border-white/5 bg-black/20"
+                trackClassName="h-1"
+            />
 
             <div className="p-4 border-t border-white/10 space-y-3 bg-black/20">
                 <label className="flex items-center justify-between text-xs text-slate-500">

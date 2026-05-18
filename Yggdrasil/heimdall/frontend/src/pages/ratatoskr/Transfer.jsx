@@ -13,13 +13,22 @@ import {
     ChevronDown,
     Pencil,
     X,
+    Layers,
 } from 'lucide-react';
 
 const CASKET_NAME_MAX_LENGTH = 20;
 import storageUnitImage from '../../assets/ratatoskr/storage-unit.png';
 import TransferQueueModal from '../../components/TransferQueueModal';
+import TransferProgressBar from '../../components/TransferProgressBar';
 import SteamMarketLink from '../../components/SteamMarketLink';
 import { getItemImageUrl, getStickerImageUrl } from '../../utils/ratatoskrImages';
+import {
+    tagInventoryItems,
+    tagCasketItems,
+    groupItemsByName,
+    filterItemsByQuery,
+    groupItemsByCasket,
+} from '../../utils/transferItems';
 
 const STORAGE_CAPACITY = 1000;
 const NO_COLLECTION_LABEL = 'No collection';
@@ -53,31 +62,55 @@ const groupTradeHold = (items) => {
     return maxDays > 0 ? `${maxDays}d` : '—';
 };
 
-const groupItemsByName = (items) => {
-    const map = new Map();
-    for (const item of items) {
-        const key = item.item_name || 'Unknown';
-        if (!map.has(key)) {
-            map.set(key, {
-                key,
-                item_name: item.item_name,
-                item_wear_name: item.item_wear_name,
-                item_collection: item.item_collection,
-                stickers: item.stickers || [],
-                representative: item,
-                item_ids: [item.item_id],
-                items: [item],
-            });
-        } else {
-            const group = map.get(key);
-            group.item_ids.push(item.item_id);
-            group.items.push(item);
-        }
-    }
-    return Array.from(map.values())
-        .map(g => ({ ...g, qty: g.item_ids.length }))
-        .sort((a, b) => a.item_name.localeCompare(b.item_name));
-};
+const PickCheckbox = ({ checked, partial = false, onChange, label }) => (
+    <button
+        type="button"
+        role="checkbox"
+        aria-checked={checked || partial}
+        aria-label={label}
+        onClick={(e) => {
+            e.stopPropagation();
+            onChange();
+        }}
+        className={`p-1 rounded border transition-colors shrink-0 ${checked
+            ? 'bg-emerald-600/30 border-emerald-500/50 text-emerald-400'
+            : partial
+              ? 'bg-amber-600/20 border-amber-500/40 text-amber-400'
+              : 'border-white/10 text-slate-500 hover:border-white/20'
+            }`}
+    >
+        {checked ? (
+            <Check size={14} />
+        ) : partial ? (
+            <Minus size={14} />
+        ) : (
+            <span className="block w-3.5 h-3.5" />
+        )}
+    </button>
+);
+
+const CollapsibleSection = ({ title, icon: Icon, open, onToggle, summary, headerRight, children }) => (
+    <div className="mb-3 rounded-xl border border-white/10 bg-black/20 overflow-hidden">
+        <button
+            type="button"
+            onClick={onToggle}
+            className="w-full flex items-center gap-2 px-3 py-2.5 text-left hover:bg-white/[0.03] transition-colors"
+            aria-expanded={open}
+        >
+            <ChevronDown
+                size={16}
+                className={`shrink-0 text-slate-500 transition-transform ${open ? '' : '-rotate-90'}`}
+            />
+            {Icon && <Icon size={14} className="text-amber-400/80 shrink-0" />}
+            <span className="text-xs font-bold tracking-widest text-slate-500 shrink-0">{title}</span>
+            {!open && summary && (
+                <span className="text-xs text-slate-400 truncate min-w-0">{summary}</span>
+            )}
+            {headerRight && <div className="ml-auto flex items-center gap-2 shrink-0">{headerRight}</div>}
+        </button>
+        {open && <div className="px-3 pb-3 border-t border-white/5">{children}</div>}
+    </div>
+);
 
 const ItemThumb = ({ item }) => {
     const [failed, setFailed] = useState(false);
@@ -233,7 +266,8 @@ const RatatoskrTransfer = () => {
     const [inventory, setInventory] = useState([]);
     const [caskets, setCaskets] = useState([]);
     const [casketItems, setCasketItems] = useState([]);
-    const [selectedCasket, setSelectedCasket] = useState(null);
+    const [selectedCasketIds, setSelectedCasketIds] = useState([]);
+    const [allStorageSelected, setAllStorageSelected] = useState(false);
     const [transferMode, setTransferMode] = useState(null);
 
     const [loading, setLoading] = useState(false);
@@ -255,6 +289,10 @@ const RatatoskrTransfer = () => {
     const [renameDraft, setRenameDraft] = useState('');
     const [renameLoading, setRenameLoading] = useState(false);
     const [renameError, setRenameError] = useState(null);
+    const [allCasketItems, setAllCasketItems] = useState([]);
+    const [allCasketLoading, setAllCasketLoading] = useState(false);
+    const [allCasketLoaded, setAllCasketLoaded] = useState(false);
+    const [storageSectionOpen, setStorageSectionOpen] = useState(true);
     const filterRef = useRef(null);
 
     const fetchMoveDelay = async () => {
@@ -296,13 +334,27 @@ const RatatoskrTransfer = () => {
     }, [steamid]);
 
     useEffect(() => {
-        if (selectedCasket) {
-            fetchCasketContents(selectedCasket.item_id);
-            setSelectedCasketItems([]);
-        } else {
+        setSelectedCasketItems([]);
+        if (transferMode !== 'from') {
             setCasketItems([]);
+            return;
         }
-    }, [selectedCasket]);
+        if (!allStorageSelected && selectedCasketIds.length === 0) {
+            setCasketItems([]);
+            return;
+        }
+        if (allStorageSelected || selectedCasketIds.length !== 1) {
+            if (!allCasketLoaded) fetchAllStorageContents();
+            return;
+        }
+        fetchCasketContents(selectedCasketIds[0]);
+    }, [allStorageSelected, selectedCasketIds, transferMode]);
+
+    useEffect(() => {
+        if (transferMode === 'from' && caskets.length > 0 && !allCasketLoaded && !allCasketLoading) {
+            fetchAllStorageContents();
+        }
+    }, [transferMode, caskets.length]);
 
     useEffect(() => {
         if (!filtersOpen) return undefined;
@@ -316,14 +368,16 @@ const RatatoskrTransfer = () => {
     }, [filtersOpen]);
 
     useEffect(() => {
-        if (!selectedCasket || !transferMode) return;
-        const count = getCasketCount(selectedCasket);
+        if (!transferMode || allStorageSelected || selectedCasketIds.length !== 1) return;
+        const casket = caskets.find((c) => c.item_id === selectedCasketIds[0]);
+        if (!casket) return;
+        const count = getCasketCount(casket);
         const stillValid =
             transferMode === 'to'
                 ? count < STORAGE_CAPACITY
                 : count >= 1 && count <= STORAGE_CAPACITY;
-        if (!stillValid) setSelectedCasket(null);
-    }, [transferMode, caskets]);
+        if (!stillValid) setSelectedCasketIds([]);
+    }, [transferMode, caskets, selectedCasketIds, allStorageSelected]);
 
     const fetchInventory = async () => {
         try {
@@ -388,9 +442,6 @@ const RatatoskrTransfer = () => {
             setCaskets((prev) =>
                 prev.map((c) => (c.item_id === updated.item_id ? { ...c, ...updated } : c))
             );
-            if (selectedCasket?.item_id === updated.item_id) {
-                setSelectedCasket((prev) => ({ ...prev, ...updated }));
-            }
             setRenamingCasket(null);
             setRenameDraft('');
             setRenameError(null);
@@ -412,17 +463,90 @@ const RatatoskrTransfer = () => {
         finally { setLoading(false); }
     };
 
+    const fetchAllStorageContents = async () => {
+        setAllCasketLoading(true);
+        try {
+            const units = caskets.filter((c) => getCasketCount(c) > 0);
+            const chunks = await Promise.all(
+                units.map(async (c) => {
+                    try {
+                        const res = await fetch(`/api/ratatoskr/casket/${steamid}/${c.item_id}`);
+                        const data = await res.json();
+                        return tagCasketItems(data.items || [], c.item_id, casketDisplayName(c));
+                    } catch (err) {
+                        console.error(`Failed to load ${c.item_id}`, err);
+                        return [];
+                    }
+                })
+            );
+            setAllCasketItems(chunks.flat());
+            setAllCasketLoaded(true);
+        } catch (err) {
+            console.error(err);
+        } finally {
+            setAllCasketLoading(false);
+        }
+    };
+
+    const invalidateAllStorageCache = () => {
+        setAllCasketLoaded(false);
+        setAllCasketItems([]);
+    };
+
+    const hasStorageSelection = allStorageSelected || selectedCasketIds.length > 0;
+
+    const isCasketSelected = (casketId) =>
+        allStorageSelected || selectedCasketIds.includes(casketId);
+
+    const getCasketById = (casketId) => caskets.find((c) => c.item_id === casketId);
+
+    const primarySelectedCasket =
+        selectedCasketIds.length === 1 ? getCasketById(selectedCasketIds[0]) : null;
+
+    const pickCasket = (casket) => {
+        if (transferMode === 'from') {
+            setAllStorageSelected(false);
+            setSelectedCasketIds((prev) =>
+                prev.includes(casket.item_id)
+                    ? prev.filter((id) => id !== casket.item_id)
+                    : [...prev, casket.item_id]
+            );
+            return;
+        }
+        setAllStorageSelected(false);
+        setSelectedCasketIds([casket.item_id]);
+    };
+
+    const pickAllStorage = () => {
+        if (transferMode === 'from') {
+            if (allStorageSelected) {
+                setAllStorageSelected(false);
+                setSelectedCasketItems([]);
+            } else {
+                setAllStorageSelected(true);
+                setSelectedCasketIds([]);
+                setSelectedCasketItems([]);
+            }
+            return;
+        }
+        setAllStorageSelected(true);
+        setSelectedCasketIds([]);
+    };
+
     const selectMode = (mode) => {
         setTransferMode(mode);
-        setSelectedCasket(null);
+        setSelectedCasketIds([]);
+        setAllStorageSelected(false);
         setSelectedInvItems([]);
         setSelectedCasketItems([]);
         setCasketItems([]);
+        invalidateAllStorageCache();
         setItemSearch('');
         setQueueOpen(false);
         setIncludedCollections([]);
         setCollectionFilterSearch('');
         setFiltersOpen(false);
+        setStorageSectionOpen(true);
     };
 
     const clearItemFilters = () => {
@@ -444,9 +568,14 @@ const RatatoskrTransfer = () => {
     };
 
     const refreshAfterMove = async () => {
+        invalidateAllStorageCache();
         await fetchInventory();
         await fetchCaskets();
-        if (selectedCasket) await fetchCasketContents(selectedCasket.item_id);
+        if (allStorageSelected || selectedCasketIds.length !== 1) {
+            await fetchAllStorageContents();
+        } else if (selectedCasketIds.length === 1) {
+            await fetchCasketContents(selectedCasketIds[0]);
+        }
     };
 
     const pollMoveStatus = () =>
@@ -464,7 +593,7 @@ const RatatoskrTransfer = () => {
                         resolve(data);
                         return;
                     }
-                    setTimeout(poll, 500);
+                    setTimeout(poll, 250);
                 } catch (err) {
                     reject(err);
                 }
@@ -472,8 +601,29 @@ const RatatoskrTransfer = () => {
             poll();
         });
 
+    const queueBatchMove = async (itemIDs, casketID, source, target) => {
+        const res = await fetch('/api/ratatoskr/move/batch', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                steamID: steamid,
+                itemIDs,
+                casketID,
+                source,
+                target,
+            }),
+        });
+        const data = await res.json();
+        if (!res.ok || data.error) {
+            throw new Error(data.error || 'Failed to queue moves');
+        }
+        setMoveProgress(data);
+        return pollMoveStatus();
+    };
+
     const handleMove = async () => {
-        if (!selectedCasket || !transferMode || moveProgress?.running) return;
+        if (!hasStorageSelection || !transferMode || moveProgress?.running) return;
+        if (transferMode === 'to' && selectedCasketIds.length !== 1) return;
         const itemsToMove = transferMode === 'to' ? selectedInvItems : selectedCasketItems;
         if (itemsToMove.length === 0) return;
 
@@ -486,31 +636,41 @@ const RatatoskrTransfer = () => {
         setMoveProgress({ running: true, done: 0, failed: 0, total: itemsToMove.length, pending: itemsToMove.length });
 
         try {
-            const res = await fetch('/api/ratatoskr/move/batch', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    steamID: steamid,
-                    itemIDs: itemsToMove,
-                    casketID: selectedCasket.item_id,
+            let totalDone = 0;
+            let totalFailed = 0;
+
+            if (transferMode === 'from') {
+                const pool =
+                    allCasketItems.length > 0
+                        ? allCasketItems
+                        : tagCasketItems(
+                              casketItems,
+                              selectedCasketIds[0],
+                              primarySelectedCasket
+                                  ? casketDisplayName(primarySelectedCasket)
+                                  : ''
+                          );
+                const byCasket = groupItemsByCasket(itemsToMove, pool);
+                for (const [casketID, itemIDs] of byCasket) {
+                    const status = await queueBatchMove(itemIDs, casketID, source, target);
+                    totalDone += status.done || 0;
+                    totalFailed += status.failed || 0;
+                }
+            } else {
+                const status = await queueBatchMove(
+                    itemsToMove,
+                    selectedCasketIds[0],
                     source,
-                    target,
-                }),
-            });
-            const data = await res.json();
-            if (!res.ok || data.error) {
-                throw new Error(data.error || 'Failed to queue moves');
+                    target
+                );
+                totalDone = status.done || 0;
+                totalFailed = status.failed || 0;
             }
 
-            setMoveProgress(data);
-            const finalStatus = await pollMoveStatus();
-
-            const failed = finalStatus.failed || 0;
-            const done = finalStatus.done || 0;
-            if (failed > 0) {
-                setMoveError(`${done} moved, ${failed} failed. Check console for details.`);
+            if (totalFailed > 0) {
+                setMoveError(`${totalDone} moved, ${totalFailed} failed. Check console for details.`);
             } else {
-                setSuccessMsg(`Moved ${done} items successfully!`);
+                setSuccessMsg(`Moved ${totalDone} items successfully!`);
                 setTimeout(() => setSuccessMsg(null), 5000);
             }
 
@@ -518,7 +678,6 @@ const RatatoskrTransfer = () => {
             setSelectedCasketItems([]);
             setQueueOpen(false);
 
-            // Give the GC a moment to sync before refreshing
             await new Promise((r) => setTimeout(r, 1500));
             await refreshAfterMove();
         } catch (err) {
@@ -531,19 +690,26 @@ const RatatoskrTransfer = () => {
     };
 
     const exportItems = () => {
-        const rows = sortedGroupedItems.map(group => ({
+        const rows = sortedGroupedItems.map((group) => ({
             name: group.item_name,
+            storage: group.storage_unit_name || '',
             wear: group.item_wear_name || '',
             collection: group.item_collection || '',
             tradehold: groupTradeHold(group.items),
             qty: group.qty,
         }));
-        const header = 'Name,Wear,Collection,Tradehold,Qty\n';
-        const body = rows.map(r =>
-            [r.name, r.wear, r.collection, r.tradehold, r.qty]
-                .map(v => `"${String(v).replace(/"/g, '""')}"`)
-                .join(',')
-        ).join('\n');
+        const withStorage = showStorageColumn;
+        const header = withStorage
+            ? 'Name,Storage,Wear,Collection,Tradehold,Qty\n'
+            : 'Name,Wear,Collection,Tradehold,Qty\n';
+        const body = rows
+            .map((r) => {
+                const cols = withStorage
+                    ? [r.name, r.storage, r.wear, r.collection, r.tradehold, r.qty]
+                    : [r.name, r.wear, r.collection, r.tradehold, r.qty];
+                return cols.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(',');
+            })
+            .join('\n');
         const blob = new Blob([header + body], { type: 'text/csv' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
@@ -562,9 +728,40 @@ const RatatoskrTransfer = () => {
         return false;
     };
 
-    const rawItems = transferMode === 'to'
-        ? inventory.filter(i => i.def_index !== 1201)
-        : casketItems;
+    const allStorageTotal = useMemo(
+        () => caskets.reduce((sum, c) => sum + getCasketCount(c), 0),
+        [caskets]
+    );
+
+    const showStorageColumn =
+        transferMode === 'from' &&
+        (allStorageSelected || selectedCasketIds.length > 1);
+
+    const rawItems = useMemo(() => {
+        if (transferMode === 'to') {
+            return tagInventoryItems(inventory.filter((i) => i.def_index !== 1201));
+        }
+        if (allStorageSelected) return allCasketItems;
+        if (selectedCasketIds.length === 0) return [];
+        if (selectedCasketIds.length === 1 && allCasketItems.length === 0) {
+            const casket = getCasketById(selectedCasketIds[0]);
+            return tagCasketItems(
+                casketItems,
+                selectedCasketIds[0],
+                casket ? casketDisplayName(casket) : ''
+            );
+        }
+        const idSet = new Set(selectedCasketIds);
+        return allCasketItems.filter((item) => idSet.has(item.storage_unit_id));
+    }, [
+        transferMode,
+        inventory,
+        casketItems,
+        allCasketItems,
+        allStorageSelected,
+        selectedCasketIds,
+        caskets,
+    ]);
 
     const availableCollections = useMemo(() => {
         const names = new Set();
@@ -580,19 +777,15 @@ const RatatoskrTransfer = () => {
             const allowed = new Set(includedCollections);
             items = items.filter((item) => allowed.has(getItemCollection(item)));
         }
-        const q = itemSearch.trim().toLowerCase();
-        if (q) {
-            items = items.filter((item) => item.item_name.toLowerCase().includes(q));
-        }
-        return items;
+        return filterItemsByQuery(items, itemSearch);
     }, [rawItems, itemSearch, includedCollections]);
 
     const activeFilterCount =
         (itemSearch.trim() ? 1 : 0) + (includedCollections.length > 0 ? 1 : 0);
 
     const groupedItems = useMemo(
-        () => groupItemsByName(displayItems),
-        [displayItems]
+        () => groupItemsByName(displayItems, { includeStorage: showStorageColumn }),
+        [displayItems, showStorageColumn]
     );
 
     const sortedGroupedItems = useMemo(() => {
@@ -647,6 +840,7 @@ const RatatoskrTransfer = () => {
                     key: group.key,
                     item_name: group.item_name,
                     representative: group.representative,
+                    storageName: group.storage_unit_name,
                     group,
                     queueQty: group.item_ids.filter((id) => selectedIds.includes(id)).length,
                 }))
@@ -654,11 +848,28 @@ const RatatoskrTransfer = () => {
         [sortedGroupedItems, selectedIds]
     );
 
-    const slotsLeft = selectedCasket
-        ? Math.max(0, STORAGE_CAPACITY - getCasketCount(selectedCasket))
-        : null;
+    const slotsLeft =
+        primarySelectedCasket && transferMode === 'to'
+            ? Math.max(0, STORAGE_CAPACITY - getCasketCount(primarySelectedCasket))
+            : null;
+
+    const listLoading =
+        loading ||
+        ((allStorageSelected || selectedCasketIds.length > 1) &&
+            allCasketLoading &&
+            rawItems.length === 0);
 
     const isMoving = moveProgress?.running;
+
+    const selectedStorageLabel = useMemo(() => {
+        if (allStorageSelected) return 'All storage units';
+        if (selectedCasketIds.length === 0) return 'None selected';
+        if (selectedCasketIds.length === 1) {
+            const c = getCasketById(selectedCasketIds[0]);
+            return c ? casketDisplayName(c) : '1 storage unit';
+        }
+        return `${selectedCasketIds.length} storage units`;
+    }, [allStorageSelected, selectedCasketIds, caskets]);
 
     const emptyUnitsMessage = () => {
         if (transferMode === 'to') {
@@ -673,13 +884,24 @@ const RatatoskrTransfer = () => {
 
     const mainEmptyMessage = () => {
         if (!transferMode) return 'Choose To or From to see available storage units';
-        if (!selectedCasket) {
+        if (!hasStorageSelection) {
             return transferMode === 'to'
                 ? 'Pick a storage unit to deposit items into'
-                : 'Pick a storage unit to withdraw items from';
+                : 'Pick one or more storage units to withdraw items from';
+        }
+        if (
+            (allStorageSelected || selectedCasketIds.length > 1) &&
+            allCasketLoading &&
+            rawItems.length === 0
+        ) {
+            return null;
         }
         return null;
     };
+
+    const tableGridCols = showStorageColumn
+        ? 'grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_72px_64px_72px]'
+        : 'grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)_72px_64px_72px]';
 
     const itemListPanel = (
         <div className="flex-1 flex flex-col min-h-0 bg-odin-blue/30 border border-white/5 rounded-2xl overflow-hidden">
@@ -764,8 +986,9 @@ const RatatoskrTransfer = () => {
             </div>
 
             {/* Table header */}
-            <div className="grid grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)_72px_64px_72px] gap-2 px-4 py-2 border-b border-white/5 text-[10px] font-bold tracking-wider text-slate-500 uppercase bg-black/10">
+            <div className={`grid ${tableGridCols} gap-2 px-4 py-2 border-b border-white/5 text-[10px] font-bold tracking-wider text-slate-500 uppercase bg-black/10`}>
                 <span>Name</span>
+                {showStorageColumn && <span>Storage</span>}
                 <span>Stickers</span>
                 <span>Collection</span>
                 <span>Tradehold</span>
@@ -788,7 +1011,7 @@ const RatatoskrTransfer = () => {
             </div>
 
             <div className="flex-1 overflow-y-auto custom-scrollbar">
-                {loading && sortedGroupedItems.length === 0 ? (
+                {listLoading && sortedGroupedItems.length === 0 ? (
                     <div className="flex justify-center p-12">
                         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-white" />
                     </div>
@@ -803,7 +1026,7 @@ const RatatoskrTransfer = () => {
                         return (
                             <div
                                 key={group.key}
-                                className={`grid grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)_72px_64px_72px] gap-2 items-center px-4 py-2 border-b border-white/5 transition-colors ${sel !== 'none' ? 'bg-amber-500/10' : 'hover:bg-white/5'}`}
+                                className={`grid ${tableGridCols} gap-2 items-center px-4 py-2 border-b border-white/5 transition-colors ${sel !== 'none' ? 'bg-amber-500/10' : 'hover:bg-white/5'}`}
                             >
                                 <div className="flex items-center gap-2 min-w-0">
                                     <ItemThumb item={group.representative} />
@@ -819,6 +1042,12 @@ const RatatoskrTransfer = () => {
                                         )}
                                     </div>
                                 </div>
+
+                                {showStorageColumn && (
+                                    <span className="text-xs text-slate-400 truncate" title={group.storage_unit_name}>
+                                        {group.storage_unit_name || '—'}
+                                    </span>
+                                )}
 
                                 <div className="flex items-center gap-0.5 flex-wrap min-h-[24px]">
                                     {(group.stickers || []).slice(0, 5).map((s, i) => {
@@ -884,7 +1113,7 @@ const RatatoskrTransfer = () => {
             <div className="flex justify-between items-center mb-6">
                 <h1 className="text-3xl font-bold text-white font-serif">Transfer</h1>
                 <div className="flex items-center gap-2">
-                    {selectedIds.length > 0 && selectedCasket && transferMode && (
+                    {selectedIds.length > 0 && hasStorageSelection && transferMode && (
                         <div className="relative">
                             <button
                                 type="button"
@@ -915,7 +1144,7 @@ const RatatoskrTransfer = () => {
                                 isOpen={queueOpen}
                                 onClose={() => setQueueOpen(false)}
                                 transferMode={transferMode}
-                                storageName={casketDisplayName(selectedCasket)}
+                                storageName={selectedStorageLabel}
                                 entries={queueEntries}
                                 totalItems={selectedIds.length}
                                 onClearAll={clearQueue}
@@ -963,28 +1192,13 @@ const RatatoskrTransfer = () => {
                 </p>
             )}
 
-            {moveProgress && !queueOpen && (moveProgress.running || (moveProgress.processed ?? 0) > 0) && (
-                <div className="mb-4 bg-black/30 border border-white/10 rounded-lg px-4 py-3">
-                    <div className="flex justify-between text-xs text-slate-400 mb-2">
-                        <span>{moveProgress.running ? 'Transferring…' : 'Transfer complete'}</span>
-                        <span className="tabular-nums text-white">
-                            {(moveProgress.processed ?? moveProgress.done + moveProgress.failed)} / {moveProgress.total}
-                            {moveProgress.failed > 0 && (
-                                <span className="text-red-400 ml-2">({moveProgress.failed} failed)</span>
-                            )}
-                        </span>
-                    </div>
-                    <div className="w-full h-1.5 bg-black/40 rounded-full overflow-hidden">
-                        <div
-                            className="h-full bg-amber-500 transition-all duration-300"
-                            style={{
-                                width: `${moveProgress.total
-                                    ? Math.min(100, ((moveProgress.processed ?? moveProgress.done + moveProgress.failed) / moveProgress.total) * 100)
-                                    : 0}%`,
-                            }}
-                        />
-                    </div>
-                </div>
+
+            {moveProgress && !queueOpen && (
+                <TransferProgressBar
+                    moveProgress={moveProgress}
+                    className="mb-4 bg-black/30 border border-white/10 rounded-lg px-4 py-3"
+                    labelDone="Transfer complete"
+                />
             )}
 
             {moveError && (
@@ -999,24 +1213,32 @@ const RatatoskrTransfer = () => {
                 </div>
             )}
 
-            <div className="mb-4">
-                <div className="flex items-center gap-4 mb-3">
-                    <span className="text-xs font-bold tracking-widest text-slate-500 shrink-0">STORAGE UNITS</span>
-                    <div className="relative flex-1 max-w-sm">
+            <CollapsibleSection
+                title="STORAGE UNITS"
+                icon={Package}
+                open={storageSectionOpen}
+                onToggle={() => setStorageSectionOpen((o) => !o)}
+                summary={transferMode ? selectedStorageLabel : 'Select To or From above'}
+            >
+                {!transferMode ? (
+                    <p className="text-sm text-slate-500 py-2 pt-2">Select To or From above to list storage units.</p>
+                ) : (
+                    <>
+                <div className="flex flex-wrap items-center gap-3 pt-2 pb-2">
+                    <div className="relative flex-1 min-w-[160px] max-w-sm">
                         <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={14} />
                         <input
                             type="text"
                             placeholder="Search storage units"
                             value={unitSearch}
                             onChange={(e) => setUnitSearch(e.target.value)}
-                            disabled={!transferMode}
-                            className="w-full bg-black/30 border border-white/10 rounded-lg pl-9 pr-3 py-2 text-sm text-white focus:outline-none focus:border-amber-500/40 placeholder:text-slate-600 disabled:opacity-40"
+                            className="w-full bg-black/30 border border-white/10 rounded-lg pl-9 pr-3 py-2 text-sm text-white focus:outline-none focus:border-amber-500/40 placeholder:text-slate-600"
                         />
                     </div>
-                    {selectedCasket && transferMode && (
+                    {primarySelectedCasket && !allStorageSelected && selectedCasketIds.length === 1 && (
                         <button
                             type="button"
-                            onClick={() => openRenameCasket(selectedCasket)}
+                            onClick={() => openRenameCasket(primarySelectedCasket)}
                             className="flex items-center gap-1.5 shrink-0 px-2.5 py-2 text-xs text-slate-400 border border-white/10 rounded-lg hover:text-white hover:bg-white/5 transition-colors"
                             title="Rename selected storage unit"
                         >
@@ -1026,9 +1248,7 @@ const RatatoskrTransfer = () => {
                     )}
                 </div>
 
-                {!transferMode ? (
-                    <p className="text-sm text-slate-500 py-2">Select To or From above to list storage units.</p>
-                ) : filteredCaskets.length === 0 ? (
+                {filteredCaskets.length === 0 && !(transferMode === 'from' && allStorageTotal > 0) ? (
                     <p className="text-sm text-slate-500 py-2">
                         {unitSearch ? 'No storage units match your search.' : emptyUnitsMessage()}
                     </p>
@@ -1039,8 +1259,41 @@ const RatatoskrTransfer = () => {
                         aria-label="Storage units"
                     >
                         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-2">
+                        {transferMode === 'from' && allStorageTotal > 0 && (
+                            <div
+                                role="listitem"
+                                className={`flex items-center gap-1 w-full rounded-lg border transition-all col-span-full sm:col-span-2 xl:col-span-3 ${allStorageSelected
+                                    ? 'border-amber-500/50 bg-amber-500/10'
+                                    : 'border-white/10 bg-black/20'
+                                    }`}
+                            >
+                                <div className="pl-2 shrink-0">
+                                    <PickCheckbox
+                                        checked={allStorageSelected}
+                                        label="Select all storage units"
+                                        onChange={pickAllStorage}
+                                    />
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={pickAllStorage}
+                                    className="flex items-center gap-3 flex-1 min-w-0 px-3 py-2.5 text-left hover:bg-white/5 rounded-lg transition-colors"
+                                >
+                                    <div className="w-10 h-10 rounded-lg bg-amber-500/10 border border-amber-500/20 flex items-center justify-center shrink-0">
+                                        <Layers size={20} className="text-amber-400" />
+                                    </div>
+                                    <div className="min-w-0 flex-1">
+                                        <p className="text-sm font-medium text-white">All storage units</p>
+                                        <p className="text-xs text-slate-400">
+                                            {allStorageTotal} items across {caskets.filter((c) => getCasketCount(c) > 0).length} units
+                                            {allCasketLoading && ' · loading…'}
+                                        </p>
+                                    </div>
+                                </button>
+                            </div>
+                        )}
                         {filteredCaskets.map(c => {
-                            const isSelected = selectedCasket?.item_id === c.item_id;
+                            const isSelected = isCasketSelected(c.item_id);
                             const name = casketDisplayName(c);
                             const count = getCasketCount(c);
                             return (
@@ -1052,10 +1305,17 @@ const RatatoskrTransfer = () => {
                                         : 'border-white/10 bg-black/20'
                                         }`}
                                 >
+                                    <div className="pl-2 shrink-0">
+                                        <PickCheckbox
+                                            checked={isSelected}
+                                            label={`Select ${name}`}
+                                            onChange={() => pickCasket(c)}
+                                        />
+                                    </div>
                                     <button
                                         type="button"
-                                        onClick={() => setSelectedCasket(c)}
-                                        className="flex items-center gap-3 flex-1 min-w-0 px-3 py-2.5 text-left hover:bg-white/5 rounded-l-lg transition-colors"
+                                        onClick={() => pickCasket(c)}
+                                        className="flex items-center gap-3 flex-1 min-w-0 px-3 py-2.5 text-left hover:bg-white/5 rounded-lg transition-colors"
                                     >
                                         <img
                                             src={storageUnitImage}
@@ -1082,7 +1342,9 @@ const RatatoskrTransfer = () => {
                         </div>
                     </div>
                 )}
-            </div>
+                    </>
+                )}
+            </CollapsibleSection>
 
             {mainEmptyMessage() ? (
                 <div className="flex-1 flex flex-col items-center justify-center rounded-2xl border border-white/5 bg-odin-blue/20 text-slate-500 min-h-0">
