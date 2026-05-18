@@ -195,4 +195,10 @@ secret.key
 secrets.yaml
 credentials.json
 token.txt
-*maFiles/
+
+# Steam Guard maFiles (NEVER commit — contains shared_secret, identity_secret, session tokens)
+*.maFile
+**/*.maFile
+
+# Heimdall runtime data (maFiles/ folder itself may contain README + .gitkeep)
+Yggdrasil/heimdall/backend/logs/

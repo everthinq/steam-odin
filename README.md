@@ -50,3 +50,13 @@ make ragnarok
 The `docker-compose.yml` orchestrates all services.
 - **Heimdall Frontend**: http://localhost:3000
 - **Heimdall Backend**: http://localhost:5001
+
+## 🔒 Security (open source)
+
+This project uses **local-only** Steam Guard `maFile` storage. Those files are **not** in git.
+
+1. Copy `Yggdrasil/heimdall/backend/.env.example` → `.env` and set `HEIMDALL_SECRET_KEY`.
+2. Import your `.maFile` via the UI (saved under `Yggdrasil/heimdall/backend/maFiles/`).
+3. Read [SECURITY.md](SECURITY.md) before publishing or forking.
+
+**Do not commit** `*.maFile`, `.env`, or `backend/logs/`.
