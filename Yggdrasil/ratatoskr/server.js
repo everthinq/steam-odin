@@ -18,8 +18,206 @@ const itemsProcessor = new Items();
 // Store active sessions: { steamID: { user: SteamUser, csgo: GlobalOffensive, ... } }
 const sessions = {};
 
+const MIN_MOVE_DELAY_MS = 100;
+const MAX_MOVE_DELAY_MS = 5000;
+const DEFAULT_MOVE_DELAY_MS = parseInt(process.env.MOVE_DELAY_MS || '400', 10);
+
+let moveDelayMs = Math.min(
+    MAX_MOVE_DELAY_MS,
+    Math.max(MIN_MOVE_DELAY_MS, DEFAULT_MOVE_DELAY_MS)
+);
+
+const getMoveDelayMs = () => moveDelayMs;
+
+const setMoveDelayMs = (value) => {
+    const parsed = parseInt(value, 10);
+    if (Number.isNaN(parsed)) {
+        throw new Error('delayMs must be a number');
+    }
+    moveDelayMs = Math.min(MAX_MOVE_DELAY_MS, Math.max(MIN_MOVE_DELAY_MS, parsed));
+    return moveDelayMs;
+};
+
+const moveQueues = {};
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const CASKET_NAME_MAX_LENGTH = 20;
+
 // Helper to get session
 const getSession = (steamID) => sessions[steamID];
+
+const renameCasket = (session, casketId, name) => {
+    const { csgo } = session;
+    const trimmed = String(name ?? '').trim();
+    if (trimmed.length > CASKET_NAME_MAX_LENGTH) {
+        return Promise.reject(
+            new Error(`Name must be ${CASKET_NAME_MAX_LENGTH} characters or less`)
+        );
+    }
+
+    const idStr = String(casketId);
+    const casket = csgo.inventory?.find(
+        (item) => String(item.id) === idStr && item.def_index === 1201
+    );
+    if (!casket) {
+        return Promise.reject(new Error('Storage unit not found in inventory'));
+    }
+
+    return new Promise((resolve, reject) => {
+        const timeout = setTimeout(() => {
+            cleanup();
+            reject(new Error('Rename timed out waiting for GC'));
+        }, 15000);
+
+        const doneTypes = new Set([
+            GlobalOffensive.ItemCustomizationNotification.NameItem,
+            GlobalOffensive.ItemCustomizationNotification.NameBaseItem,
+            GlobalOffensive.ItemCustomizationNotification.RemoveItemName,
+        ]);
+
+        const finish = () => {
+            const updated = csgo.inventory?.find((item) => String(item.id) === idStr);
+            cleanup();
+            resolve({
+                item_id: idStr,
+                custom_name: updated?.custom_name ?? (trimmed || null),
+            });
+        };
+
+        const onChanged = (oldItem, item) => {
+            if (String(item?.id) !== idStr) return;
+            finish();
+        };
+
+        const onNotif = (itemIds, notificationType) => {
+            if (!itemIds?.some((id) => String(id) === idStr)) return;
+            if (!doneTypes.has(notificationType)) return;
+            finish();
+        };
+
+        const cleanup = () => {
+            clearTimeout(timeout);
+            csgo.removeListener('itemChanged', onChanged);
+            csgo.removeListener('itemCustomizationNotification', onNotif);
+        };
+
+        csgo.on('itemChanged', onChanged);
+        csgo.on('itemCustomizationNotification', onNotif);
+
+        try {
+            csgo.nameItem('0', idStr, trimmed);
+            session.lastActivity = Date.now();
+        } catch (err) {
+            cleanup();
+            reject(err);
+        }
+    });
+};
+
+const createMoveQueueState = () => ({
+    jobs: [],
+    running: false,
+    done: 0,
+    failed: 0,
+    total: 0,
+    errors: [],
+    currentItemID: null,
+});
+
+const getMoveQueue = (steamID) => {
+    if (!moveQueues[steamID]) {
+        moveQueues[steamID] = createMoveQueueState();
+    }
+    return moveQueues[steamID];
+};
+
+const getMoveQueueStatus = (steamID) => {
+    const state = moveQueues[steamID] || createMoveQueueState();
+    const pending = state.jobs.length;
+    const processed = state.done + state.failed;
+    return {
+        running: state.running,
+        pending,
+        done: state.done,
+        failed: state.failed,
+        total: state.total || processed + pending,
+        processed,
+        currentItemID: state.currentItemID,
+        errors: state.errors.slice(-20),
+        delayMs: getMoveDelayMs(),
+    };
+};
+
+const executeMoveJob = (session, job) => {
+    const { csgo } = session;
+    if (job.source === 'inventory' && job.target === 'casket') {
+        csgo.addToCasket(job.casketID, job.itemID);
+        return;
+    }
+    if (job.source === 'casket' && job.target === 'inventory') {
+        csgo.removeFromCasket(job.casketID, job.itemID);
+        return;
+    }
+    throw new Error('Invalid move source/target');
+};
+
+const processMoveQueue = async (steamID) => {
+    const state = getMoveQueue(steamID);
+    if (state.running) return;
+
+    const session = getSession(steamID);
+    if (!session?.csgo?.haveGCSession) {
+        state.errors.push({ error: 'No active GC session' });
+        return;
+    }
+
+    state.running = true;
+
+    while (state.jobs.length > 0) {
+        const job = state.jobs.shift();
+        state.currentItemID = job.itemID;
+
+        try {
+            executeMoveJob(session, job);
+            state.done++;
+            session.lastActivity = Date.now();
+        } catch (err) {
+            state.failed++;
+            state.errors.push({ itemID: job.itemID, error: err.message });
+            console.error(`Move queue error (${steamID}):`, err);
+        }
+
+        if (state.jobs.length > 0) {
+            await sleep(getMoveDelayMs());
+        }
+    }
+
+    state.running = false;
+    state.currentItemID = null;
+    console.log(`Move queue finished for ${steamID}: ${state.done} ok, ${state.failed} failed`);
+};
+
+const enqueueMoves = (steamID, jobs, resetCounters) => {
+    const state = getMoveQueue(steamID);
+
+    if (resetCounters && !state.running) {
+        state.done = 0;
+        state.failed = 0;
+        state.errors = [];
+        state.total = 0;
+    }
+
+    state.jobs.push(...jobs);
+    state.total = state.done + state.failed + state.jobs.length;
+
+    processMoveQueue(steamID).catch((err) => {
+        console.error(`Move queue processor crashed (${steamID}):`, err);
+        state.running = false;
+    });
+
+    return getMoveQueueStatus(steamID);
+};
 
 // Login Endpoint
 app.post('/login', (req, res) => {
@@ -129,6 +327,21 @@ app.post('/login', (req, res) => {
     }, 30000);
 });
 
+const disconnectSession = (steamID) => {
+    const session = getSession(steamID);
+    if (!session) return false;
+
+    try {
+        session.user.logOff();
+    } catch (err) {
+        console.error(`Error logging off ${steamID}:`, err);
+    }
+
+    delete sessions[steamID];
+    delete moveQueues[steamID];
+    return true;
+};
+
 // Status Endpoint
 app.get('/status/:steamid', (req, res) => {
     const steamID = req.params.steamid;
@@ -138,6 +351,15 @@ app.get('/status/:steamid', (req, res) => {
         res.json({ status: 'connected', steamID });
     } else {
         res.status(404).json({ status: 'disconnected', error: 'No active session found' });
+    }
+});
+
+app.post('/disconnect/:steamid', (req, res) => {
+    const steamID = req.params.steamid;
+    if (disconnectSession(steamID)) {
+        res.json({ success: true, message: 'Disconnected from Steam and GC' });
+    } else {
+        res.status(404).json({ error: 'No active session found' });
     }
 });
 
@@ -219,34 +441,103 @@ app.get('/casket/:steamid/:casketid', (req, res) => {
     });
 });
 
-// Move Item Endpoint
+// Rename storage unit (free — nameTagId 0)
+app.post('/casket/rename', (req, res) => {
+    const { steamID, casketID, name } = req.body;
+
+    const session = getSession(steamID);
+    if (!session?.csgo?.haveGCSession) {
+        return res.status(401).json({ error: 'No active GC session' });
+    }
+
+    if (!casketID) {
+        return res.status(400).json({ error: 'Missing casketID' });
+    }
+
+    renameCasket(session, casketID, name)
+        .then((result) => {
+            const raw = session.csgo.inventory?.find(
+                (item) => String(item.id) === String(casketID)
+            );
+            const formatted = raw ? itemsProcessor.inventoryConverter([raw]) : [];
+            res.json({
+                success: true,
+                item_id: result.item_id,
+                custom_name: result.custom_name,
+                casket: formatted[0] || {
+                    item_id: result.item_id,
+                    item_customname: result.custom_name,
+                },
+            });
+        })
+        .catch((err) => {
+            console.error('Casket rename error:', err);
+            res.status(500).json({ error: err.message || 'Failed to rename storage unit' });
+        });
+});
+
+// Move Item Endpoint (queued)
 app.post('/move', (req, res) => {
     const { steamID, source, target, itemID, casketID } = req.body;
 
     const session = getSession(steamID);
-    if (!session || !session.csgo || !session.csgo.haveGCSession) {
+    if (!session?.csgo?.haveGCSession) {
         return res.status(401).json({ error: 'No active GC session' });
     }
 
-    session.lastActivity = Date.now();
-    const { csgo } = session;
+    if (!itemID || !casketID || !source || !target) {
+        return res.status(400).json({ error: 'Missing required fields' });
+    }
 
+    const status = enqueueMoves(steamID, [{ itemID, source, target, casketID }], true);
+    return res.json({ success: true, message: 'Move queued', ...status });
+});
+
+// Batch move endpoint (queued with delay between each item)
+app.post('/move/batch', (req, res) => {
+    const { steamID, source, target, itemIDs, casketID } = req.body;
+
+    const session = getSession(steamID);
+    if (!session?.csgo?.haveGCSession) {
+        return res.status(401).json({ error: 'No active GC session' });
+    }
+
+    if (!Array.isArray(itemIDs) || itemIDs.length === 0 || !casketID || !source || !target) {
+        return res.status(400).json({ error: 'Missing required fields' });
+    }
+
+    const jobs = itemIDs.map((itemID) => ({ itemID, source, target, casketID }));
+    const status = enqueueMoves(steamID, jobs, true);
+
+    console.log(`Queued ${itemIDs.length} moves for ${steamID} (${getMoveDelayMs()}ms between each)`);
+    return res.json({ success: true, message: 'Batch queued', queued: itemIDs.length, ...status });
+});
+
+app.get('/move/status/:steamid', (req, res) => {
+    res.json(getMoveQueueStatus(req.params.steamid));
+});
+
+app.get('/config/move-delay', (req, res) => {
+    res.json({
+        delayMs: getMoveDelayMs(),
+        min: MIN_MOVE_DELAY_MS,
+        max: MAX_MOVE_DELAY_MS,
+        default: DEFAULT_MOVE_DELAY_MS,
+    });
+});
+
+app.post('/config/move-delay', (req, res) => {
     try {
-        if (source === 'inventory' && target === 'casket') {
-            console.log(`Moving item ${itemID} to casket ${casketID}`);
-            csgo.addToCasket(casketID, itemID);
-            return res.json({ success: true, message: 'Move command sent' });
-
-        } else if (source === 'casket' && target === 'inventory') {
-            console.log(`Moving item ${itemID} from casket ${casketID}`);
-            csgo.removeFromCasket(casketID, itemID);
-            return res.json({ success: true, message: 'Move command sent' });
-        } else {
-            return res.status(400).json({ error: 'Invalid move source/target' });
-        }
+        const delayMs = setMoveDelayMs(req.body?.delayMs);
+        console.log(`Move delay set to ${delayMs}ms`);
+        res.json({
+            success: true,
+            delayMs,
+            min: MIN_MOVE_DELAY_MS,
+            max: MAX_MOVE_DELAY_MS,
+        });
     } catch (err) {
-        console.error('Move error:', err);
-        return res.status(500).json({ error: 'Move failed', details: err.message });
+        res.status(400).json({ error: err.message });
     }
 });
 
@@ -258,6 +549,7 @@ setInterval(() => {
             console.log(`Cleaning up inactive session for ${steamID}`);
             session.user.logOff();
             delete sessions[steamID];
+            delete moveQueues[steamID];
         }
     }
 }, 1000 * 60 * 5);

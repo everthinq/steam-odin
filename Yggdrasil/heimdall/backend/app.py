@@ -284,6 +284,21 @@ def ratatoskr_status(steamid):
     """Check Ratatoskr session status."""
     return jsonify(ratatoskr_service.get_status(steamid))
 
+@app.route('/api/ratatoskr/disconnect', methods=['POST'])
+def ratatoskr_disconnect():
+    """End a Ratatoskr GC session."""
+    if not request.json:
+        return jsonify({"error": "Missing JSON body"}), 400
+
+    steam_id = request.json.get('steam_id')
+    if not steam_id:
+        return jsonify({"error": "Missing steam_id"}), 400
+
+    result = ratatoskr_service.disconnect(steam_id)
+    if result.get('error'):
+        return jsonify(result), 400
+    return jsonify(result)
+
 @app.route('/api/ratatoskr/move', methods=['POST'])
 def ratatoskr_move():
     """Move items via Ratatoskr."""
@@ -302,6 +317,47 @@ def ratatoskr_move():
         return jsonify(result), 400
     return jsonify(result)
 
+@app.route('/api/ratatoskr/move/batch', methods=['POST'])
+def ratatoskr_move_batch():
+    """Queue a batch of item moves via Ratatoskr."""
+    if not request.json:
+        return jsonify({"error": "Missing JSON body"}), 400
+
+    result = ratatoskr_service.move_batch(
+        steam_id=request.json.get('steamID'),
+        item_ids=request.json.get('itemIDs'),
+        source=request.json.get('source'),
+        target=request.json.get('target'),
+        casket_id=request.json.get('casketID'),
+    )
+
+    if 'error' in result:
+        return jsonify(result), 400
+    return jsonify(result)
+
+@app.route('/api/ratatoskr/move/status/<steamid>', methods=['GET'])
+def ratatoskr_move_status(steamid):
+    """Get move queue progress for an account."""
+    return jsonify(ratatoskr_service.get_move_status(steamid))
+
+@app.route('/api/ratatoskr/config/move-delay', methods=['GET'])
+def ratatoskr_get_move_delay():
+    """Get delay between queued item moves (ms)."""
+    result = ratatoskr_service.get_move_delay()
+    if 'error' in result:
+        return jsonify(result), 502
+    return jsonify(result)
+
+@app.route('/api/ratatoskr/config/move-delay', methods=['POST'])
+def ratatoskr_set_move_delay():
+    """Set delay between queued item moves (ms)."""
+    if not request.json or request.json.get('delayMs') is None:
+        return jsonify({"error": "Missing delayMs"}), 400
+    result = ratatoskr_service.set_move_delay(request.json.get('delayMs'))
+    if 'error' in result:
+        return jsonify(result), 400
+    return jsonify(result)
+
 @app.route('/api/ratatoskr/inventory/<steamid>', methods=['GET'])
 def ratatoskr_inventory(steamid):
     """Get inventory for account."""
@@ -316,6 +372,22 @@ def ratatoskr_caskets(steamid):
 def ratatoskr_casket_contents(steamid, casketid):
     """Get contents of a specific storage unit."""
     return jsonify(ratatoskr_service.get_casket_contents(steamid, casketid))
+
+@app.route('/api/ratatoskr/casket/rename', methods=['POST'])
+def ratatoskr_casket_rename():
+    """Rename a storage unit via Ratatoskr."""
+    if not request.json:
+        return jsonify({"error": "Missing JSON body"}), 400
+
+    result = ratatoskr_service.rename_casket(
+        steam_id=request.json.get('steamID'),
+        casket_id=request.json.get('casketID'),
+        name=request.json.get('name', ''),
+    )
+
+    if 'error' in result:
+        return jsonify(result), 400
+    return jsonify(result)
 
 @app.route('/health', methods=['GET'])
 def health_check():

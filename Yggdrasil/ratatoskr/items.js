@@ -98,7 +98,9 @@ class items {
       sticker_kits: {},
       casket_icons: {},
       music_kits: {},
-      graffiti_tints: {}
+      graffiti_tints: {},
+      item_sets: {},
+      client_loot_lists: {},
     };
 
     // If the JSON is already structured (keys like 'items', 'paint_kits' at top level), use it directly.
@@ -111,6 +113,8 @@ class items {
     dict_to_write['sticker_kits'] = updateItemsLoop(jsonData, 'sticker_kits');
     dict_to_write['music_kits'] = updateItemsLoop(jsonData, 'music_definitions');
     dict_to_write['graffiti_tints'] = updateItemsLoop(jsonData, 'graffiti_tints');
+    dict_to_write['item_sets'] = updateItemsLoop(jsonData, 'item_sets');
+    dict_to_write['client_loot_lists'] = updateItemsLoop(jsonData, 'client_loot_lists');
 
     if (jsonData['items_game'] && jsonData['items_game']['alternate_icons2']) {
       dict_to_write['casket_icons'] = jsonData['items_game']['alternate_icons2']['casket_icons'];
@@ -257,6 +261,7 @@ class items {
       returnDict['equipped_ct'] = equipped[0];
       returnDict['equipped_t'] = equipped[1];
       returnDict['def_index'] = value['def_index'];
+      returnDict['item_collection'] = this.handleError(this.getCollectionName, [value]) || '';
 
       if (returnDict['item_has_stickers']) {
         const stickerList = [];
@@ -656,6 +661,109 @@ class items {
 
   getStickerDetails(stickerID) {
     return this.csgoItems['sticker_kits'][stickerID];
+  }
+
+  buildPaintKitCollectionMap() {
+    if (this._paintKitCollectionMap) return this._paintKitCollectionMap;
+    this._paintKitCollectionMap = {};
+    const sets = this.csgoItems['item_sets'] || {};
+    for (const [, setData] of Object.entries(sets)) {
+      if (!setData?.items) continue;
+      const setName = this.getTranslation(setData.name || '');
+      if (!setName || setName.startsWith('#')) continue;
+      for (const itemKey of Object.keys(setData.items)) {
+        const match = itemKey.match(/\[([^\]]+)\]/);
+        if (match) this._paintKitCollectionMap[match[1]] = setName;
+      }
+    }
+    return this._paintKitCollectionMap;
+  }
+
+  getStickerPackDisplayName(lootListKey) {
+    const base = lootListKey.replace(
+      /_(rare|mythical|legendary|ancient|uncommon|common|lootlist)$/,
+      ''
+    );
+    const packId = base.replace(/^sticker_pack_/, '');
+    const candidates = [
+      `csgo_crate_sticker_pack_${packId}_short`,
+      `csgo_crate_sticker_pack_${packId}_capsule`,
+      `csgo_crate_sticker_pack_${packId}`,
+    ];
+    for (const key of candidates) {
+      const label = this.getTranslation(`#${key}`);
+      if (label && !label.startsWith('#') && label.toLowerCase() !== key) {
+        return label;
+      }
+    }
+    return '';
+  }
+
+  buildStickerKitCollectionMap() {
+    if (this._stickerKitCollectionMap) return this._stickerKitCollectionMap;
+    this._stickerKitCollectionMap = {};
+    const lists = this.csgoItems['client_loot_lists'] || {};
+    for (const [listKey, entries] of Object.entries(lists)) {
+      if (!listKey.startsWith('sticker_pack_') || listKey.endsWith('_lootlist')) {
+        continue;
+      }
+      const packName = this.getStickerPackDisplayName(listKey);
+      if (!packName) continue;
+      for (const entryKey of Object.keys(entries || {})) {
+        const match = entryKey.match(/\[([^\]]+)\]sticker/);
+        if (match) this._stickerKitCollectionMap[match[1]] = packName;
+      }
+    }
+    return this._stickerKitCollectionMap;
+  }
+
+  getStickerIdFromRow(storageRow) {
+    const stickers = storageRow?.stickers;
+    if (!stickers) return null;
+    const first = Array.isArray(stickers) ? stickers[0] : Object.values(stickers)[0];
+    return first?.sticker_id ?? null;
+  }
+
+  getStickerCollectionFromMaterial(stickerKit) {
+    const material = stickerKit?.sticker_material;
+    if (!material) return '';
+    const parts = material.split('/');
+    const folder = parts[0] === 'community' && parts[1] ? parts[1] : parts[0];
+    if (!folder || !folder.includes('capsule')) return '';
+    const packSlug = folder.replace(/_capsule$/, '');
+    const candidates = [
+      `csgo_crate_sticker_pack_${packSlug}_capsule`,
+      `csgo_crate_sticker_pack_${packSlug}`,
+    ];
+    for (const key of candidates) {
+      const label = this.getTranslation(`#${key}`);
+      if (label && !label.startsWith('#') && label.toLowerCase() !== key) {
+        return label;
+      }
+    }
+    return '';
+  }
+
+  getStickerCollectionName(storageRow) {
+    const stickerId = this.getStickerIdFromRow(storageRow);
+    if (stickerId == null) return '';
+    const kit = this.getStickerDetails(stickerId);
+    if (!kit?.name) return '';
+    const map = this.buildStickerKitCollectionMap();
+    if (map[kit.name]) return map[kit.name];
+    return this.getStickerCollectionFromMaterial(kit) || '';
+  }
+
+  getCollectionName(storageRow) {
+    if (storageRow['paint_index'] !== undefined) {
+      const paintKit = this.getPaintDetails(storageRow['paint_index']);
+      if (paintKit?.name) {
+        const map = this.buildPaintKitCollectionMap();
+        const skinCollection = map[paintKit.name];
+        if (skinCollection) return skinCollection;
+      }
+    }
+    return this.getStickerCollectionName(storageRow);
   }
 
   checkIfAttributeIsThere(item, attribDefIndex) {
