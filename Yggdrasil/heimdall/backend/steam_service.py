@@ -11,6 +11,9 @@ from hashlib import sha1
 from storage import SecureStorage
 
 
+_STEAMID64_BASE = 76561197960265728
+
+
 class SteamService:
     def __init__(self):
         self.storage = SecureStorage()
@@ -212,37 +215,105 @@ class SteamService:
             'mobileClientVersion': '777777 3.6.1',
         }
 
-    def _ensure_access_token(self, steamid, data, username, password, expected_steamid=None):
+    def _to_account_id(self, steamid):
+        """Steam mobile confirmations expect account id, not SteamID64."""
+        return str(int(steamid) - _STEAMID64_BASE)
+
+    @staticmethod
+    def _steam_json_success(value):
+        return value is True or value == 1 or str(value).lower() in ('true', '1')
+
+    @staticmethod
+    def _normalize_confirmation_list(conf):
+        if conf is None:
+            return []
+        if isinstance(conf, list):
+            return conf
+        if isinstance(conf, dict):
+            return list(conf.values())
+        return []
+
+    def _mobileconf_error_message(self, payload, http_status):
+        if not isinstance(payload, dict):
+            return f'Steam returned HTTP {http_status} (non-JSON)'
+        detail = payload.get('message') or payload.get('detail') or payload.get('error')
+        if detail:
+            return f'Steam failed confirmation fetch: {detail}'
+        return 'Steam failed confirmation fetch'
+
+    def _pick_session_token(self, session_data):
+        """Prefer Ratatoskr web session while connected; fall back to mobile AccessToken."""
+        return session_data.get('WebAccessToken') or session_data.get('AccessToken')
+
+    def _refresh_access_token(self, steamid, data):
+        """Exchange RefreshToken for a new AccessToken (independent of Ratatoskr)."""
+        session_data = data.get('Session') or {}
+        refresh_token = session_data.get('RefreshToken')
+        if not refresh_token:
+            return {'success': False, 'message': 'No refresh token stored for this account'}
+
+        stored_steamid = str(session_data.get('SteamID') or steamid)
+        try:
+            resp = requests.post(
+                'https://api.steampowered.com/IAuthenticationService/GenerateAccessTokenForApp/v1/',
+                data={
+                    'refresh_token': refresh_token,
+                    'steamid': stored_steamid,
+                    'renewal_type': 1,
+                },
+                timeout=30,
+                proxies=self._get_proxies(),
+            )
+            self._log_steam_response('GenerateAccessTokenForApp', resp)
+            if resp.status_code != 200:
+                return {
+                    'success': False,
+                    'message': f'Token refresh failed (HTTP {resp.status_code})',
+                    'details': resp.text[:500],
+                }
+
+            body = resp.json().get('response', {})
+            new_access = body.get('access_token')
+            if not new_access:
+                return {'success': False, 'message': 'Token refresh returned no access_token', 'raw': resp.json()}
+
+            session_data['AccessToken'] = new_access
+            if body.get('refresh_token'):
+                session_data['RefreshToken'] = body['refresh_token']
+            data['Session'] = session_data
+
+            print(f"[AUTH] AccessToken REFRESHED for {steamid}")
+            self.storage.save_account(steamid, data)
+            print(f"[STORAGE] Persisted refreshed session to {steamid}.maFile")
+
+            return {'success': True, 'access_token': new_access, 'steamid': stored_steamid}
+        except Exception as e:
+            return {'success': False, 'message': f'Token refresh error: {e}'}
+
+    def _ensure_access_token(self, steamid, data, username, password, expected_steamid=None, force_refresh=False):
         """Ensure we have an access token and log persistence events."""
         session_data = data.get('Session') or {}
-        access_token = session_data.get('AccessToken')
         refresh_token = session_data.get('RefreshToken')
         stored_steamid = session_data.get('SteamID') or steamid
 
-        # 1) Try existing token
-        if access_token:
-            return {'success': True, 'access_token': access_token, 'steamid': stored_steamid}
+        if force_refresh:
+            session_data.pop('WebAccessToken', None)
+            session_data.pop('AccessToken', None)
+            data['Session'] = session_data
 
-        # 2) Try refresh token
+        if not force_refresh:
+            cached = self._pick_session_token(session_data)
+            if cached:
+                return {'success': True, 'access_token': cached, 'steamid': stored_steamid}
+
+        # Refresh token (survives Ratatoskr logOff)
         if refresh_token:
-            try:
-                # ... (refresh request logic) ...
-                if resp.status_code == 200:
-                    new_access = resp.json().get('response', {}).get('access_token')
-                    if new_access:
-                        session_data['AccessToken'] = new_access
-                        data['Session'] = session_data
-                        
-                        # LOG REFRESH PERSISTENCE
-                        print(f"[AUTH] AccessToken REFRESHED for {steamid}")
-                        self.storage.save_account(steamid, data)
-                        print(f"[STORAGE] Persisted refreshed session to {steamid}.maFile")
-                        
-                        return {'success': True, 'access_token': new_access, 'steamid': stored_steamid}
-            except Exception as e:
-                print(f"[AUTH] Refresh failed for {steamid}: {e}")
+            refreshed = self._refresh_access_token(steamid, data)
+            if refreshed.get('success'):
+                return refreshed
+            print(f"[AUTH] Refresh failed for {steamid}: {refreshed.get('message')}")
 
-        # 3) Fallback: full login
+        # Fallback: full login
         auth = self.begin_auth_session(username, password)
         if not auth.get('success'):
             return {'success': False, 'message': auth.get('message', 'Auth failed'), 'details': auth.get('details')}
@@ -284,10 +355,12 @@ class SteamService:
         # Ratatoskr (steam-user) 'webSession' event gives sessionID and cookies.
         # Cookies are usually strings like 'steamLoginSecure=...'
         
-        # We trust the caller to provide valid data
+        # Ratatoskr web session — do not overwrite mobile AccessToken (invalidated on logOff)
         if access_token:
-            session_data['AccessToken'] = access_token
-        
+            session_data['WebAccessToken'] = access_token
+        if session_id:
+            session_data['WebSessionId'] = session_id
+
         # If we have a full steamLoginSecure cookie value (steamid%7C%7Ctoken), we can extract token if needed,
         # but for requests, we construct headers/cookies dynamically.
         # The key persistence is AccessToken for MobileAPI and steamLoginSecure for Community scraping.
@@ -306,6 +379,22 @@ class SteamService:
         except Exception as e:
             print(f"[AUTH] Failed to save updated session for {steamid}: {e}")
             return {'success': False, 'message': str(e)}
+
+    def clear_web_session(self, steamid):
+        """Drop Ratatoskr web tokens so confirmations use mobile AccessToken/refresh."""
+        data = self.storage.load_account(steamid)
+        if not data:
+            return {'success': False, 'message': 'Account not found'}
+
+        session_data = data.get('Session') or {}
+        if 'WebAccessToken' in session_data or 'WebSessionId' in session_data:
+            session_data.pop('WebAccessToken', None)
+            session_data.pop('WebSessionId', None)
+            data['Session'] = session_data
+            self.storage.save_account(steamid, data)
+            print(f"[AUTH] Cleared web session tokens for {steamid}")
+
+        return {'success': True}
 
     def begin_auth_session(self, username, password):
         try:
@@ -379,27 +468,141 @@ class SteamService:
                 return data.get('shared_secret')
         return None
 
+    def _confirmation_param_variants(self, steamid, data, identity_secret, tag):
+        """Steam clients differ on account id vs SteamID64 and m=react|android — try both."""
+        timestamp = self._get_steam_time()
+        device_id = data.get('device_id') or self._generate_device_id(steamid)
+        conf_key = self._generate_confirmation_key(identity_secret, tag, timestamp)
+        base = {'p': device_id, 'k': conf_key, 't': timestamp, 'tag': tag}
+        variants = []
+        seen = set()
+        for account in (self._to_account_id(steamid), str(steamid)):
+            for mobile in ('react', 'android'):
+                params = {**base, 'a': account, 'm': mobile}
+                key = (account, mobile)
+                if key in seen:
+                    continue
+                seen.add(key)
+                variants.append(params)
+        return variants
+
+    def _fetch_confirmations_once(self, steamid, data, access_token):
+        identity_secret = data.get('identity_secret')
+        if not identity_secret:
+            return {'success': False, 'message': 'identity_secret missing from maFile'}
+
+        session_data = data.get('Session') or {}
+        session_id = session_data.get('WebSessionId')
+        cookies = self._get_cookies(steamid, access_token, session_id=session_id)
+        last_payload = None
+        last_status = None
+
+        for params in self._confirmation_param_variants(steamid, data, identity_secret, 'conf'):
+            resp = requests.get(
+                'https://steamcommunity.com/mobileconf/getlist',
+                params=params,
+                headers={'User-Agent': 'okhttp/3.12.12'},
+                cookies=cookies,
+                timeout=30,
+                proxies=self._get_proxies(),
+            )
+            self._log_steam_response('MobileConfGetList', resp)
+            last_status = resp.status_code
+
+            text = (resp.text or '').strip()
+            if not text.startswith('{'):
+                continue
+
+            try:
+                payload = resp.json()
+            except ValueError:
+                continue
+
+            last_payload = payload
+            if self._steam_json_success(payload.get('success')):
+                return {
+                    'success': True,
+                    'confirmations': self._normalize_confirmation_list(payload.get('conf')),
+                }
+
+        return {
+            'success': False,
+            'message': self._mobileconf_error_message(last_payload, last_status),
+            'raw': last_payload,
+        }
+
+    def _parse_ajaxop_response(self, result):
+        if isinstance(result, dict):
+            if result.get('success'):
+                return {'success': True}
+            return {
+                'success': False,
+                'message': result.get('message', 'Authentication failed'),
+                'raw': result,
+            }
+        if isinstance(result, Exception):
+            return {'success': False, 'message': str(result)}
+
+        if not hasattr(result, 'json'):
+            return {'success': False, 'message': 'Invalid confirmation response'}
+
+        if result.status_code != 200:
+            return {'success': False, 'message': f'Confirmation action failed (HTTP {result.status_code})'}
+
+        text = (result.text or '').strip()
+        if not text.startswith('{'):
+            return {'success': False, 'message': 'Steam returned non-JSON for confirmation action'}
+
+        try:
+            payload = result.json()
+        except ValueError as e:
+            return {'success': False, 'message': f'Invalid JSON from Steam: {e}'}
+
+        if self._steam_json_success(payload.get('success')):
+            return {'success': True}
+        return {
+            'success': False,
+            'message': self._mobileconf_error_message(payload, result.status_code),
+            'raw': payload,
+        }
+
     def get_confirmations(self, steamid):
         data = self.storage.load_account(steamid)
-        if not data: return {'success': False, 'message': 'Account not found'}
-        
+        if not data:
+            return {'success': False, 'message': 'Account not found'}
+
         identity_secret = data.get('identity_secret')
+        if not identity_secret:
+            return {'success': False, 'message': 'identity_secret missing from maFile'}
+
         username = data.get('account_name') or data.get('Session', {}).get('AccountName')
         password = data.get('account_password')
 
         token_result = self._ensure_access_token(steamid, data, username, password, expected_steamid=steamid)
-        if not token_result.get('success'): return token_result
-
-        timestamp = int(time.time())
-        conf_key = self._generate_confirmation_key(identity_secret, 'conf', timestamp)
-        params = {'p': data.get('device_id') or self._generate_device_id(steamid), 'a': steamid, 'k': conf_key, 't': timestamp, 'm': 'react', 'tag': 'conf'}
+        if not token_result.get('success'):
+            return token_result
 
         try:
-            resp = requests.get('https://steamcommunity.com/mobileconf/getlist', params=params, headers={'User-Agent': 'okhttp/3.12.12'}, cookies=self._get_cookies(steamid, token_result['access_token']), timeout=30, proxies=self._get_proxies())
-            self._log_steam_response('MobileConfGetList', resp)
-            payload = resp.json()
-            if payload.get('success'): return {'success': True, 'confirmations': payload.get('conf', [])}
-            return {'success': False, 'message': 'Steam failed confirmation fetch', 'raw': payload}
+            result = self._fetch_confirmations_once(steamid, data, token_result['access_token'])
+            if result.get('success'):
+                return result
+
+            # Stale web token after Ratatoskr disconnect — refresh mobile session and retry
+            print(f"[AUTH] Confirmation fetch failed for {steamid}, refreshing session...")
+            data = self.storage.load_account(steamid) or data
+            refresh_result = self._ensure_access_token(
+                steamid, data, username, password, expected_steamid=steamid, force_refresh=True
+            )
+            if not refresh_result.get('success'):
+                result['refresh'] = refresh_result
+                return result
+
+            data = self.storage.load_account(steamid) or data
+            retry = self._fetch_confirmations_once(steamid, data, refresh_result['access_token'])
+            if retry.get('success'):
+                return retry
+            retry['refresh'] = refresh_result
+            return retry
         except Exception as e:
             return {'success': False, 'message': f'Fetch error: {e}'}
 
@@ -423,62 +626,56 @@ class SteamService:
         username = data.get('account_name') or session_data.get('AccountName')
         password = data.get('account_password')
 
-        def attempt_action():
-            token_result = self._ensure_access_token(steamid, data, username, password, expected_steamid=steamid)
+        def attempt_action(force_refresh=False):
+            token_result = self._ensure_access_token(
+                steamid, data, username, password, expected_steamid=steamid, force_refresh=force_refresh
+            )
             if not token_result.get('success'):
                 return token_result
 
-            timestamp = int(time.time())
             tag = 'accept' if operation == 'allow' else 'reject'
-            conf_key = self._generate_confirmation_key(identity_secret, tag, timestamp)
-            
-            params = {
-                'op': operation,
-                'p': data.get('device_id') or self._generate_device_id(steamid),
-                'a': steamid,
-                'k': conf_key,
-                't': timestamp,
-                'm': 'react',
-                'tag': tag,
-                'cid': cid,
-                'ck': ck,
+            session_id = session_data.get('WebSessionId')
+            cookies = self._get_cookies(steamid, token_result['access_token'], session_id=session_id)
+            last_payload = None
+            last_status = None
+
+            for base_params in self._confirmation_param_variants(steamid, data, identity_secret, tag):
+                params = {
+                    **base_params,
+                    'op': operation,
+                    'cid': cid,
+                    'ck': ck,
+                }
+                try:
+                    resp = requests.get(
+                        'https://steamcommunity.com/mobileconf/ajaxop',
+                        params=params,
+                        headers={'User-Agent': 'okhttp/3.12.12'},
+                        cookies=cookies,
+                        timeout=30,
+                        proxies=self._get_proxies(),
+                    )
+                    self._log_steam_response('MobileConfAjaxOp', resp)
+                    last_status = resp.status_code
+                    parsed = self._parse_ajaxop_response(resp)
+                    if parsed.get('success'):
+                        return parsed
+                    last_payload = parsed.get('raw')
+                except Exception as e:
+                    last_payload = {'error': str(e)}
+
+            return {
+                'success': False,
+                'message': self._mobileconf_error_message(last_payload, last_status),
+                'raw': last_payload,
             }
-            
-            try:
-                resp = requests.get(
-                    'https://steamcommunity.com/mobileconf/ajaxop',
-                    params=params,
-                    headers={'User-Agent': 'okhttp/3.12.12'},
-                    cookies=self._get_cookies(steamid, token_result['access_token']),
-                    timeout=30,
-                    proxies=self._get_proxies()
-                )
-                self._log_steam_response('MobileConfAjaxOp', resp)
-                return resp
-            except Exception as e:
-                return e
 
-        # First Attempt
-        result = attempt_action()
-        
-        # Check for failure to trigger retry
-        is_failed = (
-            isinstance(result, Exception) or 
-            (hasattr(result, 'status_code') and result.status_code != 200) or 
-            (isinstance(result, dict) and not result.get('success')) or
-            (hasattr(result, 'json') and not result.json().get('success'))
-        )
+        parsed = attempt_action()
+        if parsed.get('success'):
+            return parsed
 
-        if is_failed:
-            print(f"First attempt failed for confirmation {cid}. Retrying once...")
-            result = attempt_action() # Final attempt
-            
-            # Final verification
-            if isinstance(result, Exception) or (hasattr(result, 'status_code') and result.status_code != 200):
-                return {'success': False, 'message': 'Action failed after single retry.'}
-            
-            final_payload = result.json() if hasattr(result, 'json') else result
-            if not final_payload.get('success'):
-                return {'success': False, 'message': 'Steam reported failure on retry.', 'raw': final_payload}
-
-        return {'success': True}
+        print(f"First attempt failed for confirmation {cid}. Refreshing session and retrying...")
+        retry = attempt_action(force_refresh=True)
+        if retry.get('success'):
+            return retry
+        return retry

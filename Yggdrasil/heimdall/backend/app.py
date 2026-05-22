@@ -25,9 +25,18 @@ def trigger_restart():
     
     threading.Thread(target=_restart).start()
 
-# Start background task
-if os.environ.get('WERKZEUG_RUN_MAIN') != 'true':
-    # Avoid double-starting in Flask debug reloader
+def _should_start_background_scheduler():
+    """
+    Start the scheduler in the process that actually serves requests.
+    With FLASK debug + reloader, only the child has WERKZEUG_RUN_MAIN=true;
+    the old guard skipped the child, so auto-confirm never ran in Docker dev.
+    """
+    if os.environ.get('FLASK_ENV') != 'development':
+        return True
+    return os.environ.get('WERKZEUG_RUN_MAIN') == 'true'
+
+
+if _should_start_background_scheduler():
     scheduler.start()
 
 # Ensure all errors return JSON, not HTML
@@ -181,8 +190,18 @@ def check_all_confirmations():
     # The scheduler isn't locking the steam_service, so it should be fine.
     
     try:
-        scheduler._check_all_accounts(settings_manager.get_settings())
-        return jsonify({"status": "success", "message": "Check initiated"})
+        settings = settings_manager.get_settings()
+        scheduler._check_all_accounts(settings)
+        return jsonify({
+            "status": "success",
+            "message": "Check completed",
+            "settings": {
+                "auto_check_enabled": settings.get("auto_check_enabled"),
+                "auto_confirm_market": settings.get("auto_confirm_market"),
+                "auto_confirm_trades": settings.get("auto_confirm_trades"),
+                "check_interval": settings.get("check_interval"),
+            },
+        })
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -278,6 +297,21 @@ def update_account_session():
         return jsonify({"error": result.get('message')}), 500
     
     return jsonify({"error": "Could not extract access token from cookies"}), 400
+
+@app.route('/api/accounts/clear-web-session', methods=['POST'])
+def clear_web_session():
+    """Remove Ratatoskr web session tokens (called when Ratatoskr disconnects)."""
+    if not request.json:
+        return jsonify({"error": "Missing JSON body"}), 400
+
+    steamid = request.json.get('steamID')
+    if not steamid:
+        return jsonify({"error": "Missing steamID"}), 400
+
+    result = steam_service.clear_web_session(steamid)
+    if not result.get('success'):
+        return jsonify({"error": result.get('message', 'Failed')}), 400
+    return jsonify({"status": "success"})
 
 @app.route('/api/ratatoskr/status/<steamid>', methods=['GET'])
 def ratatoskr_status(steamid):
@@ -391,7 +425,15 @@ def ratatoskr_casket_rename():
 
 @app.route('/health', methods=['GET'])
 def health_check():
-    return jsonify({"status": "healthy"}), 200
+    settings = settings_manager.get_settings()
+    return jsonify({
+        "status": "healthy",
+        "scheduler": {
+            "running": bool(scheduler.thread and scheduler.thread.is_alive()),
+            "polling": ConfirmationScheduler._should_poll(settings),
+            "interval_sec": settings.get("check_interval"),
+        },
+    }), 200
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))

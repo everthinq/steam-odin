@@ -327,9 +327,22 @@ app.post('/login', (req, res) => {
     }, 30000);
 });
 
+const notifyHeimdallWebSessionCleared = async (steamID) => {
+    const heimdallUrl = process.env.HEIMDALL_API_URL || 'http://localhost:5000';
+    const axios = require('axios');
+    try {
+        await axios.post(`${heimdallUrl}/api/accounts/clear-web-session`, { steamID });
+        console.log(`[DEBUG] Cleared Heimdall web session for ${steamID}`);
+    } catch (err) {
+        console.error(`[DEBUG] Failed to clear Heimdall web session: ${err.message}`);
+    }
+};
+
 const disconnectSession = (steamID) => {
     const session = getSession(steamID);
     if (!session) return false;
+
+    notifyHeimdallWebSessionCleared(steamID);
 
     try {
         session.user.logOff();

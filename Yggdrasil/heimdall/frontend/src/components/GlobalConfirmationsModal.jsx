@@ -155,6 +155,13 @@ const GlobalConfirmationsModal = ({ isOpen, onClose }) => {
                                     />
                                     <span className="text-sm text-frost-white/80 group-hover:text-frost-white">Auto-confirm Trades</span>
                                 </label>
+
+                                {(settings.auto_confirm_market || settings.auto_confirm_trades) && !settings.auto_check_enabled && (
+                                    <p className="text-xs text-amber-200/80 px-3">
+                                        Auto-confirm still runs on the timer below. Turn on Automatic Checking to
+                                        control how often Heimdall polls Steam.
+                                    </p>
+                                )}
                             </div>
 
                             {/* Actions */}

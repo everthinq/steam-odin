@@ -21,18 +21,24 @@ const Confirmations = () => {
     const [actingId, setActingId] = useState(null);
     const [infoMessage, setInfoMessage] = useState(null);
 
-    const loadConfirmations = useCallback(async () => {
+    const loadConfirmations = useCallback(async ({ preserveMessages = false } = {}) => {
         setLoading(true);
-        setError(null);
-        setInfoMessage(null);
+        if (!preserveMessages) {
+            setError(null);
+            setInfoMessage(null);
+        }
         try {
             const res = await fetch(`/api/accounts/${steamid}/confirmations`);
             const data = await res.json();
 
             if (!res.ok) {
+                setConfirmations([]);
                 throw new Error(data.error || data.message || 'Failed to load confirmations');
             }
             setConfirmations(data.confirmations || []);
+            if ((data.confirmations || []).length === 0) {
+                setInfoMessage('No pending confirmations on Steam.');
+            }
         } catch (err) {
             // Handle JSON parse errors gracefully
             if (err instanceof SyntaxError && err.message.includes('JSON')) {
@@ -59,7 +65,7 @@ const Confirmations = () => {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    ck: conf.nonce,
+                    ck: conf.nonce || conf.key,
                     op
                 })
             });
@@ -69,8 +75,12 @@ const Confirmations = () => {
                 throw new Error(data.error || data.message || 'Failed to update confirmation');
             }
             setInfoMessage(op === 'allow' ? 'Confirmation approved.' : 'Confirmation denied.');
-            // Remove this confirmation from the list
             setConfirmations(prev => prev.filter(c => c.id !== conf.id));
+            try {
+                await loadConfirmations({ preserveMessages: true });
+            } catch {
+                // Action succeeded on Steam; do not replace success with a list-fetch error.
+            }
         } catch (err) {
             // Handle JSON parse errors gracefully
             if (err instanceof SyntaxError && err.message.includes('JSON')) {
@@ -130,11 +140,13 @@ const Confirmations = () => {
                     <div className="flex justify-center items-center h-48">
                         <RefreshCw className="animate-spin text-asgard-gold" size={32} />
                     </div>
-                ) : confirmations.length === 0 ? (
+                ) : error ? null : confirmations.length === 0 ? (
                     <div className="glass-panel rounded-2xl p-10 text-center border border-white/5 bg-odin-blue/20">
                         <p className="text-lg font-semibold mb-2 text-frost-white">No pending confirmations</p>
                         <p className="text-frost-white/40 text-sm">
                             There are currently no trade or market confirmations waiting for this account.
+                            If you use Global Settings → auto-confirm trades, the scheduler may have already approved
+                            this trade even when this page could not load the list.
                         </p>
                     </div>
                 ) : (
@@ -166,7 +178,7 @@ const Confirmations = () => {
                                         </div>
                                         <div className="text-left md:text-right text-[10px] text-frost-white/30 font-mono w-full md:w-auto">
                                             <div>CID: {conf.id}</div>
-                                            <div>CK: {conf.nonce}</div>
+                                            <div>CK: {conf.nonce || conf.key}</div>
                                         </div>
                                     </div>
                                     <div className="flex justify-end gap-3">

@@ -23,11 +23,20 @@ class ConfirmationScheduler:
             self.thread.join(timeout=2)
             print("[SCHEDULER] Stopped background confirmation checker.")
 
+    @staticmethod
+    def _should_poll(settings):
+        """Poll when periodic check is on, or any auto-confirm rule needs a watcher."""
+        return bool(
+            settings.get("auto_check_enabled")
+            or settings.get("auto_confirm_market")
+            or settings.get("auto_confirm_trades")
+        )
+
     def _run_loop(self):
         while not self.stop_event.is_set():
             settings = self.settings_manager.get_settings()
-            
-            if settings.get("auto_check_enabled"):
+
+            if self._should_poll(settings):
                 try:
                     self._check_all_accounts(settings)
                 except Exception as e:
@@ -70,19 +79,43 @@ class ConfirmationScheduler:
         auto_trades = settings.get("auto_confirm_trades")
 
         for conf in confirmations:
-            # conf.type: 2=Trade, 3=Market
-            ctype = conf.get('type')
+            # Steam: type 2 = Trade, 3 = Market (may arrive as str)
+            try:
+                ctype = int(conf.get('type', 0) or 0)
+            except (TypeError, ValueError):
+                ctype = 0
+
             cid = conf.get('id')
-            ck = conf.get('nonce')
-            
+            ck = conf.get('nonce') or conf.get('key')
+            if cid is None or not ck:
+                print(
+                    f"[SCHEDULER] Skipping malformed confirmation for {steamid}: "
+                    f"id={cid!r} nonce/key={ck!r} keys={list(conf.keys())}"
+                )
+                continue
+
+            cid = str(cid)
+            ck = str(ck)
+
             should_accept = False
             if ctype == 3 and auto_market:
                 should_accept = True
             elif ctype == 2 and auto_trades:
                 should_accept = True
-            
-            if should_accept:
-                print(f"[SCHEDULER] Auto-accepting {'Market' if ctype==3 else 'Trade'} confirmation {cid} for {steamid}")
-                res = self.steam_service.act_on_confirmation(steamid, cid, ck, 'allow')
-                if not res.get('success'):
-                   print(f"[SCHEDULER] Failed to accept {cid}: {res.get('message')}")
+
+            if not should_accept:
+                print(
+                    f"[SCHEDULER] Pending type={ctype} for {steamid} "
+                    f"(auto_market={auto_market}, auto_trades={auto_trades})"
+                )
+                continue
+
+            print(
+                f"[SCHEDULER] Auto-accepting {'Market' if ctype == 3 else 'Trade'} "
+                f"confirmation {cid} for {steamid}"
+            )
+            res = self.steam_service.act_on_confirmation(steamid, cid, ck, 'allow')
+            if not res.get('success'):
+                print(f"[SCHEDULER] Failed to accept {cid}: {res.get('message')}")
+            else:
+                print(f"[SCHEDULER] Accepted {cid} for {steamid}")
