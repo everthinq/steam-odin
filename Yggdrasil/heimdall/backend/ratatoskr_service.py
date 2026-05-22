@@ -155,6 +155,98 @@ class RatatoskrService:
         except requests.exceptions.RequestException:
             return {"error": "Failed to fetch casket contents from Ratatoskr"}
 
+    def get_store(self, steam_id):
+        """Fetch in-game store catalog and wallet info."""
+        try:
+            response = requests.get(f"{self.base_url}/store/{steam_id}", timeout=30)
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.RequestException as e:
+            print(f"Ratatoskr Store GET Error: {e}")
+            if e.response:
+                body = e.response.json()
+                return {"error": body.get("error", "Failed to load store")}
+            return {"error": "Failed to connect to Ratatoskr"}
+
+    def begin_store_purchase(self, steam_id, item_def_id, quantity=1):
+        """GC StorePurchaseInit — returns Steam Authorize URL (SkinLedger step 1)."""
+        payload = {
+            "steamID": steam_id,
+            "itemDefId": item_def_id,
+            "quantity": quantity,
+        }
+        try:
+            response = requests.post(
+                f"{self.base_url}/store/purchase/begin",
+                json=payload,
+                timeout=120,
+            )
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.RequestException as e:
+            print(f"Ratatoskr Store Begin Error: {e}")
+            if e.response is not None:
+                try:
+                    return {"error": e.response.json().get("error", "Purchase init failed")}
+                except ValueError:
+                    pass
+            return {"error": "Failed to connect to Ratatoskr"}
+
+    def finish_store_purchase(self, steam_id, txn_id):
+        """Complete purchase after user clicks Authorize (SkinLedger step 2)."""
+        payload = {"steamID": steam_id, "txnId": txn_id}
+        try:
+            response = requests.post(
+                f"{self.base_url}/store/purchase/finish",
+                json=payload,
+                timeout=120,
+            )
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.RequestException as e:
+            print(f"Ratatoskr Store Finish Error: {e}")
+            if e.response is not None:
+                try:
+                    return {"error": e.response.json().get("error", "Purchase finalize failed")}
+                except ValueError:
+                    pass
+            return {"error": "Failed to connect to Ratatoskr"}
+
+    def purchase_store_item(self, steam_id, item_def_id, quantity=1):
+        """Purchase an item from the CS2 in-game store."""
+        payload = {
+            "steamID": steam_id,
+            "itemDefId": item_def_id,
+            "quantity": quantity,
+        }
+        try:
+            response = requests.post(
+                f"{self.base_url}/store/purchase",
+                json=payload,
+                timeout=180,
+            )
+            if response.status_code == 402:
+                return response.json()
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.Timeout:
+            print("Ratatoskr Store Purchase Error: timed out after 180s")
+            return {
+                "error": "Purchase timed out. Reconnect to Ratatoskr and check if the item arrived.",
+            }
+        except requests.exceptions.ConnectionError as e:
+            print(f"Ratatoskr Store Purchase Error (connection): {e}")
+            return {"error": f"Ratatoskr is not reachable ({e}). Is the service running?"}
+        except requests.exceptions.RequestException as e:
+            print(f"Ratatoskr Store Purchase Error: {e}")
+            if e.response is not None:
+                try:
+                    body = e.response.json()
+                    return {"error": body.get("error", "Purchase failed")}
+                except ValueError:
+                    return {"error": e.response.text or "Purchase failed"}
+            return {"error": f"Ratatoskr request failed: {e}"}
+
     def rename_casket(self, steam_id, casket_id, name):
         """Rename a storage unit (free via GC, no name tag consumed)."""
         payload = {

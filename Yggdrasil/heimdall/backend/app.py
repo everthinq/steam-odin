@@ -373,6 +373,70 @@ def ratatoskr_casket_contents(steamid, casketid):
     """Get contents of a specific storage unit."""
     return jsonify(ratatoskr_service.get_casket_contents(steamid, casketid))
 
+@app.route('/api/ratatoskr/store/<steamid>', methods=['GET'])
+def ratatoskr_store(steamid):
+    """Get CS2 in-game store catalog for account."""
+    result = ratatoskr_service.get_store(steamid)
+    if result.get('error') and not result.get('catalog'):
+        return jsonify(result), 503
+    return jsonify(result)
+
+@app.route('/api/ratatoskr/store/purchase/begin', methods=['POST'])
+def ratatoskr_store_purchase_begin():
+    """Start GC purchase — returns Steam Authorize checkout URL."""
+    if not request.json:
+        return jsonify({"error": "Missing JSON body"}), 400
+
+    steam_id = request.json.get('steamID')
+    item_def_id = request.json.get('itemDefId')
+    quantity = request.json.get('quantity', 1)
+
+    if not steam_id or not item_def_id:
+        return jsonify({"error": "Missing steamID or itemDefId"}), 400
+
+    result = ratatoskr_service.begin_store_purchase(steam_id, item_def_id, quantity)
+    if result.get('error'):
+        return jsonify(result), 400
+    return jsonify(result)
+
+
+@app.route('/api/ratatoskr/store/purchase/finish', methods=['POST'])
+def ratatoskr_store_purchase_finish():
+    """Finish purchase after user authorizes on Steam checkout."""
+    if not request.json:
+        return jsonify({"error": "Missing JSON body"}), 400
+
+    steam_id = request.json.get('steamID')
+    txn_id = request.json.get('txnId')
+
+    if not steam_id or not txn_id:
+        return jsonify({"error": "Missing steamID or txnId"}), 400
+
+    result = ratatoskr_service.finish_store_purchase(steam_id, txn_id)
+    if result.get('error'):
+        return jsonify(result), 400
+    return jsonify(result)
+
+
+@app.route('/api/ratatoskr/store/purchase', methods=['POST'])
+def ratatoskr_store_purchase():
+    """Purchase an item from the CS2 in-game store."""
+    if not request.json:
+        return jsonify({"error": "Missing JSON body"}), 400
+
+    steam_id = request.json.get('steamID')
+    item_def_id = request.json.get('itemDefId')
+    quantity = request.json.get('quantity', 1)
+
+    if not steam_id or not item_def_id:
+        return jsonify({"error": "Missing steamID or itemDefId"}), 400
+
+    result = ratatoskr_service.purchase_store_item(steam_id, item_def_id, quantity)
+    if result.get('error'):
+        status = 402 if result.get('requires_browser') else 400
+        return jsonify(result), status
+    return jsonify(result)
+
 @app.route('/api/ratatoskr/casket/rename', methods=['POST'])
 def ratatoskr_casket_rename():
     """Rename a storage unit via Ratatoskr."""

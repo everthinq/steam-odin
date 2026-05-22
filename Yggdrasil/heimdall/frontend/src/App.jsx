@@ -5,6 +5,7 @@ import Confirmations from './pages/Confirmations';
 import RatatoskrLayout from './pages/RatatoskrLayout';
 import RatatoskrInventory from './pages/ratatoskr/Inventory';
 import RatatoskrTransfer from './pages/ratatoskr/Transfer';
+import RatatoskrStore from './pages/ratatoskr/Store';
 import './index.css';
 
 function App() {
@@ -24,6 +25,7 @@ function App() {
             <Route index element={<Navigate to="inventory" replace />} />
             <Route path="inventory" element={<RatatoskrInventory />} />
             <Route path="transfer" element={<RatatoskrTransfer />} />
+            <Route path="store" element={<RatatoskrStore />} />
           </Route>
 
         </Routes>

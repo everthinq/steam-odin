@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Outlet, Link, useParams, useLocation, useNavigate } from 'react-router-dom';
-import { Package, ArrowRightLeft, Database, LayoutDashboard, Plug, Unplug } from 'lucide-react';
+import { Package, ArrowRightLeft, ShoppingBag, Database, LayoutDashboard, Plug, Unplug } from 'lucide-react';
 
 const RatatoskrLayout = () => {
     const { steamid } = useParams();
@@ -87,6 +87,7 @@ const RatatoskrLayout = () => {
     const navItems = [
         { path: 'inventory', icon: Package, label: 'Inventory' },
         { path: 'transfer', icon: ArrowRightLeft, label: 'Transfer' },
+        { path: 'store', icon: ShoppingBag, label: 'Store' },
     ];
 
     const accountLabel = account?.account_name || 'Unknown account';
@@ -230,8 +231,8 @@ const RatatoskrLayout = () => {
                         </div>
                         <h1 className="text-2xl font-bold text-amber-100 font-serif mb-2">Not connected</h1>
                         <p className="text-slate-400 text-sm mb-6">
-                            Connect to the Steam Game Coordinator using the button in the sidebar to use Inventory and
-                            Transfer.
+                            Connect to the Steam Game Coordinator using the button in the sidebar to use Inventory,
+                            Transfer, and Store.
                         </p>
                         <button
                             type="button"

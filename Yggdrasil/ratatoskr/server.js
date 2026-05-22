@@ -5,6 +5,7 @@ const GlobalOffensive = require('globaloffensive');
 const bodyParser = require('body-parser');
 const cors = require('cors');
 const Items = require('./items');
+const Store = require('./store');
 
 const app = express();
 const port = process.env.PORT || 3030;
@@ -17,6 +18,9 @@ const itemsProcessor = new Items();
 
 // Store active sessions: { steamID: { user: SteamUser, csgo: GlobalOffensive, ... } }
 const sessions = {};
+
+/** webSession often fires before connectedToGC; stash cookies until session object exists */
+const pendingWebSessions = {};
 
 const MIN_MOVE_DELAY_MS = 100;
 const MAX_MOVE_DELAY_MS = 5000;
@@ -252,12 +256,20 @@ app.post('/login', (req, res) => {
     user.on('loggedOn', (details) => {
         console.log(`Logged into Steam as ${user.steamID.getSteamID64()}`);
         user.setPersona(SteamUser.EPersonaState.Online);
-        user.gamesPlayed([730]); // Launch CS2
+        user.gamesPlayed([{ game_id: 730, game_extra_info: 'Counter-Strike 2' }]);
     });
 
     user.on('webSession', (sessionID, cookies) => {
         console.log(`[DEBUG] Got web session for ${user.steamID.getSteamID64()}`);
-        console.log('[DEBUG] Cookies received:', cookies);
+
+        if (user.steamID) {
+            const sid = user.steamID.getSteamID64();
+            pendingWebSessions[sid] = { webSessionId: sessionID, webCookies: cookies };
+            if (sessions[sid]) {
+                sessions[sid].webSessionId = sessionID;
+                sessions[sid].webCookies = cookies;
+            }
+        }
 
         // Send cookies to Heimdall
         const heimdallUrl = process.env.HEIMDALL_API_URL || 'http://localhost:5000';
@@ -303,7 +315,33 @@ app.post('/login', (req, res) => {
 
         // Store session
         const steamID64 = user.steamID.getSteamID64();
-        sessions[steamID64] = { user, csgo, lastActivity: Date.now() };
+        const pending = pendingWebSessions[steamID64];
+        sessions[steamID64] = {
+            user,
+            csgo,
+            lastActivity: Date.now(),
+            webSessionId: pending?.webSessionId ?? sessions[steamID64]?.webSessionId,
+            webCookies: pending?.webCookies ?? sessions[steamID64]?.webCookies,
+        };
+        Store.attachMicroTxnHandler(sessions[steamID64]);
+        Store.attachStoreGcHandlers(sessions[steamID64]);
+
+        setTimeout(() => {
+            const s = sessions[steamID64];
+            if (s?.csgo?.haveGCSession) {
+                Store.syncStoreAfterAccountData(s).catch((err) => {
+                    console.warn(`[STORE] delayed GC store sync: ${err.message}`);
+                });
+            }
+        }, 3000);
+
+        if (!sessions[steamID64].webCookies?.length) {
+            try {
+                user.webLogOn();
+            } catch (err) {
+                console.warn(`[STORE] webLogOn after GC connect failed: ${err.message}`);
+            }
+        }
 
         if (!isResponded) {
             res.json({ success: true, steamID: steamID64, message: 'Connected to Steam and GC' });
@@ -330,6 +368,8 @@ app.post('/login', (req, res) => {
 const disconnectSession = (steamID) => {
     const session = getSession(steamID);
     if (!session) return false;
+
+    Store.detachMicroTxnHandler(session);
 
     try {
         session.user.logOff();
@@ -524,6 +564,134 @@ app.get('/config/move-delay', (req, res) => {
         max: MAX_MOVE_DELAY_MS,
         default: DEFAULT_MOVE_DELAY_MS,
     });
+});
+
+// In-game store catalog (always returns items + Steam buyitem URLs)
+app.get('/store/:steamid', async (req, res) => {
+    const steamID = req.params.steamid;
+    const session = getSession(steamID);
+
+    if (session) {
+        session.lastActivity = Date.now();
+    }
+
+    let storageUnitsOwned = 0;
+    if (session?.csgo?.inventory) {
+        storageUnitsOwned = session.csgo.inventory.filter((item) => item.def_index === 1201).length;
+    }
+
+    try {
+        const store = await Store.getStoreUserData(session);
+        res.json({
+            success: true,
+            ...store,
+            storage_units_owned: storageUnitsOwned,
+        });
+    } catch (err) {
+        console.error('Store catalog error:', err);
+        res.json({
+            success: true,
+            gc_connected: false,
+            warning: err.message || 'Failed to load store',
+            catalog: Store.buildCatalog({}, 1, false),
+            storage_units_owned: storageUnitsOwned,
+        });
+    }
+});
+
+// Purchase step 1: GC init → return Steam Authorize URL (SkinLedger-style)
+app.post('/store/purchase/begin', async (req, res) => {
+    const { steamID, itemDefId, quantity } = req.body;
+
+    const session = getSession(steamID);
+    if (!session?.csgo?.haveGCSession) {
+        return res.status(401).json({ error: 'No active GC session' });
+    }
+    if (!itemDefId) {
+        return res.status(400).json({ error: 'Missing itemDefId' });
+    }
+
+    session.lastActivity = Date.now();
+
+    try {
+        const result = await Store.beginStorePurchase(session, itemDefId, quantity);
+        res.json(result);
+    } catch (err) {
+        console.error('Store purchase begin error:', err);
+        res.status(500).json({ error: err.message || 'Purchase init failed' });
+    }
+});
+
+// Purchase step 2: after user clicks Authorize on Steam checkout page
+app.post('/store/purchase/finish', async (req, res) => {
+    const { steamID, txnId } = req.body;
+
+    const session = getSession(steamID);
+    if (!session?.csgo?.haveGCSession) {
+        return res.status(401).json({ error: 'No active GC session' });
+    }
+    if (!txnId) {
+        return res.status(400).json({ error: 'Missing txnId' });
+    }
+
+    session.lastActivity = Date.now();
+
+    try {
+        const result = await Store.finishStorePurchase(session, txnId);
+        res.json(result);
+    } catch (err) {
+        console.error('Store purchase finish error:', err);
+        res.status(500).json({ error: err.message || 'Purchase finalize failed' });
+    }
+});
+
+// Diagnostics: price sheet parse + session snapshot (+ optional full purchase)
+app.post('/store/diag/run', async (req, res) => {
+    const { steamID, executePurchase, accountId, currency } = req.body || {};
+    const session = steamID ? getSession(steamID) : null;
+
+    console.log(
+        `[STORE] diag/run steamID=${steamID || 'none'} executePurchase=${Boolean(executePurchase)}`
+    );
+
+    try {
+        const report = await Store.runStoreDiagnostics(session, {
+            executePurchase: Boolean(executePurchase),
+            accountId,
+            currency,
+        });
+        res.json({ success: true, report });
+    } catch (err) {
+        console.error('Store diag error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Full purchase (begin + finish without opening browser — may fail without Authorize click)
+app.post('/store/purchase', async (req, res) => {
+    const { steamID, itemDefId, quantity } = req.body;
+
+    const session = getSession(steamID);
+    if (!session?.csgo?.haveGCSession) {
+        return res.status(401).json({ error: 'No active GC session' });
+    }
+
+    if (!itemDefId) {
+        return res.status(400).json({ error: 'Missing itemDefId' });
+    }
+
+    session.lastActivity = Date.now();
+
+    try {
+        const result = await Store.purchaseStoreItem(session, itemDefId, quantity);
+        if (result.requires_browser) {
+            return res.status(402).json(result);
+        }
+        res.json(result);
+    } catch (err) {
+        console.error('Store purchase error:', err);
+        res.status(500).json({ error: err.message || 'Purchase failed' });
+    }
 });
 
 app.post('/config/move-delay', (req, res) => {
