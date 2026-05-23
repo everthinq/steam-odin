@@ -8,6 +8,58 @@ export const ALL_STORAGE_UNIT = {
 
 export const INVENTORY_LOCATION = 'Inventory';
 
+/** Common CS2 wear shorthand → words stored in item_wear_name */
+const WEAR_QUERY_ALIASES = {
+    fn: 'factory new',
+    mw: 'minimal wear',
+    ft: 'field tested',
+    'field-tested': 'field tested',
+    ww: 'well worn',
+    'well-worn': 'well worn',
+    bs: 'battle scarred',
+    'battle-scarred': 'battle scarred',
+};
+
+/**
+ * Normalize market-style names for search (pipes, punctuation, symbols).
+ * "FAMAS | Half Sleeve (Factory New)" → "famas half sleeve factory new"
+ */
+export const normalizeItemSearchText = (text) => {
+    let s = (text || '')
+        .toLowerCase()
+        .replace(/[|★™®]/g, ' ')
+        .replace(/[()[\]]/g, ' ')
+        .replace(/-/g, ' ')
+        .replace(/[^\w\s]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+    const tokens = s.split(' ').filter(Boolean);
+    const expanded = tokens.flatMap((token) => {
+        const alias = WEAR_QUERY_ALIASES[token];
+        return alias ? alias.split(' ') : [token];
+    });
+    return expanded.join(' ');
+};
+
+/**
+ * Token search: every word in the query must appear somewhere in the fields.
+ * Works without "|", wear in or out of parentheses, and out-of-order terms.
+ */
+export const matchesSearchQuery = (fields, query) => {
+    const q = normalizeItemSearchText(query);
+    if (!q) return true;
+
+    const haystack = fields
+        .flat()
+        .filter((f) => f != null && f !== '')
+        .map((f) => normalizeItemSearchText(String(f)))
+        .join(' ');
+
+    const tokens = q.split(' ').filter(Boolean);
+    return tokens.every((token) => haystack.includes(token));
+};
+
 export const tagInventoryItems = (items) =>
     (items || []).map((item) => ({
         ...item,
@@ -59,21 +111,27 @@ export const groupItemsByName = (items, { includeStorage = false } = {}) => {
         });
 };
 
+const itemSearchFields = (item) => {
+    const stickerNames = (item.stickers || [])
+        .map((s) => s.sticker_name || s.name)
+        .filter(Boolean);
+    const displayWithWear = item.item_wear_name
+        ? `${item.item_name || ''} (${item.item_wear_name})`
+        : item.item_name;
+
+    return [
+        item.item_name,
+        item.item_wear_name,
+        item.item_collection,
+        item.storage_unit_name,
+        displayWithWear,
+        ...stickerNames,
+    ];
+};
+
 export const filterItemsByQuery = (items, query) => {
-    const q = query.trim().toLowerCase();
-    if (!q) return items;
-    return items.filter((item) => {
-        const name = (item.item_name || '').toLowerCase();
-        const wear = (item.item_wear_name || '').toLowerCase();
-        const collection = (item.item_collection || '').toLowerCase();
-        const storage = (item.storage_unit_name || '').toLowerCase();
-        return (
-            name.includes(q) ||
-            wear.includes(q) ||
-            collection.includes(q) ||
-            storage.includes(q)
-        );
-    });
+    if (!query?.trim()) return items;
+    return items.filter((item) => matchesSearchQuery(itemSearchFields(item), query));
 };
 
 export const groupItemsByCasket = (itemIds, itemsWithStorage) => {

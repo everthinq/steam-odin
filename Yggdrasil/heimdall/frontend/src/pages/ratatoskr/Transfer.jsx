@@ -28,6 +28,7 @@ import {
     groupItemsByName,
     filterItemsByQuery,
     groupItemsByCasket,
+    matchesSearchQuery,
 } from '../../utils/transferItems';
 
 const STORAGE_CAPACITY = 1000;
@@ -146,9 +147,8 @@ const CollectionFilterPanel = ({
     onClearSelection,
 }) => {
     const filtered = useMemo(() => {
-        const q = search.trim().toLowerCase();
-        if (!q) return collections;
-        return collections.filter((c) => c.toLowerCase().includes(q));
+        if (!search.trim()) return collections;
+        return collections.filter((c) => matchesSearchQuery([c], search));
     }, [collections, search]);
 
     return (
@@ -802,9 +802,8 @@ const RatatoskrTransfer = () => {
         });
     };
 
-    const filteredCaskets = caskets.filter(c =>
-        casketDisplayName(c).toLowerCase().includes(unitSearch.toLowerCase()) &&
-        matchesMode(c)
+    const filteredCaskets = caskets.filter(
+        (c) => matchesSearchQuery([casketDisplayName(c)], unitSearch) && matchesMode(c)
     );
 
     const selectedIds = transferMode === 'to' ? selectedInvItems : selectedCasketItems;
@@ -930,9 +929,10 @@ const RatatoskrTransfer = () => {
                             onSearchChange={setCollectionFilterSearch}
                             onToggle={toggleCollectionFilter}
                             onSelectAll={() => {
-                                const q = collectionFilterSearch.trim().toLowerCase();
-                                const visible = q
-                                    ? availableCollections.filter((c) => c.toLowerCase().includes(q))
+                                const visible = collectionFilterSearch.trim()
+                                    ? availableCollections.filter((c) =>
+                                          matchesSearchQuery([c], collectionFilterSearch)
+                                      )
                                     : availableCollections;
                                 setIncludedCollections((prev) => Array.from(new Set([...prev, ...visible])));
                             }}
@@ -951,7 +951,7 @@ const RatatoskrTransfer = () => {
                     <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500" size={14} />
                     <input
                         type="text"
-                        placeholder="Search items"
+                        placeholder="Search items (e.g. famas half sleeve fn)"
                         value={itemSearch}
                         onChange={(e) => setItemSearch(e.target.value)}
                         className="w-full bg-black/30 border border-white/10 rounded-lg pl-8 pr-3 py-1.5 text-sm text-white focus:outline-none focus:border-amber-500/40"
