@@ -27,7 +27,49 @@ let moveDelayMs = Math.min(
     Math.max(MIN_MOVE_DELAY_MS, DEFAULT_MOVE_DELAY_MS)
 );
 
+/** Auto-disconnect after inactivity (0 = never). Default 1 hour; was hardcoded 10 min. */
+const MIN_SESSION_IDLE_MS = 5 * 60 * 1000;
+const MAX_SESSION_IDLE_MS = 24 * 60 * 60 * 1000;
+const DEFAULT_SESSION_IDLE_MS = parseInt(
+    process.env.SESSION_IDLE_TIMEOUT_MS || String(60 * 60 * 1000),
+    10
+);
+
+let sessionIdleTimeoutMs = DEFAULT_SESSION_IDLE_MS === 0
+    ? 0
+    : Math.min(
+        MAX_SESSION_IDLE_MS,
+        Math.max(MIN_SESSION_IDLE_MS, DEFAULT_SESSION_IDLE_MS)
+    );
+
 const getMoveDelayMs = () => moveDelayMs;
+
+const getSessionIdleTimeoutMs = () => sessionIdleTimeoutMs;
+
+const setSessionIdleTimeoutMs = (value) => {
+    const parsed = parseInt(value, 10);
+    if (Number.isNaN(parsed) || parsed <= 0) {
+        sessionIdleTimeoutMs = 0;
+        return sessionIdleTimeoutMs;
+    }
+    sessionIdleTimeoutMs = Math.min(
+        MAX_SESSION_IDLE_MS,
+        Math.max(MIN_SESSION_IDLE_MS, parsed)
+    );
+    return sessionIdleTimeoutMs;
+};
+
+const isSessionIdleExpired = (session) => {
+    const idleMs = getSessionIdleTimeoutMs();
+    if (idleMs === 0 || !session?.lastActivity) return false;
+    return Date.now() - session.lastActivity > idleMs;
+};
+
+const hasActiveMoveWork = (steamID) => {
+    const state = moveQueues[steamID];
+    if (!state) return false;
+    return state.running || state.jobs.length > 0;
+};
 
 const setMoveDelayMs = (value) => {
     const parsed = parseInt(value, 10);
@@ -355,16 +397,30 @@ const disconnectSession = (steamID) => {
     return true;
 };
 
-// Status Endpoint
+// Status Endpoint (also acts as keep-alive when the UI polls)
 app.get('/status/:steamid', (req, res) => {
     const steamID = req.params.steamid;
     const session = getSession(steamID);
 
-    if (session && session.csgo && session.csgo.haveGCSession) {
-        res.json({ status: 'connected', steamID });
-    } else {
-        res.status(404).json({ status: 'disconnected', error: 'No active session found' });
+    if (session) {
+        session.lastActivity = Date.now();
+        if (session.csgo && session.csgo.haveGCSession) {
+            return res.json({
+                status: 'connected',
+                steamID,
+                idleTimeoutMs: getSessionIdleTimeoutMs(),
+                lastActivity: session.lastActivity,
+            });
+        }
+        return res.status(503).json({
+            status: 'gc_lost',
+            steamID,
+            error: 'Steam session exists but Game Coordinator is not connected',
+            idleTimeoutMs: getSessionIdleTimeoutMs(),
+        });
     }
+
+    res.status(404).json({ status: 'disconnected', error: 'No active session found' });
 });
 
 app.post('/disconnect/:steamid', (req, res) => {
@@ -554,18 +610,57 @@ app.post('/config/move-delay', (req, res) => {
     }
 });
 
-// Cleanup inactive sessions (every 5 mins)
-setInterval(() => {
-    const now = Date.now();
-    for (const [steamID, session] of Object.entries(sessions)) {
-        if (now - session.lastActivity > 1000 * 60 * 10) { // 10 mins inactive
-            console.log(`Cleaning up inactive session for ${steamID}`);
-            session.user.logOff();
-            delete sessions[steamID];
-            delete moveQueues[steamID];
-        }
+app.get('/config/session-idle', (req, res) => {
+    res.json({
+        idleTimeoutMs: getSessionIdleTimeoutMs(),
+        min: MIN_SESSION_IDLE_MS,
+        max: MAX_SESSION_IDLE_MS,
+        default: sessionIdleTimeoutMs,
+        presets: [
+            { label: '15 minutes', idleTimeoutMs: 15 * 60 * 1000 },
+            { label: '30 minutes', idleTimeoutMs: 30 * 60 * 1000 },
+            { label: '1 hour', idleTimeoutMs: 60 * 60 * 1000 },
+            { label: '2 hours', idleTimeoutMs: 2 * 60 * 60 * 1000 },
+            { label: '4 hours', idleTimeoutMs: 4 * 60 * 60 * 1000 },
+            { label: 'Never', idleTimeoutMs: 0 },
+        ],
+    });
+});
+
+app.post('/config/session-idle', (req, res) => {
+    try {
+        const idleTimeoutMs = setSessionIdleTimeoutMs(req.body?.idleTimeoutMs);
+        const label =
+            idleTimeoutMs === 0
+                ? 'disabled (never auto-disconnect)'
+                : `${Math.round(idleTimeoutMs / 60000)} minutes`;
+        console.log(`Session idle timeout set to ${label}`);
+        res.json({
+            success: true,
+            idleTimeoutMs,
+            min: MIN_SESSION_IDLE_MS,
+            max: MAX_SESSION_IDLE_MS,
+        });
+    } catch (err) {
+        res.status(400).json({ error: err.message });
     }
-}, 1000 * 60 * 5);
+});
+
+// Cleanup inactive sessions (respects configurable idle timeout)
+const SESSION_SWEEP_MS = 60 * 1000;
+setInterval(() => {
+    for (const [steamID, session] of Object.entries(sessions)) {
+        if (!isSessionIdleExpired(session)) continue;
+        if (hasActiveMoveWork(steamID)) {
+            session.lastActivity = Date.now();
+            continue;
+        }
+        console.log(
+            `[SESSION] Idle timeout (${getSessionIdleTimeoutMs()}ms) — disconnecting ${steamID}`
+        );
+        disconnectSession(steamID);
+    }
+}, SESSION_SWEEP_MS);
 
 app.listen(port, () => {
     console.log(`Ratatoskr listening at http://localhost:${port}`);

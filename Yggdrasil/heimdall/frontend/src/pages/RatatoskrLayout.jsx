@@ -1,6 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import { Outlet, Link, useParams, useLocation, useNavigate } from 'react-router-dom';
-import { Package, ArrowRightLeft, Database, LayoutDashboard, Plug, Unplug } from 'lucide-react';
+import { Package, ArrowRightLeft, Database, LayoutDashboard, Plug, Unplug, Timer } from 'lucide-react';
+
+const STATUS_POLL_MS = 90 * 1000;
+
+const formatIdleLabel = (idleTimeoutMs) => {
+    if (idleTimeoutMs === 0) return 'Never';
+    const minutes = Math.round(idleTimeoutMs / 60000);
+    if (minutes < 60) return `${minutes} min`;
+    const hours = minutes / 60;
+    return Number.isInteger(hours) ? `${hours} hr` : `${hours.toFixed(1)} hr`;
+};
 
 const RatatoskrLayout = () => {
     const { steamid } = useParams();
@@ -11,13 +21,25 @@ const RatatoskrLayout = () => {
     const [account, setAccount] = useState(null);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
+    const [idleTimeoutMs, setIdleTimeoutMs] = useState(60 * 60 * 1000);
+    const [idlePresets, setIdlePresets] = useState([]);
+    const [idleSaving, setIdleSaving] = useState(false);
 
     const isConnected = status === 'connected';
 
     useEffect(() => {
         loadAccount();
         checkStatus();
+        fetchSessionIdleConfig();
     }, [steamid]);
+
+    useEffect(() => {
+        if (status !== 'connected') return undefined;
+        const timer = setInterval(() => {
+            checkStatus({ quiet: true });
+        }, STATUS_POLL_MS);
+        return () => clearInterval(timer);
+    }, [status, steamid]);
 
     const loadAccount = async () => {
         try {
@@ -31,18 +53,62 @@ const RatatoskrLayout = () => {
         }
     };
 
-    const checkStatus = async () => {
-        setLoading(true);
+    const fetchSessionIdleConfig = async () => {
+        try {
+            const res = await fetch('/api/ratatoskr/config/session-idle');
+            const data = await res.json();
+            if (res.ok && data.idleTimeoutMs != null) {
+                setIdleTimeoutMs(data.idleTimeoutMs);
+                if (Array.isArray(data.presets)) {
+                    setIdlePresets(data.presets);
+                }
+            }
+        } catch (err) {
+            console.error('Failed to load session idle config', err);
+        }
+    };
+
+    const saveSessionIdle = async (ms) => {
+        setIdleSaving(true);
+        try {
+            const res = await fetch('/api/ratatoskr/config/session-idle', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ idleTimeoutMs: ms }),
+            });
+            const data = await res.json();
+            if (res.ok && data.idleTimeoutMs != null) {
+                setIdleTimeoutMs(data.idleTimeoutMs);
+            }
+        } catch (err) {
+            console.error('Failed to save session idle config', err);
+        } finally {
+            setIdleSaving(false);
+        }
+    };
+
+    const checkStatus = async ({ quiet = false } = {}) => {
+        if (!quiet) setLoading(true);
         try {
             const res = await fetch(`/api/ratatoskr/status/${steamid}`);
             const data = await res.json();
-            setStatus(data.status);
-            if (data.status === 'connected') setError(null);
+            if (res.ok && data.status === 'connected') {
+                setStatus('connected');
+                setError(null);
+                if (data.idleTimeoutMs != null) {
+                    setIdleTimeoutMs(data.idleTimeoutMs);
+                }
+            } else if (data.status === 'gc_lost') {
+                setStatus('disconnected');
+                setError('Game Coordinator connection lost. Click Connect to restore.');
+            } else {
+                setStatus('disconnected');
+            }
         } catch (err) {
             console.error(err);
-            setStatus('disconnected');
+            if (!quiet) setStatus('disconnected');
         } finally {
-            setLoading(false);
+            if (!quiet) setLoading(false);
         }
     };
 
@@ -152,6 +218,49 @@ const RatatoskrLayout = () => {
         </div>
     );
 
+    const SessionIdleControl = () => {
+        const options =
+            idlePresets.length > 0
+                ? idlePresets
+                : [
+                      { label: '15 minutes', idleTimeoutMs: 15 * 60 * 1000 },
+                      { label: '30 minutes', idleTimeoutMs: 30 * 60 * 1000 },
+                      { label: '1 hour', idleTimeoutMs: 60 * 60 * 1000 },
+                      { label: '2 hours', idleTimeoutMs: 2 * 60 * 60 * 1000 },
+                      { label: '4 hours', idleTimeoutMs: 4 * 60 * 60 * 1000 },
+                      { label: 'Never', idleTimeoutMs: 0 },
+                  ];
+
+        return (
+            <div className="mt-4 pt-4 border-t border-white/5">
+                <label className="flex items-center gap-2 text-[10px] uppercase tracking-wider text-slate-500 font-medium mb-2">
+                    <Timer size={12} />
+                    Auto-disconnect when idle
+                </label>
+                <select
+                    value={String(idleTimeoutMs)}
+                    disabled={idleSaving}
+                    onChange={(e) => saveSessionIdle(parseInt(e.target.value, 10))}
+                    className="w-full rounded-lg bg-black/30 border border-white/10 text-sm text-slate-200 px-3 py-2 focus:outline-none focus:border-amber-500/40 disabled:opacity-50"
+                >
+                    {options.map((opt) => (
+                        <option key={opt.idleTimeoutMs} value={opt.idleTimeoutMs}>
+                            {opt.label}
+                        </option>
+                    ))}
+                </select>
+                <p className="text-[10px] text-slate-500 mt-1.5 leading-snug">
+                    Currently: <span className="text-slate-400">{formatIdleLabel(idleTimeoutMs)}</span>.
+                    {isConnected && idleTimeoutMs > 0
+                        ? ' This page refreshes your session every ~90s while open.'
+                        : idleTimeoutMs === 0
+                          ? ' Session stays up until you disconnect.'
+                          : null}
+                </p>
+            </div>
+        );
+    };
+
     if (status === 'checking') {
         return (
             <div className="min-h-screen bg-odin-dark flex items-center justify-center">
@@ -180,6 +289,7 @@ const RatatoskrLayout = () => {
                     </div>
                     <AccountBadge />
                     <ConnectionControls />
+                    <SessionIdleControl />
                 </div>
 
                 <nav className="flex-1 p-4 space-y-1">

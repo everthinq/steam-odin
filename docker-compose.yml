@@ -54,6 +54,8 @@ services:
       - PORT=3000
       - HEIMDALL_API_URL=http://heimdall-backend:5000
       - MOVE_DELAY_MS=400
+      # Auto-disconnect after idle (ms). 0 = never. Default 3600000 (1 hour).
+      # - SESSION_IDLE_TIMEOUT_MS=1800000
     volumes:
       - ./Yggdrasil/ratatoskr:/app
       - /app/node_modules

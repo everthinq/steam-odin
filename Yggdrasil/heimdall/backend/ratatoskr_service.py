@@ -37,7 +37,13 @@ class RatatoskrService:
         try:
             response = requests.get(f"{self.base_url}/status/{steam_id}", timeout=5)
             if response.status_code == 200:
-                return {"status": "connected"}
+                data = response.json()
+                data.setdefault("status", "connected")
+                return data
+            if response.status_code == 503:
+                data = response.json()
+                data.setdefault("status", "gc_lost")
+                return data
             return {"status": "disconnected"}
         except requests.exceptions.RequestException:
              return {"status": "disconnected", "error": "Ratatoskr unreachable"}
@@ -129,6 +135,32 @@ class RatatoskrService:
             print(f"Ratatoskr Move Delay SET Error: {e}")
             if e.response:
                 return {"error": e.response.json().get('error', 'Failed to set move delay')}
+            return {"error": "Failed to connect to Ratatoskr"}
+
+    def get_session_idle_timeout(self):
+        """Get auto-disconnect idle timeout (ms); 0 = never."""
+        try:
+            response = requests.get(f"{self.base_url}/config/session-idle", timeout=10)
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.RequestException as e:
+            print(f"Ratatoskr Session Idle GET Error: {e}")
+            return {"error": "Failed to fetch session idle timeout from Ratatoskr"}
+
+    def set_session_idle_timeout(self, idle_timeout_ms):
+        """Set auto-disconnect idle timeout (ms); 0 = never."""
+        try:
+            response = requests.post(
+                f"{self.base_url}/config/session-idle",
+                json={"idleTimeoutMs": idle_timeout_ms},
+                timeout=10,
+            )
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.RequestException as e:
+            print(f"Ratatoskr Session Idle SET Error: {e}")
+            if e.response:
+                return {"error": e.response.json().get('error', 'Failed to set session idle timeout')}
             return {"error": "Failed to connect to Ratatoskr"}
 
     def get_inventory(self, steam_id):

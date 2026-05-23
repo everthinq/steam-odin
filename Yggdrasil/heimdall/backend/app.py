@@ -392,6 +392,24 @@ def ratatoskr_set_move_delay():
         return jsonify(result), 400
     return jsonify(result)
 
+@app.route('/api/ratatoskr/config/session-idle', methods=['GET'])
+def ratatoskr_get_session_idle():
+    """Get Ratatoskr auto-disconnect idle timeout (ms); 0 = never."""
+    result = ratatoskr_service.get_session_idle_timeout()
+    if 'error' in result:
+        return jsonify(result), 502
+    return jsonify(result)
+
+@app.route('/api/ratatoskr/config/session-idle', methods=['POST'])
+def ratatoskr_set_session_idle():
+    """Set Ratatoskr auto-disconnect idle timeout (ms); 0 = never."""
+    if not request.json or request.json.get('idleTimeoutMs') is None:
+        return jsonify({"error": "Missing idleTimeoutMs"}), 400
+    result = ratatoskr_service.set_session_idle_timeout(request.json.get('idleTimeoutMs'))
+    if 'error' in result:
+        return jsonify(result), 400
+    return jsonify(result)
+
 @app.route('/api/ratatoskr/inventory/<steamid>', methods=['GET'])
 def ratatoskr_inventory(steamid):
     """Get inventory for account."""
