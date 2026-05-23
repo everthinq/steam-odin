@@ -458,7 +458,9 @@ class items {
     if (storageRow['paint_index'] !== undefined) {
       var skinPatternName = this.getPaintDetails(storageRow['paint_index']);
       if (skinPatternName) {
-        var baseTwo = this.getTranslation(skinPatternName['description_tag']);
+        var baseTwo = this.formatPaintKitTagName(
+          this.getTranslation(skinPatternName['description_tag'])
+        );
       }
     }
 
@@ -637,6 +639,20 @@ class items {
 
     return this.translation[stringFormatted].replaceAll('"', '');
   }
+
+  /**
+   * Paint kit tags in csgo_english are often zero-padded (e.g. "027" on USP-S | 27)
+   * because they match in-game roll numbers, not the Steam market skin name.
+   */
+  formatPaintKitTagName(translated) {
+    if (!translated) return translated;
+    const text = String(translated).trim();
+    if (/^\d+$/.test(text)) {
+      return String(parseInt(text, 10));
+    }
+    return text;
+  }
+
   getPrefab(prefab) {
     return this.csgoItems['prefabs'][prefab.toString()];
   }
