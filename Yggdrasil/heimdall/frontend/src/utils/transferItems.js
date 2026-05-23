@@ -74,40 +74,103 @@ export const tagCasketItems = (items, casketId, casketName) =>
         storage_unit_name: casketName,
     }));
 
+/** Display float (CS2 paint wear 0–1). */
+export const formatItemFloat = (paintWear) => {
+    if (paintWear == null || paintWear === '') return null;
+    const n = Number(paintWear);
+    if (!Number.isFinite(n)) return null;
+    return n.toFixed(6);
+};
+
+/** Stable key segment for grouping identical float values. */
+export const getItemFloatKey = (item) => {
+    const pw = item?.item_paint_wear;
+    if (pw == null || pw === '') return '';
+    const n = Number(pw);
+    if (!Number.isFinite(n)) return '';
+    return n.toFixed(10);
+};
+
+/** Market line (name + wear) — used for row grouping and “one of each”. */
+export const getItemSkinLineKey = (item) =>
+    `${item?.item_name || 'Unknown'}\0${item?.item_wear_name || ''}`;
+
+/** @deprecated alias */
+export const getItemSkinKey = (item) => getItemSkinLineKey(item);
+
+/**
+ * Group by name + wear (and storage when requested). Distinct floats are nested
+ * under `floatVariants` for the expandable picker in the transfer table.
+ */
 export const groupItemsByName = (items, { includeStorage = false } = {}) => {
     const map = new Map();
     for (const item of items) {
-        const baseKey = item.item_name || 'Unknown';
+        const lineKey = getItemSkinLineKey(item);
         const key = includeStorage
-            ? `${baseKey}\0${item.storage_unit_id ?? 'inventory'}`
-            : baseKey;
+            ? `${lineKey}\0${item.storage_unit_id ?? 'inventory'}`
+            : lineKey;
+
         if (!map.has(key)) {
             map.set(key, {
                 key,
+                skin_line_key: lineKey,
                 item_name: item.item_name,
                 item_wear_name: item.item_wear_name,
                 item_collection: item.item_collection,
                 stickers: item.stickers || [],
                 representative: item,
-                item_ids: [item.item_id],
-                items: [item],
+                item_ids: [],
+                items: [],
+                floatVariantMap: new Map(),
                 storage_unit_id: includeStorage ? item.storage_unit_id ?? null : undefined,
                 storage_unit_name: includeStorage
                     ? item.storage_unit_name ?? INVENTORY_LOCATION
                     : undefined,
             });
-        } else {
-            const group = map.get(key);
-            group.item_ids.push(item.item_id);
-            group.items.push(item);
         }
+
+        const line = map.get(key);
+        line.item_ids.push(item.item_id);
+        line.items.push(item);
+
+        const floatSeg = getItemFloatKey(item) || '__no_float__';
+        if (!line.floatVariantMap.has(floatSeg)) {
+            line.floatVariantMap.set(floatSeg, {
+                key: `${key}\0${floatSeg}`,
+                item_paint_wear: item.item_paint_wear,
+                item_collection: item.item_collection,
+                stickers: item.stickers || [],
+                representative: item,
+                item_ids: [],
+                items: [],
+            });
+        }
+        const variant = line.floatVariantMap.get(floatSeg);
+        variant.item_ids.push(item.item_id);
+        variant.items.push(item);
     }
+
     return Array.from(map.values())
-        .map((g) => ({ ...g, qty: g.item_ids.length }))
+        .map((line) => {
+            const floatVariants = Array.from(line.floatVariantMap.values())
+                .map((v) => ({ ...v, qty: v.item_ids.length }))
+                .sort((a, b) => {
+                    const fa = a.item_paint_wear ?? 0;
+                    const fb = b.item_paint_wear ?? 0;
+                    return fa - fb;
+                });
+            const { floatVariantMap, ...rest } = line;
+            return {
+                ...rest,
+                qty: line.item_ids.length,
+                floatVariants,
+                hasMultipleFloats: floatVariants.length > 1,
+            };
+        })
         .sort((a, b) => {
             const loc = (a.storage_unit_name || '').localeCompare(b.storage_unit_name || '');
             if (loc !== 0) return loc;
-            return a.item_name.localeCompare(b.item_name);
+            return (a.item_name || '').localeCompare(b.item_name || '');
         });
 };
 
@@ -137,16 +200,25 @@ export const filterItemsByQuery = (items, query) => {
 /** Selectable count while keeping one copy in the source (inventory or storage). */
 export const getGroupReserveOneQty = (group) => Math.max(0, (group?.qty ?? 0) - 1);
 
-/** Unique skin line for arbitrage sampling (name + wear). */
-export const getItemSkinKey = (item) =>
-    `${item?.item_name || 'Unknown'}\0${item?.item_wear_name || ''}`;
+/**
+ * To storage: max selectable for one float stack when reserve-one applies to the
+ * whole skin line (name + wear). Another float on the line can be the kept copy.
+ */
+export const getVariantMaxSelectableToStorage = (lineGroup, variant, selectedIds) => {
+    const budget = getGroupReserveOneQty(lineGroup);
+    const variantIdSet = new Set(variant.item_ids);
+    const otherSelected = lineGroup.item_ids.filter(
+        (id) => selectedIds.includes(id) && !variantIdSet.has(id)
+    ).length;
+    return Math.min(variant.qty, Math.max(0, budget - otherSelected));
+};
 
-/** One item_id per skin line from a flat item list. */
+/** One item_id per name + wear line from a flat item list. */
 export const pickOneItemIdPerSkin = (items) => {
     const byKey = new Map();
     for (const item of items) {
         if (item?.item_moveable === false || item?.def_index === 1201) continue;
-        const key = getItemSkinKey(item);
+        const key = getItemSkinLineKey(item);
         if (!byKey.has(key)) byKey.set(key, item.item_id);
     }
     return Array.from(byKey.values());

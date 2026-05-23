@@ -30,7 +30,9 @@ import {
     groupItemsByCasket,
     matchesSearchQuery,
     getGroupReserveOneQty,
+    getVariantMaxSelectableToStorage,
     pickOneItemIdPerSkin,
+    formatItemFloat,
 } from '../../utils/transferItems';
 
 const STORAGE_CAPACITY = 1000;
@@ -336,6 +338,7 @@ const RatatoskrTransfer = () => {
     const [moveDelayMs, setMoveDelayMs] = useState(400);
     const [moveDelayBounds, setMoveDelayBounds] = useState({ min: 100, max: 5000 });
     const [qtySortDir, setQtySortDir] = useState(null); // null = by name, 'asc' | 'desc' = by qty
+    const [expandedFloatLines, setExpandedFloatLines] = useState(() => new Set());
     const [queueOpen, setQueueOpen] = useState(false);
     const [filtersOpen, setFiltersOpen] = useState(false);
     const [includedCollections, setIncludedCollections] = useState([]);
@@ -766,19 +769,25 @@ const RatatoskrTransfer = () => {
             name: group.item_name,
             storage: group.storage_unit_name || '',
             wear: group.item_wear_name || '',
+            float:
+                group.floatVariants?.length === 1
+                    ? formatItemFloat(group.floatVariants[0]?.item_paint_wear) || ''
+                    : group.hasMultipleFloats
+                      ? `${group.floatVariants.length} floats`
+                      : '',
             collection: group.item_collection || '',
             tradehold: groupTradeHold(group.items),
             qty: group.qty,
         }));
         const withStorage = showStorageColumn;
         const header = withStorage
-            ? 'Name,Storage,Wear,Collection,Tradehold,Qty\n'
-            : 'Name,Wear,Collection,Tradehold,Qty\n';
+            ? 'Name,Storage,Wear,Float,Collection,Tradehold,Qty\n'
+            : 'Name,Wear,Float,Collection,Tradehold,Qty\n';
         const body = rows
             .map((r) => {
                 const cols = withStorage
-                    ? [r.name, r.storage, r.wear, r.collection, r.tradehold, r.qty]
-                    : [r.name, r.wear, r.collection, r.tradehold, r.qty];
+                    ? [r.name, r.storage, r.wear, r.float, r.collection, r.tradehold, r.qty]
+                    : [r.name, r.wear, r.float, r.collection, r.tradehold, r.qty];
                 return cols.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(',');
             })
             .join('\n');
@@ -881,20 +890,36 @@ const RatatoskrTransfer = () => {
     const selectedIds = transferMode === 'to' ? selectedInvItems : selectedCasketItems;
     const setSelectedIds = transferMode === 'to' ? setSelectedInvItems : setSelectedCasketItems;
 
-    const getGroupSelectedQty = (group) =>
-        group.item_ids.filter(id => selectedIds.includes(id)).length;
+    const getIdsSelectedQty = (itemIds) =>
+        itemIds.filter((id) => selectedIds.includes(id)).length;
 
-    /** Full qty when withdrawing from storage; keep 1 in inventory when depositing (To). */
+    const getGroupSelectedQty = (group) => getIdsSelectedQty(group.item_ids);
+
+    /** Full qty when withdrawing; keep 1 in source when depositing (To) — per skin line, not per float. */
     const getMaxSelectableQty = (group) =>
         transferMode === 'to' ? getGroupReserveOneQty(group) : group.qty;
 
+    const getVariantMaxSelectableQty = (lineGroup, variant) =>
+        transferMode === 'to'
+            ? getVariantMaxSelectableToStorage(lineGroup, variant, selectedIds)
+            : variant.qty;
+
+    const setIdsSelectedQty = (itemIds, qty) => {
+        const n = Math.max(0, Math.min(itemIds.length, Number.isFinite(qty) ? qty : 0));
+        setSelectedIds((prev) => {
+            const without = prev.filter((id) => !itemIds.includes(id));
+            return [...without, ...itemIds.slice(0, n)];
+        });
+    };
+
     const setGroupSelectedQty = (group, qty) => {
         const cap = getMaxSelectableQty(group);
-        const n = Math.max(0, Math.min(cap, Number.isFinite(qty) ? qty : 0));
-        setSelectedIds((prev) => {
-            const without = prev.filter((id) => !group.item_ids.includes(id));
-            return [...without, ...group.item_ids.slice(0, n)];
-        });
+        setIdsSelectedQty(group.item_ids, Math.min(cap, qty));
+    };
+
+    const setFloatVariantSelectedQty = (lineGroup, variant, qty) => {
+        const cap = getVariantMaxSelectableQty(lineGroup, variant);
+        setIdsSelectedQty(variant.item_ids, Math.min(cap, qty));
     };
 
     const toggleGroupCheckbox = (group) => {
@@ -904,12 +929,36 @@ const RatatoskrTransfer = () => {
         setGroupSelectedQty(group, current >= target ? 0 : target);
     };
 
+    const toggleFloatVariantCheckbox = (lineGroup, variant) => {
+        const current = getIdsSelectedQty(variant.item_ids);
+        const target = getVariantMaxSelectableQty(lineGroup, variant);
+        if (target === 0) return;
+        setFloatVariantSelectedQty(lineGroup, variant, current >= target ? 0 : target);
+    };
+
     const groupSelectionState = (group) => {
         const selectedCount = getGroupSelectedQty(group);
         const target = getMaxSelectableQty(group);
         if (selectedCount === 0 || target === 0) return 'none';
         if (selectedCount >= target) return 'all';
         return 'partial';
+    };
+
+    const floatVariantSelectionState = (lineGroup, variant) => {
+        const selectedCount = getIdsSelectedQty(variant.item_ids);
+        const target = getVariantMaxSelectableQty(lineGroup, variant);
+        if (selectedCount === 0 || target === 0) return 'none';
+        if (selectedCount >= target) return 'all';
+        return 'partial';
+    };
+
+    const toggleFloatLineExpanded = (lineKey) => {
+        setExpandedFloatLines((prev) => {
+            const next = new Set(prev);
+            if (next.has(lineKey)) next.delete(lineKey);
+            else next.add(lineKey);
+            return next;
+        });
     };
 
     const selectOnePerSkinForArbitrage = async () => {
@@ -1177,37 +1226,48 @@ const RatatoskrTransfer = () => {
                         {activeFilterCount > 0 ? 'No items match your filters.' : 'No items to show.'}
                     </p>
                 ) : (
-                    sortedGroupedItems.map(group => {
-                        const sel = groupSelectionState(group);
-                        const selectedQty = getGroupSelectedQty(group);
-                        return (
-                            <div
-                                key={group.key}
-                                className={`grid ${tableGridCols} gap-2 items-center px-4 py-2 border-b border-white/5 transition-colors ${sel !== 'none' ? 'bg-amber-500/10' : 'hover:bg-white/5'}`}
-                            >
-                                <div className="flex items-center gap-2 min-w-0">
-                                    <ItemThumb item={group.representative} />
-                                    <div className="min-w-0">
-                                        <div className="flex items-center gap-1.5 min-w-0">
-                                            <span className="text-sm text-white truncate min-w-0">
-                                                {group.item_name}
-                                            </span>
-                                            <SteamMarketLink itemName={group.item_name} />
-                                        </div>
-                                        {group.item_wear_name && (
-                                            <p className="text-[11px] text-slate-500 truncate">{group.item_wear_name}</p>
-                                        )}
-                                    </div>
-                                </div>
+                    sortedGroupedItems.map((lineGroup) => {
+                        const sel = groupSelectionState(lineGroup);
+                        const selectedQty = getGroupSelectedQty(lineGroup);
+                        const floatsOpen =
+                            lineGroup.hasMultipleFloats && expandedFloatLines.has(lineGroup.key);
 
+                        const renderSelectBtn = (state, onClick, disabled, title) => (
+                            <button
+                                type="button"
+                                onClick={onClick}
+                                disabled={disabled}
+                                title={title}
+                                className={`p-1 rounded border transition-colors disabled:opacity-30 disabled:cursor-not-allowed ${state === 'all'
+                                    ? 'bg-emerald-600/30 border-emerald-500/50 text-emerald-400'
+                                    : state === 'partial'
+                                      ? 'bg-amber-600/20 border-amber-500/40 text-amber-400'
+                                      : 'border-white/10 text-slate-500 hover:border-white/20'
+                                    }`}
+                            >
+                                {state === 'all' ? (
+                                    <Check size={14} />
+                                ) : state === 'partial' ? (
+                                    <Minus size={14} />
+                                ) : (
+                                    <span className="block w-3.5 h-3.5" />
+                                )}
+                            </button>
+                        );
+
+                        const renderDataCells = (rowGroup, { variant = false } = {}) => (
+                            <>
                                 {showStorageColumn && (
-                                    <span className="text-xs text-slate-400 truncate" title={group.storage_unit_name}>
-                                        {group.storage_unit_name || '—'}
+                                    <span
+                                        className="text-xs text-slate-400 truncate"
+                                        title={lineGroup.storage_unit_name}
+                                    >
+                                        {variant ? '' : lineGroup.storage_unit_name || '—'}
                                     </span>
                                 )}
 
                                 <div className="flex items-center gap-0.5 flex-wrap min-h-[24px]">
-                                    {(group.stickers || []).slice(0, 5).map((s, i) => {
+                                    {(rowGroup.stickers || []).slice(0, 5).map((s, i) => {
                                         const src = getStickerImageUrl(s);
                                         return src ? (
                                             <img
@@ -1224,48 +1284,150 @@ const RatatoskrTransfer = () => {
                                 </div>
 
                                 <span className="text-xs text-slate-400 truncate">
-                                    {group.item_collection || '—'}
+                                    {rowGroup.item_collection || '—'}
                                 </span>
 
                                 <span className="text-xs text-slate-400">
-                                    {groupTradeHold(group.items)}
+                                    {groupTradeHold(rowGroup.items)}
                                 </span>
+                            </>
+                        );
 
-                                <GroupQtyInput
-                                    selectedQty={selectedQty}
-                                    maxQty={getMaxSelectableQty(group)}
-                                    onCommit={(n) => setGroupSelectedQty(group, n)}
-                                />
-
-                                <div className="flex justify-end">
-                                    <button
-                                        type="button"
-                                        onClick={() => toggleGroupCheckbox(group)}
-                                        disabled={getMaxSelectableQty(group) === 0}
-                                        title={
-                                            transferMode === 'to'
-                                                ? getMaxSelectableQty(group) === 0
-                                                    ? 'Only one copy in inventory'
-                                                    : `Select ${getMaxSelectableQty(group)} of ${group.qty} (keep 1 in inventory)`
-                                                : `Select all ${group.qty}`
-                                        }
-                                        className={`p-1 rounded border transition-colors disabled:opacity-30 disabled:cursor-not-allowed ${sel === 'all'
-                                            ? 'bg-emerald-600/30 border-emerald-500/50 text-emerald-400'
-                                            : sel === 'partial'
-                                                ? 'bg-amber-600/20 border-amber-500/40 text-amber-400'
-                                                : 'border-white/10 text-slate-500 hover:border-white/20'
-                                            }`}
-                                    >
-                                        {sel === 'all' ? (
-                                            <Check size={14} />
-                                        ) : sel === 'partial' ? (
-                                            <Minus size={14} />
+                        return (
+                            <React.Fragment key={lineGroup.key}>
+                                <div
+                                    className={`grid ${tableGridCols} gap-2 items-center px-4 py-2 border-b border-white/5 transition-colors ${sel !== 'none' ? 'bg-amber-500/10' : 'hover:bg-white/5'}`}
+                                >
+                                    <div className="flex items-center gap-1.5 min-w-0">
+                                        {lineGroup.hasMultipleFloats ? (
+                                            <button
+                                                type="button"
+                                                onClick={() => toggleFloatLineExpanded(lineGroup.key)}
+                                                className="shrink-0 p-0.5 text-slate-500 hover:text-white transition-colors"
+                                                aria-expanded={floatsOpen}
+                                                aria-label={
+                                                    floatsOpen
+                                                        ? 'Hide float variants'
+                                                        : 'Show float variants'
+                                                }
+                                            >
+                                                <ChevronDown
+                                                    size={16}
+                                                    className={`transition-transform ${floatsOpen ? '' : '-rotate-90'}`}
+                                                />
+                                            </button>
                                         ) : (
-                                            <span className="block w-3.5 h-3.5" />
+                                            <span className="w-5 shrink-0" />
                                         )}
-                                    </button>
+                                        <ItemThumb item={lineGroup.representative} />
+                                        <div className="min-w-0">
+                                            <div className="flex items-center gap-1.5 min-w-0">
+                                                <span className="text-sm text-white truncate min-w-0">
+                                                    {lineGroup.item_name}
+                                                </span>
+                                                <SteamMarketLink itemName={lineGroup.item_name} />
+                                            </div>
+                                            {lineGroup.item_wear_name && (
+                                                <p className="text-[11px] text-slate-500 truncate">
+                                                    {lineGroup.item_wear_name}
+                                                    {lineGroup.hasMultipleFloats && (
+                                                        <span className="text-slate-600 ml-1">
+                                                            · {lineGroup.floatVariants.length} floats
+                                                        </span>
+                                                    )}
+                                                </p>
+                                            )}
+                                            {!lineGroup.hasMultipleFloats &&
+                                                formatItemFloat(
+                                                    lineGroup.floatVariants[0]?.item_paint_wear
+                                                ) && (
+                                                    <p className="text-[10px] font-mono text-slate-600 truncate">
+                                                        {formatItemFloat(
+                                                            lineGroup.floatVariants[0]?.item_paint_wear
+                                                        )}
+                                                    </p>
+                                                )}
+                                        </div>
+                                    </div>
+
+                                    {renderDataCells(lineGroup)}
+
+                                    <GroupQtyInput
+                                        selectedQty={selectedQty}
+                                        maxQty={getMaxSelectableQty(lineGroup)}
+                                        onCommit={(n) => setGroupSelectedQty(lineGroup, n)}
+                                    />
+
+                                    <div className="flex justify-end">
+                                        {renderSelectBtn(
+                                            sel,
+                                            () => toggleGroupCheckbox(lineGroup),
+                                            getMaxSelectableQty(lineGroup) === 0,
+                                            transferMode === 'to'
+                                                ? getMaxSelectableQty(lineGroup) === 0
+                                                    ? 'Only one copy in inventory'
+                                                    : `Select ${getMaxSelectableQty(lineGroup)} of ${lineGroup.qty} (keep 1 in inventory)`
+                                                : `Select all ${lineGroup.qty}`
+                                        )}
+                                    </div>
                                 </div>
-                            </div>
+
+                                {lineGroup.hasMultipleFloats &&
+                                    floatsOpen &&
+                                    lineGroup.floatVariants.map((variant) => {
+                                        const vSel = floatVariantSelectionState(lineGroup, variant);
+                                        const vSelected = getIdsSelectedQty(variant.item_ids);
+                                        const vMax = getVariantMaxSelectableQty(lineGroup, variant);
+                                        const floatLabel =
+                                            formatItemFloat(variant.item_paint_wear) ||
+                                            'No float data';
+
+                                        return (
+                                            <div
+                                                key={variant.key}
+                                                className={`grid ${tableGridCols} gap-2 items-center pl-10 pr-4 py-2 border-b border-white/5 bg-black/15 ${vSel !== 'none' ? 'bg-amber-500/5' : ''}`}
+                                            >
+                                                <div className="flex items-center gap-2 min-w-0 col-span-1">
+                                                    <span className="w-5 shrink-0" />
+                                                    <ItemThumb item={variant.representative} />
+                                                    <div className="min-w-0">
+                                                        <p className="text-xs font-mono text-slate-300 truncate">
+                                                            {floatLabel}
+                                                        </p>
+                                                        <p className="text-[10px] text-slate-600">
+                                                            {variant.qty} in stack
+                                                        </p>
+                                                    </div>
+                                                </div>
+
+                                                {renderDataCells(variant, { variant: true })}
+
+                                                <GroupQtyInput
+                                                    selectedQty={vSelected}
+                                                    maxQty={vMax}
+                                                    onCommit={(n) =>
+                                                        setFloatVariantSelectedQty(lineGroup, variant, n)
+                                                    }
+                                                />
+
+                                                <div className="flex justify-end">
+                                                    {renderSelectBtn(
+                                                        vSel,
+                                                        () => toggleFloatVariantCheckbox(lineGroup, variant),
+                                                        vMax === 0,
+                                                        transferMode === 'to'
+                                                            ? vMax === 0
+                                                                ? lineGroup.qty <= 1
+                                                                    ? 'Only one copy in inventory for this skin'
+                                                                    : 'Another copy of this skin must stay in inventory'
+                                                                : `Select ${vMax} of ${variant.qty} at this float (keep 1 of this skin in inventory)`
+                                                            : `Select all ${variant.qty} at this float`
+                                                    )}
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                            </React.Fragment>
                         );
                     })
                 )}
@@ -1317,7 +1479,7 @@ const RatatoskrTransfer = () => {
                                     if (entry.group) {
                                         setGroupSelectedQty(entry.group, 0);
                                     } else {
-                                        setSelectedCasketItems((prev) =>
+                                        setSelectedIds((prev) =>
                                             prev.filter((id) => String(id) !== String(entry.key))
                                         );
                                     }
@@ -1360,7 +1522,7 @@ const RatatoskrTransfer = () => {
                             onClick={selectOnePerSkinForArbitrage}
                             disabled={allCasketLoading || isMoving}
                             className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium border border-bifrost-cyan/30 bg-bifrost-cyan/10 text-bifrost-cyan hover:bg-bifrost-cyan/20 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-                            title="Pick one copy of every skin from all storage units and move them to your inventory so price websites can see your items"
+                            title="Pick one copy of every skin (name and wear) from all storage units and move them to your inventory so price websites can see your items"
                         >
                             <Layers size={14} className="shrink-0" />
                             Move one of each to inventory
