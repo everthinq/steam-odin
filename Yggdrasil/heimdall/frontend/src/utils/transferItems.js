@@ -134,6 +134,24 @@ export const filterItemsByQuery = (items, query) => {
     return items.filter((item) => matchesSearchQuery(itemSearchFields(item), query));
 };
 
+/** Selectable count while keeping one copy in the source (inventory or storage). */
+export const getGroupReserveOneQty = (group) => Math.max(0, (group?.qty ?? 0) - 1);
+
+/** Unique skin line for arbitrage sampling (name + wear). */
+export const getItemSkinKey = (item) =>
+    `${item?.item_name || 'Unknown'}\0${item?.item_wear_name || ''}`;
+
+/** One item_id per skin line from a flat item list. */
+export const pickOneItemIdPerSkin = (items) => {
+    const byKey = new Map();
+    for (const item of items) {
+        if (item?.item_moveable === false || item?.def_index === 1201) continue;
+        const key = getItemSkinKey(item);
+        if (!byKey.has(key)) byKey.set(key, item.item_id);
+    }
+    return Array.from(byKey.values());
+};
+
 export const groupItemsByCasket = (itemIds, itemsWithStorage) => {
     const byCasket = new Map();
     for (const id of itemIds) {

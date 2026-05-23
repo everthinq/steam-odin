@@ -29,6 +29,8 @@ import {
     filterItemsByQuery,
     groupItemsByCasket,
     matchesSearchQuery,
+    getGroupReserveOneQty,
+    pickOneItemIdPerSkin,
 } from '../../utils/transferItems';
 
 const STORAGE_CAPACITY = 1000;
@@ -112,6 +114,56 @@ const CollapsibleSection = ({ title, icon: Icon, open, onToggle, summary, header
         {open && <div className="px-3 pb-3 border-t border-white/5">{children}</div>}
     </div>
 );
+
+const PricingSampleReport = ({ report, onDismiss }) => {
+    if (!report?.items?.length) return null;
+
+    const sorted = [...report.items].sort((a, b) =>
+        (a.item_name || '').localeCompare(b.item_name || '')
+    );
+
+    return (
+        <div className="mb-6 rounded-2xl border border-bifrost-cyan/25 bg-gradient-to-b from-bifrost-cyan/10 to-transparent overflow-hidden">
+            <div className="flex items-start justify-between gap-3 px-4 py-3 border-b border-white/10 bg-black/20">
+                <div className="min-w-0">
+                    <h3 className="text-base font-semibold text-white">Now in your inventory</h3>
+                    <p className="text-xs text-slate-400 mt-1 leading-relaxed">
+                        {sorted.length} different skin{sorted.length === 1 ? '' : 's'} — we moved{' '}
+                        <span className="text-bifrost-cyan">one of each</span> from storage so price
+                        sites can see your full collection.
+                    </p>
+                </div>
+                <button
+                    type="button"
+                    onClick={onDismiss}
+                    className="shrink-0 p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 transition-colors"
+                    aria-label="Dismiss list"
+                >
+                    <X size={18} />
+                </button>
+            </div>
+            <ul className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-2 p-3 max-h-80 overflow-y-auto custom-scrollbar">
+                {sorted.map((item) => (
+                    <li
+                        key={item.item_id}
+                        className="flex items-center gap-2.5 p-2.5 rounded-xl border border-white/5 bg-odin-blue/40 hover:bg-odin-blue/60 transition-colors"
+                    >
+                        <ItemThumb item={item.representative || item} />
+                        <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-1 min-w-0">
+                                <span className="text-sm text-white truncate">{item.item_name}</span>
+                                <SteamMarketLink itemName={item.item_name} />
+                            </div>
+                            {item.item_wear_name && (
+                                <p className="text-[11px] text-slate-500 truncate">{item.item_wear_name}</p>
+                            )}
+                        </div>
+                    </li>
+                ))}
+            </ul>
+        </div>
+    );
+};
 
 const ItemThumb = ({ item }) => {
     const [failed, setFailed] = useState(false);
@@ -276,6 +328,9 @@ const RatatoskrTransfer = () => {
     const [selectedInvItems, setSelectedInvItems] = useState([]);
     const [selectedCasketItems, setSelectedCasketItems] = useState([]);
     const [successMsg, setSuccessMsg] = useState(null);
+    const [pricingSampleReport, setPricingSampleReport] = useState(null);
+    const [pricingSampleQueued, setPricingSampleQueued] = useState(false);
+    const pricingSampleMoveRef = useRef(null);
     const [moveProgress, setMoveProgress] = useState(null);
     const [moveError, setMoveError] = useState(null);
     const [moveDelayMs, setMoveDelayMs] = useState(400);
@@ -334,7 +389,6 @@ const RatatoskrTransfer = () => {
     }, [steamid]);
 
     useEffect(() => {
-        setSelectedCasketItems([]);
         if (transferMode !== 'from') {
             setCasketItems([]);
             return;
@@ -479,10 +533,13 @@ const RatatoskrTransfer = () => {
                     }
                 })
             );
-            setAllCasketItems(chunks.flat());
+            const flat = chunks.flat();
+            setAllCasketItems(flat);
             setAllCasketLoaded(true);
+            return flat;
         } catch (err) {
             console.error(err);
+            return [];
         } finally {
             setAllCasketLoading(false);
         }
@@ -539,6 +596,8 @@ const RatatoskrTransfer = () => {
         setAllStorageSelected(false);
         setSelectedInvItems([]);
         setSelectedCasketItems([]);
+        setPricingSampleQueued(false);
+        pricingSampleMoveRef.current = null;
         setCasketItems([]);
         invalidateAllStorageCache();
         setItemSearch('');
@@ -633,6 +692,8 @@ const RatatoskrTransfer = () => {
         setLoading(true);
         setMoveError(null);
         setSuccessMsg(null);
+        setPricingSampleReport(null);
+        setPricingSampleQueued(false);
         setMoveProgress({ running: true, done: 0, failed: 0, total: itemsToMove.length, pending: itemsToMove.length });
 
         try {
@@ -667,11 +728,22 @@ const RatatoskrTransfer = () => {
                 totalFailed = status.failed || 0;
             }
 
+            const sampleItems = pricingSampleMoveRef.current;
+
             if (totalFailed > 0) {
                 setMoveError(`${totalDone} moved, ${totalFailed} failed. Check console for details.`);
+                pricingSampleMoveRef.current = null;
             } else {
-                setSuccessMsg(`Moved ${totalDone} items successfully!`);
-                setTimeout(() => setSuccessMsg(null), 5000);
+                if (sampleItems?.length) {
+                    setPricingSampleReport({ items: sampleItems });
+                    setSuccessMsg(
+                        `Moved ${totalDone} skin${totalDone === 1 ? '' : 's'} to your inventory — see the list below.`
+                    );
+                    pricingSampleMoveRef.current = null;
+                } else {
+                    setSuccessMsg(`Moved ${totalDone} items successfully!`);
+                    setTimeout(() => setSuccessMsg(null), 5000);
+                }
             }
 
             setSelectedInvItems([]);
@@ -812,40 +884,116 @@ const RatatoskrTransfer = () => {
     const getGroupSelectedQty = (group) =>
         group.item_ids.filter(id => selectedIds.includes(id)).length;
 
+    /** Full qty when withdrawing from storage; keep 1 in inventory when depositing (To). */
+    const getMaxSelectableQty = (group) =>
+        transferMode === 'to' ? getGroupReserveOneQty(group) : group.qty;
+
     const setGroupSelectedQty = (group, qty) => {
-        const n = Math.max(0, Math.min(group.qty, Number.isFinite(qty) ? qty : 0));
-        setSelectedIds(prev => {
-            const without = prev.filter(id => !group.item_ids.includes(id));
+        const cap = getMaxSelectableQty(group);
+        const n = Math.max(0, Math.min(cap, Number.isFinite(qty) ? qty : 0));
+        setSelectedIds((prev) => {
+            const without = prev.filter((id) => !group.item_ids.includes(id));
             return [...without, ...group.item_ids.slice(0, n)];
         });
     };
 
     const toggleGroupCheckbox = (group) => {
         const current = getGroupSelectedQty(group);
-        setGroupSelectedQty(group, current >= group.qty ? 0 : group.qty);
+        const target = getMaxSelectableQty(group);
+        if (target === 0) return;
+        setGroupSelectedQty(group, current >= target ? 0 : target);
     };
 
     const groupSelectionState = (group) => {
         const selectedCount = getGroupSelectedQty(group);
-        if (selectedCount === 0) return 'none';
-        if (selectedCount === group.qty) return 'all';
+        const target = getMaxSelectableQty(group);
+        if (selectedCount === 0 || target === 0) return 'none';
+        if (selectedCount >= target) return 'all';
         return 'partial';
     };
 
-    const queueEntries = useMemo(
-        () =>
-            sortedGroupedItems
-                .map((group) => ({
-                    key: group.key,
-                    item_name: group.item_name,
-                    representative: group.representative,
-                    storageName: group.storage_unit_name,
-                    group,
-                    queueQty: group.item_ids.filter((id) => selectedIds.includes(id)).length,
-                }))
-                .filter((e) => e.queueQty > 0),
-        [sortedGroupedItems, selectedIds]
-    );
+    const selectOnePerSkinForArbitrage = async () => {
+        setMoveError(null);
+        setSuccessMsg(null);
+        setTransferMode('from');
+        setAllStorageSelected(true);
+        setSelectedCasketIds([]);
+        setSelectedInvItems([]);
+
+        let items = allCasketItems;
+        if (!allCasketLoaded || items.length === 0) {
+            items = await fetchAllStorageContents();
+        }
+
+        const ids = pickOneItemIdPerSkin(items);
+        if (ids.length === 0) {
+            setMoveError('No movable items found in storage units.');
+            return;
+        }
+
+        const idSet = new Set(ids);
+        pricingSampleMoveRef.current = items
+            .filter((item) => idSet.has(item.item_id))
+            .map((item) => ({
+                item_id: item.item_id,
+                item_name: item.item_name,
+                item_wear_name: item.item_wear_name,
+                representative: item,
+            }));
+
+        setSelectedCasketItems(ids);
+        setQueueOpen(true);
+        setPricingSampleQueued(true);
+        setPricingSampleReport(null);
+        setSuccessMsg(null);
+    };
+
+    const queueEntries = useMemo(() => {
+        const fromGroups = sortedGroupedItems
+            .map((group) => ({
+                key: group.key,
+                item_name: group.item_name,
+                representative: group.representative,
+                storageName: group.storage_unit_name,
+                group,
+                queueQty: group.item_ids.filter((id) => selectedIds.includes(id)).length,
+            }))
+            .filter((e) => e.queueQty > 0);
+
+        if (fromGroups.length > 0 || selectedIds.length === 0) {
+            return fromGroups;
+        }
+
+        const pool =
+            allCasketItems.length > 0
+                ? allCasketItems
+                : casketItems.length > 0
+                  ? casketItems
+                  : [];
+
+        return selectedIds
+            .map((id) => {
+                const item = pool.find((i) => i.item_id === id);
+                if (!item) {
+                    return {
+                        key: String(id),
+                        item_name: 'Loading…',
+                        representative: null,
+                        storageName: '',
+                        group: null,
+                        queueQty: 1,
+                    };
+                }
+                return {
+                    key: String(id),
+                    item_name: item.item_name,
+                    representative: item,
+                    storageName: item.storage_unit_name || '',
+                    group: null,
+                    queueQty: 1,
+                };
+            });
+    }, [sortedGroupedItems, selectedIds, allCasketItems, casketItems]);
 
     const slotsLeft =
         primarySelectedCasket && transferMode === 'to'
@@ -1007,7 +1155,16 @@ const RatatoskrTransfer = () => {
                         <ArrowUpDown size={12} className="opacity-50" />
                     )}
                 </button>
-                <span className="text-right">Select</span>
+                <span
+                    className="text-right"
+                    title={
+                        transferMode === 'to'
+                            ? 'Select all but one (keeps 1 in inventory for arbitrage)'
+                            : 'Select all items in this row'
+                    }
+                >
+                    {transferMode === 'to' ? 'Select (−1)' : 'Select'}
+                </span>
             </div>
 
             <div className="flex-1 overflow-y-auto custom-scrollbar">
@@ -1076,7 +1233,7 @@ const RatatoskrTransfer = () => {
 
                                 <GroupQtyInput
                                     selectedQty={selectedQty}
-                                    maxQty={group.qty}
+                                    maxQty={getMaxSelectableQty(group)}
                                     onCommit={(n) => setGroupSelectedQty(group, n)}
                                 />
 
@@ -1084,7 +1241,15 @@ const RatatoskrTransfer = () => {
                                     <button
                                         type="button"
                                         onClick={() => toggleGroupCheckbox(group)}
-                                        className={`p-1 rounded border transition-colors ${sel === 'all'
+                                        disabled={getMaxSelectableQty(group) === 0}
+                                        title={
+                                            transferMode === 'to'
+                                                ? getMaxSelectableQty(group) === 0
+                                                    ? 'Only one copy in inventory'
+                                                    : `Select ${getMaxSelectableQty(group)} of ${group.qty} (keep 1 in inventory)`
+                                                : `Select all ${group.qty}`
+                                        }
+                                        className={`p-1 rounded border transition-colors disabled:opacity-30 disabled:cursor-not-allowed ${sel === 'all'
                                             ? 'bg-emerald-600/30 border-emerald-500/50 text-emerald-400'
                                             : sel === 'partial'
                                                 ? 'bg-amber-600/20 border-amber-500/40 text-amber-400'
@@ -1148,7 +1313,15 @@ const RatatoskrTransfer = () => {
                                 entries={queueEntries}
                                 totalItems={selectedIds.length}
                                 onClearAll={clearQueue}
-                                onRemoveEntry={(entry) => setGroupSelectedQty(entry.group, 0)}
+                                onRemoveEntry={(entry) => {
+                                    if (entry.group) {
+                                        setGroupSelectedQty(entry.group, 0);
+                                    } else {
+                                        setSelectedCasketItems((prev) =>
+                                            prev.filter((id) => String(id) !== String(entry.key))
+                                        );
+                                    }
+                                }}
                                 onMove={handleMove}
                                 isMoving={isMoving}
                                 moveProgress={moveProgress}
@@ -1181,14 +1354,26 @@ const RatatoskrTransfer = () => {
                         <ArrowDown size={16} strokeWidth={2} className="shrink-0" />
                         From
                     </button>
+                    {transferMode === 'from' && allStorageTotal > 0 && (
+                        <button
+                            type="button"
+                            onClick={selectOnePerSkinForArbitrage}
+                            disabled={allCasketLoading || isMoving}
+                            className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium border border-bifrost-cyan/30 bg-bifrost-cyan/10 text-bifrost-cyan hover:bg-bifrost-cyan/20 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                            title="Pick one copy of every skin from all storage units and move them to your inventory so price websites can see your items"
+                        >
+                            <Layers size={14} className="shrink-0" />
+                            Move one of each to inventory
+                        </button>
+                    )}
                 </div>
             </div>
 
             {transferMode && (
                 <p className="text-xs text-slate-500 -mt-4 mb-4">
                     {transferMode === 'to'
-                        ? 'Showing storage units with room (0–999 items)'
-                        : 'Showing storage units with items (1–1,000 items)'}
+                        ? 'Showing storage units with room (0–999 items). Row select keeps 1 copy in your inventory.'
+                        : 'Showing storage units with items (1–1,000 items).'}
                 </p>
             )}
 
@@ -1212,6 +1397,41 @@ const RatatoskrTransfer = () => {
                     {successMsg}
                 </div>
             )}
+
+            {pricingSampleQueued && selectedIds.length > 0 && transferMode === 'from' && (
+                <div className="mb-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 px-4 py-3 rounded-xl border border-amber-500/40 bg-amber-500/10">
+                    <p className="text-sm text-amber-100">
+                        <span className="font-semibold text-white tabular-nums">{selectedIds.length}</span>{' '}
+                        skins queued — one of each will go to your inventory.
+                    </p>
+                    <div className="flex items-center gap-2 shrink-0">
+                        <button
+                            type="button"
+                            onClick={() => setQueueOpen(true)}
+                            className="px-3 py-2 rounded-lg text-xs font-medium border border-white/15 text-slate-200 hover:bg-white/5 transition-colors"
+                        >
+                            View list
+                        </button>
+                        <button
+                            type="button"
+                            onClick={handleMove}
+                            disabled={isMoving || !hasStorageSelection}
+                            className="px-4 py-2 rounded-lg text-sm font-semibold bg-gradient-to-r from-amber-600 to-amber-700 hover:from-amber-500 hover:to-amber-600 text-white shadow-lg shadow-amber-900/20 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+                        >
+                            {isMoving ? 'Moving…' : `Move now (${selectedIds.length})`}
+                        </button>
+                    </div>
+                </div>
+            )}
+
+            <PricingSampleReport
+                report={pricingSampleReport}
+                onDismiss={() => {
+                    setPricingSampleReport(null);
+                    setSuccessMsg(null);
+                    setPricingSampleQueued(false);
+                }}
+            />
 
             <CollapsibleSection
                 title="STORAGE UNITS"
