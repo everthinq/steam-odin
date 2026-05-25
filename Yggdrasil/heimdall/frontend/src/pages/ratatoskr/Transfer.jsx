@@ -33,6 +33,8 @@ import {
     getVariantMaxSelectableToStorage,
     pickOneItemIdPerSkin,
     formatItemFloat,
+    formatTradeHoldLabel,
+    itemsHaveTradeHold,
 } from '../../utils/transferItems';
 
 const STORAGE_CAPACITY = 1000;
@@ -47,24 +49,21 @@ const getItemCollection = (item) => {
     return name || NO_COLLECTION_LABEL;
 };
 
-const formatTradeHold = (item) => {
-    if (!item.trade_unlock) return '—';
-    const unlock = new Date(item.trade_unlock);
-    if (unlock <= new Date()) return '—';
-    const days = Math.ceil((unlock - new Date()) / (1000 * 60 * 60 * 24));
-    return `${days}d`;
-};
+const TRADE_HOLD_ROW_IDLE =
+    'border-l-2 border-orange-500/50 bg-orange-950/30 hover:bg-orange-950/40';
+const TRADE_HOLD_ROW_SELECTED = 'border-l-2 border-orange-400 bg-orange-500/15';
+const TRADE_HOLD_VARIANT_IDLE =
+    'border-l-2 border-orange-500/35 bg-orange-950/20';
+const TRADE_HOLD_VARIANT_SELECTED = 'border-l-2 border-orange-400/80 bg-orange-500/10';
 
-const groupTradeHold = (items) => {
-    let maxDays = 0;
-    for (const item of items) {
-        if (!item.trade_unlock) continue;
-        const unlock = new Date(item.trade_unlock);
-        if (unlock <= new Date()) continue;
-        const days = Math.ceil((unlock - new Date()) / (1000 * 60 * 60 * 24));
-        maxDays = Math.max(maxDays, days);
+const transferRowSurfaceClass = (onTradeHold, selected, { variant = false } = {}) => {
+    if (!onTradeHold) {
+        return selected !== 'none' ? 'bg-amber-500/10' : 'hover:bg-white/5';
     }
-    return maxDays > 0 ? `${maxDays}d` : '—';
+    if (selected !== 'none') {
+        return variant ? TRADE_HOLD_VARIANT_SELECTED : TRADE_HOLD_ROW_SELECTED;
+    }
+    return variant ? TRADE_HOLD_VARIANT_IDLE : TRADE_HOLD_ROW_IDLE;
 };
 
 const PickCheckbox = ({ checked, partial = false, onChange, label }) => (
@@ -776,7 +775,7 @@ const RatatoskrTransfer = () => {
                       ? `${group.floatVariants.length} floats`
                       : '',
             collection: group.item_collection || '',
-            tradehold: groupTradeHold(group.items),
+            tradehold: formatTradeHoldLabel(group.items),
             qty: group.qty,
         }));
         const withStorage = showStorageColumn;
@@ -1255,6 +1254,27 @@ const RatatoskrTransfer = () => {
                             </button>
                         );
 
+                        const renderTradeHoldCell = (rowGroup) => {
+                            const onHold =
+                                rowGroup.onTradeHold ?? itemsHaveTradeHold(rowGroup.items);
+                            const label = formatTradeHoldLabel(rowGroup.items);
+                            return (
+                                <span
+                                    className={`text-xs tabular-nums ${onHold
+                                        ? 'text-orange-300 font-semibold'
+                                        : 'text-slate-400'
+                                        }`}
+                                    title={
+                                        onHold
+                                            ? `Trade hold — unlocks in ${label}`
+                                            : 'No trade hold'
+                                    }
+                                >
+                                    {label}
+                                </span>
+                            );
+                        };
+
                         const renderDataCells = (rowGroup, { variant = false } = {}) => (
                             <>
                                 {showStorageColumn && (
@@ -1287,16 +1307,14 @@ const RatatoskrTransfer = () => {
                                     {rowGroup.item_collection || '—'}
                                 </span>
 
-                                <span className="text-xs text-slate-400">
-                                    {groupTradeHold(rowGroup.items)}
-                                </span>
+                                {renderTradeHoldCell(rowGroup)}
                             </>
                         );
 
                         return (
                             <React.Fragment key={lineGroup.key}>
                                 <div
-                                    className={`grid ${tableGridCols} gap-2 items-center px-4 py-2 border-b border-white/5 transition-colors ${sel !== 'none' ? 'bg-amber-500/10' : 'hover:bg-white/5'}`}
+                                    className={`grid ${tableGridCols} gap-2 items-center px-4 py-2 border-b border-white/5 transition-colors ${transferRowSurfaceClass(lineGroup.onTradeHold, sel)}`}
                                 >
                                     <div className="flex items-center gap-1.5 min-w-0">
                                         {lineGroup.hasMultipleFloats ? (
@@ -1322,10 +1340,17 @@ const RatatoskrTransfer = () => {
                                         <ItemThumb item={lineGroup.representative} />
                                         <div className="min-w-0">
                                             <div className="flex items-center gap-1.5 min-w-0">
-                                                <span className="text-sm text-white truncate min-w-0">
+                                                <span
+                                                    className={`text-sm truncate min-w-0 ${lineGroup.onTradeHold ? 'text-orange-100' : 'text-white'}`}
+                                                >
                                                     {lineGroup.item_name}
                                                 </span>
                                                 <SteamMarketLink itemName={lineGroup.item_name} />
+                                                {lineGroup.onTradeHold && (
+                                                    <span className="shrink-0 px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wide bg-orange-500/25 text-orange-300 border border-orange-500/30">
+                                                        {formatTradeHoldLabel(lineGroup.items)}
+                                                    </span>
+                                                )}
                                             </div>
                                             {lineGroup.item_wear_name && (
                                                 <p className="text-[11px] text-slate-500 truncate">
@@ -1385,17 +1410,24 @@ const RatatoskrTransfer = () => {
                                         return (
                                             <div
                                                 key={variant.key}
-                                                className={`grid ${tableGridCols} gap-2 items-center pl-10 pr-4 py-2 border-b border-white/5 bg-black/15 ${vSel !== 'none' ? 'bg-amber-500/5' : ''}`}
+                                                className={`grid ${tableGridCols} gap-2 items-center pl-10 pr-4 py-2 border-b border-white/5 ${transferRowSurfaceClass(variant.onTradeHold, vSel, { variant: true })}`}
                                             >
                                                 <div className="flex items-center gap-2 min-w-0 col-span-1">
                                                     <span className="w-5 shrink-0" />
                                                     <ItemThumb item={variant.representative} />
                                                     <div className="min-w-0">
-                                                        <p className="text-xs font-mono text-slate-300 truncate">
+                                                        <p
+                                                            className={`text-xs font-mono truncate ${variant.onTradeHold ? 'text-orange-200' : 'text-slate-300'}`}
+                                                        >
                                                             {floatLabel}
                                                         </p>
                                                         <p className="text-[10px] text-slate-600">
                                                             {variant.qty} in stack
+                                                            {variant.onTradeHold && (
+                                                                <span className="text-orange-400/90 ml-1">
+                                                                    · trade hold
+                                                                </span>
+                                                            )}
                                                         </p>
                                                     </div>
                                                 </div>

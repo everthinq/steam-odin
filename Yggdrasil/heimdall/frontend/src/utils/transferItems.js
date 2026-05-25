@@ -98,6 +98,37 @@ export const getItemSkinLineKey = (item) =>
 /** @deprecated alias */
 export const getItemSkinKey = (item) => getItemSkinLineKey(item);
 
+export const isItemOnTradeHold = (item) => {
+    if (!item?.trade_unlock) return false;
+    return new Date(item.trade_unlock) > new Date();
+};
+
+export const getTradeHoldDaysForItems = (items) => {
+    let maxDays = 0;
+    for (const item of items || []) {
+        if (!isItemOnTradeHold(item)) continue;
+        const unlock = new Date(item.trade_unlock);
+        const days = Math.ceil((unlock - new Date()) / (1000 * 60 * 60 * 24));
+        maxDays = Math.max(maxDays, days);
+    }
+    return maxDays;
+};
+
+export const itemsHaveTradeHold = (items) => getTradeHoldDaysForItems(items) > 0;
+
+export const formatTradeHoldLabel = (items) => {
+    const days = getTradeHoldDaysForItems(items);
+    return days > 0 ? `${days}d` : '—';
+};
+
+/** Tradeable floats first; stacks on trade hold sink to the bottom. */
+export const compareFloatVariantsWithTradeHoldLast = (a, b) => {
+    const aHold = itemsHaveTradeHold(a.items) ? 1 : 0;
+    const bHold = itemsHaveTradeHold(b.items) ? 1 : 0;
+    if (aHold !== bHold) return aHold - bHold;
+    return (a.item_paint_wear ?? 0) - (b.item_paint_wear ?? 0);
+};
+
 /**
  * Group by name + wear (and storage when requested). Distinct floats are nested
  * under `floatVariants` for the expandable picker in the transfer table.
@@ -153,18 +184,21 @@ export const groupItemsByName = (items, { includeStorage = false } = {}) => {
     return Array.from(map.values())
         .map((line) => {
             const floatVariants = Array.from(line.floatVariantMap.values())
-                .map((v) => ({ ...v, qty: v.item_ids.length }))
-                .sort((a, b) => {
-                    const fa = a.item_paint_wear ?? 0;
-                    const fb = b.item_paint_wear ?? 0;
-                    return fa - fb;
-                });
+                .map((v) => ({
+                    ...v,
+                    qty: v.item_ids.length,
+                    onTradeHold: itemsHaveTradeHold(v.items),
+                    tradeHoldDays: getTradeHoldDaysForItems(v.items),
+                }))
+                .sort(compareFloatVariantsWithTradeHoldLast);
             const { floatVariantMap, ...rest } = line;
             return {
                 ...rest,
                 qty: line.item_ids.length,
                 floatVariants,
                 hasMultipleFloats: floatVariants.length > 1,
+                onTradeHold: itemsHaveTradeHold(line.items),
+                tradeHoldDays: getTradeHoldDaysForItems(line.items),
             };
         })
         .sort((a, b) => {
