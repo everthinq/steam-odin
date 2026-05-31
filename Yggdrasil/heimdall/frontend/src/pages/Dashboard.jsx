@@ -1,8 +1,16 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Plus, RefreshCw, Search, Trash2, Settings, Eye, EyeOff } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import AccountCard from '../components/AccountCard';
 import GlobalConfirmationsModal from '../components/GlobalConfirmationsModal';
+import {
+    loadDashboardLayout,
+    saveDashboardLayout,
+    mergeLayoutWithAccounts,
+    sortAccountsForDashboard,
+    toggleAccountPin,
+    reorderAccountList,
+} from '../utils/accountDashboardLayout';
 
 const Dashboard = () => {
     const [accounts, setAccounts] = useState([]);
@@ -11,6 +19,13 @@ const Dashboard = () => {
     const [searchQuery, setSearchQuery] = useState('');
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
     const [isVigilMode, setIsVigilMode] = useState(false);
+    const [layout, setLayout] = useState(() => loadDashboardLayout());
+    const [dragSteamId, setDragSteamId] = useState(null);
+
+    const persistLayout = (next) => {
+        setLayout(next);
+        saveDashboardLayout(next);
+    };
 
     const fetchAccounts = async () => {
         try {
@@ -57,10 +72,64 @@ const Dashboard = () => {
         return () => clearInterval(interval);
     }, []);
 
-    // Filter accounts based on search query
-    const filteredAccounts = accounts.filter(account =>
+    const accountIdsKey = useMemo(
+        () => accounts.map((a) => String(a.steamid)).sort().join(','),
+        [accounts]
+    );
+
+    useEffect(() => {
+        if (!accountIdsKey) return;
+        setLayout((prev) => {
+            const merged = mergeLayoutWithAccounts(prev, accounts);
+            const sameOrder =
+                merged.order.length === prev.order.length &&
+                merged.order.every((id, i) => id === prev.order[i]);
+            const samePinned =
+                merged.pinned.length === prev.pinned.length &&
+                merged.pinned.every((id, i) => id === prev.pinned[i]);
+            if (sameOrder && samePinned) return prev;
+            saveDashboardLayout(merged);
+            return merged;
+        });
+    }, [accountIdsKey, accounts]);
+
+    const filteredAccounts = accounts.filter((account) =>
         account.account_name.toLowerCase().includes(searchQuery.toLowerCase())
     );
+
+    const displayAccounts = useMemo(
+        () => sortAccountsForDashboard(filteredAccounts, layout),
+        [filteredAccounts, layout]
+    );
+
+    const canReorder = !searchQuery.trim();
+
+    const handleTogglePin = (steamid) => {
+        persistLayout(toggleAccountPin(layout, steamid));
+    };
+
+    const handleDragStart = (steamid) => {
+        if (!canReorder) return;
+        setDragSteamId(String(steamid));
+    };
+
+    const handleDragEnd = () => {
+        setDragSteamId(null);
+    };
+
+    const handleDropOn = (targetSteamId) => {
+        if (!canReorder || !dragSteamId || dragSteamId === String(targetSteamId)) return;
+
+        const list = [...displayAccounts];
+        const from = list.findIndex((a) => String(a.steamid) === dragSteamId);
+        const to = list.findIndex((a) => String(a.steamid) === String(targetSteamId));
+        if (from < 0 || to < 0) return;
+
+        const [moved] = list.splice(from, 1);
+        list.splice(to, 0, moved);
+        persistLayout(reorderAccountList(layout, list));
+        setDragSteamId(null);
+    };
 
     return (
         <div className="min-h-screen text-white p-4 md:p-8">
@@ -120,7 +189,7 @@ const Dashboard = () => {
                 </header>
 
                 {accounts.length > 0 && (
-                    <div className="mb-8">
+                    <div className="mb-8 space-y-2">
                         <div className="relative max-w-md">
                             <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 text-slate-400" size={20} />
                             <input
@@ -136,6 +205,11 @@ const Dashboard = () => {
                                 </span>
                             )}
                         </div>
+                        {canReorder && (
+                            <p className="text-xs text-slate-500">
+                                Drag cards to reorder · Pin to keep accounts at the top
+                            </p>
+                        )}
                     </div>
                 )}
 
@@ -181,9 +255,37 @@ const Dashboard = () => {
                             </div>
                         ) : (
                             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 md:gap-6">
-                                {filteredAccounts.map((account) => (
-                                    <AccountCard key={account.steamid} account={account} onDelete={fetchAccounts} />
-                                ))}
+                                {displayAccounts.map((account) => {
+                                    const sid = String(account.steamid);
+                                    const isPinned = layout.pinned.includes(sid);
+                                    const isDragging = dragSteamId === sid;
+
+                                    return (
+                                        <div
+                                            key={account.steamid}
+                                            draggable={canReorder}
+                                            onDragStart={() => handleDragStart(account.steamid)}
+                                            onDragEnd={handleDragEnd}
+                                            onDragOver={(e) => {
+                                                if (!canReorder) return;
+                                                e.preventDefault();
+                                            }}
+                                            onDrop={(e) => {
+                                                e.preventDefault();
+                                                handleDropOn(account.steamid);
+                                            }}
+                                            className={`transition-opacity ${isDragging ? 'opacity-40' : ''}`}
+                                        >
+                                            <AccountCard
+                                                account={account}
+                                                onDelete={fetchAccounts}
+                                                isPinned={isPinned}
+                                                onTogglePin={() => handleTogglePin(account.steamid)}
+                                                draggable={canReorder}
+                                            />
+                                        </div>
+                                    );
+                                })}
                             </div>
                         )}
                     </>
