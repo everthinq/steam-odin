@@ -9,6 +9,7 @@ import {
     Filter,
     Download,
     Check,
+    CheckSquare,
     Minus,
     ChevronDown,
     Pencil,
@@ -960,6 +961,18 @@ const RatatoskrTransfer = () => {
         });
     };
 
+    /** Apply per-row Select (−1) / Select to every visible skin line in one action. */
+    const selectAllVisibleItems = () => {
+        const ids = [];
+        for (const lineGroup of sortedGroupedItems) {
+            const cap = getMaxSelectableQty(lineGroup);
+            if (cap > 0) {
+                ids.push(...lineGroup.item_ids.slice(0, cap));
+            }
+        }
+        setSelectedIds(ids);
+    };
+
     const selectOnePerSkinForArbitrage = async () => {
         setMoveError(null);
         setSuccessMsg(null);
@@ -1160,6 +1173,22 @@ const RatatoskrTransfer = () => {
                             {slotsLeft} LEFT
                         </span>
                     )}
+                    <button
+                        type="button"
+                        onClick={selectAllVisibleItems}
+                        disabled={!transferMode || sortedGroupedItems.length === 0}
+                        className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-white/10 text-slate-300 hover:bg-white/5 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed transition-colors whitespace-nowrap"
+                        title={
+                            transferMode === 'to'
+                                ? 'Select all visible items but keep 1 copy of each skin in your inventory (same as Select −1 on every row)'
+                                : transferMode === 'from'
+                                  ? 'Select all visible items from storage'
+                                  : 'Choose To or From first'
+                        }
+                    >
+                        <CheckSquare size={14} />
+                        {transferMode === 'to' ? 'Select all (−1)' : 'Select all'}
+                    </button>
                     <button
                         type="button"
                         onClick={() => setQueueOpen(true)}
