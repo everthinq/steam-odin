@@ -54,12 +54,14 @@ class ConfirmationScheduler:
         print(f"[{datetime.now().strftime('%H:%M:%S')}] [SCHEDULER] Checking confirmations for all accounts...")
         accounts = self.steam_service.get_all_accounts_data()
         
-        for account in accounts:
+        for i, account in enumerate(accounts):
             steamid = account['steamid']
             try:
                 self._process_account(steamid, settings)
             except Exception as e:
                 print(f"[SCHEDULER] Failed to process {steamid}: {e}")
+            if i < len(accounts) - 1:
+                time.sleep(2)
 
     def _process_account(self, steamid, settings):
         # 1. Fetch confirmations

@@ -352,6 +352,7 @@ const RatatoskrTransfer = () => {
     const [allCasketLoaded, setAllCasketLoaded] = useState(false);
     const [storageSectionOpen, setStorageSectionOpen] = useState(true);
     const filterRef = useRef(null);
+    const fetchingAllStorage = useRef(false);
 
     const fetchMoveDelay = async () => {
         try {
@@ -401,7 +402,7 @@ const RatatoskrTransfer = () => {
             return;
         }
         if (allStorageSelected || selectedCasketIds.length !== 1) {
-            if (!allCasketLoaded) fetchAllStorageContents();
+            if (!allCasketLoaded && !allCasketLoading) fetchAllStorageContents();
             return;
         }
         fetchCasketContents(selectedCasketIds[0]);
@@ -521,34 +522,37 @@ const RatatoskrTransfer = () => {
     };
 
     const fetchAllStorageContents = async () => {
+        if (fetchingAllStorage.current) return [];
+        fetchingAllStorage.current = true;
         setAllCasketLoading(true);
         try {
             const units = caskets.filter((c) => getCasketCount(c) > 0);
-            const chunks = await Promise.all(
-                units.map(async (c) => {
-                    try {
-                        const res = await fetch(`/api/ratatoskr/casket/${steamid}/${c.item_id}`);
-                        const data = await res.json();
-                        return tagCasketItems(data.items || [], c.item_id, casketDisplayName(c));
-                    } catch (err) {
-                        console.error(`Failed to load ${c.item_id}`, err);
-                        return [];
-                    }
-                })
-            );
-            const flat = chunks.flat();
-            setAllCasketItems(flat);
+            const allItems = [];
+            for (let i = 0; i < units.length; i++) {
+                const c = units[i];
+                try {
+                    const res = await fetch(`/api/ratatoskr/casket/${steamid}/${c.item_id}`);
+                    const data = await res.json();
+                    allItems.push(...tagCasketItems(data.items || [], c.item_id, casketDisplayName(c)));
+                } catch (err) {
+                    console.error(`Failed to load casket ${c.item_id}`, err);
+                }
+                if (i < units.length - 1) await new Promise((r) => setTimeout(r, 350));
+            }
+            setAllCasketItems(allItems);
             setAllCasketLoaded(true);
-            return flat;
+            return allItems;
         } catch (err) {
             console.error(err);
             return [];
         } finally {
+            fetchingAllStorage.current = false;
             setAllCasketLoading(false);
         }
     };
 
     const invalidateAllStorageCache = () => {
+        fetchingAllStorage.current = false;
         setAllCasketLoaded(false);
         setAllCasketItems([]);
     };
@@ -655,7 +659,7 @@ const RatatoskrTransfer = () => {
                         resolve(data);
                         return;
                     }
-                    setTimeout(poll, 250);
+                    setTimeout(poll, 500);
                 } catch (err) {
                     reject(err);
                 }
