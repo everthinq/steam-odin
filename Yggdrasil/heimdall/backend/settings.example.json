@@ -1,0 +1,7 @@
+{
+    "check_interval": 60,
+    "auto_check_enabled": true,
+    "auto_confirm_market": true,
+    "auto_confirm_trades": true,
+    "tradeon_token": "PASTE_YOUR_PULSE_TRADEON_BEARER_TOKEN_HERE"
+}

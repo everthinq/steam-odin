@@ -8,7 +8,12 @@ DEFAULT_SETTINGS = {
     "check_interval": 300,        # seconds
     "auto_check_enabled": False,
     "auto_confirm_market": False,
-    "auto_confirm_trades": False
+    "auto_confirm_trades": False,
+    # Bearer token for pulse.tradeon.space, used by Huginn to fetch skin prices.
+    # Grab it from the `authorization: Bearer <...>` header of any request the
+    # pulse.tradeon.space site makes (DevTools → Network). Leave empty to disable
+    # Huginn price fetching. settings.json is gitignored — keep the real token there.
+    "tradeon_token": ""
 }
 
 class SettingsManager:

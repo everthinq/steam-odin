@@ -203,3 +203,6 @@ token.txt
 # Heimdall runtime data (maFiles/ folder itself may contain README + .gitkeep)
 Yggdrasil/heimdall/backend/logs/
 Yggdrasil/heimdall/backend/cache/
+
+# Heimdall settings hold the Tradeon token — keep local, use settings.example.json as the template
+Yggdrasil/heimdall/backend/settings.json
