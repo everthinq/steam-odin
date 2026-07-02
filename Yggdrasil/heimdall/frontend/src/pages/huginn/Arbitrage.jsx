@@ -1,11 +1,18 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useDeferredValue } from 'react';
 import { Link } from 'react-router-dom';
 import { LayoutDashboard, RefreshCw, AlertTriangle, Search, ChevronDown, ArrowRight } from 'lucide-react';
 import { matchesSearchQuery } from '../../utils/transferItems';
+import SteamMarketLink from '../../components/SteamMarketLink';
+
+// Render results in capped pages — the datasets are ~17k rows and painting them all
+// at once freezes the page. Rows are sorted best-profit-first, so the first page is
+// what matters; "Load more" reveals the rest on demand.
+const PAGE_SIZE = 150;
 
 const PROFILES = [
-    { id: 'tradeon-steam', from: 'Tradeon', fromSub: 'min', to: 'Steam',   toSub: 'autobuy', fetchEndpoint: '/api/huginn/tradeon/steam', cacheEndpoint: '/api/huginn/tradeon/steam/cache' },
-    { id: 'tradeon-buff',  from: 'Tradeon', fromSub: 'min', to: 'Buff163', toSub: 'autobuy', fetchEndpoint: '/api/huginn/tradeon/buff',  cacheEndpoint: '/api/huginn/tradeon/buff/cache' },
+    { id: 'tradeon-steam',  from: 'Tradeon',  fromSub: 'min', to: 'Steam',   toSub: 'autobuy', fetchEndpoint: '/api/huginn/tradeon/steam',         cacheEndpoint: '/api/huginn/tradeon/steam/cache' },
+    { id: 'tradeon-buff',   from: 'Tradeon',  fromSub: 'min', to: 'Buff163', toSub: 'autobuy', fetchEndpoint: '/api/huginn/tradeon/buff',          cacheEndpoint: '/api/huginn/tradeon/buff/cache' },
+    { id: 'lisskins-steam', from: 'LisSkins', fromSub: 'min', to: 'Steam',   toSub: 'autobuy', fetchEndpoint: '/api/huginn/tradeon/lisskins-steam', cacheEndpoint: '/api/huginn/tradeon/lisskins-steam/cache' },
 ];
 
 const MarketBadge = ({ name, sub, dim }) => (
@@ -86,6 +93,9 @@ const HuginnArbitrage = () => {
 
     const [itemSearch, setItemSearch] = useState('');
     const [inventoryOnly, setInventoryOnly] = useState(false);
+    const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
+    // Filtering ~17k rows on every keystroke is heavy; defer it so typing stays snappy.
+    const deferredSearch = useDeferredValue(itemSearch);
 
     useEffect(() => {
         fetch('/api/huginn/scan/cache')
@@ -177,14 +187,25 @@ const HuginnArbitrage = () => {
 
     const filteredResults = useMemo(() => {
         let r = inventoryOnly ? allResults.filter(item => item.owned) : allResults;
-        if (!itemSearch.trim()) return r;
+        if (!deferredSearch.trim()) return r;
         return r.filter(item =>
             matchesSearchQuery(
                 [item.itemName?.marketHashName, item.itemName?.skinName, item.itemName?.itemTypeName],
-                itemSearch
+                deferredSearch
             )
         );
-    }, [allResults, itemSearch, inventoryOnly]);
+    }, [allResults, deferredSearch, inventoryOnly]);
+
+    // Only the first `visibleCount` rows are painted (see PAGE_SIZE note).
+    const visibleResults = useMemo(
+        () => filteredResults.slice(0, visibleCount),
+        [filteredResults, visibleCount]
+    );
+
+    // Reset the window whenever the result set changes so we start from the top.
+    useEffect(() => {
+        setVisibleCount(PAGE_SIZE);
+    }, [deferredSearch, inventoryOnly, profileId]);
 
     return (
         <div className="h-screen bg-odin-dark flex flex-col overflow-hidden">
@@ -313,7 +334,7 @@ const HuginnArbitrage = () => {
                                     placeholder="Search items (e.g. ak redline ft)"
                                     value={itemSearch}
                                     onChange={(e) => setItemSearch(e.target.value)}
-                                    className="w-full bg-black/30 border border-white/10 rounded-lg pl-8 pr-3 py-1.5 text-sm text-white focus:outline-none focus:border-amber-500/40 placeholder:text-slate-600"
+                                    className="w-full bg-black/30 border border-white/10 rounded-lg pl-8 pr-3 py-2 text-base text-white focus:outline-none focus:border-amber-500/40 placeholder:text-slate-600"
                                 />
                             </div>
                             <button
@@ -323,11 +344,12 @@ const HuginnArbitrage = () => {
                             >
                                 My Inventory
                             </button>
-                            <span className="text-xs text-slate-500 shrink-0">
-                                {filteredResults.length} of {allResults.length}
+                            <span className="text-sm text-slate-500 shrink-0">
+                                showing {Math.min(visibleCount, filteredResults.length)} of {filteredResults.length}
+                                {filteredResults.length !== allResults.length && ` (${allResults.length} total)`}
                             </span>
                         </div>
-                        <div className="shrink-0 grid grid-cols-[minmax(0,2.5fr)_60px_72px_72px_80px_80px_minmax(0,1fr)] gap-2 px-4 py-2 border-b border-white/5 text-[10px] font-bold tracking-wider text-slate-500 uppercase bg-black/20">
+                        <div className="shrink-0 grid grid-cols-[minmax(0,2.5fr)_64px_88px_88px_96px_88px_minmax(0,1fr)] gap-2 px-4 py-2 border-b border-white/5 text-[11px] font-bold tracking-wider text-slate-400 uppercase bg-black/20">
                             <span>Item</span>
                             <span className="text-right">Owned</span>
                             <span className="text-right">Buy</span>
@@ -337,16 +359,25 @@ const HuginnArbitrage = () => {
                             <span>Accounts</span>
                         </div>
                         <div className="flex-1 overflow-y-auto custom-scrollbar min-h-0">
-                            {filteredResults.map((item, idx) => {
+                            {visibleResults.map((item, idx) => {
                                 const mhn = item.itemName.marketHashName;
                                 const owned = item.owned;
                                 const hasHold = owned?.instances.some(i => i.on_trade_hold) ?? false;
-                                const accountNames = owned ? [...new Set(owned.instances.map(i => i.account_name))] : [];
+                                // Group instances per account, with a per-location breakdown for the tooltip.
+                                const accountSummary = owned
+                                    ? Object.values(owned.instances.reduce((acc, i) => {
+                                        const a = (acc[i.account_name] ||= { name: i.account_name, count: 0, locations: {} });
+                                        a.count += 1;
+                                        const loc = i.storage_unit ? `${i.location}: ${i.storage_unit}` : (i.location || 'Unknown');
+                                        a.locations[loc] = (a.locations[loc] || 0) + 1;
+                                        return acc;
+                                    }, {}))
+                                    : [];
 
                                 return (
                                     <div
                                         key={`${mhn}-${idx}`}
-                                        className="grid grid-cols-[minmax(0,2.5fr)_60px_72px_72px_80px_80px_minmax(0,1fr)] gap-2 items-center px-4 py-2.5 border-b border-white/5 hover:bg-white/[0.03] transition-colors"
+                                        className="grid grid-cols-[minmax(0,2.5fr)_64px_88px_88px_96px_88px_minmax(0,1fr)] gap-2 items-center px-4 py-2.5 border-b border-white/5 hover:bg-white/[0.03] transition-colors"
                                     >
                                         <div className="flex items-center gap-2.5 min-w-0">
                                             {item.imageUrl && (
@@ -355,29 +386,55 @@ const HuginnArbitrage = () => {
                                                     alt=""
                                                     className="w-9 h-9 object-contain shrink-0 rounded bg-black/20"
                                                     loading="lazy"
+                                                    decoding="async"
                                                     referrerPolicy="no-referrer"
                                                 />
                                             )}
                                             <div className="min-w-0">
-                                                <p className="text-sm text-white truncate" title={mhn}>{mhn}</p>
+                                                <div className="flex items-center gap-1.5 min-w-0">
+                                                    <p className="text-base text-white truncate" title={mhn}>{mhn}</p>
+                                                    <SteamMarketLink itemName={mhn} />
+                                                </div>
                                                 {hasHold && (
-                                                    <span className="text-[10px] text-orange-400">trade hold on some</span>
+                                                    <span className="text-[11px] text-orange-400">trade hold on some</span>
                                                 )}
                                             </div>
                                         </div>
 
-                                        <span className="text-sm text-right font-bold text-amber-400 tabular-nums">{owned ? owned.count : <span className="text-slate-600">—</span>}</span>
-                                        <span className="text-sm text-right text-slate-300 tabular-nums">${item.firstMarket?.price?.toFixed(2)}</span>
-                                        <span className="text-sm text-right text-slate-300 tabular-nums">${item.secondMarket?.price?.toFixed(2)}</span>
-                                        <span className={`text-sm text-right tabular-nums ${(item.profit ?? 0) <= 0 ? 'text-red-400' : 'text-emerald-400'}`}>${item.profit?.toFixed(2)}</span>
-                                        <span className={`text-sm text-right font-semibold tabular-nums ${(item.profitPercent ?? 0) <= 0 ? 'text-red-400' : 'text-emerald-400'}`}>{item.profitPercent?.toFixed(0)}%</span>
+                                        <span className="text-base text-right font-bold text-amber-400 tabular-nums">{owned ? owned.count : <span className="text-slate-600">—</span>}</span>
+                                        <span className="text-base text-right text-slate-300 tabular-nums">${item.firstMarket?.price?.toFixed(2)}</span>
+                                        <span className="text-base text-right text-slate-300 tabular-nums">${item.secondMarket?.price?.toFixed(2)}</span>
+                                        <span className={`text-base text-right tabular-nums ${(item.profit ?? 0) <= 0 ? 'text-red-400' : 'text-emerald-400'}`}>${item.profit?.toFixed(2)}</span>
+                                        <span className={`text-base text-right font-semibold tabular-nums ${(item.profitPercent ?? 0) <= 0 ? 'text-red-400' : 'text-emerald-400'}`}>{item.profitPercent?.toFixed(0)}%</span>
 
-                                        <span className="text-xs text-slate-400 truncate" title={accountNames.join(', ')}>
-                                            {accountNames.join(', ')}
-                                        </span>
+                                        <div className="flex flex-wrap gap-1">
+                                            {accountSummary.map((a) => (
+                                                <span
+                                                    key={a.name}
+                                                    title={Object.entries(a.locations).map(([l, c]) => `${l} ×${c}`).join('\n')}
+                                                    className="inline-flex items-center gap-1 rounded bg-white/5 border border-white/10 px-2 py-0.5 text-xs text-slate-300"
+                                                >
+                                                    <span className="truncate max-w-[9rem]">{a.name}</span>
+                                                    {a.count > 1 && <span className="text-amber-400 font-medium">×{a.count}</span>}
+                                                </span>
+                                            ))}
+                                        </div>
                                     </div>
                                 );
                             })}
+
+                            {visibleCount < filteredResults.length && (
+                                <div className="flex justify-center py-4">
+                                    <button
+                                        type="button"
+                                        onClick={() => setVisibleCount(c => c + PAGE_SIZE)}
+                                        className="px-4 py-2 rounded-lg bg-white/5 border border-white/10 text-sm text-slate-300 hover:text-white hover:border-white/20 transition-colors"
+                                    >
+                                        Load {Math.min(PAGE_SIZE, filteredResults.length - visibleCount)} more
+                                        <span className="text-slate-500 ml-2">({filteredResults.length - visibleCount} left)</span>
+                                    </button>
+                                </div>
+                            )}
                         </div>
                     </div>
                 ) : (

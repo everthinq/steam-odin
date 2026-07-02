@@ -1,3 +1,4 @@
+import copy
 import json
 import os
 import time
@@ -8,9 +9,14 @@ from datetime import datetime, timezone
 CACHE_PATH = os.path.join(os.path.dirname(__file__), 'cache', 'huginn_scan.json')
 TRADEON_STEAM_CACHE_PATH = os.path.join(os.path.dirname(__file__), 'cache', 'huginn_tradeon_steam.json')
 TRADEON_BUFF_CACHE_PATH  = os.path.join(os.path.dirname(__file__), 'cache', 'huginn_tradeon_buff.json')
+TRADEON_LISSKINS_STEAM_CACHE_PATH = os.path.join(os.path.dirname(__file__), 'cache', 'huginn_tradeon_lisskins_steam.json')
 
-_TRADEON_STEAM_URL = 'https://api-pulse.tradeon.space/api/table/counter-strike/TradeOnMarket/Steam/all'
-_TRADEON_BUFF_URL  = 'https://api-pulse.tradeon.space/api/table/counter-strike/TradeOnMarket/Buff/all'
+_TRADEON_STEAM_URL    = 'https://api-pulse.tradeon.space/api/table/counter-strike/TradeOnMarket/Steam/all'
+_TRADEON_BUFF_URL     = 'https://api-pulse.tradeon.space/api/table/counter-strike/TradeOnMarket/Buff/all'
+_TRADEON_LISSKINS_URL = 'https://api-pulse.tradeon.space/api/table/counter-strike/TradeOnMarket/LisSkins/all'
+
+# Steam takes ~13% on a sale, so net proceeds when selling into Steam = price * (1 - fee).
+STEAM_SALES_FEE = 0.13
 _TRADEON_STEAM_BODY = {
     "templateId": None,
     "firstMarketOptions": {
@@ -85,6 +91,11 @@ _TRADEON_STEAM_BODY = {
         "takeCount": 9999999,
     },
 }
+
+# LisSkins query: same body but secondMarket priced as "SellWithoutHold", which is the
+# LisSkins side and (unlike most second markets) comes back un-paywalled.
+_TRADEON_LISSKINS_BODY = copy.deepcopy(_TRADEON_STEAM_BODY)
+_TRADEON_LISSKINS_BODY["secondMarketOptions"]["secondMarketPriceType"] = "SellWithoutHold"
 
 
 class HuginnService:
@@ -172,8 +183,9 @@ class HuginnService:
         with open(CACHE_PATH) as f:
             return json.load(f)
 
-    def _fetch_tradeon(self, url, token, cache_path):
-        body_bytes = json.dumps(_TRADEON_STEAM_BODY).encode('utf-8')
+    def _post_tradeon(self, url, token, body=None):
+        """POST a tradeon table query and return the list of items (no caching)."""
+        body_bytes = json.dumps(body or _TRADEON_STEAM_BODY).encode('utf-8')
         req = urllib.request.Request(
             url,
             data=body_bytes,
@@ -193,14 +205,19 @@ class HuginnService:
         with urllib.request.urlopen(req, timeout=30) as resp:
             data = json.loads(resp.read().decode('utf-8'))
         if isinstance(data, list):
-            items = data
-        elif isinstance(data, dict):
-            items = next((data[k] for k in ('items', 'data', 'result', 'records') if isinstance(data.get(k), list)), data)
-        else:
-            items = data
+            return data
+        if isinstance(data, dict):
+            return next((data[k] for k in ('items', 'data', 'result', 'records') if isinstance(data.get(k), list)), data)
+        return data
+
+    def _write_cache(self, cache_path, items):
         os.makedirs(os.path.dirname(cache_path), exist_ok=True)
         with open(cache_path, 'w') as f:
             json.dump(items, f)
+
+    def _fetch_tradeon(self, url, token, cache_path, body=None):
+        items = self._post_tradeon(url, token, body)
+        self._write_cache(cache_path, items)
         return items
 
     def _get_tradeon_cache(self, cache_path):
@@ -220,3 +237,50 @@ class HuginnService:
 
     def get_tradeon_buff_cache(self):
         return self._get_tradeon_cache(TRADEON_BUFF_CACHE_PATH)
+
+    def fetch_lisskins_steam(self, token):
+        """Combine LisSkins buy prices with Steam autobuy prices into one arbitrage list.
+
+        LisSkins second-market prices come back un-paywalled, so we buy there (min) and
+        sell into Steam buy orders (autobuy), netting Steam's sales fee. Items are joined
+        on market_hash_name; only items present on both sides are returned. Shaped like the
+        other profiles (firstMarket = LisSkins buy, secondMarket = Steam sell) so the UI
+        renders it unchanged.
+        """
+        lisskins = self._post_tradeon(_TRADEON_LISSKINS_URL, token, _TRADEON_LISSKINS_BODY)
+        steam = self._post_tradeon(_TRADEON_STEAM_URL, token, _TRADEON_STEAM_BODY)
+
+        # market_hash_name -> Steam second-market (the sell side)
+        steam_by_name = {}
+        for it in steam:
+            name = (it.get('itemName') or {}).get('marketHashName')
+            sm = it.get('secondMarket') or {}
+            if name and sm.get('price') is not None:
+                steam_by_name[name] = sm
+
+        combined = []
+        for it in lisskins:
+            name = (it.get('itemName') or {}).get('marketHashName')
+            buy_market = it.get('secondMarket') or {}      # LisSkins side
+            buy = buy_market.get('price')
+            sell_market = steam_by_name.get(name)          # Steam side
+            if not name or buy is None or not buy or sell_market is None:
+                continue
+            sell = sell_market['price']
+            net_sell = sell * (1 - STEAM_SALES_FEE)
+            profit = net_sell - buy
+            combined.append({
+                'itemName': it.get('itemName'),
+                'imageUrl': it.get('imageUrl'),
+                'firstMarket': buy_market,                 # Buy @ LisSkins
+                'secondMarket': sell_market,               # Sell @ Steam
+                'profit': round(profit, 3),
+                'profitPercent': round(profit / buy * 100, 2),
+            })
+
+        combined.sort(key=lambda x: x['profitPercent'], reverse=True)
+        self._write_cache(TRADEON_LISSKINS_STEAM_CACHE_PATH, combined)
+        return combined
+
+    def get_lisskins_steam_cache(self):
+        return self._get_tradeon_cache(TRADEON_LISSKINS_STEAM_CACHE_PATH)
