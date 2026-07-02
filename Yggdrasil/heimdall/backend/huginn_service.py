@@ -11,6 +11,7 @@ TRADEON_STEAM_CACHE_PATH = os.path.join(os.path.dirname(__file__), 'cache', 'hug
 TRADEON_BUFF_CACHE_PATH  = os.path.join(os.path.dirname(__file__), 'cache', 'huginn_tradeon_buff.json')
 TRADEON_LISSKINS_STEAM_CACHE_PATH = os.path.join(os.path.dirname(__file__), 'cache', 'huginn_tradeon_lisskins_steam.json')
 TRADEON_LISSKINS_BUFF_CACHE_PATH  = os.path.join(os.path.dirname(__file__), 'cache', 'huginn_tradeon_lisskins_buff.json')
+TRADEON_BUFF_STEAM_CACHE_PATH     = os.path.join(os.path.dirname(__file__), 'cache', 'huginn_tradeon_buff_steam.json')
 
 _TRADEON_STEAM_URL    = 'https://api-pulse.tradeon.space/api/table/counter-strike/TradeOnMarket/Steam/all'
 _TRADEON_BUFF_URL     = 'https://api-pulse.tradeon.space/api/table/counter-strike/TradeOnMarket/Buff/all'
@@ -94,10 +95,13 @@ _TRADEON_STEAM_BODY = {
     },
 }
 
-# LisSkins query: same body but secondMarket priced as "SellWithoutHold", which is the
-# LisSkins side and (unlike most second markets) comes back un-paywalled.
+# Buy-side queries: same body, but the second market is priced as its own sell price
+# (the min you'd pay to buy). These come back un-paywalled even for paid markets.
 _TRADEON_LISSKINS_BODY = copy.deepcopy(_TRADEON_STEAM_BODY)
 _TRADEON_LISSKINS_BODY["secondMarketOptions"]["secondMarketPriceType"] = "SellWithoutHold"
+
+_TRADEON_BUFF_BUY_BODY = copy.deepcopy(_TRADEON_STEAM_BODY)
+_TRADEON_BUFF_BUY_BODY["secondMarketOptions"]["secondMarketPriceType"] = "Sell"
 
 
 class HuginnService:
@@ -240,16 +244,17 @@ class HuginnService:
     def get_tradeon_buff_cache(self):
         return self._get_tradeon_cache(TRADEON_BUFF_CACHE_PATH)
 
-    def _combine_lisskins(self, token, sell_url, sell_fee, cache_path):
-        """Combine LisSkins buy prices with a sell-side market's autobuy prices.
+    def _combine_arbitrage(self, token, buy_url, buy_body, sell_url, sell_fee, cache_path):
+        """Combine a buy-side market's min prices with a sell-side market's autobuy prices.
 
-        LisSkins second-market prices come back un-paywalled, so we buy there (min) and
-        sell into the target market's buy orders (autobuy), netting that market's fee.
-        Items are joined on market_hash_name; only items on both sides are returned.
-        Shaped like the other profiles (firstMarket = LisSkins buy, secondMarket = sell)
-        so the UI renders it unchanged.
+        The buy side is queried so its second market carries its own (un-paywalled) sell
+        price — the min you'd pay to buy. The sell side is the standard autobuy query. We
+        buy low there and sell into the target market's buy orders, netting that market's
+        fee. Items are joined on market_hash_name; only items on both sides are returned.
+        Shaped like the other profiles (firstMarket = buy, secondMarket = sell) so the UI
+        renders it unchanged.
         """
-        lisskins = self._post_tradeon(_TRADEON_LISSKINS_URL, token, _TRADEON_LISSKINS_BODY)
+        buy_items = self._post_tradeon(buy_url, token, buy_body)
         sell_items = self._post_tradeon(sell_url, token, _TRADEON_STEAM_BODY)
 
         # market_hash_name -> sell-side second-market
@@ -261,9 +266,9 @@ class HuginnService:
                 sell_by_name[name] = sm
 
         combined = []
-        for it in lisskins:
+        for it in buy_items:
             name = (it.get('itemName') or {}).get('marketHashName')
-            buy_market = it.get('secondMarket') or {}      # LisSkins side
+            buy_market = it.get('secondMarket') or {}      # buy side
             buy = buy_market.get('price')
             sell_market = sell_by_name.get(name)           # target sell side
             if not name or buy is None or not buy or sell_market is None:
@@ -273,7 +278,7 @@ class HuginnService:
             combined.append({
                 'itemName': it.get('itemName'),
                 'imageUrl': it.get('imageUrl'),
-                'firstMarket': buy_market,                 # Buy @ LisSkins
+                'firstMarket': buy_market,                 # Buy @ buy-side market
                 'secondMarket': sell_market,               # Sell @ target market
                 'profit': round(profit, 3),
                 'profitPercent': round(profit / buy * 100, 2),
@@ -284,13 +289,22 @@ class HuginnService:
         return combined
 
     def fetch_lisskins_steam(self, token):
-        return self._combine_lisskins(token, _TRADEON_STEAM_URL, STEAM_SALES_FEE, TRADEON_LISSKINS_STEAM_CACHE_PATH)
+        return self._combine_arbitrage(token, _TRADEON_LISSKINS_URL, _TRADEON_LISSKINS_BODY,
+                                       _TRADEON_STEAM_URL, STEAM_SALES_FEE, TRADEON_LISSKINS_STEAM_CACHE_PATH)
 
     def get_lisskins_steam_cache(self):
         return self._get_tradeon_cache(TRADEON_LISSKINS_STEAM_CACHE_PATH)
 
     def fetch_lisskins_buff(self, token):
-        return self._combine_lisskins(token, _TRADEON_BUFF_URL, BUFF_SALES_FEE, TRADEON_LISSKINS_BUFF_CACHE_PATH)
+        return self._combine_arbitrage(token, _TRADEON_LISSKINS_URL, _TRADEON_LISSKINS_BODY,
+                                       _TRADEON_BUFF_URL, BUFF_SALES_FEE, TRADEON_LISSKINS_BUFF_CACHE_PATH)
 
     def get_lisskins_buff_cache(self):
         return self._get_tradeon_cache(TRADEON_LISSKINS_BUFF_CACHE_PATH)
+
+    def fetch_buff_steam(self, token):
+        return self._combine_arbitrage(token, _TRADEON_BUFF_URL, _TRADEON_BUFF_BUY_BODY,
+                                       _TRADEON_STEAM_URL, STEAM_SALES_FEE, TRADEON_BUFF_STEAM_CACHE_PATH)
+
+    def get_buff_steam_cache(self):
+        return self._get_tradeon_cache(TRADEON_BUFF_STEAM_CACHE_PATH)

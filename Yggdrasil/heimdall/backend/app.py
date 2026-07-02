@@ -540,6 +540,26 @@ def huginn_tradeon_lisskins_buff():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+@app.route('/api/huginn/tradeon/buff-steam/cache', methods=['GET'])
+def huginn_tradeon_buff_steam_cache():
+    """Return cached Buff163 → Steam arbitrage data."""
+    cache = huginn_service.get_buff_steam_cache()
+    if not cache:
+        return jsonify({'error': 'No cached data yet'}), 404
+    return jsonify(cache)
+
+@app.route('/api/huginn/tradeon/buff-steam', methods=['GET'])
+def huginn_tradeon_buff_steam():
+    """Fetch Buff163 buy + Steam sell prices and combine into arbitrage data."""
+    token = settings_manager.get_settings().get('tradeon_token', '')
+    if not token:
+        return jsonify({'error': 'tradeon_token not set in settings'}), 400
+    try:
+        data = huginn_service.fetch_buff_steam(token)
+        return jsonify(data)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 @app.route('/health', methods=['GET'])
 def health_check():
     settings = settings_manager.get_settings()

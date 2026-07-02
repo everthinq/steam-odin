@@ -14,6 +14,7 @@ const PROFILES = [
     { id: 'tradeon-buff',   from: 'Tradeon',  fromSub: 'min', to: 'Buff163', toSub: 'autobuy', fetchEndpoint: '/api/huginn/tradeon/buff',          cacheEndpoint: '/api/huginn/tradeon/buff/cache' },
     { id: 'lisskins-steam', from: 'LisSkins', fromSub: 'min', to: 'Steam',   toSub: 'autobuy', fetchEndpoint: '/api/huginn/tradeon/lisskins-steam', cacheEndpoint: '/api/huginn/tradeon/lisskins-steam/cache' },
     { id: 'lisskins-buff',  from: 'LisSkins', fromSub: 'min', to: 'Buff163', toSub: 'autobuy', fetchEndpoint: '/api/huginn/tradeon/lisskins-buff',  cacheEndpoint: '/api/huginn/tradeon/lisskins-buff/cache' },
+    { id: 'buff-steam',     from: 'Buff163',  fromSub: 'min', to: 'Steam',   toSub: 'autobuy', fetchEndpoint: '/api/huginn/tradeon/buff-steam',     cacheEndpoint: '/api/huginn/tradeon/buff-steam/cache' },
 ];
 
 const MarketBadge = ({ name, sub, dim }) => (
