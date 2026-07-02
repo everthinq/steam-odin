@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Plus, RefreshCw, Search, Trash2, Settings, Eye, EyeOff } from 'lucide-react';
+import { Plus, RefreshCw, Search, Trash2, Settings, Eye, EyeOff, TrendingUp } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import AccountCard from '../components/AccountCard';
 import GlobalConfirmationsModal from '../components/GlobalConfirmationsModal';
@@ -187,6 +187,22 @@ const Dashboard = () => {
                         )}
                     </div>
                 </header>
+
+                <div className="mb-8">
+                    <p className="text-[10px] font-bold tracking-widest text-slate-500 uppercase mb-3">Tools</p>
+                    <Link
+                        to="/huginn"
+                        className="inline-flex items-center gap-3 px-4 py-3 bg-odin-blue/40 border border-amber-500/20 rounded-xl hover:bg-odin-blue/60 hover:border-amber-500/40 transition-all"
+                    >
+                        <div className="p-2 bg-amber-900/30 rounded-lg border border-amber-600/30">
+                            <TrendingUp size={18} className="text-amber-500" />
+                        </div>
+                        <div>
+                            <p className="text-sm font-semibold text-amber-100 font-serif">Huginn</p>
+                            <p className="text-xs text-slate-500">The Scout — Arbitrage &amp; deals</p>
+                        </div>
+                    </Link>
+                </div>
 
                 {accounts.length > 0 && (
                     <div className="mb-8 space-y-2">

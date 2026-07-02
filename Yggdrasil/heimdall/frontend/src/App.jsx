@@ -5,6 +5,7 @@ import Confirmations from './pages/Confirmations';
 import RatatoskrLayout from './pages/RatatoskrLayout';
 import RatatoskrInventory from './pages/ratatoskr/Inventory';
 import RatatoskrTransfer from './pages/ratatoskr/Transfer';
+import HuginnArbitrage from './pages/huginn/Arbitrage';
 import './index.css';
 
 function App() {
@@ -18,6 +19,9 @@ function App() {
           <Route path="/" element={<Dashboard />} />
           <Route path="/add-account" element={<AddAccount />} />
           <Route path="/accounts/:steamid/confirmations" element={<Confirmations />} />
+
+          {/* Huginn Routes */}
+          <Route path="/huginn" element={<HuginnArbitrage />} />
 
           {/* Ratatoskr Routes */}
           <Route path="/ratatoskr/:steamid" element={<RatatoskrLayout />}>

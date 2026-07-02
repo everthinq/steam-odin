@@ -1,0 +1,395 @@
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { Link } from 'react-router-dom';
+import { LayoutDashboard, RefreshCw, AlertTriangle, Search, ChevronDown, ArrowRight } from 'lucide-react';
+import { matchesSearchQuery } from '../../utils/transferItems';
+
+const PROFILES = [
+    { id: 'tradeon-steam', from: 'Tradeon', fromSub: 'min', to: 'Steam',   toSub: 'autobuy', fetchEndpoint: '/api/huginn/tradeon/steam', cacheEndpoint: '/api/huginn/tradeon/steam/cache' },
+    { id: 'tradeon-buff',  from: 'Tradeon', fromSub: 'min', to: 'Buff163', toSub: 'autobuy', fetchEndpoint: '/api/huginn/tradeon/buff',  cacheEndpoint: '/api/huginn/tradeon/buff/cache' },
+];
+
+const MarketBadge = ({ name, sub, dim }) => (
+    <span className={`flex items-baseline gap-1 ${dim ? 'opacity-50' : ''}`}>
+        <span className="font-semibold text-white">{name}</span>
+        <span className="text-[10px] text-slate-500">({sub})</span>
+    </span>
+);
+
+const ProfilePicker = ({ profiles, value, onChange }) => {
+    const [open, setOpen] = useState(false);
+    const ref = useRef(null);
+    const active = profiles.find(p => p.id === value) ?? profiles[0];
+
+    useEffect(() => {
+        const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+        document.addEventListener('mousedown', handler);
+        return () => document.removeEventListener('mousedown', handler);
+    }, []);
+
+    return (
+        <div ref={ref} className="relative shrink-0">
+            <button
+                type="button"
+                onClick={() => setOpen(o => !o)}
+                className="flex items-center gap-2.5 px-3 py-2 rounded-xl bg-odin-blue/60 border border-amber-500/20 hover:border-amber-500/40 hover:bg-odin-blue/80 transition-all text-sm"
+            >
+                <MarketBadge name={active.from} sub={active.fromSub} />
+                <ArrowRight size={13} className="text-amber-500/60 shrink-0" />
+                <MarketBadge name={active.to} sub={active.toSub} />
+                <ChevronDown size={13} className={`text-slate-500 ml-1 transition-transform ${open ? 'rotate-180' : ''}`} />
+            </button>
+
+            {open && (
+                <div className="absolute top-full left-0 mt-1.5 z-50 min-w-full bg-[#0d1520] border border-white/10 rounded-xl shadow-2xl shadow-black/60 overflow-hidden">
+                    {profiles.map(p => {
+                        const isActive = p.id === value;
+                        return (
+                            <button
+                                key={p.id}
+                                type="button"
+                                onClick={() => { onChange(p.id); setOpen(false); }}
+                                className={`w-full flex items-center gap-2.5 px-4 py-2.5 text-sm transition-colors text-left ${isActive ? 'bg-amber-500/10 text-white' : 'hover:bg-white/[0.04] text-slate-300'}`}
+                            >
+                                <MarketBadge name={p.from} sub={p.fromSub} dim={!isActive} />
+                                <ArrowRight size={12} className={isActive ? 'text-amber-500/60' : 'text-slate-600'} />
+                                <MarketBadge name={p.to} sub={p.toSub} dim={!isActive} />
+                                {isActive && <span className="ml-auto w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0" />}
+                            </button>
+                        );
+                    })}
+                </div>
+            )}
+        </div>
+    );
+};
+
+const formatTs = (ts) => {
+    if (!ts) return null;
+    const diffMin = Math.round((Date.now() - new Date(ts).getTime()) / 60000);
+    if (diffMin < 1) return 'just now';
+    if (diffMin < 60) return `${diffMin}m ago`;
+    const diffH = Math.round(diffMin / 60);
+    return diffH < 24 ? `${diffH}h ago` : new Date(ts).toLocaleDateString();
+};
+
+const HuginnArbitrage = () => {
+    const [scanData, setScanData] = useState(null);
+    const [scanning, setScanning] = useState(false);
+    const [scanError, setScanError] = useState(null);
+
+    const [tradeonData, setTradeonData] = useState(null);
+    const [tradeonError, setTradeonError] = useState(null);
+    const [tradeonFetching, setTradeonFetching] = useState(false);
+    const [uploadOpen, setUploadOpen] = useState(true);
+
+    const [profileId, setProfileId] = useState(PROFILES[0].id);
+
+    const [itemSearch, setItemSearch] = useState('');
+    const [inventoryOnly, setInventoryOnly] = useState(false);
+
+    useEffect(() => {
+        fetch('/api/huginn/scan/cache')
+            .then(r => r.ok ? r.json() : null)
+            .then(data => { if (data) setScanData(data); })
+            .catch(() => {});
+    }, []);
+
+    useEffect(() => {
+        const profile = PROFILES.find(p => p.id === profileId);
+        if (!profile?.cacheEndpoint) { setTradeonData(null); return; }
+        fetch(profile.cacheEndpoint)
+            .then(r => r.ok ? r.json() : null)
+            .then(data => {
+                if (Array.isArray(data)) { setTradeonData(data); setUploadOpen(false); }
+                else { setTradeonData(null); setUploadOpen(true); }
+            })
+            .catch(() => { setTradeonData(null); setUploadOpen(true); });
+    }, [profileId]);
+
+    const handleScan = async () => {
+        setScanning(true);
+        setScanError(null);
+        try {
+            const res = await fetch('/api/huginn/scan', { method: 'POST' });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || 'Scan failed');
+            setScanData(data);
+        } catch (err) {
+            setScanError(err.message);
+        } finally {
+            setScanning(false);
+        }
+    };
+
+    const handleTradeonChange = (raw) => {
+        if (!raw.trim()) { setTradeonData(null); setTradeonError(null); return; }
+        try {
+            const parsed = JSON.parse(raw);
+            if (!Array.isArray(parsed)) throw new Error('Expected a JSON array');
+            setTradeonData(parsed);
+            setTradeonError(null);
+            setUploadOpen(false);
+        } catch (err) {
+            setTradeonData(null);
+            setTradeonError(err.message);
+        }
+    };
+
+    const handleFileUpload = (e) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (ev) => handleTradeonChange(ev.target.result || '');
+        reader.readAsText(file);
+        e.target.value = '';
+    };
+
+    const activeProfile = PROFILES.find(p => p.id === profileId) ?? PROFILES[0];
+
+    const handleApiFetch = async () => {
+        if (tradeonFetching) return;
+        setTradeonFetching(true);
+        setTradeonError(null);
+        try {
+            const res = await fetch(activeProfile.fetchEndpoint);
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || 'Fetch failed');
+            if (!Array.isArray(data)) throw new Error('Unexpected response format');
+            setTradeonData(data);
+            setTradeonError(null);
+            setUploadOpen(false);
+        } catch (err) {
+            setTradeonError(err.message);
+        } finally {
+            setTradeonFetching(false);
+        }
+    };
+
+    const allResults = useMemo(() => {
+        if (!tradeonData) return [];
+        return tradeonData
+            .map(item => ({
+                ...item,
+                owned: scanData?.by_hash?.[item.itemName?.marketHashName] ?? null,
+            }))
+            .sort((a, b) => (b.profitPercent ?? 0) - (a.profitPercent ?? 0));
+    }, [tradeonData, scanData]);
+
+    const filteredResults = useMemo(() => {
+        let r = inventoryOnly ? allResults.filter(item => item.owned) : allResults;
+        if (!itemSearch.trim()) return r;
+        return r.filter(item =>
+            matchesSearchQuery(
+                [item.itemName?.marketHashName, item.itemName?.skinName, item.itemName?.itemTypeName],
+                itemSearch
+            )
+        );
+    }, [allResults, itemSearch, inventoryOnly]);
+
+    return (
+        <div className="h-screen bg-odin-dark flex flex-col overflow-hidden">
+            {/* Header */}
+            <div className="shrink-0 border-b border-white/5 bg-odin-blue/50 px-6 py-4 flex items-center gap-3 flex-wrap">
+                <Link to="/" className="flex items-center gap-1.5 text-sm text-slate-400 hover:text-white transition-colors shrink-0">
+                    <LayoutDashboard size={15} />
+                    Dashboard
+                </Link>
+                <span className="text-white/20">/</span>
+                <h1 className="text-lg font-bold font-serif text-amber-100">Huginn — The Scout</h1>
+
+                <div className="ml-auto flex items-center gap-4">
+                    {scanData && (
+                        <span className="text-xs text-slate-500 tabular-nums">
+                            {scanData.total_items.toLocaleString()} items · {formatTs(scanData.scan_timestamp)}
+                        </span>
+                    )}
+                    <button
+                        onClick={handleScan}
+                        disabled={scanning}
+                        className="flex items-center gap-2 px-4 py-2 rounded-lg bg-amber-600 hover:bg-amber-500 text-white text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    >
+                        <RefreshCw size={14} className={scanning ? 'animate-spin' : ''} />
+                        {scanning ? 'Scanning…' : 'Get all items'}
+                    </button>
+                </div>
+            </div>
+
+            <div className="flex-1 flex flex-col gap-3 p-6 overflow-hidden max-w-7xl w-full mx-auto">
+                {scanError && (
+                    <div className="shrink-0 bg-red-500/20 border border-red-500/30 text-red-300 px-4 py-3 rounded-lg text-sm">
+                        {scanError}
+                    </div>
+                )}
+                {scanning && (
+                    <div className="shrink-0 bg-amber-500/10 border border-amber-500/20 text-amber-300 px-4 py-3 rounded-lg text-sm">
+                        Connecting to all accounts and reading storage units — this can take up to a minute…
+                    </div>
+                )}
+
+                {/* Profile picker */}
+                <div className="shrink-0 flex items-center gap-3">
+                    <span className="text-[10px] font-bold tracking-widest text-slate-600 uppercase">Profile</span>
+                    <ProfilePicker
+                        profiles={PROFILES}
+                        value={profileId}
+                        onChange={id => setProfileId(id)}
+                    />
+                </div>
+
+                {/* Collapsible upload section */}
+                <div className="shrink-0 bg-odin-blue/30 border border-white/5 rounded-xl overflow-hidden">
+                    <div className="flex items-center">
+                        <button
+                            type="button"
+                            onClick={() => setUploadOpen(o => !o)}
+                            className="flex-1 flex items-center gap-2 px-4 py-2.5 hover:bg-white/[0.03] transition-colors text-left"
+                        >
+                            <ChevronDown size={15} className={`text-slate-500 transition-transform shrink-0 ${uploadOpen ? '' : '-rotate-90'}`} />
+                            <span className="text-[10px] font-bold tracking-widest text-slate-500 uppercase">pulse.tradeon JSON</span>
+                            {tradeonData && !uploadOpen && (
+                                <span className="ml-2 text-xs text-amber-400">
+                                    {tradeonData.length} deals · {allResults.filter(i => i.owned).length} owned
+                                </span>
+                            )}
+                        </button>
+                        {activeProfile.fetchEndpoint && (
+                            <button
+                                type="button"
+                                onClick={handleApiFetch}
+                                disabled={tradeonFetching}
+                                className="flex items-center gap-1.5 px-3 py-1.5 mr-2 rounded-lg bg-amber-600/70 hover:bg-amber-500 text-white text-xs font-medium disabled:opacity-50 disabled:cursor-not-allowed transition-colors shrink-0"
+                            >
+                                <RefreshCw size={12} className={tradeonFetching ? 'animate-spin' : ''} />
+                                {tradeonFetching ? 'Fetching…' : tradeonData ? 'Re-fetch' : 'Fetch live data'}
+                            </button>
+                        )}
+                    </div>
+
+                    {uploadOpen && (
+                        <div className="px-4 pb-4 border-t border-white/5">
+                            {activeProfile.fetchEndpoint ? (
+                                <div className="mt-3">
+                                    {tradeonData && !tradeonFetching && (
+                                        <span className="text-xs text-slate-500">
+                                            {tradeonData.length} deals loaded
+                                            {scanData ? ` · ${allResults.filter(i => i.owned).length} match your inventory` : ''}
+                                        </span>
+                                    )}
+                                    {!tradeonData && !tradeonFetching && (
+                                        <span className="text-xs text-slate-500">Click "Fetch live data" to load prices from Tradeon.</span>
+                                    )}
+                                </div>
+                            ) : (
+                                <label className={`mt-3 flex items-center justify-center gap-3 h-16 rounded-lg border-2 border-dashed cursor-pointer transition-colors ${tradeonData ? 'border-amber-500/40 bg-amber-500/5 hover:bg-amber-500/10' : 'border-white/10 hover:border-white/20 hover:bg-white/[0.02]'}`}>
+                                    <input type="file" accept=".json,application/json" onChange={handleFileUpload} className="hidden" />
+                                    {tradeonData ? (
+                                        <span className="text-sm text-amber-300">
+                                            {tradeonData.length} deals loaded
+                                            {scanData ? ` · ${allResults.filter(i => i.owned).length} match your inventory` : ' · scan your inventory to see matches'}
+                                            <span className="text-slate-500 ml-2 text-xs">— click to replace</span>
+                                        </span>
+                                    ) : (
+                                        <span className="text-sm text-slate-500">Click to upload JSON file</span>
+                                    )}
+                                </label>
+                            )}
+                            {tradeonError && (
+                                <p className="text-xs text-red-400 mt-2 flex items-center gap-1">
+                                    <AlertTriangle size={11} /> {tradeonError}
+                                </p>
+                            )}
+                        </div>
+                    )}
+                </div>
+
+                {/* Results table — flex-1 fills all remaining space */}
+                {allResults.length > 0 ? (
+                    <div className="flex-1 flex flex-col bg-odin-blue/30 border border-white/5 rounded-xl overflow-hidden min-h-0">
+                        <div className="shrink-0 flex items-center gap-3 px-4 py-3 border-b border-white/5 bg-black/10">
+                            <div className="relative flex-1 max-w-sm">
+                                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500" size={14} />
+                                <input
+                                    type="text"
+                                    placeholder="Search items (e.g. ak redline ft)"
+                                    value={itemSearch}
+                                    onChange={(e) => setItemSearch(e.target.value)}
+                                    className="w-full bg-black/30 border border-white/10 rounded-lg pl-8 pr-3 py-1.5 text-sm text-white focus:outline-none focus:border-amber-500/40 placeholder:text-slate-600"
+                                />
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => setInventoryOnly(v => !v)}
+                                className={`shrink-0 px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${inventoryOnly ? 'bg-sky-500/20 border-sky-500/40 text-sky-300' : 'bg-black/20 border-white/10 text-slate-400 hover:text-white hover:border-white/20'}`}
+                            >
+                                My Inventory
+                            </button>
+                            <span className="text-xs text-slate-500 shrink-0">
+                                {filteredResults.length} of {allResults.length}
+                            </span>
+                        </div>
+                        <div className="shrink-0 grid grid-cols-[minmax(0,2.5fr)_60px_72px_72px_80px_80px_minmax(0,1fr)] gap-2 px-4 py-2 border-b border-white/5 text-[10px] font-bold tracking-wider text-slate-500 uppercase bg-black/20">
+                            <span>Item</span>
+                            <span className="text-right">Owned</span>
+                            <span className="text-right">Buy</span>
+                            <span className="text-right">Sell</span>
+                            <span className="text-right">Profit</span>
+                            <span className="text-right">Profit %</span>
+                            <span>Accounts</span>
+                        </div>
+                        <div className="flex-1 overflow-y-auto custom-scrollbar min-h-0">
+                            {filteredResults.map((item, idx) => {
+                                const mhn = item.itemName.marketHashName;
+                                const owned = item.owned;
+                                const hasHold = owned?.instances.some(i => i.on_trade_hold) ?? false;
+                                const accountNames = owned ? [...new Set(owned.instances.map(i => i.account_name))] : [];
+
+                                return (
+                                    <div
+                                        key={`${mhn}-${idx}`}
+                                        className="grid grid-cols-[minmax(0,2.5fr)_60px_72px_72px_80px_80px_minmax(0,1fr)] gap-2 items-center px-4 py-2.5 border-b border-white/5 hover:bg-white/[0.03] transition-colors"
+                                    >
+                                        <div className="flex items-center gap-2.5 min-w-0">
+                                            {item.imageUrl && (
+                                                <img
+                                                    src={item.imageUrl}
+                                                    alt=""
+                                                    className="w-9 h-9 object-contain shrink-0 rounded bg-black/20"
+                                                    loading="lazy"
+                                                    referrerPolicy="no-referrer"
+                                                />
+                                            )}
+                                            <div className="min-w-0">
+                                                <p className="text-sm text-white truncate" title={mhn}>{mhn}</p>
+                                                {hasHold && (
+                                                    <span className="text-[10px] text-orange-400">trade hold on some</span>
+                                                )}
+                                            </div>
+                                        </div>
+
+                                        <span className="text-sm text-right font-bold text-amber-400 tabular-nums">{owned ? owned.count : <span className="text-slate-600">—</span>}</span>
+                                        <span className="text-sm text-right text-slate-300 tabular-nums">${item.firstMarket?.price?.toFixed(2)}</span>
+                                        <span className="text-sm text-right text-slate-300 tabular-nums">${item.secondMarket?.price?.toFixed(2)}</span>
+                                        <span className={`text-sm text-right tabular-nums ${(item.profit ?? 0) <= 0 ? 'text-red-400' : 'text-emerald-400'}`}>${item.profit?.toFixed(2)}</span>
+                                        <span className={`text-sm text-right font-semibold tabular-nums ${(item.profitPercent ?? 0) <= 0 ? 'text-red-400' : 'text-emerald-400'}`}>{item.profitPercent?.toFixed(0)}%</span>
+
+                                        <span className="text-xs text-slate-400 truncate" title={accountNames.join(', ')}>
+                                            {accountNames.join(', ')}
+                                        </span>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </div>
+                ) : (
+                    <div className="flex-1 flex items-center justify-center text-slate-600 text-sm">
+                        {!tradeonData
+                            ? 'Upload the tradeon JSON to see deals. Scan your inventory to highlight items you own.'
+                            : 'No deals to show.'}
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+};
+
+export default HuginnArbitrage;

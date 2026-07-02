@@ -7,6 +7,7 @@ from steam_service import SteamService
 from settings import SettingsManager
 from scheduler import ConfirmationScheduler
 from ratatoskr_service import RatatoskrService
+from huginn_service import HuginnService
 
 app = Flask(__name__)
 CORS(app)
@@ -14,6 +15,7 @@ CORS(app)
 settings_manager = SettingsManager()
 steam_service = SteamService()
 ratatoskr_service = RatatoskrService()
+huginn_service = HuginnService(steam_service, ratatoskr_service)
 scheduler = ConfirmationScheduler(settings_manager, steam_service)
 
 def trigger_restart():
@@ -440,6 +442,63 @@ def ratatoskr_casket_rename():
     if 'error' in result:
         return jsonify(result), 400
     return jsonify(result)
+
+@app.route('/api/huginn/scan', methods=['POST'])
+def huginn_scan():
+    """Scan all accounts and cache inventory grouped by market hash name."""
+    try:
+        result = huginn_service.scan()
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/huginn/scan/cache', methods=['GET'])
+def huginn_scan_cache():
+    """Return cached inventory scan result."""
+    cache = huginn_service.get_cache()
+    if not cache:
+        return jsonify({'error': 'No scan data yet'}), 404
+    return jsonify(cache)
+
+@app.route('/api/huginn/tradeon/steam/cache', methods=['GET'])
+def huginn_tradeon_steam_cache():
+    """Return cached Tradeon → Steam data."""
+    cache = huginn_service.get_tradeon_steam_cache()
+    if not cache:
+        return jsonify({'error': 'No cached data yet'}), 404
+    return jsonify(cache)
+
+@app.route('/api/huginn/tradeon/steam', methods=['GET'])
+def huginn_tradeon_steam():
+    """Proxy Tradeon → Steam arbitrage data."""
+    token = settings_manager.get_settings().get('tradeon_token', '')
+    if not token:
+        return jsonify({'error': 'tradeon_token not set in settings'}), 400
+    try:
+        data = huginn_service.fetch_tradeon_steam(token)
+        return jsonify(data)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/huginn/tradeon/buff/cache', methods=['GET'])
+def huginn_tradeon_buff_cache():
+    """Return cached Tradeon → Buff163 data."""
+    cache = huginn_service.get_tradeon_buff_cache()
+    if not cache:
+        return jsonify({'error': 'No cached data yet'}), 404
+    return jsonify(cache)
+
+@app.route('/api/huginn/tradeon/buff', methods=['GET'])
+def huginn_tradeon_buff():
+    """Proxy Tradeon → Buff163 arbitrage data."""
+    token = settings_manager.get_settings().get('tradeon_token', '')
+    if not token:
+        return jsonify({'error': 'tradeon_token not set in settings'}), 400
+    try:
+        data = huginn_service.fetch_tradeon_buff(token)
+        return jsonify(data)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/health', methods=['GET'])
 def health_check():
