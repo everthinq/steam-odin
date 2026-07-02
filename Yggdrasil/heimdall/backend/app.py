@@ -520,6 +520,26 @@ def huginn_tradeon_lisskins_steam():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+@app.route('/api/huginn/tradeon/lisskins-buff/cache', methods=['GET'])
+def huginn_tradeon_lisskins_buff_cache():
+    """Return cached LisSkins → Buff163 arbitrage data."""
+    cache = huginn_service.get_lisskins_buff_cache()
+    if not cache:
+        return jsonify({'error': 'No cached data yet'}), 404
+    return jsonify(cache)
+
+@app.route('/api/huginn/tradeon/lisskins-buff', methods=['GET'])
+def huginn_tradeon_lisskins_buff():
+    """Fetch LisSkins buy + Buff163 sell prices and combine into arbitrage data."""
+    token = settings_manager.get_settings().get('tradeon_token', '')
+    if not token:
+        return jsonify({'error': 'tradeon_token not set in settings'}), 400
+    try:
+        data = huginn_service.fetch_lisskins_buff(token)
+        return jsonify(data)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 @app.route('/health', methods=['GET'])
 def health_check():
     settings = settings_manager.get_settings()

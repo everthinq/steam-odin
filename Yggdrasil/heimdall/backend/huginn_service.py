@@ -10,13 +10,15 @@ CACHE_PATH = os.path.join(os.path.dirname(__file__), 'cache', 'huginn_scan.json'
 TRADEON_STEAM_CACHE_PATH = os.path.join(os.path.dirname(__file__), 'cache', 'huginn_tradeon_steam.json')
 TRADEON_BUFF_CACHE_PATH  = os.path.join(os.path.dirname(__file__), 'cache', 'huginn_tradeon_buff.json')
 TRADEON_LISSKINS_STEAM_CACHE_PATH = os.path.join(os.path.dirname(__file__), 'cache', 'huginn_tradeon_lisskins_steam.json')
+TRADEON_LISSKINS_BUFF_CACHE_PATH  = os.path.join(os.path.dirname(__file__), 'cache', 'huginn_tradeon_lisskins_buff.json')
 
 _TRADEON_STEAM_URL    = 'https://api-pulse.tradeon.space/api/table/counter-strike/TradeOnMarket/Steam/all'
 _TRADEON_BUFF_URL     = 'https://api-pulse.tradeon.space/api/table/counter-strike/TradeOnMarket/Buff/all'
 _TRADEON_LISSKINS_URL = 'https://api-pulse.tradeon.space/api/table/counter-strike/TradeOnMarket/LisSkins/all'
 
-# Steam takes ~13% on a sale, so net proceeds when selling into Steam = price * (1 - fee).
+# Sales fee taken by the sell-side market: net proceeds = price * (1 - fee).
 STEAM_SALES_FEE = 0.13
+BUFF_SALES_FEE = 0.015
 _TRADEON_STEAM_BODY = {
     "templateId": None,
     "firstMarketOptions": {
@@ -238,49 +240,57 @@ class HuginnService:
     def get_tradeon_buff_cache(self):
         return self._get_tradeon_cache(TRADEON_BUFF_CACHE_PATH)
 
-    def fetch_lisskins_steam(self, token):
-        """Combine LisSkins buy prices with Steam autobuy prices into one arbitrage list.
+    def _combine_lisskins(self, token, sell_url, sell_fee, cache_path):
+        """Combine LisSkins buy prices with a sell-side market's autobuy prices.
 
         LisSkins second-market prices come back un-paywalled, so we buy there (min) and
-        sell into Steam buy orders (autobuy), netting Steam's sales fee. Items are joined
-        on market_hash_name; only items present on both sides are returned. Shaped like the
-        other profiles (firstMarket = LisSkins buy, secondMarket = Steam sell) so the UI
-        renders it unchanged.
+        sell into the target market's buy orders (autobuy), netting that market's fee.
+        Items are joined on market_hash_name; only items on both sides are returned.
+        Shaped like the other profiles (firstMarket = LisSkins buy, secondMarket = sell)
+        so the UI renders it unchanged.
         """
         lisskins = self._post_tradeon(_TRADEON_LISSKINS_URL, token, _TRADEON_LISSKINS_BODY)
-        steam = self._post_tradeon(_TRADEON_STEAM_URL, token, _TRADEON_STEAM_BODY)
+        sell_items = self._post_tradeon(sell_url, token, _TRADEON_STEAM_BODY)
 
-        # market_hash_name -> Steam second-market (the sell side)
-        steam_by_name = {}
-        for it in steam:
+        # market_hash_name -> sell-side second-market
+        sell_by_name = {}
+        for it in sell_items:
             name = (it.get('itemName') or {}).get('marketHashName')
             sm = it.get('secondMarket') or {}
             if name and sm.get('price') is not None:
-                steam_by_name[name] = sm
+                sell_by_name[name] = sm
 
         combined = []
         for it in lisskins:
             name = (it.get('itemName') or {}).get('marketHashName')
             buy_market = it.get('secondMarket') or {}      # LisSkins side
             buy = buy_market.get('price')
-            sell_market = steam_by_name.get(name)          # Steam side
+            sell_market = sell_by_name.get(name)           # target sell side
             if not name or buy is None or not buy or sell_market is None:
                 continue
-            sell = sell_market['price']
-            net_sell = sell * (1 - STEAM_SALES_FEE)
+            net_sell = sell_market['price'] * (1 - sell_fee)
             profit = net_sell - buy
             combined.append({
                 'itemName': it.get('itemName'),
                 'imageUrl': it.get('imageUrl'),
                 'firstMarket': buy_market,                 # Buy @ LisSkins
-                'secondMarket': sell_market,               # Sell @ Steam
+                'secondMarket': sell_market,               # Sell @ target market
                 'profit': round(profit, 3),
                 'profitPercent': round(profit / buy * 100, 2),
             })
 
         combined.sort(key=lambda x: x['profitPercent'], reverse=True)
-        self._write_cache(TRADEON_LISSKINS_STEAM_CACHE_PATH, combined)
+        self._write_cache(cache_path, combined)
         return combined
+
+    def fetch_lisskins_steam(self, token):
+        return self._combine_lisskins(token, _TRADEON_STEAM_URL, STEAM_SALES_FEE, TRADEON_LISSKINS_STEAM_CACHE_PATH)
 
     def get_lisskins_steam_cache(self):
         return self._get_tradeon_cache(TRADEON_LISSKINS_STEAM_CACHE_PATH)
+
+    def fetch_lisskins_buff(self, token):
+        return self._combine_lisskins(token, _TRADEON_BUFF_URL, BUFF_SALES_FEE, TRADEON_LISSKINS_BUFF_CACHE_PATH)
+
+    def get_lisskins_buff_cache(self):
+        return self._get_tradeon_cache(TRADEON_LISSKINS_BUFF_CACHE_PATH)
