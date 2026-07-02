@@ -51,15 +51,25 @@ class ConfirmationScheduler:
                 time.sleep(1)
 
     def _check_all_accounts(self, settings):
+        # If mobileconf is in backoff, skip the whole sweep so we don't keep hitting it.
+        cooldown = self.steam_service._mobileconf_cooldown_remaining()
+        if cooldown:
+            print(f"[SCHEDULER] Skipping sweep — mobileconf backoff active ({int(cooldown)}s left)")
+            return
+
         print(f"[{datetime.now().strftime('%H:%M:%S')}] [SCHEDULER] Checking confirmations for all accounts...")
         accounts = self.steam_service.get_all_accounts_data()
-        
+
         for i, account in enumerate(accounts):
             steamid = account['steamid']
             try:
                 self._process_account(steamid, settings)
             except Exception as e:
                 print(f"[SCHEDULER] Failed to process {steamid}: {e}")
+            # Stop the sweep immediately if the backoff was tripped mid-run.
+            if self.steam_service._mobileconf_cooldown_remaining():
+                print("[SCHEDULER] mobileconf backoff tripped mid-sweep — aborting remaining accounts")
+                break
             if i < len(accounts) - 1:
                 time.sleep(2)
 
@@ -100,7 +110,8 @@ class ConfirmationScheduler:
             ck = str(ck)
 
             should_accept = False
-            if ctype == 3 and auto_market:
+            if ctype in (3, 12) and auto_market:
+                # type 3 = market listing, type 12 = market purchase / buy-order confirmation
                 should_accept = True
             elif ctype == 2 and auto_trades:
                 should_accept = True

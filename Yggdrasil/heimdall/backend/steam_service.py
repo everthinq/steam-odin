@@ -6,19 +6,151 @@ import requests
 import json
 import secrets
 import os
-from datetime import datetime
+import shutil
+import logging
+from logging.handlers import TimedRotatingFileHandler
+from datetime import datetime, timedelta
 from hashlib import sha1
 from storage import SecureStorage
 
 
 _STEAMID64_BASE = 76561197960265728
 
+_LOG_RETENTION_DAYS = 2
+_LOG_TRIM_MIN_SIZE = 5 * 1024 * 1024  # only trim a pre-existing file if it's over 5 MB
+_steam_debug_logger = None
+
+
+def _read_last_log_timestamp(path):
+    """Return the newest header timestamp in the log by scanning only its tail."""
+    try:
+        with open(path, 'rb') as f:
+            f.seek(0, os.SEEK_END)
+            size = f.tell()
+            read = min(size, 65536)
+            f.seek(size - read)
+            tail = f.read()
+    except OSError:
+        return None
+
+    last = None
+    for raw_line in tail.split(b'\n'):
+        if raw_line.startswith(b'[') and b'[STEAM DEBUG]' in raw_line:
+            ts_end = raw_line.find(b']')
+            if ts_end > 1:
+                ts_str = raw_line[1:ts_end].decode('ascii', 'ignore').rstrip('Z')
+                try:
+                    last = datetime.fromisoformat(ts_str)
+                except ValueError:
+                    pass
+    return last
+
+
+def _trim_steam_log(path, max_age_days=_LOG_RETENTION_DAYS):
+    """
+    One-time trim of a pre-existing oversized debug log: keep only entries from the
+    last `max_age_days`. The rotating handler keeps things bounded afterwards; this
+    just deals with a file that grew huge before rotation existed.
+
+    The cutoff is anchored to the newest entry *in the file* (not the wall clock) so
+    a container/host clock skew can't wrongly wipe otherwise-recent logs.
+    """
+    try:
+        if not os.path.exists(path) or os.path.getsize(path) < _LOG_TRIM_MIN_SIZE:
+            return
+    except OSError:
+        return
+
+    anchor = _read_last_log_timestamp(path) or datetime.utcnow()
+    cutoff = anchor - timedelta(days=max_age_days)
+    keep_offset = 0
+    found = False
+    try:
+        with open(path, 'rb') as f:
+            offset = 0
+            for raw_line in f:
+                if raw_line.startswith(b'[') and b'[STEAM DEBUG]' in raw_line:
+                    ts_end = raw_line.find(b']')
+                    if ts_end > 1:
+                        ts_str = raw_line[1:ts_end].decode('ascii', 'ignore').rstrip('Z')
+                        try:
+                            if datetime.fromisoformat(ts_str) >= cutoff:
+                                keep_offset = offset
+                                found = True
+                                break
+                        except ValueError:
+                            pass
+                offset += len(raw_line)
+    except OSError:
+        return
+
+    try:
+        if not found:
+            # Every entry is older than the cutoff — start clean.
+            open(path, 'w').close()
+            return
+        if keep_offset == 0:
+            return  # everything already within the window
+        tmp = path + '.trim'
+        with open(path, 'rb') as src, open(tmp, 'wb') as dst:
+            src.seek(keep_offset)
+            shutil.copyfileobj(src, dst, length=1024 * 1024)
+        os.replace(tmp, path)
+    except OSError as e:
+        print(f"[STEAM DEBUG] Log trim failed: {e}")
+
+
+def _get_steam_debug_logger():
+    """Lazily build a daily-rotating logger that retains `_LOG_RETENTION_DAYS` days."""
+    global _steam_debug_logger
+    if _steam_debug_logger is not None:
+        return _steam_debug_logger
+
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    log_dir = os.path.join(base_dir, 'logs')
+    os.makedirs(log_dir, exist_ok=True)
+    log_path = os.path.join(log_dir, 'steam_debug.log')
+
+    # Shrink any huge pre-rotation file before attaching the handler.
+    _trim_steam_log(log_path)
+
+    logger = logging.getLogger('steam_debug')
+    logger.setLevel(logging.INFO)
+    logger.propagate = False
+    if not logger.handlers:
+        handler = TimedRotatingFileHandler(
+            log_path, when='midnight', backupCount=_LOG_RETENTION_DAYS, encoding='utf-8', utc=True
+        )
+        handler.setFormatter(logging.Formatter('%(message)s'))
+        logger.addHandler(handler)
+
+    _steam_debug_logger = logger
+    return logger
+
 
 class SteamService:
+    # Exponential backoff for mobileconf.
+    #
+    # When Steam answers a confirmation request with "Oh nooooooes! ... try your
+    # request again later" we stop hitting the endpoint for a while instead of
+    # retrying in a tight loop. Each consecutive transient error doubles the wait
+    # (up to the cap); the first successful fetch resets it back to the base.
+    #
+    # NOTE: that "try again later" message is a *generic* transient signal, not a
+    # confirmed IP ban. The one time it appeared en masse it was actually caused by
+    # sending the deprecated 32-bit account id in the `a` param (see
+    # _confirmation_param_variants). The backoff is kept as a general safety net so
+    # any future failure loop can't turn into a request storm.
+    _MOBILECONF_COOLDOWN_BASE = 180
+    _MOBILECONF_COOLDOWN_MAX = 3600
+
     def __init__(self):
         self.storage = SecureStorage()
         self.time_offset = None
         self.last_time_sync = 0
+        # Pause all mobileconf traffic until this timestamp after a transient error.
+        self._mobileconf_cooldown_until = 0
+        self._mobileconf_backoff_sec = self._MOBILECONF_COOLDOWN_BASE
 
     def _get_proxies(self):
         """Get proxy configuration from environment variables."""
@@ -70,13 +202,7 @@ class SteamService:
         print(log_body)
 
         try:
-            base_dir = os.path.dirname(os.path.abspath(__file__))
-            log_dir = os.path.join(base_dir, 'logs')
-            os.makedirs(log_dir, exist_ok=True)
-            log_path = os.path.join(log_dir, 'steam_debug.log')
-            with open(log_path, 'a', encoding='utf-8') as f:
-                f.write(log_header + "\n")
-                f.write(log_body + "\n")
+            _get_steam_debug_logger().info(log_header + "\n" + log_body)
         except Exception as e:
             print(f"[STEAM DEBUG] Failed to write log file: {e}")
 
@@ -241,6 +367,70 @@ class SteamService:
             return f'Steam failed confirmation fetch: {detail}'
         return 'Steam failed confirmation fetch'
 
+    @staticmethod
+    def _is_transient_steam_error(payload):
+        """True for Steam's "Oh nooooooes! ... try your request again later" response.
+
+        This is a generic "come back later" signal, not a stale-token error — a
+        refresh/re-login won't clear it, so callers back off (see the backoff docs on
+        the class) rather than retry immediately.
+        """
+        if not isinstance(payload, dict):
+            return False
+        blob = f"{payload.get('message', '')} {payload.get('detail', '')}".lower()
+        return (
+            'try your request again later' in blob
+            or 'oh nooo' in blob
+            or 'problem loading the confirmations' in blob
+        )
+
+    def _mobileconf_cooldown_remaining(self):
+        """Seconds left on the mobileconf backoff (0 if clear)."""
+        remaining = self._mobileconf_cooldown_until - time.time()
+        return remaining if remaining > 0 else 0
+
+    def _cooldown_response(self):
+        """Return a ready-made 'backing off' result if a cooldown is active, else None.
+
+        Entry points call this first to avoid touching Steam while backing off.
+        """
+        remaining = self._mobileconf_cooldown_remaining()
+        if not remaining:
+            return None
+        return {
+            'success': False,
+            'rate_limited': True,
+            'message': f'Steam mobileconf backoff active — retrying in {int(remaining)}s',
+        }
+
+    def _note_transient(self, result):
+        """If `result` is a transient Steam error, trip the backoff and flag it.
+
+        Returns True when the backoff was tripped so callers can stop retrying.
+        """
+        if self._is_transient_steam_error(result.get('raw')):
+            self._trip_mobileconf_cooldown()
+            result['rate_limited'] = True
+            return True
+        return False
+
+    def _trip_mobileconf_cooldown(self):
+        """Start/extend the backoff window with exponential growth (capped)."""
+        wait = self._mobileconf_backoff_sec
+        self._mobileconf_cooldown_until = time.time() + wait
+        self._mobileconf_backoff_sec = min(wait * 2, self._MOBILECONF_COOLDOWN_MAX)
+        print(
+            f"[AUTH] mobileconf transient error — backing off {int(wait)}s "
+            f"(next {int(self._mobileconf_backoff_sec)}s)"
+        )
+
+    def _reset_mobileconf_cooldown(self):
+        """Clear the backoff after a successful request."""
+        if self._mobileconf_backoff_sec != self._MOBILECONF_COOLDOWN_BASE:
+            print("[AUTH] mobileconf recovered — backoff reset")
+        self._mobileconf_cooldown_until = 0
+        self._mobileconf_backoff_sec = self._MOBILECONF_COOLDOWN_BASE
+
     def _pick_session_token(self, session_data):
         """Prefer Ratatoskr web session while connected; fall back to mobile AccessToken."""
         return session_data.get('WebAccessToken') or session_data.get('AccessToken')
@@ -259,7 +449,10 @@ class SteamService:
                 data={
                     'refresh_token': refresh_token,
                     'steamid': stored_steamid,
-                    'renewal_type': 1,
+                    # renewal_type 0 (None) reliably mints a fresh access token.
+                    # renewal_type 1 (Allow) intermittently returns an empty
+                    # {"response":{}} — which forced a heavyweight full re-login.
+                    'renewal_type': 0,
                 },
                 timeout=30,
                 proxies=self._get_proxies(),
@@ -469,22 +662,20 @@ class SteamService:
         return None
 
     def _confirmation_param_variants(self, steamid, data, identity_secret, tag):
-        """Steam clients differ on account id vs SteamID64 and m=react|android — try both."""
+        """
+        mobileconf's `a` parameter must be the full SteamID64. Steam deprecated the
+        32-bit account id — sending it now returns "Oh nooooooes! ... try again later"
+        for every request. Verified head-to-head: a=SteamID64 loads confirmations,
+        a=account_id fails, regardless of tag. Try m=react first, m=android as fallback.
+        """
         timestamp = self._get_steam_time()
         device_id = data.get('device_id') or self._generate_device_id(steamid)
         conf_key = self._generate_confirmation_key(identity_secret, tag, timestamp)
-        base = {'p': device_id, 'k': conf_key, 't': timestamp, 'tag': tag}
-        variants = []
-        seen = set()
-        for account in (self._to_account_id(steamid), str(steamid)):
-            for mobile in ('react', 'android'):
-                params = {**base, 'a': account, 'm': mobile}
-                key = (account, mobile)
-                if key in seen:
-                    continue
-                seen.add(key)
-                variants.append(params)
-        return variants
+        base = {'p': device_id, 'k': conf_key, 't': timestamp, 'tag': tag, 'a': str(steamid)}
+        return [
+            {**base, 'm': 'react'},
+            {**base, 'm': 'android'},
+        ]
 
     def _fetch_confirmations_once(self, steamid, data, access_token):
         identity_secret = data.get('identity_secret')
@@ -578,6 +769,10 @@ class SteamService:
         username = data.get('account_name') or data.get('Session', {}).get('AccountName')
         password = data.get('account_password')
 
+        backoff = self._cooldown_response()
+        if backoff:
+            return backoff
+
         token_result = self._ensure_access_token(steamid, data, username, password, expected_steamid=steamid)
         if not token_result.get('success'):
             return token_result
@@ -585,24 +780,33 @@ class SteamService:
         try:
             result = self._fetch_confirmations_once(steamid, data, token_result['access_token'])
             if result.get('success'):
+                self._reset_mobileconf_cooldown()
                 return result
 
-            # Stale web token after Ratatoskr disconnect — refresh mobile session and retry
-            print(f"[AUTH] Confirmation fetch failed for {steamid}, refreshing session...")
+            # First fetch failed. Try exactly one session refresh + retry to cover a
+            # genuinely stale token. Only one refresh happens (the cooldown gates any
+            # further attempts), so this can't spiral into a login storm.
+            print(f"[AUTH] Confirmation fetch failed for {steamid}, refreshing session once...")
             data = self.storage.load_account(steamid) or data
             refresh_result = self._ensure_access_token(
                 steamid, data, username, password, expected_steamid=steamid, force_refresh=True
             )
-            if not refresh_result.get('success'):
-                result['refresh'] = refresh_result
-                return result
 
-            data = self.storage.load_account(steamid) or data
-            retry = self._fetch_confirmations_once(steamid, data, refresh_result['access_token'])
-            if retry.get('success'):
-                return retry
-            retry['refresh'] = refresh_result
-            return retry
+            if refresh_result.get('success'):
+                data = self.storage.load_account(steamid) or data
+                retry = self._fetch_confirmations_once(steamid, data, refresh_result['access_token'])
+                if retry.get('success'):
+                    self._reset_mobileconf_cooldown()
+                    return retry
+                result = retry  # classify the post-refresh failure below
+            else:
+                # Couldn't get a fresh token — session expired beyond refresh
+                # (re-import / re-authenticate the account).
+                result['refresh'] = refresh_result
+
+            # Still failing after a fresh session → transient "try again later" → back off.
+            self._note_transient(result)
+            return result
         except Exception as e:
             return {'success': False, 'message': f'Fetch error: {e}'}
 
@@ -625,6 +829,10 @@ class SteamService:
         session_data = data.get('Session', {})
         username = data.get('account_name') or session_data.get('AccountName')
         password = data.get('account_password')
+
+        backoff = self._cooldown_response()
+        if backoff:
+            return backoff
 
         def attempt_action(force_refresh=False):
             token_result = self._ensure_access_token(
@@ -672,10 +880,17 @@ class SteamService:
 
         parsed = attempt_action()
         if parsed.get('success'):
+            self._reset_mobileconf_cooldown()
+            return parsed
+
+        # Transient "try again later" — back off; a re-login won't clear it.
+        if self._note_transient(parsed):
             return parsed
 
         print(f"First attempt failed for confirmation {cid}. Refreshing session and retrying...")
         retry = attempt_action(force_refresh=True)
         if retry.get('success'):
+            self._reset_mobileconf_cooldown()
             return retry
+        self._note_transient(retry)
         return retry
