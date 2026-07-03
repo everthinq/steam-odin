@@ -4,6 +4,8 @@ import { LayoutDashboard, RefreshCw, AlertTriangle, Search, ChevronDown, ArrowRi
 import { matchesSearchQuery } from '../../utils/transferItems';
 import SteamMarketLink from '../../components/SteamMarketLink';
 import BuffMarketLink from '../../components/BuffMarketLink';
+import LisSkinsMarketLink from '../../components/LisSkinsMarketLink';
+import { getTradeonShortLink } from '../../utils/tradeonShortLink';
 
 // Render results in capped pages — the datasets are ~17k rows and painting them all
 // at once freezes the page. Rows are sorted best-profit-first, so the first page is
@@ -11,12 +13,34 @@ import BuffMarketLink from '../../components/BuffMarketLink';
 const PAGE_SIZE = 150;
 
 const PROFILES = [
-    { id: 'tradeon-steam',  from: 'Tradeon',  fromSub: 'min', to: 'Steam',   toSub: 'autobuy', fetchEndpoint: '/api/huginn/tradeon/steam',         cacheEndpoint: '/api/huginn/tradeon/steam/cache' },
-    { id: 'tradeon-buff',   from: 'Tradeon',  fromSub: 'min', to: 'Buff163', toSub: 'autobuy', fetchEndpoint: '/api/huginn/tradeon/buff',          cacheEndpoint: '/api/huginn/tradeon/buff/cache' },
-    { id: 'lisskins-steam', from: 'LisSkins', fromSub: 'min', to: 'Steam',   toSub: 'autobuy', fetchEndpoint: '/api/huginn/tradeon/lisskins-steam', cacheEndpoint: '/api/huginn/tradeon/lisskins-steam/cache' },
-    { id: 'lisskins-buff',  from: 'LisSkins', fromSub: 'min', to: 'Buff163', toSub: 'autobuy', fetchEndpoint: '/api/huginn/tradeon/lisskins-buff',  cacheEndpoint: '/api/huginn/tradeon/lisskins-buff/cache' },
-    { id: 'buff-steam',     from: 'Buff163',  fromSub: 'min', to: 'Steam',   toSub: 'autobuy', fetchEndpoint: '/api/huginn/tradeon/buff-steam',     cacheEndpoint: '/api/huginn/tradeon/buff-steam/cache' },
+    // buyMarket / sellMarket are pulse short-link slugs; when set, the Buy/Sell prices
+    // link to that market's page for the item.
+    { id: 'tradeon-steam',  from: 'Tradeon',  fromSub: 'min', to: 'Steam',   toSub: 'autobuy', buyMarket: 'TradeOnMarket', sellMarket: 'Steam', fetchEndpoint: '/api/huginn/tradeon/steam',         cacheEndpoint: '/api/huginn/tradeon/steam/cache' },
+    { id: 'tradeon-buff',   from: 'Tradeon',  fromSub: 'min', to: 'Buff163', toSub: 'autobuy', buyMarket: 'TradeOnMarket', sellMarket: 'Buff',  fetchEndpoint: '/api/huginn/tradeon/buff',          cacheEndpoint: '/api/huginn/tradeon/buff/cache' },
+    { id: 'lisskins-steam', from: 'LisSkins', fromSub: 'min', to: 'Steam',   toSub: 'autobuy', buyMarket: 'LisSkins',      sellMarket: 'Steam', fetchEndpoint: '/api/huginn/tradeon/lisskins-steam', cacheEndpoint: '/api/huginn/tradeon/lisskins-steam/cache' },
+    { id: 'lisskins-buff',  from: 'LisSkins', fromSub: 'min', to: 'Buff163', toSub: 'autobuy', buyMarket: 'LisSkins',      sellMarket: 'Buff',  fetchEndpoint: '/api/huginn/tradeon/lisskins-buff',  cacheEndpoint: '/api/huginn/tradeon/lisskins-buff/cache' },
+    { id: 'buff-steam',     from: 'Buff163',  fromSub: 'min', to: 'Steam',   toSub: 'autobuy', buyMarket: 'Buff',          sellMarket: 'Steam', fetchEndpoint: '/api/huginn/tradeon/buff-steam',     cacheEndpoint: '/api/huginn/tradeon/buff-steam/cache' },
 ];
+
+// A right-aligned price. When `market` is set, it links to that market's pulse
+// short-link for the item; otherwise it's plain text.
+const PriceCell = ({ market, itemName, price, className }) => {
+    const text = `$${price?.toFixed(2)}`;
+    const href = market ? getTradeonShortLink(market, itemName) : null;
+    if (!href) return <span className={className}>{text}</span>;
+    return (
+        <a
+            href={href}
+            target="_blank"
+            rel="noopener noreferrer"
+            title={`Open on ${market === 'TradeOnMarket' ? 'Tradeon' : market}`}
+            onClick={(e) => e.stopPropagation()}
+            className={`${className} hover:text-amber-300 hover:underline transition-colors`}
+        >
+            {text}
+        </a>
+    );
+};
 
 const MarketBadge = ({ name, sub, dim }) => (
     <span className={`flex items-baseline gap-1 ${dim ? 'opacity-50' : ''}`}>
@@ -97,6 +121,7 @@ const HuginnArbitrage = () => {
     const [itemSearch, setItemSearch] = useState('');
     const [inventoryOnly, setInventoryOnly] = useState(false);
     const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
+    const [copiedName, setCopiedName] = useState('');
     // Filtering ~17k rows on every keystroke is heavy; defer it so typing stays snappy.
     const deferredSearch = useDeferredValue(itemSearch);
 
@@ -176,6 +201,12 @@ const HuginnArbitrage = () => {
         } finally {
             setTradeonFetching(false);
         }
+    };
+
+    const copyItemName = (name) => {
+        navigator.clipboard?.writeText(name).catch(() => {});
+        setCopiedName(name);
+        setTimeout(() => setCopiedName(c => (c === name ? '' : c)), 1200);
     };
 
     const allResults = useMemo(() => {
@@ -395,9 +426,19 @@ const HuginnArbitrage = () => {
                                             )}
                                             <div className="min-w-0">
                                                 <div className="flex items-center gap-1.5 min-w-0">
-                                                    <p className="text-base text-white truncate" title={mhn}>{mhn}</p>
+                                                    <p
+                                                        className="text-base text-white truncate cursor-pointer hover:text-amber-300 transition-colors"
+                                                        title={`${mhn}\n(click to copy)`}
+                                                        onClick={() => copyItemName(mhn)}
+                                                    >
+                                                        {mhn}
+                                                    </p>
+                                                    {copiedName === mhn && (
+                                                        <span className="shrink-0 text-[10px] font-medium text-emerald-400">copied</span>
+                                                    )}
                                                     <SteamMarketLink itemName={mhn} />
                                                     <BuffMarketLink itemName={mhn} />
+                                                    <LisSkinsMarketLink itemName={mhn} />
                                                 </div>
                                                 {hasHold && (
                                                     <span className="text-[11px] text-orange-400">trade hold on some</span>
@@ -406,8 +447,8 @@ const HuginnArbitrage = () => {
                                         </div>
 
                                         <span className="text-base text-right font-bold text-amber-400 tabular-nums">{owned ? owned.count : <span className="text-slate-600">—</span>}</span>
-                                        <span className="text-base text-right text-slate-300 tabular-nums">${item.firstMarket?.price?.toFixed(2)}</span>
-                                        <span className="text-base text-right text-slate-300 tabular-nums">${item.secondMarket?.price?.toFixed(2)}</span>
+                                        <PriceCell market={activeProfile.buyMarket} itemName={mhn} price={item.firstMarket?.price} className="text-base text-right text-slate-300 tabular-nums" />
+                                        <PriceCell market={activeProfile.sellMarket} itemName={mhn} price={item.secondMarket?.price} className="text-base text-right text-slate-300 tabular-nums" />
                                         <span className={`text-base text-right tabular-nums ${(item.profit ?? 0) <= 0 ? 'text-red-400' : 'text-emerald-400'}`}>${item.profit?.toFixed(2)}</span>
                                         <span className={`text-base text-right font-semibold tabular-nums ${(item.profitPercent ?? 0) <= 0 ? 'text-red-400' : 'text-emerald-400'}`}>{item.profitPercent?.toFixed(0)}%</span>
 
