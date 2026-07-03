@@ -231,22 +231,6 @@ export const filterItemsByQuery = (items, query) => {
     return items.filter((item) => matchesSearchQuery(itemSearchFields(item), query));
 };
 
-/** Selectable count while keeping one copy in the source (inventory or storage). */
-export const getGroupReserveOneQty = (group) => Math.max(0, (group?.qty ?? 0) - 1);
-
-/**
- * To storage: max selectable for one float stack when reserve-one applies to the
- * whole skin line (name + wear). Another float on the line can be the kept copy.
- */
-export const getVariantMaxSelectableToStorage = (lineGroup, variant, selectedIds) => {
-    const budget = getGroupReserveOneQty(lineGroup);
-    const variantIdSet = new Set(variant.item_ids);
-    const otherSelected = lineGroup.item_ids.filter(
-        (id) => selectedIds.includes(id) && !variantIdSet.has(id)
-    ).length;
-    return Math.min(variant.qty, Math.max(0, budget - otherSelected));
-};
-
 /** One item_id per name + wear line from a flat item list. */
 export const pickOneItemIdPerSkin = (items) => {
     const byKey = new Map();

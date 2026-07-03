@@ -30,8 +30,6 @@ import {
     filterItemsByQuery,
     groupItemsByCasket,
     matchesSearchQuery,
-    getGroupReserveOneQty,
-    getVariantMaxSelectableToStorage,
     pickOneItemIdPerSkin,
     formatItemFloat,
     formatTradeHoldLabel,
@@ -899,14 +897,10 @@ const RatatoskrTransfer = () => {
 
     const getGroupSelectedQty = (group) => getIdsSelectedQty(group.item_ids);
 
-    /** Full qty when withdrawing; keep 1 in source when depositing (To) — per skin line, not per float. */
-    const getMaxSelectableQty = (group) =>
-        transferMode === 'to' ? getGroupReserveOneQty(group) : group.qty;
+    /** Full qty in both directions — deposit-all to storage, withdraw-all from storage. */
+    const getMaxSelectableQty = (group) => group.qty;
 
-    const getVariantMaxSelectableQty = (lineGroup, variant) =>
-        transferMode === 'to'
-            ? getVariantMaxSelectableToStorage(lineGroup, variant, selectedIds)
-            : variant.qty;
+    const getVariantMaxSelectableQty = (lineGroup, variant) => variant.qty;
 
     const setIdsSelectedQty = (itemIds, qty) => {
         const n = Math.max(0, Math.min(itemIds.length, Number.isFinite(qty) ? qty : 0));
@@ -965,7 +959,7 @@ const RatatoskrTransfer = () => {
         });
     };
 
-    /** Apply per-row Select (−1) / Select to every visible skin line in one action. */
+    /** Select every visible skin line at full quantity in one action. */
     const selectAllVisibleItems = () => {
         const ids = [];
         for (const lineGroup of sortedGroupedItems) {
@@ -1184,14 +1178,14 @@ const RatatoskrTransfer = () => {
                         className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-white/10 text-slate-300 hover:bg-white/5 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed transition-colors whitespace-nowrap"
                         title={
                             transferMode === 'to'
-                                ? 'Select all visible items but keep 1 copy of each skin in your inventory (same as Select −1 on every row)'
+                                ? 'Select all visible items to move to storage'
                                 : transferMode === 'from'
                                   ? 'Select all visible items from storage'
                                   : 'Choose To or From first'
                         }
                     >
                         <CheckSquare size={14} />
-                        {transferMode === 'to' ? 'Select all (−1)' : 'Select all'}
+                        Select all
                     </button>
                     <button
                         type="button"
@@ -1236,15 +1230,8 @@ const RatatoskrTransfer = () => {
                         <ArrowUpDown size={12} className="opacity-50" />
                     )}
                 </button>
-                <span
-                    className="text-right"
-                    title={
-                        transferMode === 'to'
-                            ? 'Select all but one (keeps 1 in inventory for arbitrage)'
-                            : 'Select all items in this row'
-                    }
-                >
-                    {transferMode === 'to' ? 'Select (−1)' : 'Select'}
+                <span className="text-right" title="Select all items in this row">
+                    Select
                 </span>
             </div>
 
@@ -1421,11 +1408,7 @@ const RatatoskrTransfer = () => {
                                             sel,
                                             () => toggleGroupCheckbox(lineGroup),
                                             getMaxSelectableQty(lineGroup) === 0,
-                                            transferMode === 'to'
-                                                ? getMaxSelectableQty(lineGroup) === 0
-                                                    ? 'Only one copy in inventory'
-                                                    : `Select ${getMaxSelectableQty(lineGroup)} of ${lineGroup.qty} (keep 1 in inventory)`
-                                                : `Select all ${lineGroup.qty}`
+                                            `Select all ${lineGroup.qty}`
                                         )}
                                     </div>
                                 </div>
@@ -1480,13 +1463,7 @@ const RatatoskrTransfer = () => {
                                                         vSel,
                                                         () => toggleFloatVariantCheckbox(lineGroup, variant),
                                                         vMax === 0,
-                                                        transferMode === 'to'
-                                                            ? vMax === 0
-                                                                ? lineGroup.qty <= 1
-                                                                    ? 'Only one copy in inventory for this skin'
-                                                                    : 'Another copy of this skin must stay in inventory'
-                                                                : `Select ${vMax} of ${variant.qty} at this float (keep 1 of this skin in inventory)`
-                                                            : `Select all ${variant.qty} at this float`
+                                                        `Select all ${variant.qty} at this float`
                                                     )}
                                                 </div>
                                             </div>
@@ -1599,7 +1576,7 @@ const RatatoskrTransfer = () => {
             {transferMode && (
                 <p className="text-xs text-slate-500 -mt-4 mb-4">
                     {transferMode === 'to'
-                        ? 'Showing storage units with room (0–999 items). Row select keeps 1 copy in your inventory.'
+                        ? 'Showing storage units with room (0–999 items).'
                         : 'Showing storage units with items (1–1,000 items).'}
                 </p>
             )}
