@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { LayoutDashboard, RefreshCw, AlertTriangle, Search, ChevronDown, ArrowRight } from 'lucide-react';
 import { matchesSearchQuery } from '../../utils/transferItems';
 import SteamMarketLink from '../../components/SteamMarketLink';
+import BuffMarketLink from '../../components/BuffMarketLink';
 
 // Render results in capped pages — the datasets are ~17k rows and painting them all
 // at once freezes the page. Rows are sorted best-profit-first, so the first page is
@@ -396,6 +397,7 @@ const HuginnArbitrage = () => {
                                                 <div className="flex items-center gap-1.5 min-w-0">
                                                     <p className="text-base text-white truncate" title={mhn}>{mhn}</p>
                                                     <SteamMarketLink itemName={mhn} />
+                                                    <BuffMarketLink itemName={mhn} />
                                                 </div>
                                                 {hasHold && (
                                                     <span className="text-[11px] text-orange-400">trade hold on some</span>
