@@ -16,7 +16,7 @@ settings_manager = SettingsManager()
 steam_service = SteamService()
 ratatoskr_service = RatatoskrService()
 huginn_service = HuginnService(steam_service, ratatoskr_service)
-scheduler = ConfirmationScheduler(settings_manager, steam_service)
+scheduler = ConfirmationScheduler(settings_manager, steam_service, ratatoskr_service)
 
 def trigger_restart():
     """Triggers a backend restart by exiting the process after a short delay."""
@@ -442,6 +442,56 @@ def ratatoskr_casket_rename():
     if 'error' in result:
         return jsonify(result), 400
     return jsonify(result)
+
+@app.route('/api/ratatoskr/auto-store', methods=['GET'])
+def get_auto_store():
+    """Return auto-store watcher config + recent move history (newest first)."""
+    s = settings_manager.get_settings()
+    history = list(s.get("auto_store_history") or [])
+    history.reverse()
+    return jsonify({
+        "enabled": bool(s.get("auto_store_enabled")),
+        "items": s.get("auto_store_items") or [],
+        "accounts": s.get("auto_store_accounts") or [],
+        "history": history,
+        "moved_total": sum(int(r.get("count", 0)) for r in history),
+    })
+
+@app.route('/api/ratatoskr/auto-store', methods=['POST'])
+def update_auto_store():
+    """Update the auto-store toggle, watched item names, and enabled accounts."""
+    data = request.json or {}
+    patch = {}
+    if "enabled" in data:
+        patch["auto_store_enabled"] = bool(data["enabled"])
+    if "items" in data and isinstance(data["items"], list):
+        # De-dup while preserving order, drop blanks.
+        seen, items = set(), []
+        for name in data["items"]:
+            name = str(name).strip()
+            if name and name.lower() not in seen:
+                seen.add(name.lower())
+                items.append(name)
+        patch["auto_store_items"] = items
+    if "accounts" in data and isinstance(data["accounts"], list):
+        patch["auto_store_accounts"] = [str(a) for a in data["accounts"]]
+
+    if not patch:
+        return jsonify({"error": "Nothing to update"}), 400
+    if not settings_manager.save_settings(patch):
+        return jsonify({"error": "Failed to save settings"}), 500
+    return get_auto_store()
+
+@app.route('/api/ratatoskr/auto-store/sweep', methods=['POST'])
+def trigger_auto_store_sweep():
+    """Run an auto-store sweep immediately (background) for instant feedback."""
+    settings = settings_manager.get_settings()
+    if not scheduler._auto_store_on(settings):
+        return jsonify({"error": "Auto-store is off or has no items/accounts configured"}), 400
+    threading.Thread(
+        target=lambda: scheduler._auto_store_sweep(settings), daemon=True
+    ).start()
+    return jsonify({"status": "sweeping"})
 
 @app.route('/api/huginn/scan', methods=['POST'])
 def huginn_scan():

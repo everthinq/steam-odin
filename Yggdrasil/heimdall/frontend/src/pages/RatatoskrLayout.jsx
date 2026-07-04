@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Outlet, Link, useParams, useLocation, useNavigate } from 'react-router-dom';
-import { Package, ArrowRightLeft, Database, LayoutDashboard, Plug, Unplug, Timer } from 'lucide-react';
+import { Package, ArrowRightLeft, Database, LayoutDashboard, Plug, Unplug, Timer, Boxes } from 'lucide-react';
 
 const STATUS_POLL_MS = 90 * 1000;
 
@@ -153,6 +153,7 @@ const RatatoskrLayout = () => {
     const navItems = [
         { path: 'inventory', icon: Package, label: 'Inventory' },
         { path: 'transfer', icon: ArrowRightLeft, label: 'Transfer' },
+        { path: 'auto-store', icon: Boxes, label: 'Auto-Store' },
     ];
 
     const accountLabel = account?.account_name || 'Unknown account';

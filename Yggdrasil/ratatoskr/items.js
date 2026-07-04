@@ -321,6 +321,16 @@ class items {
       // returnDict['coordinator_data'] = JSON.stringify(value);
       // console.log(value, returnDict)
 
+      // Items received via a trade carry econ attribute def_index 312
+      // ("trade protection"). Unlike a plain market-purchase cooldown
+      // (attribute 75), attribute 312 prevents the item from being deposited
+      // into a storage unit. Verified against live inventories: traded cases
+      // had attributes [75, 312] and the GC refused to store them, while
+      // market-bought cases had [75] (or none) and stored fine even mid-cooldown.
+      returnDict['trade_locked'] = (value['attribute'] || []).some(
+        (a) => a.def_index === 312
+      );
+
       returnList.push(returnDict);
     }
     return returnList;

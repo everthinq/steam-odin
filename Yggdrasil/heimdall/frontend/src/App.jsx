@@ -5,6 +5,7 @@ import Confirmations from './pages/Confirmations';
 import RatatoskrLayout from './pages/RatatoskrLayout';
 import RatatoskrInventory from './pages/ratatoskr/Inventory';
 import RatatoskrTransfer from './pages/ratatoskr/Transfer';
+import RatatoskrAutoStore from './pages/ratatoskr/AutoStore';
 import HuginnArbitrage from './pages/huginn/Arbitrage';
 import './index.css';
 
@@ -28,6 +29,7 @@ function App() {
             <Route index element={<Navigate to="inventory" replace />} />
             <Route path="inventory" element={<RatatoskrInventory />} />
             <Route path="transfer" element={<RatatoskrTransfer />} />
+            <Route path="auto-store" element={<RatatoskrAutoStore />} />
           </Route>
 
         </Routes>

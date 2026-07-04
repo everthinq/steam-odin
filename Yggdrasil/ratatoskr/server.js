@@ -269,18 +269,10 @@ app.post('/login', (req, res) => {
         return res.status(400).json({ error: 'Missing credentials' });
     }
 
-    // Check if we already have a session for this accountName
-    // Ideally we map accountName -> steamID, but for now let's just create a new one
-    // In a real app we'd check if `sessions` has a user with this accountName.
-
     const user = new SteamUser();
     const csgo = new GlobalOffensive(user);
 
-    const logOnOptions = {
-        accountName,
-        password,
-    };
-
+    const logOnOptions = { accountName, password };
     if (twoFactorCode) {
         logOnOptions.twoFactorCode = twoFactorCode;
     } else if (sharedSecret) {

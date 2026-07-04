@@ -1,13 +1,25 @@
+import random
 import threading
 import time
-from datetime import datetime
+from datetime import datetime, timezone
+
+# Storage units hold up to 1000 items (mirrors STORAGE_CAPACITY in the frontend).
+STORAGE_CAPACITY = 1000
+# Drop an in-flight move from the guard set after this long so a stuck/failed
+# move gets retried on a later sweep instead of being skipped forever.
+_INFLIGHT_TTL_SEC = 15 * 60
+
 
 class ConfirmationScheduler:
-    def __init__(self, settings_manager, steam_service):
+    def __init__(self, settings_manager, steam_service, ratatoskr_service=None):
         self.settings_manager = settings_manager
         self.steam_service = steam_service
+        self.ratatoskr_service = ratatoskr_service
         self.stop_event = threading.Event()
         self.thread = None
+        # steamid -> {item_id: queued_at_epoch} for moves already handed to Ratatoskr
+        # but not yet reflected in inventory, so we don't double-queue them.
+        self._auto_store_inflight = {}
 
     def start(self):
         if self.thread and self.thread.is_alive():
@@ -24,23 +36,41 @@ class ConfirmationScheduler:
             print("[SCHEDULER] Stopped background confirmation checker.")
 
     @staticmethod
-    def _should_poll(settings):
-        """Poll when periodic check is on, or any auto-confirm rule needs a watcher."""
+    def _confirm_polling_on(settings):
         return bool(
             settings.get("auto_check_enabled")
             or settings.get("auto_confirm_market")
             or settings.get("auto_confirm_trades")
         )
 
+    @staticmethod
+    def _auto_store_on(settings):
+        return bool(
+            settings.get("auto_store_enabled")
+            and settings.get("auto_store_items")
+            and settings.get("auto_store_accounts")
+        )
+
+    @classmethod
+    def _should_poll(cls, settings):
+        """Poll when confirmations need a watcher, or the auto-store watcher is armed."""
+        return cls._confirm_polling_on(settings) or cls._auto_store_on(settings)
+
     def _run_loop(self):
         while not self.stop_event.is_set():
             settings = self.settings_manager.get_settings()
 
-            if self._should_poll(settings):
+            if self._confirm_polling_on(settings):
                 try:
                     self._check_all_accounts(settings)
                 except Exception as e:
                     print(f"[SCHEDULER] Error in check loop: {e}")
+
+            if self._auto_store_on(settings):
+                try:
+                    self._auto_store_sweep(settings)
+                except Exception as e:
+                    print(f"[SCHEDULER] Error in auto-store sweep: {e}")
 
             # Sleep for the configured interval, checking stop_event frequently
             interval = max(10, settings.get("check_interval", 300))
@@ -132,3 +162,238 @@ class ConfirmationScheduler:
                 print(f"[SCHEDULER] Failed to accept {cid}: {res.get('message')}")
             else:
                 print(f"[SCHEDULER] Accepted {cid} for {steamid}")
+
+    # ------------------------------------------------------------------
+    # Auto-store watcher: sweep watched items from inventory into storage.
+    # ------------------------------------------------------------------
+    def _auto_store_sweep(self, settings):
+        if not self.ratatoskr_service:
+            return
+
+        watch = {
+            str(name).strip().lower()
+            for name in (settings.get("auto_store_items") or [])
+            if str(name).strip()
+        }
+        accounts = [str(s) for s in (settings.get("auto_store_accounts") or [])]
+        if not watch or not accounts:
+            return
+
+        for steamid in accounts:
+            try:
+                self._auto_store_account(steamid, watch)
+            except Exception as e:
+                print(f"[AUTO-STORE] Failed for {steamid}: {e}")
+
+    def _auto_store_account(self, steamid, watch):
+        if not self._ensure_connected(steamid):
+            print(f"[AUTO-STORE] {steamid} not connected and could not auto-connect — skipping")
+            return
+
+        items = self._fetch_inventory_items(steamid)
+        if items is None:
+            return
+
+        present_ids = {str(it.get("item_id")) for it in items}
+        now = time.time()
+
+        status = self.ratatoskr_service.get_move_status(steamid) or {}
+        queue_busy = bool(status.get("running") or (status.get("pending") or 0) > 0)
+
+        # 1) Reconcile earlier moves against reality — logs only genuine deposits.
+        self._reconcile_inflight(steamid, present_ids, now, queue_busy)
+
+        # Don't pile more work onto a queue that's still draining.
+        if queue_busy:
+            return
+
+        inflight = self._auto_store_inflight.setdefault(steamid, {})
+
+        # 2) Storable, watched items not already in flight.
+        id_to_name = {str(it.get("item_id")): it.get("item_name") for it in items}
+        loose_ids = [
+            str(it.get("item_id"))
+            for it in items
+            if self._is_storable(it)
+            and str(it.get("item_name", "")).strip().lower() in watch
+            and str(it.get("item_id")) not in inflight
+        ]
+        if not loose_ids:
+            return
+
+        caskets = (self.ratatoskr_service.get_caskets(steamid) or {}).get("caskets") or []
+        plan, unplaced = self._plan_casket_moves(loose_ids, caskets)
+        if not plan:
+            print(f"[AUTO-STORE] {steamid}: no storage room for {len(loose_ids)} item(s)")
+            return
+
+        for casket_id, batch_ids in plan:
+            res = self.ratatoskr_service.move_batch(
+                steamid, batch_ids, "inventory", "casket", casket_id
+            )
+            if res.get("error"):
+                print(f"[AUTO-STORE] {steamid}: move to {casket_id} failed: {res.get('error')}")
+                continue
+
+            casket_name = self._casket_label(caskets, casket_id)
+            for iid in batch_ids:
+                inflight[iid] = {
+                    "casket_id": str(casket_id),
+                    "casket_name": casket_name,
+                    "item_name": id_to_name.get(iid),
+                    "issued_at": now,
+                }
+            print(
+                f"[AUTO-STORE] {steamid}: issued {len(batch_ids)} move(s) → "
+                f"'{casket_name}' ({casket_id}); confirming once they leave inventory"
+            )
+
+        if unplaced:
+            print(f"[AUTO-STORE] {steamid}: {len(unplaced)} item(s) had no room left")
+
+    def _reconcile_inflight(self, steamid, present_ids, now, queue_busy):
+        """Confirm previously-issued moves against the live inventory.
+
+        A move is only real once the item has left the loose inventory (it's now
+        inside a storage unit) — that's when we log it. Fire-and-forget GC adds
+        give no acknowledgement, so this is the only trustworthy signal. Items
+        that linger after the queue has drained were refused by the GC (almost
+        always a trade hold) and are dropped so they aren't counted or stuck.
+        """
+        inflight = self._auto_store_inflight.setdefault(steamid, {})
+        if not inflight:
+            return
+
+        confirmed = {}  # casket_id -> {"name": str, "count": int, "items": {mhn: qty}}
+        for iid, meta in list(inflight.items()):
+            if iid not in present_ids:
+                cid = meta.get("casket_id")
+                slot = confirmed.setdefault(
+                    cid, {"name": meta.get("casket_name"), "count": 0, "items": {}}
+                )
+                slot["count"] += 1
+                name = meta.get("item_name") or "Unknown item"
+                slot["items"][name] = slot["items"].get(name, 0) + 1
+                inflight.pop(iid, None)
+            elif not queue_busy and (now - meta.get("issued_at", now)) > _INFLIGHT_TTL_SEC:
+                print(f"[AUTO-STORE] {steamid}: item {iid} never moved (likely trade-held) — releasing guard")
+                inflight.pop(iid, None)
+
+        if not confirmed:
+            return
+
+        account_name = self._account_name(steamid)
+        for cid, slot in confirmed.items():
+            breakdown = ", ".join(f"{qty}× {nm}" for nm, qty in slot["items"].items())
+            print(f"[AUTO-STORE] {steamid}: confirmed {slot['count']} stored in '{slot['name']}' ({cid}): {breakdown}")
+            self.settings_manager.append_auto_store_history({
+                "ts": datetime.now(timezone.utc).isoformat(),
+                "steamid": steamid,
+                "account_name": account_name,
+                "count": slot["count"],
+                "casket_id": str(cid),
+                "casket_name": slot["name"],
+                "items": slot["items"],
+            })
+
+    @staticmethod
+    def _is_storable(it):
+        """Whether a loose inventory item can actually be deposited into storage now.
+
+        Skips storage units themselves, items the GC marks unmovable (medals,
+        base weapons, untradable collectibles), and — the key distinction —
+        items received via a trade. A traded item carries econ attribute 312
+        (surfaced as `trade_locked`) and the GC refuses to store it. A plain
+        market-purchase cooldown (`trade_unlock`, attribute 75) does NOT block
+        storage, so those items are moved normally even mid-cooldown.
+        """
+        if it.get("def_index") == 1201:
+            return False
+        if not it.get("item_moveable", True):
+            return False
+        if it.get("trade_locked"):
+            return False
+        return True
+
+    @staticmethod
+    def _plan_casket_moves(item_ids, caskets):
+        """Pick a random storage unit with room for all items; split across units if none fits.
+
+        Returns (plan, unplaced) where plan is a list of (casket_id, [item_ids]).
+        """
+        def free(c):
+            return max(0, STORAGE_CAPACITY - int(c.get("item_storage_total") or 0))
+
+        n = len(item_ids)
+        fits = [c for c in caskets if free(c) >= n]
+        if fits:
+            target = random.choice(fits)
+            return [(target.get("item_id"), list(item_ids))], []
+
+        # No single unit fits — spread greedily across random units with any room.
+        units = [c for c in caskets if free(c) > 0]
+        random.shuffle(units)
+        plan = []
+        remaining = list(item_ids)
+        for c in units:
+            if not remaining:
+                break
+            take = min(free(c), len(remaining))
+            plan.append((c.get("item_id"), remaining[:take]))
+            remaining = remaining[take:]
+        return plan, remaining
+
+    @staticmethod
+    def _casket_label(caskets, casket_id):
+        for c in caskets:
+            if str(c.get("item_id")) == str(casket_id):
+                return c.get("item_customname") or c.get("item_name") or "Storage Unit"
+        return "Storage Unit"
+
+    def _account_name(self, steamid):
+        data = self.steam_service.get_account(steamid)
+        return (data or {}).get("account_name", "Unknown")
+
+    def _fetch_inventory_items(self, steamid, retries=3):
+        """Fetch inventory, retrying briefly since it can lag a fresh GC connect."""
+        for attempt in range(retries):
+            resp = self.ratatoskr_service.get_inventory(steamid) or {}
+            if resp.get("error"):
+                print(f"[AUTO-STORE] {steamid}: inventory fetch error: {resp.get('error')}")
+                return None
+            items = resp.get("items")
+            if items:
+                return items
+            if attempt < retries - 1:
+                time.sleep(1)
+        return []
+
+    def _ensure_connected(self, steamid):
+        """Return True if the account has a live Ratatoskr GC session, auto-connecting if not.
+
+        Auto-connect uses the stored password + shared secret, the same path the
+        manual Connect button uses. (The stored RefreshToken is a web/mobile
+        token, not a Steam-client token, so it can't be used for a GC login.)
+        """
+        status = self.ratatoskr_service.get_status(steamid) or {}
+        if status.get("status") == "connected":
+            return True
+
+        data = self.steam_service.get_account(steamid)
+        if not data:
+            return False
+
+        account_name = data.get("account_name")
+        password = self.steam_service.get_password(steamid)
+        if not password:
+            print(f"[AUTO-STORE] {steamid}: no stored password — connect it once manually to enable auto-store")
+            return False
+
+        print(f"[AUTO-STORE] Auto-connecting {steamid} ({account_name})…")
+        result = self.ratatoskr_service.login(
+            account_name, password=password, shared_secret=data.get("shared_secret")
+        )
+        if result.get("error"):
+            print(f"[AUTO-STORE] {steamid}: auto-connect failed: {result.get('error')}")
+            return False
+        return True
