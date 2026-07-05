@@ -5,6 +5,7 @@ import { matchesSearchQuery } from '../../utils/transferItems';
 import SteamMarketLink from '../../components/SteamMarketLink';
 import BuffMarketLink from '../../components/BuffMarketLink';
 import LisSkinsMarketLink from '../../components/LisSkinsMarketLink';
+import CSFloatMarketLink from '../../components/CSFloatMarketLink';
 import { getTradeonShortLink } from '../../utils/tradeonShortLink';
 
 // Render results in capped pages — the datasets are ~17k rows and painting them all
@@ -439,6 +440,7 @@ const HuginnArbitrage = () => {
                                                     <SteamMarketLink itemName={mhn} />
                                                     <BuffMarketLink itemName={mhn} />
                                                     <LisSkinsMarketLink itemName={mhn} />
+                                                    <CSFloatMarketLink itemName={mhn} />
                                                 </div>
                                                 {hasHold && (
                                                     <span className="text-[11px] text-orange-400">trade hold on some</span>
