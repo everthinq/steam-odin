@@ -44,6 +44,10 @@ let sessionIdleTimeoutMs = DEFAULT_SESSION_IDLE_MS === 0
 
 const getMoveDelayMs = () => moveDelayMs;
 
+// SteamIDs exempt from idle auto-disconnect (e.g. the auto-store watcher's
+// accounts). Heimdall keeps this in sync — see POST /config/protected-accounts.
+let protectedSteamIds = new Set();
+
 const getSessionIdleTimeoutMs = () => sessionIdleTimeoutMs;
 
 const setSessionIdleTimeoutMs = (value) => {
@@ -638,11 +642,27 @@ app.post('/config/session-idle', (req, res) => {
     }
 });
 
+// Accounts that must never be idle-disconnected (synced from Heimdall).
+app.get('/config/protected-accounts', (req, res) => {
+    res.json({ steamIds: [...protectedSteamIds] });
+});
+
+app.post('/config/protected-accounts', (req, res) => {
+    const ids = req.body?.steamIds;
+    if (!Array.isArray(ids)) {
+        return res.status(400).json({ error: 'steamIds must be an array' });
+    }
+    protectedSteamIds = new Set(ids.map(String));
+    console.log(`[SESSION] Protected accounts set: ${[...protectedSteamIds].join(', ') || '(none)'}`);
+    res.json({ success: true, steamIds: [...protectedSteamIds] });
+});
+
 // Cleanup inactive sessions (respects configurable idle timeout)
 const SESSION_SWEEP_MS = 60 * 1000;
 setInterval(() => {
     for (const [steamID, session] of Object.entries(sessions)) {
         if (!isSessionIdleExpired(session)) continue;
+        if (protectedSteamIds.has(steamID)) continue; // auto-store account — keep online
         if (hasActiveMoveWork(steamID)) {
             session.lastActivity = Date.now();
             continue;

@@ -480,6 +480,12 @@ def update_auto_store():
         return jsonify({"error": "Nothing to update"}), 400
     if not settings_manager.save_settings(patch):
         return jsonify({"error": "Failed to save settings"}), 500
+
+    # Keep the idle-disconnect exemption in sync immediately (also re-asserted by the scheduler).
+    s = settings_manager.get_settings()
+    protected = (s.get("auto_store_accounts") or []) if s.get("auto_store_enabled") else []
+    ratatoskr_service.set_protected_accounts(protected)
+
     return get_auto_store()
 
 @app.route('/api/ratatoskr/auto-store/sweep', methods=['POST'])

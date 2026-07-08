@@ -56,9 +56,23 @@ class ConfirmationScheduler:
         """Poll when confirmations need a watcher, or the auto-store watcher is armed."""
         return cls._confirm_polling_on(settings) or cls._auto_store_on(settings)
 
+    def _sync_protected_accounts(self, settings):
+        """Keep Ratatoskr's idle-disconnect exemption in sync with the auto-store
+        accounts, so the watcher's account is never idled out. Re-asserted every
+        loop so it self-heals after a Ratatoskr restart."""
+        if not self.ratatoskr_service:
+            return
+        protected = (settings.get("auto_store_accounts") or []) if settings.get("auto_store_enabled") else []
+        try:
+            self.ratatoskr_service.set_protected_accounts(protected)
+        except Exception as e:
+            print(f"[AUTO-STORE] Failed to sync protected accounts: {e}")
+
     def _run_loop(self):
         while not self.stop_event.is_set():
             settings = self.settings_manager.get_settings()
+
+            self._sync_protected_accounts(settings)
 
             if self._confirm_polling_on(settings):
                 try:

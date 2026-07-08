@@ -137,6 +137,20 @@ class RatatoskrService:
                 return {"error": e.response.json().get('error', 'Failed to set move delay')}
             return {"error": "Failed to connect to Ratatoskr"}
 
+    def set_protected_accounts(self, steam_ids):
+        """Tell Ratatoskr which accounts must never be idle-disconnected."""
+        try:
+            response = requests.post(
+                f"{self.base_url}/config/protected-accounts",
+                json={"steamIds": [str(s) for s in (steam_ids or [])]},
+                timeout=10,
+            )
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.RequestException as e:
+            print(f"Ratatoskr Protected Accounts SET Error: {e}")
+            return {"error": "Failed to set protected accounts"}
+
     def get_session_idle_timeout(self):
         """Get auto-disconnect idle timeout (ms); 0 = never."""
         try:
