@@ -9,12 +9,14 @@ from datetime import datetime, timezone
 CACHE_PATH = os.path.join(os.path.dirname(__file__), 'cache', 'huginn_scan.json')
 TRADEON_STEAM_CACHE_PATH = os.path.join(os.path.dirname(__file__), 'cache', 'huginn_tradeon_steam.json')
 TRADEON_BUFF_CACHE_PATH  = os.path.join(os.path.dirname(__file__), 'cache', 'huginn_tradeon_buff.json')
+TRADEON_CSFLOAT_CACHE_PATH = os.path.join(os.path.dirname(__file__), 'cache', 'huginn_tradeon_csfloat.json')
 TRADEON_LISSKINS_STEAM_CACHE_PATH = os.path.join(os.path.dirname(__file__), 'cache', 'huginn_tradeon_lisskins_steam.json')
 TRADEON_LISSKINS_BUFF_CACHE_PATH  = os.path.join(os.path.dirname(__file__), 'cache', 'huginn_tradeon_lisskins_buff.json')
 TRADEON_BUFF_STEAM_CACHE_PATH     = os.path.join(os.path.dirname(__file__), 'cache', 'huginn_tradeon_buff_steam.json')
 
 _TRADEON_STEAM_URL    = 'https://api-pulse.tradeon.space/api/table/counter-strike/TradeOnMarket/Steam/all'
 _TRADEON_BUFF_URL     = 'https://api-pulse.tradeon.space/api/table/counter-strike/TradeOnMarket/Buff/all'
+_TRADEON_CSFLOAT_URL  = 'https://api-pulse.tradeon.space/api/table/counter-strike/TradeOnMarket/CsFloat/all'
 _TRADEON_LISSKINS_URL = 'https://api-pulse.tradeon.space/api/table/counter-strike/TradeOnMarket/LisSkins/all'
 
 # Sales fee taken by the sell-side market: net proceeds = price * (1 - fee).
@@ -102,6 +104,12 @@ _TRADEON_LISSKINS_BODY["secondMarketOptions"]["secondMarketPriceType"] = "SellWi
 
 _TRADEON_BUFF_BUY_BODY = copy.deepcopy(_TRADEON_STEAM_BODY)
 _TRADEON_BUFF_BUY_BODY["secondMarketOptions"]["secondMarketPriceType"] = "Sell"
+
+# Tradeon (min) => CSFloat (min): CSFloat has no autobuy, so the sell side is its
+# lowest listing (Sell), not a buy order. Direct pulse query — pulse returns the
+# profit itself, so this passes through like the other Tradeon-first profiles.
+_TRADEON_CSFLOAT_BODY = copy.deepcopy(_TRADEON_STEAM_BODY)
+_TRADEON_CSFLOAT_BODY["secondMarketOptions"]["secondMarketPriceType"] = "Sell"
 
 
 class HuginnService:
@@ -243,6 +251,12 @@ class HuginnService:
 
     def get_tradeon_buff_cache(self):
         return self._get_tradeon_cache(TRADEON_BUFF_CACHE_PATH)
+
+    def fetch_tradeon_csfloat(self, token):
+        return self._fetch_tradeon(_TRADEON_CSFLOAT_URL, token, TRADEON_CSFLOAT_CACHE_PATH, _TRADEON_CSFLOAT_BODY)
+
+    def get_tradeon_csfloat_cache(self):
+        return self._get_tradeon_cache(TRADEON_CSFLOAT_CACHE_PATH)
 
     def _combine_arbitrage(self, token, buy_url, buy_body, sell_url, sell_fee, cache_path):
         """Combine a buy-side market's min prices with a sell-side market's autobuy prices.
