@@ -894,3 +894,87 @@ class SteamService:
             return retry
         self._note_transient(retry)
         return retry
+
+    def act_on_confirmations_batch(self, steamid, items, operation='allow'):
+        """Approve/deny many confirmations in ONE mobileconf/multiajaxop call.
+
+        `items` is a list of (cid, ck) pairs. Steam accepts repeated cid[]/ck[]
+        form fields and acts on all of them at once — far faster than issuing a
+        request per confirmation. Mirrors act_on_confirmation's token/backoff/
+        retry handling.
+        """
+        items = [(str(c), str(k)) for c, k in items if c and k]
+        if not items:
+            return {'success': True, 'accepted': 0}
+
+        data = self.storage.load_account(steamid)
+        if not data:
+            return {'success': False, 'message': 'Account not found'}
+
+        identity_secret = data.get('identity_secret')
+        session_data = data.get('Session', {})
+        username = data.get('account_name') or session_data.get('AccountName')
+        password = data.get('account_password')
+
+        backoff = self._cooldown_response()
+        if backoff:
+            return backoff
+
+        cids = [c for c, _ in items]
+        cks = [k for _, k in items]
+
+        def attempt_action(force_refresh=False):
+            token_result = self._ensure_access_token(
+                steamid, data, username, password, expected_steamid=steamid, force_refresh=force_refresh
+            )
+            if not token_result.get('success'):
+                return token_result
+
+            tag = 'accept' if operation == 'allow' else 'reject'
+            session_id = session_data.get('WebSessionId')
+            cookies = self._get_cookies(steamid, token_result['access_token'], session_id=session_id)
+            last_payload = None
+            last_status = None
+
+            for base_params in self._confirmation_param_variants(steamid, data, identity_secret, tag):
+                form = {**base_params, 'op': operation, 'cid[]': cids, 'ck[]': cks}
+                try:
+                    resp = requests.post(
+                        'https://steamcommunity.com/mobileconf/multiajaxop',
+                        data=form,
+                        headers={'User-Agent': 'okhttp/3.12.12'},
+                        cookies=cookies,
+                        timeout=30,
+                        proxies=self._get_proxies(),
+                    )
+                    self._log_steam_response('MobileConfMultiAjaxOp', resp)
+                    last_status = resp.status_code
+                    parsed = self._parse_ajaxop_response(resp)
+                    if parsed.get('success'):
+                        parsed['accepted'] = len(items)
+                        return parsed
+                    last_payload = parsed.get('raw')
+                except Exception as e:
+                    last_payload = {'error': str(e)}
+
+            return {
+                'success': False,
+                'message': self._mobileconf_error_message(last_payload, last_status),
+                'raw': last_payload,
+            }
+
+        parsed = attempt_action()
+        if parsed.get('success'):
+            self._reset_mobileconf_cooldown()
+            return parsed
+
+        if self._note_transient(parsed):
+            return parsed
+
+        print(f"Batch confirm failed for {steamid} ({len(items)} items). Refreshing session and retrying...")
+        retry = attempt_action(force_refresh=True)
+        if retry.get('success'):
+            self._reset_mobileconf_cooldown()
+            return retry
+        self._note_transient(retry)
+        return retry

@@ -115,7 +115,7 @@ class ConfirmationScheduler:
                 print("[SCHEDULER] mobileconf backoff tripped mid-sweep — aborting remaining accounts")
                 break
             if i < len(accounts) - 1:
-                time.sleep(2)
+                time.sleep(1)
 
     def _process_account(self, steamid, settings):
         # 1. Fetch confirmations
@@ -130,12 +130,14 @@ class ConfirmationScheduler:
 
         print(f"[SCHEDULER] Found {len(confirmations)} confirmations for {steamid}")
 
-        # 2. filter and act
+        # 2. Collect everything to accept, then approve it all in ONE batch call.
         auto_market = settings.get("auto_confirm_market")
         auto_trades = settings.get("auto_confirm_trades")
 
+        to_accept = []
+        skipped = 0
         for conf in confirmations:
-            # Steam: type 2 = Trade, 3 = Market (may arrive as str)
+            # Steam: type 2 = Trade, 3 = Market listing, 12 = Market purchase (may arrive as str)
             try:
                 ctype = int(conf.get('type', 0) or 0)
             except (TypeError, ValueError):
@@ -150,32 +152,24 @@ class ConfirmationScheduler:
                 )
                 continue
 
-            cid = str(cid)
-            ck = str(ck)
-
-            should_accept = False
-            if ctype in (3, 12) and auto_market:
-                # type 3 = market listing, type 12 = market purchase / buy-order confirmation
-                should_accept = True
-            elif ctype == 2 and auto_trades:
-                should_accept = True
-
-            if not should_accept:
-                print(
-                    f"[SCHEDULER] Pending type={ctype} for {steamid} "
-                    f"(auto_market={auto_market}, auto_trades={auto_trades})"
-                )
-                continue
-
-            print(
-                f"[SCHEDULER] Auto-accepting {'Market' if ctype == 3 else 'Trade'} "
-                f"confirmation {cid} for {steamid}"
-            )
-            res = self.steam_service.act_on_confirmation(steamid, cid, ck, 'allow')
-            if not res.get('success'):
-                print(f"[SCHEDULER] Failed to accept {cid}: {res.get('message')}")
+            if (ctype in (3, 12) and auto_market) or (ctype == 2 and auto_trades):
+                to_accept.append((str(cid), str(ck)))
             else:
-                print(f"[SCHEDULER] Accepted {cid} for {steamid}")
+                skipped += 1
+
+        if skipped:
+            print(f"[SCHEDULER] {steamid}: {skipped} confirmation(s) not eligible "
+                  f"(auto_market={auto_market}, auto_trades={auto_trades})")
+
+        if not to_accept:
+            return
+
+        print(f"[SCHEDULER] Auto-accepting {len(to_accept)} confirmation(s) for {steamid} in one batch")
+        res = self.steam_service.act_on_confirmations_batch(steamid, to_accept, 'allow')
+        if res.get('success'):
+            print(f"[SCHEDULER] Accepted {res.get('accepted', len(to_accept))} for {steamid}")
+        else:
+            print(f"[SCHEDULER] Batch accept failed for {steamid}: {res.get('message')}")
 
     # ------------------------------------------------------------------
     # Auto-store watcher: sweep watched items from inventory into storage.
