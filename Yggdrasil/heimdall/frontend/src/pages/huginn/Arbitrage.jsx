@@ -6,6 +6,7 @@ import SteamMarketLink from '../../components/SteamMarketLink';
 import BuffMarketLink from '../../components/BuffMarketLink';
 import LisSkinsMarketLink from '../../components/LisSkinsMarketLink';
 import CSFloatMarketLink from '../../components/CSFloatMarketLink';
+import CollectionFilter from '../../components/CollectionFilter';
 import { getTradeonShortLink } from '../../utils/tradeonShortLink';
 
 // Render results in capped pages — the datasets are ~17k rows and painting them all
@@ -15,13 +16,13 @@ const PAGE_SIZE = 150;
 
 const PROFILES = [
     // buyMarket / sellMarket are pulse short-link slugs; when set, the Buy/Sell prices
-    // link to that market's page for the item.
-    { id: 'tradeon-steam',  from: 'Tradeon',  fromSub: 'min', to: 'Steam',   toSub: 'autobuy', buyMarket: 'TradeOnMarket', sellMarket: 'Steam', fetchEndpoint: '/api/huginn/tradeon/steam',         cacheEndpoint: '/api/huginn/tradeon/steam/cache' },
-    { id: 'tradeon-buff',   from: 'Tradeon',  fromSub: 'min', to: 'Buff163', toSub: 'autobuy', buyMarket: 'TradeOnMarket', sellMarket: 'Buff',  fetchEndpoint: '/api/huginn/tradeon/buff',          cacheEndpoint: '/api/huginn/tradeon/buff/cache' },
-    { id: 'tradeon-csfloat', from: 'Tradeon', fromSub: 'min', to: 'CSFloat', toSub: 'min',     buyMarket: 'TradeOnMarket', sellMarket: 'CsFloat', fetchEndpoint: '/api/huginn/tradeon/csfloat',    cacheEndpoint: '/api/huginn/tradeon/csfloat/cache' },
-    { id: 'lisskins-steam', from: 'LisSkins', fromSub: 'min', to: 'Steam',   toSub: 'autobuy', buyMarket: 'LisSkins',      sellMarket: 'Steam', fetchEndpoint: '/api/huginn/tradeon/lisskins-steam', cacheEndpoint: '/api/huginn/tradeon/lisskins-steam/cache' },
-    { id: 'lisskins-buff',  from: 'LisSkins', fromSub: 'min', to: 'Buff163', toSub: 'autobuy', buyMarket: 'LisSkins',      sellMarket: 'Buff',  fetchEndpoint: '/api/huginn/tradeon/lisskins-buff',  cacheEndpoint: '/api/huginn/tradeon/lisskins-buff/cache' },
-    { id: 'buff-steam',     from: 'Buff163',  fromSub: 'min', to: 'Steam',   toSub: 'autobuy', buyMarket: 'Buff',          sellMarket: 'Steam', fetchEndpoint: '/api/huginn/tradeon/buff-steam',     cacheEndpoint: '/api/huginn/tradeon/buff-steam/cache' },
+    // link to that market's page for the item. Data is fetched live on demand only.
+    { id: 'tradeon-steam',   from: 'Tradeon',  fromSub: 'min', to: 'Steam',   toSub: 'autobuy', buyMarket: 'TradeOnMarket', sellMarket: 'Steam',   fetchEndpoint: '/api/huginn/tradeon/steam' },
+    { id: 'tradeon-buff',    from: 'Tradeon',  fromSub: 'min', to: 'Buff163', toSub: 'autobuy', buyMarket: 'TradeOnMarket', sellMarket: 'Buff',    fetchEndpoint: '/api/huginn/tradeon/buff' },
+    { id: 'tradeon-csfloat', from: 'Tradeon',  fromSub: 'min', to: 'CSFloat', toSub: 'min',     buyMarket: 'TradeOnMarket', sellMarket: 'CsFloat', fetchEndpoint: '/api/huginn/tradeon/csfloat' },
+    { id: 'lisskins-steam',  from: 'LisSkins', fromSub: 'min', to: 'Steam',   toSub: 'autobuy', buyMarket: 'LisSkins',      sellMarket: 'Steam',   fetchEndpoint: '/api/huginn/tradeon/lisskins-steam' },
+    { id: 'lisskins-buff',   from: 'LisSkins', fromSub: 'min', to: 'Buff163', toSub: 'autobuy', buyMarket: 'LisSkins',      sellMarket: 'Buff',    fetchEndpoint: '/api/huginn/tradeon/lisskins-buff' },
+    { id: 'buff-steam',      from: 'Buff163',  fromSub: 'min', to: 'Steam',   toSub: 'autobuy', buyMarket: 'Buff',          sellMarket: 'Steam',   fetchEndpoint: '/api/huginn/tradeon/buff-steam' },
 ];
 
 // A right-aligned price. When `market` is set, it links to that market's pulse
@@ -113,15 +114,21 @@ const HuginnArbitrage = () => {
     const [scanning, setScanning] = useState(false);
     const [scanError, setScanError] = useState(null);
 
-    const [tradeonData, setTradeonData] = useState(null);
+    // Fetched arbitrage data is held per-profile in memory for this session only.
+    // Nothing is preloaded from disk — opening the page and switching profiles is
+    // instant. Data loads only when you hit Fetch/Re-fetch (a re-fetch replaces it),
+    // and it's intentionally gone on reload/leaving the page.
+    const [dataByProfile, setDataByProfile] = useState({});
     const [tradeonError, setTradeonError] = useState(null);
     const [tradeonFetching, setTradeonFetching] = useState(false);
     const [uploadOpen, setUploadOpen] = useState(true);
 
     const [profileId, setProfileId] = useState(PROFILES[0].id);
+    const tradeonData = dataByProfile[profileId] ?? null;
 
     const [itemSearch, setItemSearch] = useState('');
     const [inventoryOnly, setInventoryOnly] = useState(false);
+    const [includedCollections, setIncludedCollections] = useState([]);
     const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
     const [copiedName, setCopiedName] = useState('');
     // Filtering ~17k rows on every keystroke is heavy; defer it so typing stays snappy.
@@ -134,17 +141,11 @@ const HuginnArbitrage = () => {
             .catch(() => {});
     }, []);
 
+    // No preload. Just reflect whether this profile already has session data:
+    // collapse the fetch panel if it does, open it (prompt to fetch) if it doesn't.
     useEffect(() => {
-        const profile = PROFILES.find(p => p.id === profileId);
-        if (!profile?.cacheEndpoint) { setTradeonData(null); return; }
-        fetch(profile.cacheEndpoint)
-            .then(r => r.ok ? r.json() : null)
-            .then(data => {
-                if (Array.isArray(data)) { setTradeonData(data); setUploadOpen(false); }
-                else { setTradeonData(null); setUploadOpen(true); }
-            })
-            .catch(() => { setTradeonData(null); setUploadOpen(true); });
-    }, [profileId]);
+        setUploadOpen(!dataByProfile[profileId]);
+    }, [profileId]); // eslint-disable-line react-hooks/exhaustive-deps
 
     const handleScan = async () => {
         setScanning(true);
@@ -161,16 +162,18 @@ const HuginnArbitrage = () => {
         }
     };
 
+    const setProfileData = (id, data) => setDataByProfile(prev => ({ ...prev, [id]: data }));
+
     const handleTradeonChange = (raw) => {
-        if (!raw.trim()) { setTradeonData(null); setTradeonError(null); return; }
+        if (!raw.trim()) { setProfileData(profileId, null); setTradeonError(null); return; }
         try {
             const parsed = JSON.parse(raw);
             if (!Array.isArray(parsed)) throw new Error('Expected a JSON array');
-            setTradeonData(parsed);
+            setProfileData(profileId, parsed);
             setTradeonError(null);
             setUploadOpen(false);
         } catch (err) {
-            setTradeonData(null);
+            setProfileData(profileId, null);
             setTradeonError(err.message);
         }
     };
@@ -188,14 +191,15 @@ const HuginnArbitrage = () => {
 
     const handleApiFetch = async () => {
         if (tradeonFetching) return;
+        const profile = activeProfile; // capture — profile could change during the await
         setTradeonFetching(true);
         setTradeonError(null);
         try {
-            const res = await fetch(activeProfile.fetchEndpoint);
+            const res = await fetch(profile.fetchEndpoint);
             const data = await res.json();
             if (!res.ok) throw new Error(data.error || 'Fetch failed');
             if (!Array.isArray(data)) throw new Error('Unexpected response format');
-            setTradeonData(data);
+            setProfileData(profile.id, data);
             setTradeonError(null);
             setUploadOpen(false);
         } catch (err) {
@@ -211,26 +215,55 @@ const HuginnArbitrage = () => {
         setTimeout(() => setCopiedName(c => (c === name ? '' : c)), 1200);
     };
 
-    const allResults = useMemo(() => {
+    // Owned-item lookup by market_hash_name (built by the scan). Plain ref — cheap.
+    const byHash = scanData?.by_hash ?? null;
+
+    // Sort once, best profit first. Shallow copy of references only — the old
+    // code cloned every one of ~24k rows here on each scan, which was the main
+    // memory/GC cost. (Backend already sorts; this is a defensive re-sort.)
+    const sortedResults = useMemo(() => {
         if (!tradeonData) return [];
-        return tradeonData
-            .map(item => ({
-                ...item,
-                owned: scanData?.by_hash?.[item.itemName?.marketHashName] ?? null,
-            }))
-            .sort((a, b) => (b.profitPercent ?? 0) - (a.profitPercent ?? 0));
-    }, [tradeonData, scanData]);
+        return [...tradeonData].sort((a, b) => (b.profitPercent ?? 0) - (a.profitPercent ?? 0));
+    }, [tradeonData]);
+
+    // Collections found in the current inventory scan (pulse data carries none),
+    // for the collection filter. Empty until an inventory scan exists.
+    const collections = useMemo(() => {
+        if (!byHash) return [];
+        const set = new Set();
+        for (const entry of Object.values(byHash)) {
+            for (const inst of entry.instances || []) {
+                if (inst.collection) set.add(inst.collection);
+            }
+        }
+        return [...set].sort();
+    }, [byHash]);
+
+    // How many arbitrage rows you own — memoized (was recomputed 3x per render).
+    const ownedCount = useMemo(() => {
+        if (!byHash) return 0;
+        let n = 0;
+        for (const it of sortedResults) if (byHash[it.itemName?.marketHashName]) n++;
+        return n;
+    }, [sortedResults, byHash]);
 
     const filteredResults = useMemo(() => {
-        let r = inventoryOnly ? allResults.filter(item => item.owned) : allResults;
-        if (!deferredSearch.trim()) return r;
-        return r.filter(item =>
-            matchesSearchQuery(
+        const q = deferredSearch.trim();
+        const cols = includedCollections.length ? new Set(includedCollections) : null;
+        if (!inventoryOnly && !cols && !q) return sortedResults;
+        return sortedResults.filter(item => {
+            const owned = byHash?.[item.itemName?.marketHashName];
+            if (inventoryOnly && !owned) return false;
+            if (cols && !(owned?.instances || []).some(i => cols.has(i.collection))) {
+                return false;
+            }
+            if (q && !matchesSearchQuery(
                 [item.itemName?.marketHashName, item.itemName?.skinName, item.itemName?.itemTypeName],
-                deferredSearch
-            )
-        );
-    }, [allResults, deferredSearch, inventoryOnly]);
+                q
+            )) return false;
+            return true;
+        });
+    }, [sortedResults, byHash, deferredSearch, inventoryOnly, includedCollections]);
 
     // Only the first `visibleCount` rows are painted (see PAGE_SIZE note).
     const visibleResults = useMemo(
@@ -241,7 +274,7 @@ const HuginnArbitrage = () => {
     // Reset the window whenever the result set changes so we start from the top.
     useEffect(() => {
         setVisibleCount(PAGE_SIZE);
-    }, [deferredSearch, inventoryOnly, profileId]);
+    }, [deferredSearch, inventoryOnly, includedCollections, profileId]);
 
     return (
         <div className="h-screen bg-odin-dark flex flex-col overflow-hidden">
@@ -305,7 +338,7 @@ const HuginnArbitrage = () => {
                             <span className="text-[10px] font-bold tracking-widest text-slate-500 uppercase">pulse.tradeon JSON</span>
                             {tradeonData && !uploadOpen && (
                                 <span className="ml-2 text-xs text-amber-400">
-                                    {tradeonData.length} deals · {allResults.filter(i => i.owned).length} owned
+                                    {tradeonData.length} deals · {ownedCount} owned
                                 </span>
                             )}
                         </button>
@@ -329,7 +362,7 @@ const HuginnArbitrage = () => {
                                     {tradeonData && !tradeonFetching && (
                                         <span className="text-xs text-slate-500">
                                             {tradeonData.length} deals loaded
-                                            {scanData ? ` · ${allResults.filter(i => i.owned).length} match your inventory` : ''}
+                                            {scanData ? ` · ${ownedCount} match your inventory` : ''}
                                         </span>
                                     )}
                                     {!tradeonData && !tradeonFetching && (
@@ -342,7 +375,7 @@ const HuginnArbitrage = () => {
                                     {tradeonData ? (
                                         <span className="text-sm text-amber-300">
                                             {tradeonData.length} deals loaded
-                                            {scanData ? ` · ${allResults.filter(i => i.owned).length} match your inventory` : ' · scan your inventory to see matches'}
+                                            {scanData ? ` · ${ownedCount} match your inventory` : ' · scan your inventory to see matches'}
                                             <span className="text-slate-500 ml-2 text-xs">— click to replace</span>
                                         </span>
                                     ) : (
@@ -360,7 +393,7 @@ const HuginnArbitrage = () => {
                 </div>
 
                 {/* Results table — flex-1 fills all remaining space */}
-                {allResults.length > 0 ? (
+                {sortedResults.length > 0 ? (
                     <div className="flex-1 flex flex-col bg-odin-blue/30 border border-white/5 rounded-xl overflow-hidden min-h-0">
                         <div className="shrink-0 flex items-center gap-3 px-4 py-3 border-b border-white/5 bg-black/10">
                             <div className="relative flex-1 max-w-sm">
@@ -380,9 +413,15 @@ const HuginnArbitrage = () => {
                             >
                                 My Inventory
                             </button>
+                            <CollectionFilter
+                                collections={collections}
+                                selected={includedCollections}
+                                onChange={setIncludedCollections}
+                                disabledHint="Scan your inventory (Get all items) to filter by collection"
+                            />
                             <span className="text-sm text-slate-500 shrink-0">
                                 showing {Math.min(visibleCount, filteredResults.length)} of {filteredResults.length}
-                                {filteredResults.length !== allResults.length && ` (${allResults.length} total)`}
+                                {filteredResults.length !== sortedResults.length && ` (${sortedResults.length} total)`}
                             </span>
                         </div>
                         <div className="shrink-0 grid grid-cols-[minmax(0,2.5fr)_64px_88px_88px_96px_88px_minmax(0,1fr)] gap-2 px-4 py-2 border-b border-white/5 text-[11px] font-bold tracking-wider text-slate-400 uppercase bg-black/20">
@@ -397,7 +436,7 @@ const HuginnArbitrage = () => {
                         <div className="flex-1 overflow-y-auto custom-scrollbar min-h-0">
                             {visibleResults.map((item, idx) => {
                                 const mhn = item.itemName.marketHashName;
-                                const owned = item.owned;
+                                const owned = byHash?.[mhn] ?? null;
                                 const hasHold = owned?.instances.some(i => i.on_trade_hold) ?? false;
                                 // Group instances per account, with a per-location breakdown for the tooltip.
                                 const accountSummary = owned
@@ -488,7 +527,7 @@ const HuginnArbitrage = () => {
                 ) : (
                     <div className="flex-1 flex items-center justify-center text-slate-600 text-sm">
                         {!tradeonData
-                            ? 'Upload the tradeon JSON to see deals. Scan your inventory to highlight items you own.'
+                            ? 'Click "Fetch live data" to load deals for this profile. "Get all items" highlights the ones you own.'
                             : 'No deals to show.'}
                     </div>
                 )}

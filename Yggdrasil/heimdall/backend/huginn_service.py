@@ -6,13 +6,9 @@ import urllib.request
 import urllib.error
 from datetime import datetime, timezone
 
+# Only the inventory scan is cached to disk (it's expensive to produce). Arbitrage
+# prices are fetched live on demand and held in the browser session, never cached.
 CACHE_PATH = os.path.join(os.path.dirname(__file__), 'cache', 'huginn_scan.json')
-TRADEON_STEAM_CACHE_PATH = os.path.join(os.path.dirname(__file__), 'cache', 'huginn_tradeon_steam.json')
-TRADEON_BUFF_CACHE_PATH  = os.path.join(os.path.dirname(__file__), 'cache', 'huginn_tradeon_buff.json')
-TRADEON_CSFLOAT_CACHE_PATH = os.path.join(os.path.dirname(__file__), 'cache', 'huginn_tradeon_csfloat.json')
-TRADEON_LISSKINS_STEAM_CACHE_PATH = os.path.join(os.path.dirname(__file__), 'cache', 'huginn_tradeon_lisskins_steam.json')
-TRADEON_LISSKINS_BUFF_CACHE_PATH  = os.path.join(os.path.dirname(__file__), 'cache', 'huginn_tradeon_lisskins_buff.json')
-TRADEON_BUFF_STEAM_CACHE_PATH     = os.path.join(os.path.dirname(__file__), 'cache', 'huginn_tradeon_buff_steam.json')
 
 _TRADEON_STEAM_URL    = 'https://api-pulse.tradeon.space/api/table/counter-strike/TradeOnMarket/Steam/all'
 _TRADEON_BUFF_URL     = 'https://api-pulse.tradeon.space/api/table/counter-strike/TradeOnMarket/Buff/all'
@@ -224,41 +220,16 @@ class HuginnService:
             return next((data[k] for k in ('items', 'data', 'result', 'records') if isinstance(data.get(k), list)), data)
         return data
 
-    def _write_cache(self, cache_path, items):
-        os.makedirs(os.path.dirname(cache_path), exist_ok=True)
-        with open(cache_path, 'w') as f:
-            json.dump(items, f)
-
-    def _fetch_tradeon(self, url, token, cache_path, body=None):
-        items = self._post_tradeon(url, token, body)
-        self._write_cache(cache_path, items)
-        return items
-
-    def _get_tradeon_cache(self, cache_path):
-        if not os.path.exists(cache_path):
-            return None
-        with open(cache_path) as f:
-            return json.load(f)
-
     def fetch_tradeon_steam(self, token):
-        return self._fetch_tradeon(_TRADEON_STEAM_URL, token, TRADEON_STEAM_CACHE_PATH)
-
-    def get_tradeon_steam_cache(self):
-        return self._get_tradeon_cache(TRADEON_STEAM_CACHE_PATH)
+        return self._post_tradeon(_TRADEON_STEAM_URL, token)
 
     def fetch_tradeon_buff(self, token):
-        return self._fetch_tradeon(_TRADEON_BUFF_URL, token, TRADEON_BUFF_CACHE_PATH)
-
-    def get_tradeon_buff_cache(self):
-        return self._get_tradeon_cache(TRADEON_BUFF_CACHE_PATH)
+        return self._post_tradeon(_TRADEON_BUFF_URL, token)
 
     def fetch_tradeon_csfloat(self, token):
-        return self._fetch_tradeon(_TRADEON_CSFLOAT_URL, token, TRADEON_CSFLOAT_CACHE_PATH, _TRADEON_CSFLOAT_BODY)
+        return self._post_tradeon(_TRADEON_CSFLOAT_URL, token, _TRADEON_CSFLOAT_BODY)
 
-    def get_tradeon_csfloat_cache(self):
-        return self._get_tradeon_cache(TRADEON_CSFLOAT_CACHE_PATH)
-
-    def _combine_arbitrage(self, token, buy_url, buy_body, sell_url, sell_fee, cache_path):
+    def _combine_arbitrage(self, token, buy_url, buy_body, sell_url, sell_fee):
         """Combine a buy-side market's min prices with a sell-side market's autobuy prices.
 
         The buy side is queried so its second market carries its own (un-paywalled) sell
@@ -299,26 +270,16 @@ class HuginnService:
             })
 
         combined.sort(key=lambda x: x['profitPercent'], reverse=True)
-        self._write_cache(cache_path, combined)
         return combined
 
     def fetch_lisskins_steam(self, token):
         return self._combine_arbitrage(token, _TRADEON_LISSKINS_URL, _TRADEON_LISSKINS_BODY,
-                                       _TRADEON_STEAM_URL, STEAM_SALES_FEE, TRADEON_LISSKINS_STEAM_CACHE_PATH)
-
-    def get_lisskins_steam_cache(self):
-        return self._get_tradeon_cache(TRADEON_LISSKINS_STEAM_CACHE_PATH)
+                                       _TRADEON_STEAM_URL, STEAM_SALES_FEE)
 
     def fetch_lisskins_buff(self, token):
         return self._combine_arbitrage(token, _TRADEON_LISSKINS_URL, _TRADEON_LISSKINS_BODY,
-                                       _TRADEON_BUFF_URL, BUFF_SALES_FEE, TRADEON_LISSKINS_BUFF_CACHE_PATH)
-
-    def get_lisskins_buff_cache(self):
-        return self._get_tradeon_cache(TRADEON_LISSKINS_BUFF_CACHE_PATH)
+                                       _TRADEON_BUFF_URL, BUFF_SALES_FEE)
 
     def fetch_buff_steam(self, token):
         return self._combine_arbitrage(token, _TRADEON_BUFF_URL, _TRADEON_BUFF_BUY_BODY,
-                                       _TRADEON_STEAM_URL, STEAM_SALES_FEE, TRADEON_BUFF_STEAM_CACHE_PATH)
-
-    def get_buff_steam_cache(self):
-        return self._get_tradeon_cache(TRADEON_BUFF_STEAM_CACHE_PATH)
+                                       _TRADEON_STEAM_URL, STEAM_SALES_FEE)

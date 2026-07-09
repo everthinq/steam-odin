@@ -516,14 +516,6 @@ def huginn_scan_cache():
         return jsonify({'error': 'No scan data yet'}), 404
     return jsonify(cache)
 
-@app.route('/api/huginn/tradeon/steam/cache', methods=['GET'])
-def huginn_tradeon_steam_cache():
-    """Return cached Tradeon → Steam data."""
-    cache = huginn_service.get_tradeon_steam_cache()
-    if not cache:
-        return jsonify({'error': 'No cached data yet'}), 404
-    return jsonify(cache)
-
 @app.route('/api/huginn/tradeon/steam', methods=['GET'])
 def huginn_tradeon_steam():
     """Proxy Tradeon → Steam arbitrage data."""
@@ -535,14 +527,6 @@ def huginn_tradeon_steam():
         return jsonify(data)
     except Exception as e:
         return jsonify({'error': str(e)}), 500
-
-@app.route('/api/huginn/tradeon/buff/cache', methods=['GET'])
-def huginn_tradeon_buff_cache():
-    """Return cached Tradeon → Buff163 data."""
-    cache = huginn_service.get_tradeon_buff_cache()
-    if not cache:
-        return jsonify({'error': 'No cached data yet'}), 404
-    return jsonify(cache)
 
 @app.route('/api/huginn/tradeon/buff', methods=['GET'])
 def huginn_tradeon_buff():
@@ -556,14 +540,6 @@ def huginn_tradeon_buff():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-@app.route('/api/huginn/tradeon/csfloat/cache', methods=['GET'])
-def huginn_tradeon_csfloat_cache():
-    """Return cached Tradeon → CSFloat data."""
-    cache = huginn_service.get_tradeon_csfloat_cache()
-    if not cache:
-        return jsonify({'error': 'No cached data yet'}), 404
-    return jsonify(cache)
-
 @app.route('/api/huginn/tradeon/csfloat', methods=['GET'])
 def huginn_tradeon_csfloat():
     """Proxy Tradeon → CSFloat arbitrage data."""
@@ -575,14 +551,6 @@ def huginn_tradeon_csfloat():
         return jsonify(data)
     except Exception as e:
         return jsonify({'error': str(e)}), 500
-
-@app.route('/api/huginn/tradeon/lisskins-steam/cache', methods=['GET'])
-def huginn_tradeon_lisskins_steam_cache():
-    """Return cached LisSkins → Steam arbitrage data."""
-    cache = huginn_service.get_lisskins_steam_cache()
-    if not cache:
-        return jsonify({'error': 'No cached data yet'}), 404
-    return jsonify(cache)
 
 @app.route('/api/huginn/tradeon/lisskins-steam', methods=['GET'])
 def huginn_tradeon_lisskins_steam():
@@ -596,14 +564,6 @@ def huginn_tradeon_lisskins_steam():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-@app.route('/api/huginn/tradeon/lisskins-buff/cache', methods=['GET'])
-def huginn_tradeon_lisskins_buff_cache():
-    """Return cached LisSkins → Buff163 arbitrage data."""
-    cache = huginn_service.get_lisskins_buff_cache()
-    if not cache:
-        return jsonify({'error': 'No cached data yet'}), 404
-    return jsonify(cache)
-
 @app.route('/api/huginn/tradeon/lisskins-buff', methods=['GET'])
 def huginn_tradeon_lisskins_buff():
     """Fetch LisSkins buy + Buff163 sell prices and combine into arbitrage data."""
@@ -615,14 +575,6 @@ def huginn_tradeon_lisskins_buff():
         return jsonify(data)
     except Exception as e:
         return jsonify({'error': str(e)}), 500
-
-@app.route('/api/huginn/tradeon/buff-steam/cache', methods=['GET'])
-def huginn_tradeon_buff_steam_cache():
-    """Return cached Buff163 → Steam arbitrage data."""
-    cache = huginn_service.get_buff_steam_cache()
-    if not cache:
-        return jsonify({'error': 'No cached data yet'}), 404
-    return jsonify(cache)
 
 @app.route('/api/huginn/tradeon/buff-steam', methods=['GET'])
 def huginn_tradeon_buff_steam():
