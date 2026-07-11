@@ -576,6 +576,18 @@ def huginn_tradeon_lisskins_buff():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+@app.route('/api/huginn/tradeon/lisskins-csfloat', methods=['GET'])
+def huginn_tradeon_lisskins_csfloat():
+    """Fetch LisSkins buy + CSFloat sell (min listing) prices and combine into arbitrage data."""
+    token = settings_manager.get_settings().get('tradeon_token', '')
+    if not token:
+        return jsonify({'error': 'tradeon_token not set in settings'}), 400
+    try:
+        data = huginn_service.fetch_lisskins_csfloat(token)
+        return jsonify(data)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 @app.route('/api/huginn/tradeon/buff-steam', methods=['GET'])
 def huginn_tradeon_buff_steam():
     """Fetch Buff163 buy + Steam sell prices and combine into arbitrage data."""
@@ -584,6 +596,18 @@ def huginn_tradeon_buff_steam():
         return jsonify({'error': 'tradeon_token not set in settings'}), 400
     try:
         data = huginn_service.fetch_buff_steam(token)
+        return jsonify(data)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/huginn/tradeon/buff-csfloat', methods=['GET'])
+def huginn_tradeon_buff_csfloat():
+    """Fetch Buff163 buy + CSFloat sell (min listing) prices and combine into arbitrage data."""
+    token = settings_manager.get_settings().get('tradeon_token', '')
+    if not token:
+        return jsonify({'error': 'tradeon_token not set in settings'}), 400
+    try:
+        data = huginn_service.fetch_buff_csfloat(token)
         return jsonify(data)
     except Exception as e:
         return jsonify({'error': str(e)}), 500
