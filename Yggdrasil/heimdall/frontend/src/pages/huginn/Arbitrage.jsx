@@ -30,7 +30,21 @@ const PROFILES = [
     { id: 'buff-steam',              from: 'Buff163',  fromSub: 'min', to: 'Steam',   toSub: 'autobuy', buyMarket: 'Buff',          sellMarket: 'Steam',   fetchEndpoint: '/api/huginn/tradeon/buff-steam' },
     { id: 'buff-csfloat',            from: 'Buff163',  fromSub: 'min', to: 'CSFloat', toSub: 'min',     buyMarket: 'Buff',          sellMarket: 'CsFloat', fetchEndpoint: '/api/huginn/tradeon/buff-csfloat' },
     { id: 'buff-csfloat-autobuy',    from: 'Buff163',  fromSub: 'min', to: 'CSFloat', toSub: 'autobuy', buyMarket: 'Buff',          sellMarket: 'CsFloat', fetchEndpoint: '/api/huginn/tradeon/buff-csfloat-autobuy', autobuy: true },
+    { id: 'csfloat-steam',           from: 'CSFloat',  fromSub: 'min', to: 'Steam',   toSub: 'autobuy', buyMarket: 'CsFloat',       sellMarket: 'Steam',   fetchEndpoint: '/api/huginn/tradeon/csfloat-steam' },
+    { id: 'csfloat-buff',            from: 'CSFloat',  fromSub: 'min', to: 'Buff163', toSub: 'autobuy', buyMarket: 'CsFloat',       sellMarket: 'Buff',    fetchEndpoint: '/api/huginn/tradeon/csfloat-buff' },
 ];
+
+// Group profiles by their buy market ("from"), preserving array order, so the picker
+// can show tidy sections instead of one long flat list as profiles multiply.
+const groupProfiles = (profiles) => {
+    const groups = [];
+    const byFrom = {};
+    for (const p of profiles) {
+        if (!byFrom[p.from]) { byFrom[p.from] = { from: p.from, items: [] }; groups.push(byFrom[p.from]); }
+        byFrom[p.from].items.push(p);
+    }
+    return groups;
+};
 
 // A right-aligned price. When `market` is set, it links to that market's pulse
 // short-link for the item; otherwise it's plain text.
@@ -84,23 +98,29 @@ const ProfilePicker = ({ profiles, value, onChange }) => {
             </button>
 
             {open && (
-                <div className="absolute top-full left-0 mt-1.5 z-50 min-w-full bg-[#0d1520] border border-white/10 rounded-xl shadow-2xl shadow-black/60 overflow-hidden">
-                    {profiles.map(p => {
-                        const isActive = p.id === value;
-                        return (
-                            <button
-                                key={p.id}
-                                type="button"
-                                onClick={() => { onChange(p.id); setOpen(false); }}
-                                className={`w-full flex items-center gap-2.5 px-4 py-2.5 text-sm transition-colors text-left ${isActive ? 'bg-amber-500/10 text-white' : 'hover:bg-white/[0.04] text-slate-300'}`}
-                            >
-                                <MarketBadge name={p.from} sub={p.fromSub} dim={!isActive} />
-                                <ArrowRight size={12} className={isActive ? 'text-amber-500/60' : 'text-slate-600'} />
-                                <MarketBadge name={p.to} sub={p.toSub} dim={!isActive} />
-                                {isActive && <span className="ml-auto w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0" />}
-                            </button>
-                        );
-                    })}
+                <div className="absolute top-full left-0 mt-1.5 z-50 min-w-[15rem] max-h-[70vh] overflow-y-auto custom-scrollbar bg-[#0d1520] border border-white/10 rounded-xl shadow-2xl shadow-black/60 py-1">
+                    {groupProfiles(profiles).map(group => (
+                        <div key={group.from}>
+                            <div className="flex items-center gap-1.5 px-3 pt-2.5 pb-1 text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                                Buy on {group.from}
+                            </div>
+                            {group.items.map(p => {
+                                const isActive = p.id === value;
+                                return (
+                                    <button
+                                        key={p.id}
+                                        type="button"
+                                        onClick={() => { onChange(p.id); setOpen(false); }}
+                                        className={`w-full flex items-center gap-2 pl-5 pr-4 py-2 text-sm transition-colors text-left ${isActive ? 'bg-amber-500/10 text-white' : 'hover:bg-white/[0.04] text-slate-300'}`}
+                                    >
+                                        <ArrowRight size={12} className={isActive ? 'text-amber-500/60 shrink-0' : 'text-slate-600 shrink-0'} />
+                                        <MarketBadge name={p.to} sub={p.toSub} dim={!isActive} />
+                                        {isActive && <span className="ml-auto w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0" />}
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    ))}
                 </div>
             )}
         </div>

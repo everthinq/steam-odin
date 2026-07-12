@@ -722,6 +722,30 @@ def huginn_tradeon_buff_csfloat_autobuy():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+@app.route('/api/huginn/tradeon/csfloat-steam', methods=['GET'])
+def huginn_tradeon_csfloat_steam():
+    """Fetch CSFloat min buy + Steam autobuy sell prices and combine into arbitrage data."""
+    token = settings_manager.get_settings().get('tradeon_token', '')
+    if not token:
+        return jsonify({'error': 'tradeon_token not set in settings'}), 400
+    try:
+        data = huginn_service.fetch_csfloat_steam(token)
+        return jsonify(data)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/huginn/tradeon/csfloat-buff', methods=['GET'])
+def huginn_tradeon_csfloat_buff():
+    """Fetch CSFloat min buy + Buff163 autobuy sell prices and combine into arbitrage data."""
+    token = settings_manager.get_settings().get('tradeon_token', '')
+    if not token:
+        return jsonify({'error': 'tradeon_token not set in settings'}), 400
+    try:
+        data = huginn_service.fetch_csfloat_buff(token)
+        return jsonify(data)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 @app.route('/health', methods=['GET'])
 def health_check():
     settings = settings_manager.get_settings()

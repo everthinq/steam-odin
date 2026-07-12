@@ -471,6 +471,16 @@ class HuginnService:
                                        _TRADEON_CSFLOAT_URL, CSFLOAT_SALES_FEE,
                                        sell_body=_TRADEON_CSFLOAT_BODY)
 
+    def fetch_csfloat_steam(self, token):
+        # Buy at CSFloat's min listing, sell into Steam's autobuy (13% Steam fee).
+        return self._combine_arbitrage(token, _TRADEON_CSFLOAT_URL, _TRADEON_CSFLOAT_BODY,
+                                       _TRADEON_STEAM_URL, STEAM_SALES_FEE)
+
+    def fetch_csfloat_buff(self, token):
+        # Buy at CSFloat's min listing, sell into Buff163's autobuy (1.5% Buff fee).
+        return self._combine_arbitrage(token, _TRADEON_CSFLOAT_URL, _TRADEON_CSFLOAT_BODY,
+                                       _TRADEON_BUFF_URL, BUFF_SALES_FEE)
+
     # ---- CSFloat buy orders (autobuy) --------------------------------------
 
     _CSFLOAT_PROXY_ATTEMPTS = 8   # datacenter IPs are ~75% Cloudflare-blocked; rotate through several
