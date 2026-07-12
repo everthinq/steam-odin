@@ -185,11 +185,13 @@ _TRADEON_STEAM_URL    = 'https://api-pulse.tradeon.space/api/table/counter-strik
 _TRADEON_BUFF_URL     = 'https://api-pulse.tradeon.space/api/table/counter-strike/TradeOnMarket/Buff/all'
 _TRADEON_CSFLOAT_URL  = 'https://api-pulse.tradeon.space/api/table/counter-strike/TradeOnMarket/CsFloat/all'
 _TRADEON_LISSKINS_URL = 'https://api-pulse.tradeon.space/api/table/counter-strike/TradeOnMarket/LisSkins/all'
+_TRADEON_DMARKET_URL  = 'https://api-pulse.tradeon.space/api/table/counter-strike/TradeOnMarket/Dmarket/all'
 
 # Sales fee taken by the sell-side market: net proceeds = price * (1 - fee).
 STEAM_SALES_FEE = 0.13
 BUFF_SALES_FEE = 0.015
 CSFLOAT_SALES_FEE = 0.02
+DMARKET_SALES_FEE = 0.0   # DMarket takes no seller fee
 _TRADEON_STEAM_BODY = {
     "templateId": None,
     "firstMarketOptions": {
@@ -403,6 +405,11 @@ class HuginnService:
     def fetch_tradeon_csfloat(self, token):
         return self._post_tradeon(_TRADEON_CSFLOAT_URL, token, _TRADEON_CSFLOAT_BODY)
 
+    def fetch_tradeon_dmarket(self, token):
+        # Direct pulse profile: Tradeon min -> DMarket autobuy. DMarket takes no sales
+        # fee, so pulse's profit already reflects the full autobuy price (no fee to net).
+        return self._post_tradeon(_TRADEON_DMARKET_URL, token)
+
     def _combine_arbitrage(self, token, buy_url, buy_body, sell_url, sell_fee, sell_body=None):
         """Combine a buy-side market's min prices with a sell-side market's autobuy prices.
 
@@ -480,6 +487,21 @@ class HuginnService:
         # Buy at CSFloat's min listing, sell into Buff163's autobuy (1.5% Buff fee).
         return self._combine_arbitrage(token, _TRADEON_CSFLOAT_URL, _TRADEON_CSFLOAT_BODY,
                                        _TRADEON_BUFF_URL, BUFF_SALES_FEE)
+
+    def fetch_lisskins_dmarket(self, token):
+        # Buy at LisSkins min, sell into DMarket autobuy (no DMarket fee).
+        return self._combine_arbitrage(token, _TRADEON_LISSKINS_URL, _TRADEON_LISSKINS_BODY,
+                                       _TRADEON_DMARKET_URL, DMARKET_SALES_FEE)
+
+    def fetch_buff_dmarket(self, token):
+        # Buy at Buff163 min, sell into DMarket autobuy (no DMarket fee).
+        return self._combine_arbitrage(token, _TRADEON_BUFF_URL, _TRADEON_BUFF_BUY_BODY,
+                                       _TRADEON_DMARKET_URL, DMARKET_SALES_FEE)
+
+    def fetch_csfloat_dmarket(self, token):
+        # Buy at CSFloat's min listing, sell into DMarket autobuy (no DMarket fee).
+        return self._combine_arbitrage(token, _TRADEON_CSFLOAT_URL, _TRADEON_CSFLOAT_BODY,
+                                       _TRADEON_DMARKET_URL, DMARKET_SALES_FEE)
 
     # ---- CSFloat buy orders (autobuy) --------------------------------------
 
