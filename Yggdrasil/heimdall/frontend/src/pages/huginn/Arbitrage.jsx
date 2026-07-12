@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef, useDeferredValue } from 'react';
 import { Link } from 'react-router-dom';
-import { LayoutDashboard, RefreshCw, AlertTriangle, Search, ChevronDown, ArrowRight } from 'lucide-react';
+import { LayoutDashboard, RefreshCw, AlertTriangle, Search, ChevronDown, ArrowRight, Coins } from 'lucide-react';
 import { matchesSearchQuery } from '../../utils/transferItems';
 import SteamMarketLink from '../../components/SteamMarketLink';
 import BuffMarketLink from '../../components/BuffMarketLink';
@@ -17,14 +17,19 @@ const PAGE_SIZE = 150;
 const PROFILES = [
     // buyMarket / sellMarket are pulse short-link slugs; when set, the Buy/Sell prices
     // link to that market's page for the item. Data is fetched live on demand only.
-    { id: 'tradeon-steam',   from: 'Tradeon',  fromSub: 'min', to: 'Steam',   toSub: 'autobuy', buyMarket: 'TradeOnMarket', sellMarket: 'Steam',   fetchEndpoint: '/api/huginn/tradeon/steam' },
-    { id: 'tradeon-buff',    from: 'Tradeon',  fromSub: 'min', to: 'Buff163', toSub: 'autobuy', buyMarket: 'TradeOnMarket', sellMarket: 'Buff',    fetchEndpoint: '/api/huginn/tradeon/buff' },
-    { id: 'tradeon-csfloat', from: 'Tradeon',  fromSub: 'min', to: 'CSFloat', toSub: 'min',     buyMarket: 'TradeOnMarket', sellMarket: 'CsFloat', fetchEndpoint: '/api/huginn/tradeon/csfloat' },
-    { id: 'lisskins-steam',   from: 'LisSkins', fromSub: 'min', to: 'Steam',   toSub: 'autobuy', buyMarket: 'LisSkins',      sellMarket: 'Steam',   fetchEndpoint: '/api/huginn/tradeon/lisskins-steam' },
-    { id: 'lisskins-buff',    from: 'LisSkins', fromSub: 'min', to: 'Buff163', toSub: 'autobuy', buyMarket: 'LisSkins',      sellMarket: 'Buff',    fetchEndpoint: '/api/huginn/tradeon/lisskins-buff' },
-    { id: 'lisskins-csfloat', from: 'LisSkins', fromSub: 'min', to: 'CSFloat', toSub: 'min',     buyMarket: 'LisSkins',      sellMarket: 'CsFloat', fetchEndpoint: '/api/huginn/tradeon/lisskins-csfloat' },
-    { id: 'buff-steam',       from: 'Buff163',  fromSub: 'min', to: 'Steam',   toSub: 'autobuy', buyMarket: 'Buff',          sellMarket: 'Steam',   fetchEndpoint: '/api/huginn/tradeon/buff-steam' },
-    { id: 'buff-csfloat',     from: 'Buff163',  fromSub: 'min', to: 'CSFloat', toSub: 'min',     buyMarket: 'Buff',          sellMarket: 'CsFloat', fetchEndpoint: '/api/huginn/tradeon/buff-csfloat' },
+    { id: 'tradeon-steam',           from: 'Tradeon',  fromSub: 'min', to: 'Steam',   toSub: 'autobuy', buyMarket: 'TradeOnMarket', sellMarket: 'Steam',   fetchEndpoint: '/api/huginn/tradeon/steam' },
+    { id: 'tradeon-buff',            from: 'Tradeon',  fromSub: 'min', to: 'Buff163', toSub: 'autobuy', buyMarket: 'TradeOnMarket', sellMarket: 'Buff',    fetchEndpoint: '/api/huginn/tradeon/buff' },
+    { id: 'tradeon-csfloat',         from: 'Tradeon',  fromSub: 'min', to: 'CSFloat', toSub: 'min',     buyMarket: 'TradeOnMarket', sellMarket: 'CsFloat', fetchEndpoint: '/api/huginn/tradeon/csfloat' },
+    // "autobuy" profiles sell into CSFloat buy orders, which only exist for owned
+    // items we've swept (see the CSFloat buy-orders panel). Data covers owned items.
+    { id: 'tradeon-csfloat-autobuy', from: 'Tradeon',  fromSub: 'min', to: 'CSFloat', toSub: 'autobuy', buyMarket: 'TradeOnMarket', sellMarket: 'CsFloat', fetchEndpoint: '/api/huginn/tradeon/csfloat-autobuy', autobuy: true },
+    { id: 'lisskins-steam',          from: 'LisSkins', fromSub: 'min', to: 'Steam',   toSub: 'autobuy', buyMarket: 'LisSkins',      sellMarket: 'Steam',   fetchEndpoint: '/api/huginn/tradeon/lisskins-steam' },
+    { id: 'lisskins-buff',           from: 'LisSkins', fromSub: 'min', to: 'Buff163', toSub: 'autobuy', buyMarket: 'LisSkins',      sellMarket: 'Buff',    fetchEndpoint: '/api/huginn/tradeon/lisskins-buff' },
+    { id: 'lisskins-csfloat',        from: 'LisSkins', fromSub: 'min', to: 'CSFloat', toSub: 'min',     buyMarket: 'LisSkins',      sellMarket: 'CsFloat', fetchEndpoint: '/api/huginn/tradeon/lisskins-csfloat' },
+    { id: 'lisskins-csfloat-autobuy',from: 'LisSkins', fromSub: 'min', to: 'CSFloat', toSub: 'autobuy', buyMarket: 'LisSkins',      sellMarket: 'CsFloat', fetchEndpoint: '/api/huginn/tradeon/lisskins-csfloat-autobuy', autobuy: true },
+    { id: 'buff-steam',              from: 'Buff163',  fromSub: 'min', to: 'Steam',   toSub: 'autobuy', buyMarket: 'Buff',          sellMarket: 'Steam',   fetchEndpoint: '/api/huginn/tradeon/buff-steam' },
+    { id: 'buff-csfloat',            from: 'Buff163',  fromSub: 'min', to: 'CSFloat', toSub: 'min',     buyMarket: 'Buff',          sellMarket: 'CsFloat', fetchEndpoint: '/api/huginn/tradeon/buff-csfloat' },
+    { id: 'buff-csfloat-autobuy',    from: 'Buff163',  fromSub: 'min', to: 'CSFloat', toSub: 'autobuy', buyMarket: 'Buff',          sellMarket: 'CsFloat', fetchEndpoint: '/api/huginn/tradeon/buff-csfloat-autobuy', autobuy: true },
 ];
 
 // A right-aligned price. When `market` is set, it links to that market's pulse
@@ -135,6 +140,37 @@ const HuginnArbitrage = () => {
     const [copiedName, setCopiedName] = useState('');
     // Filtering ~17k rows on every keystroke is heavy; defer it so typing stays snappy.
     const deferredSearch = useDeferredValue(itemSearch);
+
+    // CSFloat buy-order sweep: {job:{running,done,total,found,...}, cache:{count,fetched_at}}.
+    // Shared by every "=> CSFloat (autobuy)" profile.
+    const [csfloatStatus, setCsfloatStatus] = useState(null);
+    const csfloatJobRunning = csfloatStatus?.job?.running ?? false;
+
+    const fetchCsfloatStatus = async () => {
+        try {
+            const r = await fetch('/api/huginn/csfloat/buy-orders');
+            if (r.ok) setCsfloatStatus(await r.json());
+        } catch { /* ignore */ }
+    };
+    useEffect(() => { fetchCsfloatStatus(); }, []);
+    // Poll while a sweep is running so the progress bar advances.
+    useEffect(() => {
+        if (!csfloatJobRunning) return undefined;
+        const t = setInterval(fetchCsfloatStatus, 1500);
+        return () => clearInterval(t);
+    }, [csfloatJobRunning]);
+
+    const handleFetchBuyOrders = async () => {
+        try {
+            const r = await fetch('/api/huginn/csfloat/buy-orders', { method: 'POST' });
+            const d = await r.json().catch(() => ({}));
+            if (!r.ok) { setTradeonError(d.error || 'Could not start CSFloat buy-order sweep'); return; }
+            setTradeonError(null);
+            fetchCsfloatStatus();
+        } catch (err) {
+            setTradeonError(err.message);
+        }
+    };
 
     useEffect(() => {
         fetch('/api/huginn/scan/cache')
@@ -327,6 +363,101 @@ const HuginnArbitrage = () => {
                         onChange={id => setProfileId(id)}
                     />
                 </div>
+
+                {/* CSFloat buy-order sweep — only for "=> CSFloat (autobuy)" profiles */}
+                {activeProfile.autobuy && (() => {
+                    const job = csfloatStatus?.job;
+                    const cache = csfloatStatus?.cache;
+                    const pct = job && job.total ? Math.round((job.done / job.total) * 100) : 0;
+                    // When all keys are cooling the sweep waits, then auto-resumes.
+                    const waitMs = job?.waiting_until ? job.waiting_until * 1000 - Date.now() : 0;
+                    const waiting = csfloatJobRunning && waitMs > 0;
+                    // A prior sweep that was throttled mid-run and can be continued.
+                    const paused = cache && cache.complete === false && !csfloatJobRunning;
+                    const btnLabel = csfloatJobRunning ? 'Fetching…' : paused ? 'Resume' : cache ? 'Refresh' : 'Fetch buy orders';
+                    return (
+                        <div className="shrink-0 bg-purple-500/5 border border-purple-500/20 rounded-xl px-4 py-3">
+                            <div className="flex items-center gap-3 flex-wrap">
+                                <Coins size={15} className="text-purple-300 shrink-0" />
+                                <span className="text-xs font-medium text-purple-200">CSFloat buy orders</span>
+                                {csfloatStatus?.proxy_enabled && (
+                                    <span title="Sweep routes through your rotating proxy" className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] bg-sky-500/10 border border-sky-500/30 text-sky-300">
+                                        via proxy
+                                    </span>
+                                )}
+                                {waiting ? (
+                                    <span className="text-xs text-amber-400 tabular-nums">
+                                        {job.done}/{job.total} · all keys cooling · auto-resuming in ~{Math.ceil(waitMs / 60000)}m
+                                    </span>
+                                ) : csfloatJobRunning ? (
+                                    <span className="text-xs text-slate-400 tabular-nums">
+                                        fetching {job.done}/{job.total} · {job.found} found
+                                    </span>
+                                ) : paused ? (
+                                    <span className="text-xs text-amber-400 tabular-nums">
+                                        paused at {cache.done}/{cache.candidates} · {cache.count} priced · {formatTs(cache.updated_at)}
+                                    </span>
+                                ) : cache ? (
+                                    <span className="text-xs text-slate-400">
+                                        {cache.count} owned items priced · {formatTs(cache.fetched_at)}
+                                    </span>
+                                ) : (
+                                    <span className="text-xs text-slate-500">not fetched yet</span>
+                                )}
+                                <button
+                                    type="button"
+                                    onClick={handleFetchBuyOrders}
+                                    disabled={csfloatJobRunning || !scanData}
+                                    title={!scanData ? 'Run "Get all items" first to know which items you own' : 'Fetch CSFloat buy orders for your owned items'}
+                                    className="ml-auto flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-purple-600/70 hover:bg-purple-500 text-white text-xs font-medium disabled:opacity-40 disabled:cursor-not-allowed transition-colors shrink-0"
+                                >
+                                    <RefreshCw size={12} className={csfloatJobRunning ? 'animate-spin' : ''} />
+                                    {btnLabel}
+                                </button>
+                            </div>
+                            {csfloatJobRunning && (
+                                <div className="mt-2 h-1 w-full bg-black/30 rounded-full overflow-hidden">
+                                    <div className="h-full bg-purple-500 transition-all" style={{ width: `${pct}%` }} />
+                                </div>
+                            )}
+                            {csfloatStatus?.keys?.length > 0 && (
+                                <div className="mt-2 flex items-center gap-1.5 flex-wrap">
+                                    {csfloatStatus.keys.map((k) => (
+                                        <span
+                                            key={k.label}
+                                            title={k.cooling
+                                                ? `Cooling down (strike ${k.strikes}) — back in ~${Math.ceil(k.cooldown_remaining / 60)}m`
+                                                : 'Available'}
+                                            className={`inline-flex items-center gap-1 rounded px-2 py-0.5 text-[10px] border ${k.cooling
+                                                ? 'bg-amber-500/10 border-amber-500/30 text-amber-300'
+                                                : 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'}`}
+                                        >
+                                            <span className={`w-1.5 h-1.5 rounded-full ${k.cooling ? 'bg-amber-400' : 'bg-emerald-400'}`} />
+                                            {k.label}
+                                            {k.cooling && ` · ${Math.ceil(k.cooldown_remaining / 60)}m`}
+                                        </span>
+                                    ))}
+                                    <span className="text-[10px] text-slate-600 ml-1">edit keys in backend/csfloat_keys.json</span>
+                                </div>
+                            )}
+                            <p className="mt-2 text-[11px] text-slate-500">
+                                CSFloat has no bulk buy-order feed, so we price only the items you own
+                                (~{cache?.candidates ?? '450'} on CSFloat) — this takes a few minutes and is
+                                reused by all CSFloat (autobuy) profiles until you refresh. If CSFloat throttles
+                                us the sweep pauses and Resume continues where it stopped (within 2h).
+                                {!scanData && ' Run "Get all items" first.'}
+                            </p>
+                            {paused && cache.reason && (
+                                <p className="mt-1 text-[11px] text-amber-400/80">Paused: {cache.reason}</p>
+                            )}
+                            {job?.error && (
+                                <p className="mt-1 text-[11px] text-red-400 flex items-center gap-1">
+                                    <AlertTriangle size={11} /> {job.error}
+                                </p>
+                            )}
+                        </div>
+                    );
+                })()}
 
                 {/* Collapsible upload section */}
                 <div className="shrink-0 bg-odin-blue/30 border border-white/5 rounded-xl overflow-hidden">

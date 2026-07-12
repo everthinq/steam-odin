@@ -14,6 +14,10 @@ DEFAULT_SETTINGS = {
     # pulse.tradeon.space site makes (DevTools → Network). Leave empty to disable
     # Huginn price fetching. settings.json is gitignored — keep the real token there.
     "tradeon_token": "",
+    # CSFloat API key (csfloat.com → Profile → Developer → New Key). Used by Huginn
+    # to fetch CSFloat buy-order (autobuy) prices for owned items. settings.json is
+    # gitignored — keep the real key there.
+    "csfloat_api_key": "",
     # --- Ratatoskr auto-store watcher ---
     # When enabled, the scheduler watches the connected (or auto-connected)
     # accounts in `auto_store_accounts` and moves any loose inventory item whose

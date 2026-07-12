@@ -206,3 +206,5 @@ Yggdrasil/heimdall/backend/cache/
 
 # Heimdall settings hold the Tradeon token — keep local, use settings.example.json as the template
 Yggdrasil/heimdall/backend/settings.json
+# CSFloat API keys (rotation pool) — secrets, keep local
+Yggdrasil/heimdall/backend/csfloat_keys.json

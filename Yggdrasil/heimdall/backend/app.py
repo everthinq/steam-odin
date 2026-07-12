@@ -7,7 +7,7 @@ from steam_service import SteamService
 from settings import SettingsManager
 from scheduler import ConfirmationScheduler
 from ratatoskr_service import RatatoskrService
-from huginn_service import HuginnService
+from huginn_service import HuginnService, load_csfloat_keys, load_csfloat_proxy
 
 app = Flask(__name__)
 CORS(app)
@@ -17,6 +17,14 @@ steam_service = SteamService()
 ratatoskr_service = RatatoskrService()
 huginn_service = HuginnService(steam_service, ratatoskr_service)
 scheduler = ConfirmationScheduler(settings_manager, steam_service, ratatoskr_service)
+
+# Background CSFloat buy-order sweep state (one at a time). Progress is polled by the UI.
+_csfloat_job_lock = threading.Lock()
+_csfloat_job = {
+    'running': False, 'done': 0, 'total': 0, 'found': 0,
+    'current': None, 'started_at': None, 'finished_at': None, 'error': None,
+    'waiting_until': None,   # epoch secs the sweep auto-resumes at (all keys cooling)
+}
 
 def trigger_restart():
     """Triggers a backend restart by exiting the process after a short delay."""
@@ -516,6 +524,72 @@ def huginn_scan_cache():
         return jsonify({'error': 'No scan data yet'}), 404
     return jsonify(cache)
 
+@app.route('/api/huginn/csfloat/buy-orders', methods=['GET'])
+def huginn_csfloat_buy_orders_status():
+    """Report the CSFloat buy-order sweep progress + what's currently cached."""
+    with _csfloat_job_lock:
+        job = dict(_csfloat_job)
+    cache = huginn_service.get_csfloat_buy_orders_cache()
+    key_pairs = load_csfloat_keys()
+    return jsonify({
+        'job': job,
+        'keys': huginn_service.csfloat_keys.status(key_pairs),
+        'proxy_enabled': bool(load_csfloat_proxy()),
+        'cache': None if not cache else {
+            'fetched_at': cache.get('fetched_at'),
+            'updated_at': cache.get('updated_at'),
+            'count': cache.get('count'),
+            'candidates': cache.get('candidates'),
+            'done': len(cache.get('processed') or []),
+            'complete': cache.get('complete', True),
+            'interrupted': cache.get('interrupted', False),
+            'reason': cache.get('reason'),
+        },
+    })
+
+@app.route('/api/huginn/csfloat/buy-orders', methods=['POST'])
+def huginn_csfloat_buy_orders_fetch():
+    """Kick off a background CSFloat buy-order sweep over owned items."""
+    settings = settings_manager.get_settings()
+    token = settings.get('tradeon_token', '')
+    if not load_csfloat_keys():
+        return jsonify({'error': 'No CSFloat API keys configured — add them to csfloat_keys.json'}), 400
+
+    scan = huginn_service.get_cache()
+    if not scan or not scan.get('by_hash'):
+        return jsonify({'error': 'No inventory scan yet — run "Get all items" first'}), 409
+
+    with _csfloat_job_lock:
+        if _csfloat_job['running']:
+            return jsonify({'error': 'A CSFloat buy-order sweep is already running'}), 409
+        _csfloat_job.update({
+            'running': True, 'done': 0, 'total': 0, 'found': 0,
+            'current': None, 'started_at': time.time(), 'finished_at': None, 'error': None,
+            'waiting_until': None,
+        })
+
+    def _progress(done, total, current, found):
+        with _csfloat_job_lock:
+            _csfloat_job.update({'done': done, 'total': total, 'current': current, 'found': found})
+
+    def _on_wait(resume_at):
+        with _csfloat_job_lock:
+            _csfloat_job['waiting_until'] = resume_at
+
+    def _run():
+        try:
+            huginn_service.fetch_csfloat_buy_orders(token=token, progress=_progress, wait_cb=_on_wait)
+        except Exception as e:
+            with _csfloat_job_lock:
+                _csfloat_job['error'] = str(e)
+        finally:
+            with _csfloat_job_lock:
+                _csfloat_job['running'] = False
+                _csfloat_job['finished_at'] = time.time()
+
+    threading.Thread(target=_run, daemon=True).start()
+    return jsonify({'status': 'started'}), 202
+
 @app.route('/api/huginn/tradeon/steam', methods=['GET'])
 def huginn_tradeon_steam():
     """Proxy Tradeon → Steam arbitrage data."""
@@ -548,6 +622,18 @@ def huginn_tradeon_csfloat():
         return jsonify({'error': 'tradeon_token not set in settings'}), 400
     try:
         data = huginn_service.fetch_tradeon_csfloat(token)
+        return jsonify(data)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/huginn/tradeon/csfloat-autobuy', methods=['GET'])
+def huginn_tradeon_csfloat_autobuy():
+    """Tradeon (min) buy + CSFloat buy-order (autobuy) sell, for owned items."""
+    token = settings_manager.get_settings().get('tradeon_token', '')
+    if not token:
+        return jsonify({'error': 'tradeon_token not set in settings'}), 400
+    try:
+        data = huginn_service.fetch_tradeon_csfloat_autobuy(token)
         return jsonify(data)
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -588,6 +674,18 @@ def huginn_tradeon_lisskins_csfloat():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+@app.route('/api/huginn/tradeon/lisskins-csfloat-autobuy', methods=['GET'])
+def huginn_tradeon_lisskins_csfloat_autobuy():
+    """LisSkins (min) buy + CSFloat buy-order (autobuy) sell, for owned items."""
+    token = settings_manager.get_settings().get('tradeon_token', '')
+    if not token:
+        return jsonify({'error': 'tradeon_token not set in settings'}), 400
+    try:
+        data = huginn_service.fetch_lisskins_csfloat_autobuy(token)
+        return jsonify(data)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 @app.route('/api/huginn/tradeon/buff-steam', methods=['GET'])
 def huginn_tradeon_buff_steam():
     """Fetch Buff163 buy + Steam sell prices and combine into arbitrage data."""
@@ -608,6 +706,18 @@ def huginn_tradeon_buff_csfloat():
         return jsonify({'error': 'tradeon_token not set in settings'}), 400
     try:
         data = huginn_service.fetch_buff_csfloat(token)
+        return jsonify(data)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/huginn/tradeon/buff-csfloat-autobuy', methods=['GET'])
+def huginn_tradeon_buff_csfloat_autobuy():
+    """Buff163 (min) buy + CSFloat buy-order (autobuy) sell, for owned items."""
+    token = settings_manager.get_settings().get('tradeon_token', '')
+    if not token:
+        return jsonify({'error': 'tradeon_token not set in settings'}), 400
+    try:
+        data = huginn_service.fetch_buff_csfloat_autobuy(token)
         return jsonify(data)
     except Exception as e:
         return jsonify({'error': str(e)}), 500
