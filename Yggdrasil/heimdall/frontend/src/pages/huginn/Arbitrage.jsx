@@ -36,6 +36,10 @@ const PROFILES = [
     { id: 'csfloat-steam',           from: 'CSFloat',  fromSub: 'min', to: 'Steam',   toSub: 'autobuy', buyMarket: 'CsFloat',       sellMarket: 'Steam',   fetchEndpoint: '/api/huginn/tradeon/csfloat-steam' },
     { id: 'csfloat-buff',            from: 'CSFloat',  fromSub: 'min', to: 'Buff163', toSub: 'autobuy', buyMarket: 'CsFloat',       sellMarket: 'Buff',    fetchEndpoint: '/api/huginn/tradeon/csfloat-buff' },
     { id: 'csfloat-dmarket',         from: 'CSFloat',  fromSub: 'min', to: 'DMarket', toSub: 'autobuy', buyMarket: 'CsFloat',       sellMarket: 'Dmarket', fetchEndpoint: '/api/huginn/tradeon/csfloat-dmarket' },
+    { id: 'dmarket-steam',           from: 'DMarket',  fromSub: 'min', to: 'Steam',   toSub: 'autobuy', buyMarket: 'Dmarket',       sellMarket: 'Steam',   fetchEndpoint: '/api/huginn/tradeon/dmarket-steam' },
+    { id: 'dmarket-buff',            from: 'DMarket',  fromSub: 'min', to: 'Buff163', toSub: 'autobuy', buyMarket: 'Dmarket',       sellMarket: 'Buff',    fetchEndpoint: '/api/huginn/tradeon/dmarket-buff' },
+    { id: 'dmarket-csfloat',         from: 'DMarket',  fromSub: 'min', to: 'CSFloat', toSub: 'min',     buyMarket: 'Dmarket',       sellMarket: 'CsFloat', fetchEndpoint: '/api/huginn/tradeon/dmarket-csfloat' },
+    { id: 'dmarket-csfloat-autobuy', from: 'DMarket',  fromSub: 'min', to: 'CSFloat', toSub: 'autobuy', buyMarket: 'Dmarket',       sellMarket: 'CsFloat', fetchEndpoint: '/api/huginn/tradeon/dmarket-csfloat-autobuy', autobuy: true },
 ];
 
 // Group profiles by their buy market ("from"), preserving array order, so the picker

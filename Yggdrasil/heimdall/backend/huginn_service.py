@@ -275,6 +275,11 @@ _TRADEON_LISSKINS_BODY["secondMarketOptions"]["secondMarketPriceType"] = "SellWi
 _TRADEON_BUFF_BUY_BODY = copy.deepcopy(_TRADEON_STEAM_BODY)
 _TRADEON_BUFF_BUY_BODY["secondMarketOptions"]["secondMarketPriceType"] = "Sell"
 
+# DMarket as a buy source: its second market is priced as its own lowest listing
+# (Sell) — the min you'd pay to buy there.
+_TRADEON_DMARKET_BUY_BODY = copy.deepcopy(_TRADEON_STEAM_BODY)
+_TRADEON_DMARKET_BUY_BODY["secondMarketOptions"]["secondMarketPriceType"] = "Sell"
+
 # Tradeon (min) => CSFloat (min): CSFloat has no autobuy, so the sell side is its
 # lowest listing (Sell), not a buy order. Direct pulse query — pulse returns the
 # profit itself, so this passes through like the other Tradeon-first profiles.
@@ -502,6 +507,23 @@ class HuginnService:
         # Buy at CSFloat's min listing, sell into DMarket autobuy (no DMarket fee).
         return self._combine_arbitrage(token, _TRADEON_CSFLOAT_URL, _TRADEON_CSFLOAT_BODY,
                                        _TRADEON_DMARKET_URL, DMARKET_SALES_FEE)
+
+    def fetch_dmarket_steam(self, token):
+        # Buy at DMarket's min listing, sell into Steam's autobuy (13% Steam fee).
+        return self._combine_arbitrage(token, _TRADEON_DMARKET_URL, _TRADEON_DMARKET_BUY_BODY,
+                                       _TRADEON_STEAM_URL, STEAM_SALES_FEE)
+
+    def fetch_dmarket_buff(self, token):
+        # Buy at DMarket's min listing, sell into Buff163's autobuy (1.5% Buff fee).
+        return self._combine_arbitrage(token, _TRADEON_DMARKET_URL, _TRADEON_DMARKET_BUY_BODY,
+                                       _TRADEON_BUFF_URL, BUFF_SALES_FEE)
+
+    def fetch_dmarket_csfloat(self, token):
+        # Buy at DMarket's min listing, sell at CSFloat's min listing (CSFloat has no
+        # autobuy, so the sell side is its lowest listing — 2% CSFloat fee).
+        return self._combine_arbitrage(token, _TRADEON_DMARKET_URL, _TRADEON_DMARKET_BUY_BODY,
+                                       _TRADEON_CSFLOAT_URL, CSFLOAT_SALES_FEE,
+                                       sell_body=_TRADEON_CSFLOAT_BODY)
 
     # ---- CSFloat buy orders (autobuy) --------------------------------------
 
@@ -792,3 +814,6 @@ class HuginnService:
 
     def fetch_buff_csfloat_autobuy(self, token):
         return self._combine_autobuy(token, _TRADEON_BUFF_URL, _TRADEON_BUFF_BUY_BODY, buy_side='second')
+
+    def fetch_dmarket_csfloat_autobuy(self, token):
+        return self._combine_autobuy(token, _TRADEON_DMARKET_URL, _TRADEON_DMARKET_BUY_BODY, buy_side='second')

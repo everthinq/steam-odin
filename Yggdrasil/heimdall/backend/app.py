@@ -794,6 +794,54 @@ def huginn_tradeon_csfloat_dmarket():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+@app.route('/api/huginn/tradeon/dmarket-steam', methods=['GET'])
+def huginn_tradeon_dmarket_steam():
+    """Fetch DMarket min buy + Steam autobuy sell prices and combine into arbitrage data."""
+    token = settings_manager.get_settings().get('tradeon_token', '')
+    if not token:
+        return jsonify({'error': 'tradeon_token not set in settings'}), 400
+    try:
+        data = huginn_service.fetch_dmarket_steam(token)
+        return jsonify(data)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/huginn/tradeon/dmarket-buff', methods=['GET'])
+def huginn_tradeon_dmarket_buff():
+    """Fetch DMarket min buy + Buff163 autobuy sell prices and combine into arbitrage data."""
+    token = settings_manager.get_settings().get('tradeon_token', '')
+    if not token:
+        return jsonify({'error': 'tradeon_token not set in settings'}), 400
+    try:
+        data = huginn_service.fetch_dmarket_buff(token)
+        return jsonify(data)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/huginn/tradeon/dmarket-csfloat', methods=['GET'])
+def huginn_tradeon_dmarket_csfloat():
+    """Fetch DMarket min buy + CSFloat min sell prices and combine into arbitrage data."""
+    token = settings_manager.get_settings().get('tradeon_token', '')
+    if not token:
+        return jsonify({'error': 'tradeon_token not set in settings'}), 400
+    try:
+        data = huginn_service.fetch_dmarket_csfloat(token)
+        return jsonify(data)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/huginn/tradeon/dmarket-csfloat-autobuy', methods=['GET'])
+def huginn_tradeon_dmarket_csfloat_autobuy():
+    """Fetch DMarket min buy + CSFloat autobuy (buy-order) sell prices and combine."""
+    token = settings_manager.get_settings().get('tradeon_token', '')
+    if not token:
+        return jsonify({'error': 'tradeon_token not set in settings'}), 400
+    try:
+        data = huginn_service.fetch_dmarket_csfloat_autobuy(token)
+        return jsonify(data)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 @app.route('/health', methods=['GET'])
 def health_check():
     settings = settings_manager.get_settings()
