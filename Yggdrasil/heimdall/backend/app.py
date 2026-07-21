@@ -8,6 +8,7 @@ from settings import SettingsManager
 from scheduler import ConfirmationScheduler
 from ratatoskr_service import RatatoskrService
 from huginn_service import HuginnService, load_csfloat_keys, load_csfloat_proxy
+from portfolio_service import PortfolioService
 
 app = Flask(__name__)
 CORS(app)
@@ -16,6 +17,7 @@ settings_manager = SettingsManager()
 steam_service = SteamService()
 ratatoskr_service = RatatoskrService()
 huginn_service = HuginnService(steam_service, ratatoskr_service)
+portfolio_service = PortfolioService(huginn_service)
 scheduler = ConfirmationScheduler(settings_manager, steam_service, ratatoskr_service)
 
 # Background CSFloat buy-order sweep state (one at a time). Progress is polled by the UI.
@@ -841,6 +843,134 @@ def huginn_tradeon_dmarket_csfloat_autobuy():
         return jsonify(data)
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+# ---- Draupnir (portfolio tracker) -----------------------------------------
+
+def _portfolio_prices(market):
+    """Non-blocking {item_name: usd} price map for valuation, plus a status.
+
+    Never waits on pulse: serves cached prices and warms in the background, so
+    Draupnir pages render instantly (cost basis) and prices fill in on a later
+    poll. Returns (prices_or_None, status)."""
+    token = settings_manager.get_settings().get('tradeon_token', '')
+    return huginn_service.prices_for_valuation(token, market or 'steam')
+
+@app.route('/api/portfolios', methods=['GET'])
+def portfolios_list():
+    market = request.args.get('market', 'steam')
+    prices, status = _portfolio_prices(market)
+    return jsonify({
+        'portfolios': portfolio_service.list_portfolios(prices),
+        'priced': prices is not None,
+        'pricing': status,
+        'market': market,
+    })
+
+@app.route('/api/portfolios', methods=['POST'])
+def portfolios_create():
+    body = request.get_json(silent=True) or {}
+    return jsonify(portfolio_service.create_portfolio(body.get('name'))), 201
+
+@app.route('/api/portfolios/import', methods=['POST'])
+def portfolios_import():
+    """Import a CSV as a new portfolio (or append to ?pid=). Body: {name, csv}."""
+    body = request.get_json(silent=True) or {}
+    csv_text = body.get('csv')
+    if not csv_text:
+        return jsonify({'error': 'csv is required'}), 400
+    p, count = portfolio_service.import_csv(csv_text, name=body.get('name'), pid=body.get('pid'))
+    if p is None:
+        return jsonify({'error': 'portfolio not found'}), 404
+    return jsonify({'portfolio': {'id': p['id'], 'name': p['name']}, 'imported': count}), 201
+
+@app.route('/api/portfolios/validate-item', methods=['POST'])
+def portfolios_validate_item():
+    """Check whether a typed name looks like a real CS item. valid=True if it's in
+    the pulse universe or already used in a portfolio; False (with fuzzy suggestions)
+    if we have a universe to check against but it's not in it; None if we can't verify
+    (no price data / no token) so the caller can allow it through."""
+    import difflib
+    name = ((request.get_json(silent=True) or {}).get('name') or '').strip()
+    if not name:
+        return jsonify({'valid': False, 'suggestions': []})
+    token = settings_manager.get_settings().get('tradeon_token', '')
+    pulse_names = huginn_service.known_item_names(token)
+    universe = pulse_names | portfolio_service.all_item_names()
+    if name in universe:
+        return jsonify({'valid': True})
+    lower = {n.lower(): n for n in universe}
+    if name.lower() in lower:
+        return jsonify({'valid': True, 'canonical': lower[name.lower()]})
+    if not pulse_names:
+        return jsonify({'valid': None})   # can't verify — let the caller decide
+    return jsonify({'valid': False, 'suggestions': difflib.get_close_matches(name, list(universe), n=5, cutoff=0.6)})
+
+@app.route('/api/portfolios/item-search', methods=['GET'])
+def portfolios_item_search():
+    """Typeahead for the Add-transaction form: real CS item names (pulse universe
+    ∪ names already used) matching all query tokens, with the current price on the
+    chosen market for prefill. Non-blocking (uses only cached pulse data)."""
+    q = (request.args.get('q') or '').strip().lower()
+    if len(q) < 2:
+        return jsonify({'items': []})
+    market = request.args.get('market', 'steam')
+    token = settings_manager.get_settings().get('tradeon_token', '')
+    universe = huginn_service.known_item_names(token, block=False) | portfolio_service.all_item_names()
+    prices, _ = huginn_service.prices_for_valuation(token, market)
+    prices = prices or {}
+    tokens = q.split()
+    matches = [n for n in universe if all(tok in n.lower() for tok in tokens)]
+    matches.sort(key=lambda n: (not n.lower().startswith(q), len(n), n))
+    return jsonify({'items': [{'name': n, 'price': prices.get(n)} for n in matches[:12]]})
+
+@app.route('/api/portfolios/<pid>', methods=['GET'])
+def portfolios_get(pid):
+    market = request.args.get('market', 'steam')
+    prices, status = _portfolio_prices(market)
+    data = portfolio_service.get_portfolio(pid, prices)
+    if data is None:
+        return jsonify({'error': 'portfolio not found'}), 404
+    data['priced'] = prices is not None
+    data['pricing'] = status
+    data['market'] = market
+    return jsonify(data)
+
+@app.route('/api/portfolios/<pid>', methods=['PATCH'])
+def portfolios_rename(pid):
+    body = request.get_json(silent=True) or {}
+    p = portfolio_service.rename_portfolio(pid, body.get('name'))
+    if p is None:
+        return jsonify({'error': 'portfolio not found'}), 404
+    return jsonify(p)
+
+@app.route('/api/portfolios/<pid>', methods=['DELETE'])
+def portfolios_delete(pid):
+    if not portfolio_service.delete_portfolio(pid):
+        return jsonify({'error': 'portfolio not found'}), 404
+    return jsonify({'ok': True})
+
+@app.route('/api/portfolios/<pid>/transactions', methods=['POST'])
+def portfolios_add_txn(pid):
+    body = request.get_json(silent=True) or {}
+    txn = portfolio_service.add_transaction(pid, body)
+    if txn is None:
+        return jsonify({'error': 'portfolio not found'}), 404
+    return jsonify(txn), 201
+
+@app.route('/api/portfolios/<pid>/transactions/<tid>', methods=['PATCH'])
+def portfolios_update_txn(pid, tid):
+    body = request.get_json(silent=True) or {}
+    txn = portfolio_service.update_transaction(pid, tid, body)
+    if txn is None:
+        return jsonify({'error': 'not found'}), 404
+    return jsonify(txn)
+
+@app.route('/api/portfolios/<pid>/transactions/<tid>', methods=['DELETE'])
+def portfolios_delete_txn(pid, tid):
+    result = portfolio_service.delete_transaction(pid, tid)
+    if not result:
+        return jsonify({'error': 'not found'}), 404
+    return jsonify({'ok': True})
 
 @app.route('/health', methods=['GET'])
 def health_check():

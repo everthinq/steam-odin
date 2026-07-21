@@ -293,6 +293,9 @@ class HuginnService:
         self.rat = ratatoskr_service
         self.csfloat_keys = CSFloatKeyManager()
         self._proxy_seq = 0   # increments per proxied attempt → fresh Bright Data session/IP
+        self._price_cache = {}   # market -> (fetched_at_epoch, {name: price}) for portfolio valuation
+        self._price_state = {}   # market -> 'refreshing' | 'ok' | 'error'
+        self._price_lock = threading.Lock()
 
     def _ensure_session(self, steam_id, account_data):
         if self.rat.get_status(steam_id).get('status') == 'connected':
@@ -817,3 +820,114 @@ class HuginnService:
 
     def fetch_dmarket_csfloat_autobuy(self, token):
         return self._combine_autobuy(token, _TRADEON_DMARKET_URL, _TRADEON_DMARKET_BUY_BODY, buy_side='second')
+
+    # ---- Live price map (portfolio valuation) ------------------------------
+
+    # market slug -> (pulse url, second-market price type used as the "current price").
+    # We use each market's lowest listing (Sell) — the standard "market price" a
+    # portfolio is worth — matching what price-tracker exports call current price.
+    _PRICE_MARKETS = {
+        'steam':    (_TRADEON_STEAM_URL,    'Sell'),
+        'buff':     (_TRADEON_BUFF_URL,     'Sell'),
+        'csfloat':  (_TRADEON_CSFLOAT_URL,  'Sell'),
+        'dmarket':  (_TRADEON_DMARKET_URL,  'Sell'),
+        'lisskins': (_TRADEON_LISSKINS_URL, 'SellWithoutHold'),
+    }
+
+    def _single_price_map(self, token, market):
+        url, sell_type = self._PRICE_MARKETS[market]
+        body = copy.deepcopy(_TRADEON_STEAM_BODY)
+        body['secondMarketOptions']['secondMarketPriceType'] = sell_type
+        out = {}
+        for it in self._post_tradeon(url, token, body):
+            name = (it.get('itemName') or {}).get('marketHashName')
+            sm = it.get('secondMarket') or {}
+            price = sm.get('price')
+            if name and price is not None and price:
+                out[name] = price
+        return out
+
+    # Portfolio valuation prices are cached this long (per market). Skin prices
+    # barely move minute-to-minute, so hour-stale is fine for tracking — and it
+    # keeps every Draupnir page load from re-hitting pulse. Tweak freely.
+    _PRICE_CACHE_TTL_SEC = 60 * 60   # 1 hour
+
+    def _compute_price_map(self, token, market):
+        if market == 'lowest':
+            merged = {}
+            for m in ('steam', 'buff', 'csfloat'):
+                for name, price in self._single_price_map(token, m).items():
+                    if name not in merged or price < merged[name]:
+                        merged[name] = price
+            return merged
+        if market not in self._PRICE_MARKETS:
+            market = 'steam'
+        return self._single_price_map(token, market)
+
+    def price_map(self, token, market='steam', force=False):
+        """market_hash_name -> current unit price (USD) on the chosen reference market.
+
+        BLOCKING: fetches from pulse if the cache is cold/stale. Prefer
+        prices_for_valuation() for request paths — it never blocks. Result is
+        cached per market for _PRICE_CACHE_TTL_SEC; pass force=True to refetch."""
+        cached = self._price_cache.get(market)
+        if not force and cached and (time.time() - cached[0]) < self._PRICE_CACHE_TTL_SEC:
+            return cached[1]
+        prices = self._compute_price_map(token, market)
+        with self._price_lock:
+            self._price_cache[market] = (time.time(), prices)
+            self._price_state[market] = 'ok'
+        return prices
+
+    def known_item_names(self, token, block=True):
+        """Set of every market_hash_name pulse knows about (the CS item universe),
+        unioned across whatever price maps are cached. With block=True, falls back
+        to a one-time blocking Steam fetch if nothing is cached yet (used for the
+        one-off validate check); block=False stays non-blocking (used for typeahead
+        on every keystroke)."""
+        names = set()
+        with self._price_lock:
+            for _, m in self._price_cache.values():
+                names.update(m.keys())
+        if not names and block and token:
+            try:
+                names.update(self.price_map(token, 'steam').keys())
+            except Exception as e:
+                print(f'[DRAUPNIR] known_item_names steam fetch failed: {e}')
+        return names
+
+    def _refresh_prices_bg(self, token, market):
+        try:
+            prices = self._compute_price_map(token, market)
+            with self._price_lock:
+                self._price_cache[market] = (time.time(), prices)
+                self._price_state[market] = 'ok'
+        except Exception as e:
+            print(f'[DRAUPNIR] price refresh failed ({market}): {e}')
+            with self._price_lock:
+                self._price_state[market] = 'error'
+
+    def prices_for_valuation(self, token, market='steam'):
+        """NON-BLOCKING. Returns (prices_or_None, status) for portfolio valuation.
+
+        Serves the cached price map instantly. When the cache is cold or stale,
+        it kicks off a single background refresh (one per market at a time) and
+        returns immediately with whatever we have (stale cache, or None on a cold
+        start) so the page never waits on pulse. status is one of:
+        'no_token', 'fresh', 'refreshing', 'error'."""
+        with self._price_lock:
+            cached = self._price_cache.get(market)
+        if not token:
+            return (cached[1] if cached else None), 'no_token'
+        if cached and (time.time() - cached[0]) < self._PRICE_CACHE_TTL_SEC:
+            return cached[1], 'fresh'
+        # cold or stale → refresh in the background (single-flight per market)
+        with self._price_lock:
+            if self._price_state.get(market) != 'refreshing':
+                self._price_state[market] = 'refreshing'
+                threading.Thread(target=self._refresh_prices_bg,
+                                 args=(token, market), daemon=True).start()
+            state = self._price_state.get(market)
+        if cached:
+            return cached[1], 'refreshing'          # serve stale while warming
+        return None, ('error' if state == 'error' else 'refreshing')

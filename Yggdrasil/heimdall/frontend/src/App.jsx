@@ -7,6 +7,8 @@ import RatatoskrInventory from './pages/ratatoskr/Inventory';
 import RatatoskrTransfer from './pages/ratatoskr/Transfer';
 import RatatoskrAutoStore from './pages/ratatoskr/AutoStore';
 import HuginnArbitrage from './pages/huginn/Arbitrage';
+import DraupnirPortfolios from './pages/draupnir/Portfolios';
+import DraupnirPortfolio from './pages/draupnir/Portfolio';
 import './index.css';
 
 function App() {
@@ -23,6 +25,10 @@ function App() {
 
           {/* Huginn Routes */}
           <Route path="/huginn" element={<HuginnArbitrage />} />
+
+          {/* Draupnir Routes (portfolio tracker) */}
+          <Route path="/draupnir" element={<DraupnirPortfolios />} />
+          <Route path="/draupnir/:portfolioId" element={<DraupnirPortfolio />} />
 
           {/* Ratatoskr Routes */}
           <Route path="/ratatoskr/:steamid" element={<RatatoskrLayout />}>
