@@ -48,11 +48,17 @@ def _demojibake(s):
 
 def _cents_to_usd(v):
     """Price-tracker exports write money as integer cents with no decimal point
-    (e.g. $1.58 -> '158'); convert to USD. Empty/'N/A' -> None."""
+    (e.g. $1.58 -> '158'); convert to USD. Empty/'N/A' -> None.
+
+    A value that already contains a decimal point is treated as real dollars —
+    Pricempire never writes decimals, but our own export (export_csv) does, so
+    this keeps an exported CSV round-trippable through import."""
     v = (v or '').strip()
     if v in ('', 'N/A', 'n/a'):
         return None
     try:
+        if '.' in v:
+            return round(float(v), 2)
         return round(float(v) / 100.0, 2)
     except ValueError:
         return None
@@ -270,6 +276,41 @@ class PortfolioService:
             p['updated_at'] = _now()
             self._persist()
             return p, len(txns)
+
+    # ---- CSV export --------------------------------------------------------
+
+    EXPORT_COLUMNS = ['Name', 'Type', 'Quantity', 'Unit Price', 'Total Price',
+                      'Marketplace', 'Date', 'Note', 'Fee Percentage']
+
+    def export_csv(self, pid):
+        """Serialize one portfolio's transactions to CSV text (real dollars, not
+        cents). Round-trips back through import_csv. Returns (name, csv) or None.
+        Rows are ordered newest-date first to match the on-screen table."""
+        with self._lock:
+            p = self._get(pid)
+            if not p:
+                return None
+            name = p['name']
+            txns = sorted(p['transactions'],
+                          key=lambda t: (t.get('date') or '', t.get('created_at') or ''),
+                          reverse=True)
+        buf = io.StringIO()
+        w = csv.DictWriter(buf, fieldnames=self.EXPORT_COLUMNS)
+        w.writeheader()
+        for t in txns:
+            qty, price = t.get('qty') or 0, t.get('price') or 0.0
+            w.writerow({
+                'Name': t.get('item_name', ''),
+                'Type': t.get('type', 'buy'),
+                'Quantity': qty,
+                'Unit Price': f'{price:.2f}',
+                'Total Price': f'{qty * price:.2f}',
+                'Marketplace': t.get('platform', ''),
+                'Date': t.get('date', ''),
+                'Note': t.get('note', ''),
+                'Fee Percentage': t.get('fee_percent', 0) or 0,
+            })
+        return name, buf.getvalue()
 
     # ---- valuation / aggregation ------------------------------------------
 

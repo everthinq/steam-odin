@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Link } from 'react-router-dom';
-import { LayoutDashboard, Coins, Plus, Upload, RefreshCw, ArrowUpDown, Trash2 } from 'lucide-react';
+import { LayoutDashboard, Coins, Plus, Upload, Download, RefreshCw, ArrowUpDown, Trash2 } from 'lucide-react';
 import { ConfirmDialog, PromptDialog } from '../../components/DraupnirDialog';
 
 const MARKETS = [
@@ -114,6 +114,19 @@ const DraupnirPortfolios = () => {
         }
     };
 
+    // Download this portfolio's transactions as CSV (re-importable). Anchor to the
+    // API route so the browser handles the download with the server's filename.
+    const handleExport = (e, p) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const a = document.createElement('a');
+        a.href = `/api/portfolios/${p.id}/export`;
+        a.download = `${p.name}.csv`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+    };
+
     const handleDelete = (e, p) => {
         e.preventDefault();
         e.stopPropagation();
@@ -219,14 +232,23 @@ const DraupnirPortfolios = () => {
                                 key={p.id} to={`/draupnir/${p.id}`}
                                 className="group relative block bg-odin-blue/40 border border-white/5 rounded-xl p-4 hover:border-yellow-500/40 hover:bg-odin-blue/60 transition-all"
                             >
-                                <button
-                                    onClick={(e) => handleDelete(e, p)}
-                                    className="absolute top-3 right-3 p-1.5 rounded-lg text-slate-600 hover:text-red-400 hover:bg-red-500/10 opacity-0 group-hover:opacity-100 transition-all"
-                                    title="Delete portfolio"
-                                >
-                                    <Trash2 size={14} />
-                                </button>
-                                <h3 className="font-serif font-semibold text-yellow-100 pr-8 truncate">{p.name}</h3>
+                                <div className="absolute top-3 right-3 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all">
+                                    <button
+                                        onClick={(e) => handleExport(e, p)}
+                                        className="p-1.5 rounded-lg text-slate-600 hover:text-yellow-300 hover:bg-yellow-500/10 transition-all"
+                                        title="Export as CSV"
+                                    >
+                                        <Download size={14} />
+                                    </button>
+                                    <button
+                                        onClick={(e) => handleDelete(e, p)}
+                                        className="p-1.5 rounded-lg text-slate-600 hover:text-red-400 hover:bg-red-500/10 transition-all"
+                                        title="Delete portfolio"
+                                    >
+                                        <Trash2 size={14} />
+                                    </button>
+                                </div>
+                                <h3 className="font-serif font-semibold text-yellow-100 pr-16 truncate">{p.name}</h3>
                                 <p className="text-xs text-slate-500 mb-3">
                                     {p.holdings_count} holdings · {p.txn_count} transactions
                                 </p>

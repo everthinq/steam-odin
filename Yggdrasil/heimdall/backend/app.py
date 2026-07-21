@@ -1,6 +1,7 @@
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, Response
 from flask_cors import CORS
 import os
+import re
 import time
 import threading
 from steam_service import SteamService
@@ -882,6 +883,20 @@ def portfolios_import():
     if p is None:
         return jsonify({'error': 'portfolio not found'}), 404
     return jsonify({'portfolio': {'id': p['id'], 'name': p['name']}, 'imported': count}), 201
+
+@app.route('/api/portfolios/<pid>/export', methods=['GET'])
+def portfolios_export(pid):
+    """Download one portfolio as a CSV (real dollars; re-importable)."""
+    result = portfolio_service.export_csv(pid)
+    if result is None:
+        return jsonify({'error': 'portfolio not found'}), 404
+    name, csv_text = result
+    safe = re.sub(r'[^A-Za-z0-9._-]+', '_', name).strip('_') or 'portfolio'
+    return Response(
+        csv_text,
+        mimetype='text/csv',
+        headers={'Content-Disposition': f'attachment; filename="{safe}.csv"'},
+    )
 
 @app.route('/api/portfolios/validate-item', methods=['POST'])
 def portfolios_validate_item():
