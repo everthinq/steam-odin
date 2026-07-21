@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Plus, RefreshCw, Search, Trash2, Settings, Eye, EyeOff, TrendingUp } from 'lucide-react';
+import { Plus, RefreshCw, Search, Trash2, Settings, Eye, EyeOff, TrendingUp, Coins } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import AccountCard from '../components/AccountCard';
 import GlobalConfirmationsModal from '../components/GlobalConfirmationsModal';
@@ -190,18 +190,32 @@ const Dashboard = () => {
 
                 <div className="mb-8">
                     <p className="text-[10px] font-bold tracking-widest text-slate-500 uppercase mb-3">Tools</p>
-                    <Link
-                        to="/huginn"
-                        className="inline-flex items-center gap-3 px-4 py-3 bg-odin-blue/40 border border-amber-500/20 rounded-xl hover:bg-odin-blue/60 hover:border-amber-500/40 transition-all"
-                    >
-                        <div className="p-2 bg-amber-900/30 rounded-lg border border-amber-600/30">
-                            <TrendingUp size={18} className="text-amber-500" />
-                        </div>
-                        <div>
-                            <p className="text-sm font-semibold text-amber-100 font-serif">Huginn</p>
-                            <p className="text-xs text-slate-500">The Scout — Arbitrage &amp; deals</p>
-                        </div>
-                    </Link>
+                    <div className="flex flex-wrap gap-3">
+                        <Link
+                            to="/huginn"
+                            className="inline-flex items-center gap-3 px-4 py-3 bg-odin-blue/40 border border-amber-500/20 rounded-xl hover:bg-odin-blue/60 hover:border-amber-500/40 transition-all"
+                        >
+                            <div className="p-2 bg-amber-900/30 rounded-lg border border-amber-600/30">
+                                <TrendingUp size={18} className="text-amber-500" />
+                            </div>
+                            <div>
+                                <p className="text-sm font-semibold text-amber-100 font-serif">Huginn</p>
+                                <p className="text-xs text-slate-500">The Scout — Arbitrage &amp; deals</p>
+                            </div>
+                        </Link>
+                        <Link
+                            to="/draupnir"
+                            className="inline-flex items-center gap-3 px-4 py-3 bg-odin-blue/40 border border-yellow-500/20 rounded-xl hover:bg-odin-blue/60 hover:border-yellow-500/40 transition-all"
+                        >
+                            <div className="p-2 bg-yellow-900/30 rounded-lg border border-yellow-600/30">
+                                <Coins size={18} className="text-yellow-500" />
+                            </div>
+                            <div>
+                                <p className="text-sm font-semibold text-yellow-100 font-serif">Draupnir</p>
+                                <p className="text-xs text-slate-500">The Hoard — Portfolio tracker</p>
+                            </div>
+                        </Link>
+                    </div>
                 </div>
 
                 {accounts.length > 0 && (

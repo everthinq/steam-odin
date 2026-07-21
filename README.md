@@ -14,6 +14,10 @@ This monorepo contains multiple applications, each named after a figure from Nor
     - *Tech:* Steam-user & Global Offensive libraries.
 - **`Yggdrasil/huginn`** (Skinsprice): The Scout.
     - *Role:* Scours marketplaces to find the best deals.
+- **Huginn** (Arbitrage): The Scout — a tool within Heimdall.
+    - *Role:* Cross-market arbitrage profiles (Tradeon/LisSkins/Buff/CSFloat/DMarket) using live pulse prices.
+- **Draupnir** (Portfolio Tracker): The Hoard — a tool within Heimdall.
+    - *Role:* Tracks buy/sell transactions per portfolio with live valuation & profit/loss. Imports Pricempire CSV exports.
 
 > [!NOTE]
 > The `apps` directory has been renamed to **`Yggdrasil`** (The World Tree), which contains the individual realms (applications).

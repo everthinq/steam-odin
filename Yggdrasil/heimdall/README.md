@@ -78,6 +78,22 @@ requires your account's bearer token:
 The token is a JWT and expires eventually; when Huginn starts returning auth
 errors, repeat these steps to refresh it.
 
+## Draupnir (Portfolio Tracker)
+
+Draupnir ("The Hoard") tracks your skin **buy/sell transactions** across multiple
+portfolios and values current holdings **live** using Huginn's pulse price feed —
+so it reuses the same `tradeon_token` (no separate config). Shows cost basis,
+realized and unrealized P/L per item and per portfolio.
+
+- **UI:** `/draupnir` (portfolio list, create, CSV import, sort) and
+  `/draupnir/:id` (summary tiles, holdings, transaction add/edit/delete).
+- **Import:** upload price-tracker CSV exports (e.g. Pricempire) — **one portfolio
+  per file**. Those exports store prices as **integer cents** (no decimal point),
+  so every price is divided by 100 on import; mojibake item names are repaired.
+- **Valuation:** switchable reference market (Steam / CSFloat / Buff / lowest),
+  cached ~1h and warmed in the background so pages never block on pulse.
+- **Data:** stored in `backend/portfolios.json` — **gitignored** (personal holdings).
+
 ## API Reference
 
 ### Health Check
@@ -85,3 +101,14 @@ errors, repeat these steps to refresh it.
 ```json
 { "status": "healthy" }
 ```
+
+### Draupnir (portfolios)
+| Method | Route | Purpose |
+|--------|-------|---------|
+| `GET` | `/api/portfolios?market=` | List portfolios with valuation summary |
+| `POST` | `/api/portfolios` | Create a portfolio |
+| `GET/PATCH/DELETE` | `/api/portfolios/<id>` | Detail / rename / delete |
+| `POST` | `/api/portfolios/import` | Import a CSV as a new portfolio |
+| `POST/PATCH/DELETE` | `/api/portfolios/<id>/transactions[/<tid>]` | Add / edit / remove a transaction |
+| `GET` | `/api/portfolios/item-search?q=` | Item-name autocomplete |
+| `POST` | `/api/portfolios/validate-item` | Check a name is a real CS item |

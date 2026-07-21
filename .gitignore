@@ -208,3 +208,5 @@ Yggdrasil/heimdall/backend/cache/
 Yggdrasil/heimdall/backend/settings.json
 # CSFloat API keys (rotation pool) — secrets, keep local
 Yggdrasil/heimdall/backend/csfloat_keys.json
+# Draupnir portfolio data (personal holdings)
+Yggdrasil/heimdall/backend/portfolios.json
