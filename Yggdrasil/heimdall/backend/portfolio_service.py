@@ -126,6 +126,10 @@ class PortfolioService:
             'date': (raw.get('date') or '').strip() or _today(),
             'note': (raw.get('note') or '').strip(),
             'fee_percent': fee_percent,
+            # Marks a leg of an inter-account move (buy on one of your accounts,
+            # sell on another). Excluded from the combined ledger so moving items
+            # between your own accounts doesn't distort overall profit.
+            'is_arbitrage': bool(raw.get('is_arbitrage')),
             'created_at': raw.get('created_at') or _now(),
         }
 
@@ -359,15 +363,27 @@ class PortfolioService:
     def _summarize(p, holdings):
         invested = sum(h['buy_cost'] for h in holdings)
         cost_basis = sum(h['cost_basis'] for h in holdings)
-        current_value = sum(h['market_value'] or 0 for h in holdings)
+        # Current value covers the WHOLE portfolio: live market value for holdings
+        # we can price, and cost basis as a neutral fallback for the rest (items
+        # not in the pulse feed). This keeps the headline comparable to Invested
+        # instead of only counting the handful of priced items. Unrealized P/L
+        # below still counts only priced holdings — we don't invent gains on items
+        # we can't value.
+        current_value = sum(
+            h['market_value'] if h['market_value'] is not None else h['cost_basis']
+            for h in holdings
+        )
         realized = sum(h['realized_pl'] for h in holdings)
         unrealized = sum(h['unrealized_pl'] or 0 for h in holdings)
         priced = any(h['current_price'] is not None for h in holdings)
+        held = [h for h in holdings if h['net_qty'] > 0]
+        unpriced_count = sum(1 for h in held if h['current_price'] is None)
         return {
             'id': p['id'], 'name': p['name'],
             'created_at': p['created_at'], 'updated_at': p['updated_at'],
             'txn_count': len(p['transactions']),
-            'holdings_count': sum(1 for h in holdings if h['net_qty'] > 0),
+            'holdings_count': len(held),
+            'unpriced_count': unpriced_count,
             'invested': round(invested, 2),
             'cost_basis': round(cost_basis, 2),
             'current_value': round(current_value, 2) if priced else None,
@@ -402,4 +418,32 @@ class PortfolioService:
                                    key=lambda t: (t.get('date') or '', t.get('created_at') or ''),
                                    reverse=True),
             'holdings': holdings,
+        }
+
+    def combined_ledger(self, prices=None):
+        """One ledger across ALL accounts, so you can see whether the arbitrage is
+        profitable overall. Inter-account moves (transactions flagged
+        is_arbitrage) are dropped — both the sell leg on the source account and
+        the buy leg on the destination — so shuffling items between your own
+        accounts nets to nothing. Each transaction is tagged with its account."""
+        with self._lock:
+            ps = json.loads(json.dumps(list(self._data['portfolios'].values())))
+        txns = []
+        for p in ps:
+            for t in p['transactions']:
+                if t.get('is_arbitrage'):
+                    continue
+                txns.append({**t, 'account': p['name'], 'portfolio_id': p['id']})
+        holdings = self._holdings(txns, prices)
+        pseudo = {'id': 'combined', 'name': 'All accounts',
+                  'created_at': '', 'updated_at': '', 'transactions': txns}
+        arb = sum(1 for p in ps for t in p['transactions'] if t.get('is_arbitrage'))
+        return {
+            **self._summarize(pseudo, holdings),
+            'transactions': sorted(txns,
+                                   key=lambda t: (t.get('date') or '', t.get('created_at') or ''),
+                                   reverse=True),
+            'holdings': holdings,
+            'account_count': len(ps),
+            'arbitrage_excluded': arb,
         }

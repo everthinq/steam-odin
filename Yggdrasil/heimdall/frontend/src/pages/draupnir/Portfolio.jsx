@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo, useDeferredValue } from 'react';
 import { Link, useParams, useNavigate } from 'react-router-dom';
-import { LayoutDashboard, Coins, RefreshCw, Pencil, Trash2, Plus, X, Check, Search, ChevronDown, Copy } from 'lucide-react';
+import { LayoutDashboard, Coins, RefreshCw, Pencil, Trash2, Plus, X, Check, Search, ChevronDown, Copy, ArrowLeftRight } from 'lucide-react';
 import { matchesSearchQuery } from '../../utils/transferItems';
 import { ConfirmDialog, PromptDialog } from '../../components/DraupnirDialog';
 import { DateField } from '../../components/DateField';
@@ -34,7 +34,7 @@ const plClass = (v) => v == null ? 'text-slate-400' : v > 0 ? 'text-emerald-400'
 const plStr = (v) => v == null ? '—' : `${v > 0 ? '+' : ''}${money(v)}`;
 
 const todayStr = () => new Date().toISOString().slice(0, 10);   // YYYY-MM-DD
-const blankForm = () => ({ item_name: '', type: 'buy', qty: 1, price: '', platform: '', date: todayStr(), note: '' });
+const blankForm = () => ({ item_name: '', type: 'buy', qty: 1, price: '', platform: '', date: todayStr(), note: '', is_arbitrage: false });
 
 const Tile = ({ label, value, cls = 'text-slate-100' }) => (
     <div className="bg-odin-blue/70 border border-white/10 rounded-xl px-4 py-3 shadow-sm">
@@ -88,6 +88,7 @@ const DraupnirPortfolio = () => {
     const [showSuggest, setShowSuggest] = useState(false);
     const [highlightIdx, setHighlightIdx] = useState(-1);   // keyboard-nav position in the suggestion list
     const [flashId, setFlashId] = useState(null);           // transaction row to flash green after an add
+    const [copiedName, setCopiedName] = useState('');       // item just click-copied → inline "Copied!" flag
     const suggestTimer = useRef(null);
     const itemInputRef = useRef(null);
     const [fetchSeq, setFetchSeq] = useState(0);
@@ -168,6 +169,14 @@ const DraupnirPortfolio = () => {
     };
 
     const onItemNameChange = (v) => { setForm(f => ({ ...f, item_name: v })); setShowSuggest(true); setHighlightIdx(-1); fetchSuggests(v); };
+
+    // Click an item name in the tables to copy it; a small "Copied!" flag shows
+    // next to it briefly without disturbing the name text itself.
+    const copyItemName = (name) => {
+        navigator.clipboard?.writeText(name).catch(() => {});
+        setCopiedName(name);
+        setTimeout(() => setCopiedName(c => (c === name ? '' : c)), 1200);
+    };
 
     // Pick a suggestion → set the exact name and its current price.
     const pickItem = (s) => {
@@ -273,7 +282,7 @@ const DraupnirPortfolio = () => {
 
     const startEdit = (t) => {
         setEditingId(t.id);
-        setForm({ item_name: t.item_name, type: t.type, qty: t.qty, price: t.price, platform: t.platform, date: t.date, note: t.note });
+        setForm({ item_name: t.item_name, type: t.type, qty: t.qty, price: t.price, platform: t.platform, date: t.date, note: t.note, is_arbitrage: !!t.is_arbitrage });
     };
 
     const deleteTxn = (t) => setDialog({
@@ -430,6 +439,14 @@ const DraupnirPortfolio = () => {
                                     value={form.date} onChange={v => setForm(f => ({ ...f, date: v }))}
                                 />
                                 <input className={`${inputCls} flex-1 min-w-[120px]`} placeholder="Note" value={form.note} onChange={e => setForm({ ...form, note: e.target.value })} />
+                                <button
+                                    type="button"
+                                    onClick={() => setForm(f => ({ ...f, is_arbitrage: !f.is_arbitrage }))}
+                                    title="Mark this as moving an item between your own accounts. Arbitrage legs are excluded from the combined 'All accounts' view so moves don't distort overall profit."
+                                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-sm font-medium border transition-colors ${form.is_arbitrage ? 'bg-sky-500/20 text-sky-300 border-sky-500/40' : 'text-slate-400 border-white/10 hover:bg-white/5'}`}
+                                >
+                                    <ArrowLeftRight size={14} /> Arbitrage
+                                </button>
                                 <button type="submit" disabled={checking} className="flex items-center gap-1.5 px-3 py-1.5 rounded bg-yellow-600 hover:bg-yellow-500 text-white text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
                                     {checking ? <><RefreshCw size={14} className="animate-spin" /> Checking…</> : editingId ? <><Check size={14} /> Save</> : <><Plus size={14} /> Add</>}
                                 </button>
@@ -471,7 +488,16 @@ const DraupnirPortfolio = () => {
                                                         <td className="px-3 py-2 text-slate-200">
                                                             <div className="flex items-center gap-2">
                                                                 <ItemIcon name={h.item_name} />
-                                                                <span>{h.item_name}</span>
+                                                                <span
+                                                                    onClick={() => copyItemName(h.item_name)}
+                                                                    title={`${h.item_name}\n(click to copy)`}
+                                                                    className="cursor-pointer transition-colors hover:text-white"
+                                                                >
+                                                                    {h.item_name}
+                                                                </span>
+                                                                {copiedName === h.item_name && (
+                                                                    <span className="shrink-0 text-xs font-medium text-emerald-400">Copied!</span>
+                                                                )}
                                                             </div>
                                                         </td>
                                                         <td className="px-3 py-2 text-right tabular-nums text-slate-300">{h.net_qty}</td>
@@ -524,7 +550,24 @@ const DraupnirPortfolio = () => {
                                                         <td className="px-3 py-2 text-slate-200">
                                                             <div className="flex items-center gap-2">
                                                                 <ItemIcon name={t.item_name} />
-                                                                <span>{t.item_name}{t.note && <span className="block text-[11px] text-slate-600 truncate max-w-[220px]">{t.note}</span>}</span>
+                                                                <span>
+                                                                    <span
+                                                                        onClick={() => copyItemName(t.item_name)}
+                                                                        title={`${t.item_name}\n(click to copy)`}
+                                                                        className="cursor-pointer transition-colors hover:text-white"
+                                                                    >
+                                                                        {t.item_name}
+                                                                    </span>
+                                                                    {copiedName === t.item_name && (
+                                                                        <span className="ml-2 text-xs font-medium text-emerald-400">Copied!</span>
+                                                                    )}
+                                                                    {t.is_arbitrage && (
+                                                                        <span className="ml-2 inline-flex items-center gap-1 align-middle text-[10px] font-medium text-sky-300 bg-sky-500/15 px-1.5 py-0.5 rounded" title="Inter-account move — excluded from the combined view">
+                                                                            <ArrowLeftRight size={10} /> arb
+                                                                        </span>
+                                                                    )}
+                                                                    {t.note && <span className="block text-[11px] text-slate-600 truncate max-w-[220px]">{t.note}</span>}
+                                                                </span>
                                                             </div>
                                                         </td>
                                                         <td className="px-3 py-2">

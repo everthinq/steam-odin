@@ -884,6 +884,17 @@ def portfolios_import():
         return jsonify({'error': 'portfolio not found'}), 404
     return jsonify({'portfolio': {'id': p['id'], 'name': p['name']}, 'imported': count}), 201
 
+@app.route('/api/portfolios/combined', methods=['GET'])
+def portfolios_combined():
+    """Single ledger across all accounts (arbitrage legs excluded) — overall view."""
+    market = request.args.get('market', 'steam')
+    prices, status = _portfolio_prices(market)
+    data = portfolio_service.combined_ledger(prices)
+    data['priced'] = prices is not None
+    data['pricing'] = status
+    data['market'] = market
+    return jsonify(data)
+
 @app.route('/api/portfolios/<pid>/export', methods=['GET'])
 def portfolios_export(pid):
     """Download one portfolio as a CSV (real dollars; re-importable)."""

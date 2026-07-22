@@ -1,7 +1,17 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Link } from 'react-router-dom';
-import { LayoutDashboard, Coins, Plus, Upload, Download, RefreshCw, ArrowUpDown, Trash2 } from 'lucide-react';
+import { LayoutDashboard, Coins, Plus, Upload, RefreshCw, Search, LayoutGrid, Layers } from 'lucide-react';
 import { ConfirmDialog, PromptDialog } from '../../components/DraupnirDialog';
+import PortfolioCard from '../../components/PortfolioCard';
+import CombinedLedger from '../../components/CombinedLedger';
+import {
+    loadPortfolioLayout,
+    savePortfolioLayout,
+    mergeLayoutWithPortfolios,
+    sortPortfoliosForDashboard,
+    togglePortfolioPin,
+    reorderPortfolioList,
+} from '../../utils/portfolioLayout';
 
 const MARKETS = [
     { id: 'steam', label: 'Steam' },
@@ -10,39 +20,37 @@ const MARKETS = [
     { id: 'lowest', label: 'Lowest' },
 ];
 
-const SORTS = [
-    { id: 'created', label: 'Created (newest)', fn: (a, b) => b.created_at.localeCompare(a.created_at) },
-    { id: 'name', label: 'Name (A–Z)', fn: (a, b) => a.name.localeCompare(b.name) },
-    { id: 'value', label: 'Value (high→low)', fn: (a, b) => (b.current_value ?? -1) - (a.current_value ?? -1) },
-    { id: 'pl', label: 'Total P/L (high→low)', fn: (a, b) => (b.total_pl ?? 0) - (a.total_pl ?? 0) },
-    { id: 'invested', label: 'Invested (high→low)', fn: (a, b) => b.invested - a.invested },
-];
-
-const money = (v) => v == null ? '—' : `$${v.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-const plClass = (v) => v == null ? 'text-slate-400' : v > 0 ? 'text-emerald-400' : v < 0 ? 'text-red-400' : 'text-slate-400';
-const plStr = (v) => v == null ? '—' : `${v > 0 ? '+' : ''}${money(v)}`;
-
 const DraupnirPortfolios = () => {
     const [portfolios, setPortfolios] = useState([]);
     const [priced, setPriced] = useState(false);
     const [pricing, setPricing] = useState('refreshing');   // no_token | fresh | refreshing | error
     const [market, setMarket] = useState('steam');
-    const [sortId, setSortId] = useState('value');
+    const [viewMode, setViewMode] = useState('accounts');   // 'accounts' | 'combined'
+    const [combined, setCombined] = useState(null);
+    const [searchQuery, setSearchQuery] = useState('');
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
     const [importing, setImporting] = useState(false);
     const [dialog, setDialog] = useState(null);   // styled confirm/prompt replacing native alerts
     const [fetchSeq, setFetchSeq] = useState(0);
+    const [layout, setLayout] = useState(() => loadPortfolioLayout());
+    const [dragId, setDragId] = useState(null);
     const fileRef = useRef(null);
     const pollRef = useRef(0);
     const MAX_POLLS = 8;   // ~24s of background price warming, then give up quietly
 
-    const fetchList = async (mkt = market) => {
+    const persistLayout = (next) => { setLayout(next); savePortfolioLayout(next); };
+
+    const fetchList = async (mkt = market, mode = viewMode) => {
         try {
-            const res = await fetch(`/api/portfolios?market=${mkt}`);
+            const url = mode === 'combined'
+                ? `/api/portfolios/combined?market=${mkt}`
+                : `/api/portfolios?market=${mkt}`;
+            const res = await fetch(url);
             if (!res.ok) throw new Error('Failed to load portfolios');
             const data = await res.json();
-            setPortfolios(data.portfolios || []);
+            if (mode === 'combined') setCombined(data);
+            else setPortfolios(data.portfolios || []);
             setPriced(!!data.priced);
             setPricing(data.pricing || 'fresh');
             setError(null);
@@ -54,20 +62,36 @@ const DraupnirPortfolios = () => {
         }
     };
 
-    // Load on mount / market change (renders instantly from cost basis).
-    useEffect(() => { pollRef.current = 0; setLoading(true); fetchList(market); }, [market]);
+    // Load on mount / market / view-mode change (renders instantly from cost basis).
+    useEffect(() => { pollRef.current = 0; setLoading(true); fetchList(market, viewMode); }, [market, viewMode]);
 
     // While prices warm in the background, re-poll a few times so they fill in.
     useEffect(() => {
         if (pricing !== 'refreshing' || pollRef.current >= MAX_POLLS) return;
-        const t = setTimeout(() => { pollRef.current += 1; fetchList(market); }, 3000);
+        const t = setTimeout(() => { pollRef.current += 1; fetchList(market, viewMode); }, 3000);
         return () => clearTimeout(t);
-    }, [fetchSeq, pricing, market]);
+    }, [fetchSeq, pricing, market, viewMode]);
 
-    const sorted = useMemo(() => {
-        const fn = (SORTS.find(s => s.id === sortId) || SORTS[0]).fn;
-        return [...portfolios].sort(fn);
-    }, [portfolios, sortId]);
+    // Keep the saved layout in sync as portfolios are created/deleted.
+    const idsKey = useMemo(() => portfolios.map(p => String(p.id)).sort().join(','), [portfolios]);
+    useEffect(() => {
+        if (!idsKey) return;
+        setLayout((prev) => {
+            const merged = mergeLayoutWithPortfolios(prev, portfolios);
+            const sameOrder = merged.order.length === prev.order.length && merged.order.every((id, i) => id === prev.order[i]);
+            const samePinned = merged.pinned.length === prev.pinned.length && merged.pinned.every((id, i) => id === prev.pinned[i]);
+            if (sameOrder && samePinned) return prev;
+            savePortfolioLayout(merged);
+            return merged;
+        });
+    }, [idsKey, portfolios]);
+
+    const filtered = useMemo(
+        () => portfolios.filter(p => p.name.toLowerCase().includes(searchQuery.toLowerCase())),
+        [portfolios, searchQuery]
+    );
+    const displayList = useMemo(() => sortPortfoliosForDashboard(filtered, layout), [filtered, layout]);
+    const canReorder = !searchQuery.trim();
 
     const handleCreate = () => setDialog({
         kind: 'prompt', title: 'New portfolio', label: 'Portfolio name',
@@ -127,6 +151,12 @@ const DraupnirPortfolios = () => {
         a.remove();
     };
 
+    const handleTogglePin = (e, p) => {
+        e.preventDefault();
+        e.stopPropagation();
+        persistLayout(togglePortfolioPin(layout, p.id));
+    };
+
     const handleDelete = (e, p) => {
         e.preventDefault();
         e.stopPropagation();
@@ -139,6 +169,21 @@ const DraupnirPortfolios = () => {
                 fetchList();
             },
         });
+    };
+
+    // ---- drag-to-reorder (disabled while searching) ----
+    const handleDragStart = (id) => { if (canReorder) setDragId(String(id)); };
+    const handleDragEnd = () => setDragId(null);
+    const handleDropOn = (targetId) => {
+        if (!canReorder || !dragId || dragId === String(targetId)) return;
+        const list = [...displayList];
+        const from = list.findIndex(p => String(p.id) === dragId);
+        const to = list.findIndex(p => String(p.id) === String(targetId));
+        if (from < 0 || to < 0) return;
+        const [moved] = list.splice(from, 1);
+        list.splice(to, 0, moved);
+        persistLayout(reorderPortfolioList(layout, list));
+        setDragId(null);
     };
 
     return (
@@ -171,22 +216,43 @@ const DraupnirPortfolios = () => {
                 </div>
             </div>
 
-            <div className="flex-1 flex flex-col gap-4 p-6 max-w-6xl w-full mx-auto">
+            <div className="flex-1 p-4 md:p-8">
+              <div className="max-w-7xl mx-auto flex flex-col gap-4">
                 {error && (
                     <div className="bg-red-500/20 border border-red-500/30 text-red-300 px-4 py-3 rounded-lg text-sm">{error}</div>
                 )}
 
-                {/* Controls */}
+                {/* Controls: view toggle + search + market + pricing status */}
                 <div className="flex items-center gap-3 flex-wrap text-sm">
-                    <div className="flex items-center gap-2">
-                        <ArrowUpDown size={14} className="text-slate-500" />
-                        <select
-                            value={sortId} onChange={e => setSortId(e.target.value)}
-                            className="bg-odin-blue/60 border border-white/10 rounded-lg px-2 py-1.5 text-slate-200 focus:outline-none focus:ring-1 focus:ring-yellow-500/50"
+                    <div className="flex rounded-lg overflow-hidden border border-white/10 shrink-0">
+                        <button
+                            onClick={() => setViewMode('accounts')}
+                            className={`flex items-center gap-1.5 px-3 py-2 text-sm font-medium transition-colors ${viewMode === 'accounts' ? 'bg-yellow-600 text-white' : 'text-slate-400 hover:bg-white/5'}`}
                         >
-                            {SORTS.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}
-                        </select>
+                            <LayoutGrid size={14} /> Per account
+                        </button>
+                        <button
+                            onClick={() => setViewMode('combined')}
+                            className={`flex items-center gap-1.5 px-3 py-2 text-sm font-medium transition-colors ${viewMode === 'combined' ? 'bg-yellow-600 text-white' : 'text-slate-400 hover:bg-white/5'}`}
+                        >
+                            <Layers size={14} /> Combined
+                        </button>
                     </div>
+                    {viewMode === 'accounts' && (
+                        <div className="relative flex-1 min-w-[220px] max-w-md">
+                            <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 text-slate-400" size={20} />
+                            <input
+                                type="text" placeholder="Search portfolios..."
+                                value={searchQuery} onChange={e => setSearchQuery(e.target.value)}
+                                className="w-full pl-12 pr-16 py-3 glass-panel rounded-lg text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all"
+                            />
+                            {searchQuery && (
+                                <span className="absolute right-4 top-1/2 transform -translate-y-1/2 text-xs text-slate-400">
+                                    {filtered.length} of {portfolios.length}
+                                </span>
+                            )}
+                        </div>
+                    )}
                     <div className="flex items-center gap-2">
                         <span className="text-[10px] font-bold tracking-widest text-slate-600 uppercase">Value on</span>
                         <select
@@ -213,11 +279,17 @@ const DraupnirPortfolios = () => {
                     )}
                 </div>
 
-                {loading ? (
+                {viewMode === 'accounts' && portfolios.length > 0 && canReorder && (
+                    <p className="-mt-1 text-xs text-slate-600">Drag cards to reorder · Pin to keep at the top</p>
+                )}
+
+                {viewMode === 'combined' ? (
+                    <CombinedLedger data={combined} loading={loading} pricing={pricing} />
+                ) : loading ? (
                     <div className="flex justify-center items-center h-64">
                         <RefreshCw className="animate-spin text-yellow-500" size={36} />
                     </div>
-                ) : sorted.length === 0 ? (
+                ) : portfolios.length === 0 ? (
                     <div className="text-center py-20 bg-odin-blue/30 border border-white/5 rounded-2xl">
                         <div className="inline-block p-4 bg-yellow-900/20 rounded-full mb-4">
                             <Coins size={36} className="text-yellow-600" />
@@ -225,47 +297,45 @@ const DraupnirPortfolios = () => {
                         <h2 className="text-xl font-semibold mb-2">No portfolios yet</h2>
                         <p className="text-slate-400 mb-6">Create one, or import a CSV export to get started.</p>
                     </div>
+                ) : displayList.length === 0 ? (
+                    <div className="text-center py-20 bg-odin-blue/30 border border-white/5 rounded-2xl">
+                        <div className="inline-block p-4 bg-slate-800 rounded-full mb-4">
+                            <Search size={32} className="text-slate-500" />
+                        </div>
+                        <h2 className="text-lg font-semibold mb-2">No matches</h2>
+                        <p className="text-slate-400 mb-4">Nothing matches “{searchQuery}”.</p>
+                        <button onClick={() => setSearchQuery('')} className="text-yellow-400 hover:text-yellow-300 transition-colors text-sm">Clear search</button>
+                    </div>
                 ) : (
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                        {sorted.map(p => (
-                            <Link
-                                key={p.id} to={`/draupnir/${p.id}`}
-                                className="group relative block bg-odin-blue/40 border border-white/5 rounded-xl p-4 hover:border-yellow-500/40 hover:bg-odin-blue/60 transition-all"
-                            >
-                                <div className="absolute top-3 right-3 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all">
-                                    <button
-                                        onClick={(e) => handleExport(e, p)}
-                                        className="p-1.5 rounded-lg text-slate-600 hover:text-yellow-300 hover:bg-yellow-500/10 transition-all"
-                                        title="Export as CSV"
-                                    >
-                                        <Download size={14} />
-                                    </button>
-                                    <button
-                                        onClick={(e) => handleDelete(e, p)}
-                                        className="p-1.5 rounded-lg text-slate-600 hover:text-red-400 hover:bg-red-500/10 transition-all"
-                                        title="Delete portfolio"
-                                    >
-                                        <Trash2 size={14} />
-                                    </button>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 md:gap-6">
+                        {displayList.map(p => {
+                            const pid = String(p.id);
+                            const isPinned = layout.pinned.includes(pid);
+                            const isDragging = dragId === pid;
+                            return (
+                                <div
+                                    key={p.id}
+                                    draggable={canReorder}
+                                    onDragStart={() => handleDragStart(p.id)}
+                                    onDragEnd={handleDragEnd}
+                                    onDragOver={(e) => { if (canReorder) e.preventDefault(); }}
+                                    onDrop={(e) => { e.preventDefault(); handleDropOn(p.id); }}
+                                    className={`transition-opacity ${isDragging ? 'opacity-40' : ''}`}
+                                >
+                                    <PortfolioCard
+                                        portfolio={p}
+                                        isPinned={isPinned}
+                                        draggable={canReorder}
+                                        onTogglePin={(e) => handleTogglePin(e, p)}
+                                        onExport={(e) => handleExport(e, p)}
+                                        onDelete={(e) => handleDelete(e, p)}
+                                    />
                                 </div>
-                                <h3 className="font-serif font-semibold text-yellow-100 pr-16 truncate">{p.name}</h3>
-                                <p className="text-xs text-slate-500 mb-3">
-                                    {p.holdings_count} holdings · {p.txn_count} transactions
-                                </p>
-                                <div className="grid grid-cols-2 gap-y-1.5 text-sm">
-                                    <span className="text-slate-500">Value</span>
-                                    <span className="text-right tabular-nums text-slate-100">{money(p.current_value)}</span>
-                                    <span className="text-slate-500">Invested</span>
-                                    <span className="text-right tabular-nums text-slate-300">{money(p.cost_basis)}</span>
-                                    <span className="text-slate-500">Unrealized</span>
-                                    <span className={`text-right tabular-nums ${plClass(p.unrealized_pl)}`}>{plStr(p.unrealized_pl)}</span>
-                                    <span className="text-slate-500">Realized</span>
-                                    <span className={`text-right tabular-nums ${plClass(p.realized_pl)}`}>{plStr(p.realized_pl)}</span>
-                                </div>
-                            </Link>
-                        ))}
+                            );
+                        })}
                     </div>
                 )}
+              </div>
             </div>
 
             <ConfirmDialog
