@@ -7,6 +7,7 @@ import urllib.request
 import urllib.error
 import urllib.parse
 from datetime import datetime, timezone
+from notifications import send_notification, notification_channel, edit_notification, delete_notification
 
 # Only the inventory scan is cached to disk (it's expensive to produce). Arbitrage
 # prices are fetched live on demand and held in the browser session, never cached.
@@ -16,6 +17,17 @@ CACHE_PATH = os.path.join(os.path.dirname(__file__), 'cache', 'huginn_scan.json'
 # them is a slow, throttled sweep (~2 API calls per item), so it runs as a background
 # job and the result is reused by every "=> CSFloat (autobuy)" profile until refreshed.
 CSFLOAT_BUYORDERS_CACHE = os.path.join(os.path.dirname(__file__), 'cache', 'huginn_csfloat_buyorders.json')
+
+# Bundled catalog of tradeable containers (cases + sticker/souvenir/autograph capsules)
+# used by the "Case Arbitrage" tracker. Regenerated from the community CSGO-API.
+CONTAINERS_FILE = os.path.join(os.path.dirname(__file__), 'cases_containers.json')
+# Daily cheapest-price snapshots per container, for trend arrows / sparklines. Cached
+# to disk (cheap to keep) and pruned to the most recent N days on every save.
+CASE_HISTORY_FILE = os.path.join(os.path.dirname(__file__), 'cache', 'case_price_history.json')
+# Which LisSkins/Buff-cheaper-than-CSFloat alerts are currently active, so we only
+# notify on NEW crossings instead of every hourly run.
+CASE_ALERT_STATE_FILE = os.path.join(os.path.dirname(__file__), 'cache', 'case_alert_state.json')
+
 _CSFLOAT_API_BASE = 'https://csfloat.com/api/v1'
 _CSFLOAT_UA = ('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 '
                '(KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36')
@@ -296,6 +308,12 @@ class HuginnService:
         self._price_cache = {}   # market -> (fetched_at_epoch, {name: price}) for portfolio valuation
         self._price_state = {}   # market -> 'refreshing' | 'ok' | 'error'
         self._price_lock = threading.Lock()
+        # Container tracker snapshots — market -> (epoch, {name: {price, count}}). Kept
+        # separate from _price_cache because it also carries listing counts (liquidity)
+        # and is filtered to the container catalog only. Same non-blocking warm pattern.
+        self._container_cache = {}
+        self._container_state = {}
+        self._container_refresh_started = False
 
     def _ensure_session(self, steam_id, account_data):
         if self.rat.get_status(steam_id).get('status') == 'connected':
@@ -931,3 +949,596 @@ class HuginnService:
         if cached:
             return cached[1], 'refreshing'          # serve stale while warming
         return None, ('error' if state == 'error' else 'refreshing')
+
+    # ---- Container price tracker ("Case Arbitrage") ------------------------
+
+    # Markets a container is compared across (all shown as prices). 'tradeon' is the
+    # TradeOnMarket lowest listing (the firstMarket side of every pulse row) — a
+    # buy-only source here.
+    _CONTAINER_MARKETS = ('steam', 'buff', 'csfloat', 'lisskins', 'dmarket', 'tradeon')
+    # Markets you can realistically CASH OUT on (drives the "best flip" + profit
+    # filters). DMarket is excluded on purpose: its pulse "Sell" price is often
+    # unfillable ("unavailable"), so a flip that targets it is noise. LisSkins is a
+    # buy-only source here (no seller fee modelled). Revisit if that changes.
+    _CONTAINER_SELL_FEES = {
+        'steam': STEAM_SALES_FEE, 'buff': BUFF_SALES_FEE, 'csfloat': CSFLOAT_SALES_FEE,
+    }
+    # Markets whose pulse price is shown but excluded from the cheapest/dearest/spread
+    # math because it's not actionable (DMarket "Sell" prices are often unfillable).
+    _CONTAINER_NOISE_MARKETS = frozenset({'dmarket'})
+    _CASE_HISTORY_MAX_DAYS = 120
+
+    def _load_containers(self, categories=None):
+        """Load the bundled container catalog. Optionally filter to a set of
+        category slugs ('case', 'sticker', 'souvenir', 'autograph')."""
+        try:
+            with open(CONTAINERS_FILE, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+        except Exception as e:
+            print(f'[HUGINN] container catalog load failed: {e}')
+            return []
+        items = data.get('containers', [])
+        if categories:
+            wanted = set(categories)
+            items = [c for c in items if c.get('category') in wanted]
+        return items
+
+    def _container_names(self):
+        return {c['name'] for c in self._load_containers(None)}
+
+    # --- container market snapshots (price + listing count, non-blocking) ---
+
+    def _single_container_map(self, token, market):
+        """{name: {price, count}} for container names only, on one market. For
+        'tradeon' we read the firstMarket side (TradeOnMarket's own lowest listing),
+        which every pulse row already carries; for the rest we read secondMarket."""
+        body = copy.deepcopy(_TRADEON_STEAM_BODY)
+        if market == 'tradeon':
+            url = _TRADEON_STEAM_URL
+            side = 'firstMarket'
+        else:
+            url, sell_type = self._PRICE_MARKETS[market]
+            body['secondMarketOptions']['secondMarketPriceType'] = sell_type
+            side = 'secondMarket'
+        names = self._container_names()
+        out = {}
+        for it in self._post_tradeon(url, token, body):
+            name = (it.get('itemName') or {}).get('marketHashName')
+            if name not in names:
+                continue
+            mk = it.get(side) or {}
+            price = mk.get('price')
+            if not price:
+                continue
+            out[name] = {'price': price, 'count': mk.get('totalOffersCount')}
+        return out
+
+    def _refresh_container_bg(self, token, market):
+        try:
+            snap = self._single_container_map(token, market)
+            with self._price_lock:
+                self._container_cache[market] = (time.time(), snap)
+                self._container_state[market] = 'ok'
+        except Exception as e:
+            print(f'[HUGINN] container snapshot refresh failed ({market}): {e}')
+            with self._price_lock:
+                self._container_state[market] = 'error'
+
+    def _container_snapshot(self, token, market):
+        """NON-BLOCKING {name:{price,count}} for one market. Serves cache instantly,
+        warms cold/stale in the background (single-flight per market), like
+        prices_for_valuation. status: 'no_token'|'fresh'|'refreshing'|'error'."""
+        with self._price_lock:
+            cached = self._container_cache.get(market)
+        if not token:
+            return (cached[1] if cached else {}), 'no_token'
+        if cached and (time.time() - cached[0]) < self._PRICE_CACHE_TTL_SEC:
+            return cached[1], 'fresh'
+        with self._price_lock:
+            if self._container_state.get(market) != 'refreshing':
+                self._container_state[market] = 'refreshing'
+                threading.Thread(target=self._refresh_container_bg,
+                                 args=(token, market), daemon=True).start()
+            state = self._container_state.get(market)
+        if cached:
+            return cached[1], 'refreshing'
+        return {}, ('error' if state == 'error' else 'refreshing')
+
+    # --- history (daily cheapest price + spread) ---
+
+    def _load_case_history(self):
+        try:
+            with open(CASE_HISTORY_FILE, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except Exception:
+            return {}
+
+    def _save_case_history(self, history):
+        """Persist snapshots, pruning each series to the most recent N days."""
+        try:
+            for name, series in list(history.items()):
+                if len(series) > self._CASE_HISTORY_MAX_DAYS:
+                    history[name] = dict(sorted(series.items())[-self._CASE_HISTORY_MAX_DAYS:])
+            os.makedirs(os.path.dirname(CASE_HISTORY_FILE), exist_ok=True)
+            tmp = CASE_HISTORY_FILE + '.tmp'
+            with open(tmp, 'w', encoding='utf-8') as f:
+                json.dump(history, f)
+            os.replace(tmp, CASE_HISTORY_FILE)
+        except Exception as e:
+            print(f'[HUGINN] case history save failed: {e}')
+
+    @staticmethod
+    def _hist_price(entry):
+        """Representative daily price = the day's low. Handles new {'lo','hi',...},
+        the interim {'p',...}, and the oldest bare-float form."""
+        if isinstance(entry, dict):
+            return entry.get('lo', entry.get('p'))
+        return entry
+
+    @staticmethod
+    def _hist_profit(entry):
+        """Net flip % stored in a snapshot entry ({'p':price,'f':profit_pct})."""
+        return entry.get('f') if isinstance(entry, dict) else None
+
+    @staticmethod
+    def _median(vals):
+        s = sorted(v for v in vals if v is not None)
+        if not s:
+            return None
+        n = len(s)
+        return s[n // 2] if n % 2 else (s[n // 2 - 1] + s[n // 2]) / 2
+
+    @staticmethod
+    def _percentile(vals, pct):
+        s = sorted(v for v in vals if v is not None)
+        if not s:
+            return None
+        k = (len(s) - 1) * pct / 100.0
+        f = int(k)
+        c = min(f + 1, len(s) - 1)
+        return s[f] if f == c else s[f] + (s[c] - s[f]) * (k - f)
+
+    def _history_trend(self, series, current):
+        """% change of cheapest price vs ~7 daily snapshots ago (nearest earlier)."""
+        if not series or current is None:
+            return None
+        dates = sorted(series.keys())
+        if len(dates) < 2:
+            return None
+        prior = self._hist_price(series[dates[-8] if len(dates) >= 8 else dates[0]])
+        if not prior:
+            return None
+        return round((current - prior) / prior * 100, 2)
+
+    def _history_sparkline(self, series, points=30):
+        if not series:
+            return []
+        out = [self._hist_price(series[d]) for d in sorted(series.keys())[-points:]]
+        return [p for p in out if p is not None]
+
+    def cases_prices(self, token, categories=None):
+        """Price every tracked container across all markets. Per item: cheapest
+        market to buy on, listing counts (liquidity), the best net-of-fee flip over
+        *sellable* markets, a daily trend + sparkline, and a 'hot' flag for containers
+        that are unusually profitable today. Non-blocking: serves cached snapshots and
+        warms cold ones in the background, like portfolio valuation."""
+        containers = self._load_containers(categories)
+        snaps, status = {}, {}
+        for m in self._CONTAINER_MARKETS:
+            snap, st = self._container_snapshot(token, m)
+            snaps[m] = snap or {}
+            status[m] = st
+        history = self._load_case_history()
+        today = datetime.now(timezone.utc).strftime('%Y-%m-%d')
+        dirty = False
+        rows = []
+        for c in containers:
+            name = c['name']
+            prices, counts = {}, {}
+            for m in self._CONTAINER_MARKETS:
+                entry = snaps[m].get(name)
+                if entry is not None:
+                    prices[m] = round(float(entry['price']), 2)
+                    counts[m] = entry.get('count')
+            row = {**c, 'prices': prices, 'counts': counts}
+            # cheapest over actionable markets only (exclude noise like DMarket);
+            # noise prices still ride along in `prices` for display.
+            tradeable = {m: p for m, p in prices.items() if m not in self._CONTAINER_NOISE_MARKETS}
+            if tradeable:
+                cheapest_market = min(tradeable, key=tradeable.get)
+                cheapest = tradeable[cheapest_market]
+                row['cheapest_market'] = cheapest_market
+                row['cheapest'] = cheapest
+                # liquidity: listings available where you'd buy (cheapest market)
+                row['liquidity'] = counts.get(cheapest_market)
+                row['total_listings'] = sum(counts[m] for m in tradeable if counts.get(m)) or None
+                # best flip over markets you can actually cash out on (net of fee)
+                best = None
+                for sm, fee in self._CONTAINER_SELL_FEES.items():
+                    sp = prices.get(sm)
+                    if sp is None:
+                        continue
+                    net = sp * (1 - fee)
+                    profit = net - cheapest
+                    if best is None or profit > best['profit']:
+                        best = {'buy_market': cheapest_market, 'sell_market': sm,
+                                'net_sell': round(net, 2), 'profit': round(profit, 2),
+                                'profit_pct': round(profit / cheapest * 100, 2) if cheapest else None}
+                row['flip'] = best
+                profit_pct = best['profit_pct'] if best else None
+                # history: per-day min/max of the cheapest price + per-market min/max.
+                # Updated every run (loop every ~10min, page views) so lo/hi capture the
+                # true daily range, not just the first reading. Entry:
+                #   {lo, hi: cheapest range, f: best flip %, mk:{market:[lo,hi]}}
+                series = history.get(name)
+                if series is None:
+                    series = history[name] = {}
+                e = series.get(today)
+                if not isinstance(e, dict) or 'lo' not in e:
+                    e = {'lo': cheapest, 'hi': cheapest, 'f': profit_pct, 'mk': {}}
+                    series[today] = e
+                    dirty = True
+                if cheapest < e['lo']:
+                    e['lo'] = cheapest; dirty = True
+                if cheapest > e['hi']:
+                    e['hi'] = cheapest; dirty = True
+                if profit_pct is not None and (e.get('f') is None or profit_pct > e['f']):
+                    e['f'] = profit_pct; dirty = True
+                mk = e.setdefault('mk', {})
+                for _m, _p in prices.items():
+                    cur = mk.get(_m)
+                    if cur is None:
+                        mk[_m] = [_p, _p]; dirty = True
+                    else:
+                        if _p < cur[0]:
+                            cur[0] = _p; dirty = True
+                        if _p > cur[1]:
+                            cur[1] = _p; dirty = True
+                row['trend_pct'] = self._history_trend(series, cheapest)
+                row['sparkline'] = self._history_sparkline(series)
+                # temporal "hot": today's net profit % vs this item's own median
+                priors = [self._hist_profit(series[d]) for d in sorted(series.keys())[:-1]]
+                priors = [f for f in priors if f is not None]
+                if len(priors) >= 5 and profit_pct is not None:
+                    med = self._median(priors)
+                    row['profit_vs_norm'] = round(profit_pct / med, 2) if med else None
+                    row['_hot_temporal'] = bool(med and profit_pct >= 1.3 * med and profit_pct > 0)
+                else:
+                    row['profit_vs_norm'] = None
+                    row['_hot_temporal'] = False
+            rows.append(row)
+        if dirty:
+            self._save_case_history(history)
+        # cross-sectional "hot": today's most profitable across the priced set (works
+        # from day one, before any history exists). 85th percentile, floored at 5%.
+        profits = [(r.get('flip') or {}).get('profit_pct') for r in rows]
+        profits = [p for p in profits if p is not None]
+        thresh = max(self._percentile(profits, 85) or 0, 5.0) if profits else None
+        for r in rows:
+            pp = (r.get('flip') or {}).get('profit_pct')
+            hot_x = thresh is not None and pp is not None and pp >= thresh
+            r['hot_today'] = bool(r.pop('_hot_temporal', False) or hot_x)
+        return {
+            'containers': rows,
+            'status': status,
+            'markets': list(self._CONTAINER_MARKETS),
+            'sell_markets': list(self._CONTAINER_SELL_FEES.keys()),
+            'sell_fees': self._CONTAINER_SELL_FEES,
+            'hot_threshold_pct': round(thresh, 2) if thresh is not None else None,
+            'count': len(rows),
+            'priced': sum(1 for r in rows if r.get('prices')),
+            'updated': today,
+        }
+
+    # --- hourly background pull (keeps the cache warm without a page view) ---
+
+    _CONTAINER_FULL_REFRESH_SEC = 3600   # full 6-market pull + history cadence
+
+    def start_container_refresh(self, settings_provider, default_interval=600):
+        """Background loop with two cadences: a FULL 6-market pull + daily history
+        every hour (keeps the UI warm without a page view), and a fast poll of the
+        alert markets (CSFloat/LisSkins/Buff) every `case_poll_interval_sec` (default
+        10min) that fires price alerts on new crossings. pulse reprices CSFloat ~1min
+        / Steam ~5min, so hourly alone is too slow. `settings_provider` returns the
+        current settings dict. Idempotent — one loop per service instance."""
+        if getattr(self, '_container_refresh_started', False):
+            return
+        self._container_refresh_started = True
+        threading.Thread(target=self._container_refresh_loop,
+                         args=(settings_provider, default_interval), daemon=True).start()
+        print(f'[HUGINN] container refresh loop started (poll default {default_interval}s)')
+
+    def _refresh_one(self, token, market):
+        try:
+            snap = self._single_container_map(token, market)
+            with self._price_lock:
+                self._container_cache[market] = (time.time(), snap)
+                self._container_state[market] = 'ok'
+        except Exception as e:
+            print(f'[HUGINN] container refresh failed ({market}): {e}')
+            with self._price_lock:
+                self._container_state[market] = 'error'
+
+    def _refresh_markets(self, token, markets, parallel=False):
+        """Refresh each market's snapshot. parallel=True fetches them concurrently so
+        they're captured within the same few seconds — important for the alert markets
+        so a cross-market comparison isn't skewed by prices moving between fetches."""
+        if parallel and len(markets) > 1:
+            ts = [threading.Thread(target=self._refresh_one, args=(token, m), daemon=True) for m in markets]
+            for t in ts:
+                t.start()
+            for t in ts:
+                t.join()
+        else:
+            for m in markets:
+                self._refresh_one(token, m)
+
+    def _container_refresh_loop(self, settings_provider, default_interval):
+        last_full = 0
+        while True:
+            interval = default_interval
+            try:
+                settings = settings_provider() if callable(settings_provider) else (settings_provider or {})
+                settings = settings or {}
+                token = settings.get('tradeon_token') or ''
+                try:
+                    interval = max(60, int(settings.get('case_poll_interval_sec') or default_interval))
+                except (TypeError, ValueError):
+                    interval = default_interval
+                alerts_on = bool(settings.get('case_alerts_enabled')) and notification_channel(settings) is not None
+                if token:
+                    now = time.time()
+                    full = (now - last_full) >= self._CONTAINER_FULL_REFRESH_SEC
+                    if full:
+                        self._refresh_markets(token, self._CONTAINER_MARKETS)
+                        try:
+                            self.cases_prices(token, None)   # daily history (own once/day guard)
+                        except Exception as e:
+                            print(f'[HUGINN] history record failed: {e}')
+                        last_full = now
+                        print('[HUGINN] full container refresh from pulse')
+                    elif alerts_on:
+                        self._refresh_markets(token, self._ALERT_MARKETS, parallel=True)
+                    if alerts_on:
+                        try:
+                            res = self.run_case_alerts(settings)
+                            if res.get('new'):
+                                print(f"[HUGINN] case alerts: {res['new']} new, sent={res.get('sent')}")
+                        except Exception as e:
+                            print(f'[HUGINN] case alerts failed: {e}')
+                else:
+                    print('[HUGINN] container refresh skipped — no tradeon_token yet')
+            except Exception as e:
+                print(f'[HUGINN] container refresh loop error: {e}')
+            time.sleep(interval)
+
+    # --- Case Arbitrage price alerts (LisSkins/Buff cheaper than CSFloat) ----
+
+    _ALERT_MARKET_LABEL = {'lisskins': 'LisSkins', 'buff': 'Buff'}
+    _ALERT_MARKETS = ('csfloat', 'lisskins', 'buff')
+    # Don't re-PING the same (case,market) more often than this even if it flickers
+    # out and back in (the board still edits silently). New deals still ping instantly.
+    _ALERT_NOTIFY_COOLDOWN_SEC = 3600
+    _MARKET_SLUG = {'steam': 'Steam', 'buff': 'Buff', 'csfloat': 'CsFloat',
+                    'lisskins': 'LisSkins', 'dmarket': 'Dmarket', 'tradeon': 'TradeOnMarket'}
+
+    def _pulse_link(self, market_key, name):
+        """pulse short-link that 302-redirects to the item's page on a given market."""
+        slug = self._MARKET_SLUG.get(market_key)
+        if not slug:
+            return None
+        return f'https://short-pulse.tradeon.space/short-link/CsGo/{slug}/{urllib.parse.quote(name)}'
+
+    @staticmethod
+    def _esc(s):
+        return str(s).replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+
+    def _load_alert_state(self):
+        try:
+            with open(CASE_ALERT_STATE_FILE, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except Exception:
+            return {}
+
+    def _save_alert_state(self, state):
+        try:
+            os.makedirs(os.path.dirname(CASE_ALERT_STATE_FILE), exist_ok=True)
+            tmp = CASE_ALERT_STATE_FILE + '.tmp'
+            with open(tmp, 'w', encoding='utf-8') as f:
+                json.dump(state, f, indent=1)
+            os.replace(tmp, CASE_ALERT_STATE_FILE)
+        except Exception as e:
+            print(f'[HUGINN] alert state save failed: {e}')
+
+    def _format_alert_messages(self, alerts, owned_map=None):
+        """Return (plain, html). Grouped one block per case (all its cheaper markets
+        together), split into 'In your inventory' vs 'Not in your inventory' (from the
+        Huginn scan), biggest discount first, a blank line between cases. html has <a>
+        links for Telegram (parse_mode=HTML); plain has raw URLs for a webhook."""
+        owned_map = owned_map or {}
+        by_case = {}
+        for a in alerts:
+            g = by_case.get(a['name'])
+            if g is None:
+                info = owned_map.get(a['name'])
+                g = by_case[a['name']] = {
+                    'name': a['name'], 'csfloat': a['csfloat'], 'markets': [],
+                    'owned': bool(info), 'owned_count': (info or {}).get('count', 0),
+                }
+            g['markets'].append(a)
+        cases = list(by_case.values())
+        for g in cases:
+            g['best'] = max(g['markets'], key=lambda m: m['pct'])
+        cases.sort(key=lambda g: g['best']['pct'], reverse=True)
+
+        n = len(cases)
+        head = f"\U0001F3AF Case Arbitrage — {n} case{'s' if n != 1 else ''} cheaper than CSFloat"
+        plain, html = [head], [self._esc(head)]
+
+        def block(g):
+            mk = sorted(g['markets'], key=lambda m: m['price'])
+            cf, best = g['csfloat'], g['best']
+            cnt = f" ×{g['owned_count']}" if g['owned'] and g['owned_count'] else ""
+            tail = f"(-${best['abs']:.2f}, -{best['pct']:.1f}%)"
+            lbl = lambda m: self._ALERT_MARKET_LABEL.get(m['market'], m['market'])
+            p_mk = ' · '.join(f"{lbl(m)} ${m['price']:.2f}" for m in mk)
+            h_mk = ' · '.join(f"<a href=\"{self._pulse_link(m['market'], g['name'])}\">{lbl(m)}</a> ${m['price']:.2f}" for m in mk)
+            cf_url = self._pulse_link('csfloat', g['name'])
+            buy_url = self._pulse_link(mk[0]['market'], g['name'])
+            p = [f"• {g['name']}{cnt}", f"   {p_mk}  vs CSFloat ${cf:.2f}  {tail}", f"   \U0001F517 {buy_url}"]
+            h = [f"• {self._esc(g['name'])}{cnt}", f"   {h_mk}  vs <a href=\"{cf_url}\">CSFloat</a> ${cf:.2f}  {tail}"]
+            return p, h
+
+        def section(title, group):
+            if not group:
+                return
+            plain.extend(['', title])
+            html.extend(['', f"<b>{self._esc(title)}</b>"])
+            for g in group[:25]:
+                p, h = block(g)
+                plain.append(''); plain.extend(p)
+                html.append(''); html.extend(h)
+
+        if owned_map:
+            owned = [g for g in cases if g['owned']]
+            notowned = [g for g in cases if not g['owned']]
+            section(f"\U0001F4E6 In your inventory ({len(owned)})", owned)
+            section(f"\U0001F195 Not in your inventory ({len(notowned)})", notowned)
+        else:
+            for g in cases[:40]:
+                p, h = block(g)
+                plain.append(''); plain.extend(p)
+                html.append(''); html.extend(h)
+            plain.extend(['', "(run 'Get all items' in Huginn to tag which you own)"])
+            html.extend(['', "<i>(run 'Get all items' in Huginn to tag which you own)</i>"])
+        # local (container TZ) time so it matches the Telegram bubble's clock; changing
+        # every tick makes each silent edit visibly refresh — a "still flying" heartbeat.
+        stamp = datetime.now().astimezone().strftime('%H:%M')
+        foot = f"⏱ Updated {stamp} — prices move fast, tap a market to verify before buying."
+        plain.extend(['', foot])
+        html.extend(['', f"<i>{self._esc(foot)}</i>"])
+        return '\n'.join(plain), '\n'.join(html)
+
+    def case_alert_status(self, settings):
+        """Config + current active alerts, for the UI (no side effects)."""
+        state = self._load_alert_state()
+        return {
+            'enabled': bool(settings.get('case_alerts_enabled')),
+            'channel': notification_channel(settings),
+            'min_pct': settings.get('case_alert_min_pct', 3.0),
+            'categories': settings.get('case_alert_categories') or ['case'],
+            'active': list((state.get('details') or {}).values()),
+            'updated': state.get('updated'),
+        }
+
+    def run_case_alerts(self, settings, force=False, refresh=False):
+        """Evaluate LisSkins/Buff-cheaper-than-CSFloat and notify on NEW crossings.
+        `force=True` re-sends all currently-active alerts (used by "Check now").
+        `refresh=True` re-pulls the alert markets (in parallel, near-simultaneous)
+        before comparing, so a manual check reflects live prices, not a stale cache.
+        Returns a summary dict; never raises into the caller."""
+        if not settings.get('case_alerts_enabled') and not force:
+            return {'ran': False, 'reason': 'disabled'}
+        if notification_channel(settings) is None:
+            return {'ran': False, 'reason': 'no channel configured'}
+        token = settings.get('tradeon_token', '')
+        if not token:
+            return {'ran': False, 'reason': 'no tradeon_token'}
+        if refresh:
+            self._refresh_markets(token, self._ALERT_MARKETS, parallel=True)
+        try:
+            min_pct = float(settings.get('case_alert_min_pct', 3) or 0)
+        except (TypeError, ValueError):
+            min_pct = 3.0
+        cats = settings.get('case_alert_categories') or ['case']
+        data = self.cases_prices(token, cats)
+        active = {}
+        for r in data['containers']:
+            prices = r.get('prices') or {}
+            cf = prices.get('csfloat')
+            if not cf:
+                continue
+            for m in ('lisskins', 'buff'):
+                p = prices.get(m)
+                if p is None or p >= cf:
+                    continue
+                pct = round((cf - p) / cf * 100, 2)
+                if pct < min_pct:
+                    continue
+                active[f'{r["name"]}|{m}'] = {
+                    'name': r['name'], 'market': m, 'price': p, 'csfloat': cf,
+                    'pct': pct, 'abs': round(cf - p, 2),
+                }
+        channel = notification_channel(settings)
+        state = self._load_alert_state()
+        prev = set(state.get('active', []))
+        board_id = state.get('board_message_id')
+        notified = dict(state.get('notified') or {})
+        now_keys = set(active.keys())
+        now_ts = time.time()
+
+        # A genuinely-new deal = active but not active last poll, AND not pinged for
+        # this exact (case,market) within the cooldown (so cent-flicker doesn't re-ping).
+        fresh = [k for k in active if k not in prev]
+        notify = [k for k in fresh if (now_ts - notified.get(k, 0)) > self._ALERT_NOTIFY_COOLDOWN_SEC]
+        should_ping = bool(notify) or force
+
+        result = {'ran': True, 'active': len(now_keys), 'new': len(fresh), 'notify': len(notify),
+                  'cleared': len(prev - now_keys), 'channel': channel,
+                  'sent': False, 'edited': False}
+        owned_map = (self.get_cache() or {}).get('by_hash') or {}
+
+        if channel == 'telegram':
+            if not now_keys:
+                # nothing cheaper right now → reflect it in the single board (silent edit)
+                if board_id:
+                    empty = "✅ Case Arbitrage — no cases cheaper than CSFloat right now."
+                    ed = edit_notification(settings, board_id, empty, empty)
+                    result['edited'] = bool(ed.get('ok'))
+                    if ed.get('not_found'):
+                        board_id = None
+            else:
+                plain, html = self._format_alert_messages([active[k] for k in now_keys], owned_map)
+                if should_ping or not board_id:
+                    # push a fresh message (notifies), then remove the old board so the
+                    # chat keeps exactly one up-to-date board.
+                    snd = send_notification(settings, plain, html=html)
+                    if snd.get('ok'):
+                        new_id = snd.get('message_id')
+                        if board_id and new_id and new_id != board_id:
+                            delete_notification(settings, board_id)
+                        board_id = new_id or board_id
+                        result['sent'] = True
+                        for k in now_keys:
+                            notified[k] = now_ts
+                    result['send_error'] = snd.get('error')
+                else:
+                    # no new deal — just keep the board current (silent, no push)
+                    ed = edit_notification(settings, board_id, plain, html)
+                    result['edited'] = bool(ed.get('ok'))
+                    if ed.get('not_found'):
+                        snd = send_notification(settings, plain, html=html)
+                        if snd.get('ok'):
+                            board_id = snd.get('message_id')
+                            result['sent'] = True
+                            for k in now_keys:
+                                notified[k] = now_ts
+        else:
+            # webhook (Discord/Slack): no edit API here — only post on a real new deal
+            if now_keys and should_ping:
+                plain, _ = self._format_alert_messages([active[k] for k in now_keys], owned_map)
+                snd = send_notification(settings, plain)
+                result['sent'] = bool(snd.get('ok'))
+                result['send_error'] = snd.get('error')
+                if snd.get('ok'):
+                    for k in now_keys:
+                        notified[k] = now_ts
+
+        # keep only recent notified timestamps (bounded) and persist state
+        cutoff = now_ts - self._ALERT_NOTIFY_COOLDOWN_SEC * 3
+        notified = {k: t for k, t in notified.items() if t >= cutoff}
+        self._save_alert_state({
+            'active': sorted(now_keys), 'details': active, 'board_message_id': board_id,
+            'notified': notified, 'updated': datetime.now(timezone.utc).isoformat(),
+        })
+        return result

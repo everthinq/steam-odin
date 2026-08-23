@@ -9,6 +9,7 @@ from settings import SettingsManager
 from scheduler import ConfirmationScheduler
 from ratatoskr_service import RatatoskrService
 from huginn_service import HuginnService, load_csfloat_keys, load_csfloat_proxy
+from notifications import send_notification, notification_channel
 from portfolio_service import PortfolioService
 
 app = Flask(__name__)
@@ -51,6 +52,10 @@ def _should_start_background_scheduler():
 
 if _should_start_background_scheduler():
     scheduler.start()
+    # Keep Case Arbitrage container prices warm: pull all markets from pulse hourly,
+    # then fire LisSkins/Buff-cheaper-than-CSFloat alerts on new crossings.
+    huginn_service.start_container_refresh(
+        lambda: settings_manager.get_settings())
 
 # Ensure all errors return JSON, not HTML
 @app.errorhandler(404)
@@ -526,6 +531,48 @@ def huginn_scan_cache():
     if not cache:
         return jsonify({'error': 'No scan data yet'}), 404
     return jsonify(cache)
+
+@app.route('/api/huginn/cases', methods=['GET'])
+def huginn_cases():
+    """Case Arbitrage: compare tracked containers (cases + sticker/souvenir/autograph
+    capsules) across all markets. Query: ?types=case,sticker,... (default: all)."""
+    token = settings_manager.get_settings().get('tradeon_token', '')
+    if not token:
+        return jsonify({'error': 'tradeon_token not set in settings'}), 400
+    raw = (request.args.get('types') or '').strip()
+    categories = [t.strip() for t in raw.split(',') if t.strip()] or None
+    try:
+        data = huginn_service.cases_prices(token, categories)
+        return jsonify(data)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/huginn/cases/alerts', methods=['GET'])
+def huginn_cases_alerts_status():
+    """Alert config + currently-active LisSkins/Buff-cheaper-than-CSFloat deals."""
+    return jsonify(huginn_service.case_alert_status(settings_manager.get_settings()))
+
+@app.route('/api/huginn/cases/alerts/check', methods=['POST'])
+def huginn_cases_alerts_check():
+    """Run the alert evaluation now. ?force=1 re-sends all active deals (else only new)."""
+    force = request.args.get('force') in ('1', 'true', 'yes')
+    # ?refresh=1 re-pulls markets first (slower, ~20-40s) for a truly-live check; by
+    # default we use the loop-maintained cache (parallel-refreshed every poll) — instant.
+    refresh = request.args.get('refresh') in ('1', 'true', 'yes')
+    settings = settings_manager.get_settings()
+    try:
+        return jsonify(huginn_service.run_case_alerts(settings, force=force, refresh=refresh))
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/huginn/cases/alerts/test', methods=['POST'])
+def huginn_cases_alerts_test():
+    """Send a test message via the configured channel (Telegram or webhook)."""
+    settings = settings_manager.get_settings()
+    if notification_channel(settings) is None:
+        return jsonify({'ok': False, 'error': 'No channel configured — set a Telegram bot token + chat id, or a webhook URL.'}), 400
+    result = send_notification(settings, '\U0001F514 Heimdall test — Case Arbitrage alerts are wired up correctly.')
+    return jsonify(result), (200 if result.get('ok') else 502)
 
 @app.route('/api/huginn/csfloat/buy-orders', methods=['GET'])
 def huginn_csfloat_buy_orders_status():

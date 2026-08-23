@@ -1,12 +1,13 @@
 import React, { useState, useEffect, useMemo, useRef, useDeferredValue } from 'react';
 import { Link } from 'react-router-dom';
-import { LayoutDashboard, RefreshCw, AlertTriangle, Search, ChevronDown, ArrowRight, Coins } from 'lucide-react';
+import { LayoutDashboard, RefreshCw, AlertTriangle, Search, ChevronDown, ArrowRight, Coins, Boxes, Repeat } from 'lucide-react';
 import { matchesSearchQuery } from '../../utils/transferItems';
 import SteamMarketLink from '../../components/SteamMarketLink';
 import BuffMarketLink from '../../components/BuffMarketLink';
 import LisSkinsMarketLink from '../../components/LisSkinsMarketLink';
 import CSFloatMarketLink from '../../components/CSFloatMarketLink';
 import CollectionFilter from '../../components/CollectionFilter';
+import CaseArbitrage from '../../components/CaseArbitrage';
 import { getTradeonShortLink } from '../../utils/tradeonShortLink';
 
 // Render results in capped pages — the datasets are ~17k rows and painting them all
@@ -145,6 +146,8 @@ const formatTs = (ts) => {
 };
 
 const HuginnArbitrage = () => {
+    // Top-level view: cross-market item arbitrage (default) vs the container/case tracker.
+    const [view, setView] = useState('arbitrage');
     const [scanData, setScanData] = useState(null);
     const [scanning, setScanning] = useState(false);
     const [scanError, setScanError] = useState(null);
@@ -353,24 +356,45 @@ const HuginnArbitrage = () => {
                 <span className="text-white/20">/</span>
                 <h1 className="text-lg font-bold font-serif text-amber-100">Huginn — The Scout</h1>
 
-                <div className="ml-auto flex items-center gap-4">
-                    {scanData && (
-                        <span className="text-xs text-slate-500 tabular-nums">
-                            {scanData.total_items.toLocaleString()} items · {formatTs(scanData.scan_timestamp)}
-                        </span>
-                    )}
+                {/* View toggle: item arbitrage vs container/case tracker */}
+                <div className="flex items-center gap-1 ml-3 p-0.5 rounded-lg bg-black/30 border border-white/10">
                     <button
-                        onClick={handleScan}
-                        disabled={scanning}
-                        className="flex items-center gap-2 px-4 py-2 rounded-lg bg-amber-600 hover:bg-amber-500 text-white text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                        type="button"
+                        onClick={() => setView('arbitrage')}
+                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${view === 'arbitrage' ? 'bg-amber-600 text-white' : 'text-slate-400 hover:text-white'}`}
                     >
-                        <RefreshCw size={14} className={scanning ? 'animate-spin' : ''} />
-                        {scanning ? 'Scanning…' : 'Get all items'}
+                        <Repeat size={13} /> Arbitrage
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => setView('cases')}
+                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${view === 'cases' ? 'bg-amber-600 text-white' : 'text-slate-400 hover:text-white'}`}
+                    >
+                        <Boxes size={13} /> Case Arbitrage
                     </button>
                 </div>
+
+                {view === 'arbitrage' && (
+                    <div className="ml-auto flex items-center gap-4">
+                        {scanData && (
+                            <span className="text-xs text-slate-500 tabular-nums">
+                                {scanData.total_items.toLocaleString()} items · {formatTs(scanData.scan_timestamp)}
+                            </span>
+                        )}
+                        <button
+                            onClick={handleScan}
+                            disabled={scanning}
+                            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-amber-600 hover:bg-amber-500 text-white text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                        >
+                            <RefreshCw size={14} className={scanning ? 'animate-spin' : ''} />
+                            {scanning ? 'Scanning…' : 'Get all items'}
+                        </button>
+                    </div>
+                )}
             </div>
 
             <div className="flex-1 flex flex-col gap-3 p-6 overflow-hidden max-w-7xl w-full mx-auto">
+                {view === 'cases' ? <CaseArbitrage /> : (<>
                 {scanError && (
                     <div className="shrink-0 bg-red-500/20 border border-red-500/30 text-red-300 px-4 py-3 rounded-lg text-sm">
                         {scanError}
@@ -692,6 +716,7 @@ const HuginnArbitrage = () => {
                             : 'No deals to show.'}
                     </div>
                 )}
+                </>)}
             </div>
         </div>
     );

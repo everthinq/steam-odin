@@ -1,0 +1,3029 @@
+{
+ "source": "ByMykel/CSGO-API crates.json",
+ "categories": {
+  "case": "Case",
+  "sticker": "Sticker Capsule",
+  "souvenir": "Souvenir",
+  "autograph": "Autograph Capsule"
+ },
+ "count": 431,
+ "containers": [
+  {
+   "id": "crate-4843",
+   "name": "Antwerp 2022 Challengers Autograph Capsule",
+   "category": "autograph",
+   "type": "Autograph Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjn_lDkShjjoYbh_ilk7vy6f6F_MKLDXDWvxvx5pfFWTCGymREivTqAiJy3dHqXOlV0C8AmR7VY5xPrkNPhN7jksQHei9pNxXj4jSwcu345t7lTUb1lpPPGirj51Q"
+  },
+  {
+   "id": "crate-4845",
+   "name": "Antwerp 2022 Champions Autograph Capsule",
+   "category": "autograph",
+   "type": "Autograph Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjn_lDkShjjoYbh_ilk7vy6f6F_MKLDXDWvxvx5pfFWTCGymA0uvDOW1Nz8dHqUOAYjWcB4TLYNsxnqkdfvN-nr7gHW3oxDxCT923tOuy09trwcEf1ypTd-iXc"
+  },
+  {
+   "id": "crate-4844",
+   "name": "Antwerp 2022 Contenders Autograph Capsule",
+   "category": "autograph",
+   "type": "Autograph Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjn_lDkShjjoYbh_ilk7vy6f6F_MKLDXDWvxvx5pfFWTCa9gRgptziXicGpeCjEbFAhXJshELECu0Wwl93uMO_h5AWNg9pCziSqhn5L6Hxu4OsBT-N7rSAkzLwR"
+  },
+  {
+   "id": "crate-4842",
+   "name": "Antwerp 2022 Legends Autograph Capsule",
+   "category": "autograph",
+   "type": "Autograph Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjn_lDkShjjoYbh_ilk7vy6f6F_MKLDXDWvxvx5pfFWQyy0kBMjoHPQztahd3zCbQcjCMB4R-4LsUG6k9O0Nu6ztA3Xg4wXnCqsjntKvS5i_a9cBi1Lnxs3"
+  },
+  {
+   "id": "crate-5132",
+   "name": "Austin 2025 Challengers Autograph Capsule",
+   "category": "autograph",
+   "type": "Autograph Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJG5zlm-UfvRzd6yenqC9gQlptK76UvmVRjOjYLp_ile_c2-aadmH_GGHTXAk7tJt_NmWjmMlhUmvzGAlIj8MziJag90X8FzQ7RcthC-ltazNuzksgXfj4hEyCv7iysauCtt4-8HUqNx_bqX0V94LVOtww"
+  },
+  {
+   "id": "crate-5134",
+   "name": "Austin 2025 Champions Autograph Capsule",
+   "category": "autograph",
+   "type": "Autograph Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJG5zlm-UfvRzd6yenqC9gQlptK76UvmVRjOjYLp_ile_c2-aadmH_GGHTXAk7tJt_NmWjmMlhUmvi2MlYHqb33BPA8jDcFzRuIMsxe6xtzvYeuxtQKK2dhNm3j-jn4d5n4_47wFU_I7uvqAoq0RnOQ"
+  },
+  {
+   "id": "crate-5133",
+   "name": "Austin 2025 Contenders Autograph Capsule",
+   "category": "autograph",
+   "type": "Autograph Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJG5zlm-UfvRzd6yenqC9gQlptK76UvmVRjOjYLp_ile_c2-aadmH_GGHTXAk7tJt_NmWjmMlhIppziLnorrMmXFaVMkCpskQ-QL4xPqxtHuZOOxtFfXi4MWnnn63ygduC1q6-pQAqpz5OSJ2JpJkGrT"
+  },
+  {
+   "id": "crate-5131",
+   "name": "Austin 2025 Legends Autograph Capsule",
+   "category": "autograph",
+   "type": "Autograph Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJG5zlm-UfvRzd6yenqC9gQlptK76UvmVRjOjYLp_ile_c2-aadmH_GGHTXAk7tJt_NmWjmMmRggtjOBicGhd3uSPwMjXsF3Fu5fthjulNHvP7m3sgXajItDxHmojC1A7Xw5sOoAT-N7rX2BomlT"
+  },
+  {
+   "id": "crate-4327",
+   "name": "Autograph Capsule | Astralis | Atlanta 2017",
+   "category": "autograph",
+   "type": "Autograph Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSW8Vp0-pP1uAm2FiLwjYLysyBfu6OqbfU1dPaSDDGRx-gis-BtTX3kx0xxtm7cydr7JyqXOg8jCsBuBbld3CDP5TY"
+  },
+  {
+   "id": "crate-4270",
+   "name": "Autograph Capsule | Astralis | Cologne 2016",
+   "category": "autograph",
+   "type": "Autograph Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU6lp684nxuAm2FyLwjYLys3sJu6L_P6BudqbLC2HAkrYhsbhrSnHnxEl35WTUm9qgIyiQPAcnWMFuBbldwclSu38"
+  },
+  {
+   "id": "crate-4221",
+   "name": "Autograph Capsule | Astralis | MLG Columbus 2016",
+   "category": "autograph",
+   "type": "Autograph Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU6lpg-YXh-Qu3EEvOn4X072wM6aKtPfJvIaLFWzGSw74k4bI4GXjjwkUi4zuBno2pdnyUa1N1WcYhW6dU5fQ_Ys5g"
+  },
+  {
+   "id": "crate-4325",
+   "name": "Autograph Capsule | Challengers (Foil) | Atlanta 2017",
+   "category": "autograph",
+   "type": "Autograph Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjn_lDkShjjoYbh_ilk7uaiaap5IaLDXzCvxvx5pfFWHmfrwUxz4m3cw96heXyQaAImC5R3RuQJsUO5xNXhYbzhtAWP344XyCSqkGoXuUK_uX0T"
+  },
+  {
+   "id": "crate-4158",
+   "name": "Autograph Capsule | Challengers (Foil) | Cluj-Napoca 2015",
+   "category": "autograph",
+   "type": "Autograph Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjn_lDkShjjoYbh_ilk7P67YvY9caWsCXWf1P5J4a8_Tn-xzE0hsW7VztqteX6ePwQlD8EhRrMLuhiww93mMuK0sVeIioNF02yg2X0SQ-6V"
+  },
+  {
+   "id": "crate-4256",
+   "name": "Autograph Capsule | Challengers (Foil) | Cologne 2016",
+   "category": "autograph",
+   "type": "Autograph Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjn_lDkShjjoYbh_ilk7P2iZ6NjJaLDXzGvxvx5pfFWHmexwkUh5TvRz9_9dimebgF1WZYmFudYtkaxxtGyMurltg3Z2toXniv8kGoXudOlkdld"
+  },
+  {
+   "id": "crate-4207",
+   "name": "Autograph Capsule | Challengers (Foil) | MLG Columbus 2016",
+   "category": "autograph",
+   "type": "Autograph Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjn_lDkShjjoYbh_ilk7P2ifalvNePBXjbG_ulkv_R5cHj9l04i5mmHy9_4dniTaFQlDpd3FOBb4Bi6wdGyNuLr7w3Xit1CmXj22jQJsHj2HVobwQ"
+  },
+  {
+   "id": "crate-4130",
+   "name": "Autograph Capsule | Cloud9 G2A | Cologne 2015",
+   "category": "autograph",
+   "type": "Autograph Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU6lp684nxuAm2FCLykpn1-XsVvvOrOvRuJafLDWHDlOx15uQxS3jlkU91sGTWzI3_JH6XPwV0A8dzRvlK7EchNMAfgA"
+  },
+  {
+   "id": "crate-4169",
+   "name": "Autograph Capsule | Cloud9 | Cluj-Napoca 2015",
+   "category": "autograph",
+   "type": "Autograph Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU6UN_ptelv2bkGFPwzJO1riAP7fP5PaU8JfGWDD6Tk78ltONoSXDiw0p-5j-EyNeoJy7GcEZ-XXTt6hr8"
+  },
+  {
+   "id": "crate-4218",
+   "name": "Autograph Capsule | Cloud9 | MLG Columbus 2016",
+   "category": "autograph",
+   "type": "Autograph Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU6lpg-YXh-Qu3EEvOnc-upCMN6vf6Pfc9IvbKWGTEk-tw6LloTS-wzRt25WrTz4v9cimSa1clA4wwG7CUvyRiwQ"
+  },
+  {
+   "id": "crate-4162",
+   "name": "Autograph Capsule | Counter Logic Gaming | Cluj-Napoca 2015",
+   "category": "autograph",
+   "type": "Autograph Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU6UN_ptelv2bkTRq_ncOz-XpauKX_Ov04JPXAVzeSkrt36bdtFi3glxkktT-Hzt6gInLCOxhgVMV5rvZSpA"
+  },
+  {
+   "id": "crate-4129",
+   "name": "Autograph Capsule | Counter Logic Gaming | Cologne 2015",
+   "category": "autograph",
+   "type": "Autograph Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU6lp684nxuAm2FCLykpGuqXJd7vT4P_E0ePPHWTaVx75ysrM8TCvjxkRw5mjTyd7_J3qTOFQkXIwwG7AaVQ2XNw"
+  },
+  {
+   "id": "crate-4260",
+   "name": "Autograph Capsule | Counter Logic Gaming | Cologne 2016",
+   "category": "autograph",
+   "type": "Autograph Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU6lp684nxuAm2FyLykpGu-XAJvvCvOPY8JaTEWD7EkOx1s7kwSXngwkhz5TzRwt6vdXqfZ1AnCIwwG7A22U06wQ"
+  },
+  {
+   "id": "crate-4211",
+   "name": "Autograph Capsule | Counter Logic Gaming | MLG Columbus 2016",
+   "category": "autograph",
+   "type": "Autograph Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU6lpg-YXh-Qu3EEvOnZrnsyAJ7feoaaE_JPLDC2SSx78j4uI-Fi3qxRx-4mqAw9qvdSqfbwElD5puBbldH-F704Y"
+  },
+  {
+   "id": "crate-4329",
+   "name": "Autograph Capsule | FaZe Clan | Atlanta 2017",
+   "category": "autograph",
+   "type": "Autograph Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSW8Vp0-pP1uAm2FiL3n4zls3YLt6aoPfA5JvKRWDXAkL0j5rg9GnnjzRl-5muAwt_4cniQalMkD8BuBbldBr1_iQM"
+  },
+  {
+   "id": "crate-4269",
+   "name": "Autograph Capsule | FaZe Clan | Cologne 2016",
+   "category": "autograph",
+   "type": "Autograph Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU6lp684nxuAm2FyL3n4zlsyACuPOrO6I5dfLCVzSUlu9z4LdvTCqywE9zsDvWmdb9cniQZlInCMNuBbld-3vWcVE"
+  },
+  {
+   "id": "crate-4220",
+   "name": "Autograph Capsule | FaZe Clan | MLG Columbus 2016",
+   "category": "autograph",
+   "type": "Autograph Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU6lpg-YXh-Qu3EEvOmJf6-GxevqL7bPxsJKCQWjHEkLsi5rkxHCjilEoi4GuAzNv6IyqXPw5xDsElW6dU5RzZc_1N"
+  },
+  {
+   "id": "crate-4330",
+   "name": "Autograph Capsule | Flipsid3 Tactics | Atlanta 2017",
+   "category": "autograph",
+   "type": "Autograph Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSW8Vp0-pP1uAm2FiL3kp_wsyMN6vGoPvY-cKPECmKWl7xw6bU4Sn-ykEV_4G3dnturIi2fPQRxC5FuBbldPeeryYk"
+  },
+  {
+   "id": "crate-4164",
+   "name": "Autograph Capsule | Flipsid3 Tactics | Cluj-Napoca 2015",
+   "category": "autograph",
+   "type": "Autograph Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU6UN_ptelv2bhTRTh0MWwpXUIvKP_P_1ucqnDWzbFx7wj6bloGXriwU8i4WvXw9usdS3DOAM-SswnKfcbE6g"
+  },
+  {
+   "id": "crate-4128",
+   "name": "Autograph Capsule | Flipsid3 Tactics | Cologne 2015",
+   "category": "autograph",
+   "type": "Autograph Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU6lp684nxuAm2FCL3kp_w7itf6rz-OaU-IaWRCGXDmbtw4-Q4S3y2lxsj5z_Xydytcn3EZlQgDZp4QOQCrFDmxUWf9Ghh"
+  },
+  {
+   "id": "crate-4262",
+   "name": "Autograph Capsule | Flipsid3 Tactics | Cologne 2016",
+   "category": "autograph",
+   "type": "Autograph Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU6lp684nxuAm2FyL3kp_wsycIvvSrO_Fod_XFVjaWxLoj5-QxTHDgxEUk4jjcm4ytdS-ebgMmX8RuBbldD933FOA"
+  },
+  {
+   "id": "crate-4213",
+   "name": "Autograph Capsule | Flipsid3 Tactics | MLG Columbus 2016",
+   "category": "autograph",
+   "type": "Autograph Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU6lpg-YXh-Qu3EEvOmJrp7Wxa7fT8O_BrI6DHVjKUwL904LhoS3ywxBx_4D6Anoz4c3iVZ1V2CMAlW6dU5QKMTSZ7"
+  },
+  {
+   "id": "crate-4331",
+   "name": "Autograph Capsule | Fnatic | Atlanta 2017",
+   "category": "autograph",
+   "type": "Autograph Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSW8Vp0-pP1uAm2FiL3kILjsyAM66GoPvc5JaCVXDDJxOwltOBsSiuywE0h5WiBzNevcnLFaVNzDpFuBbldUoPmQwM"
+  },
+  {
+   "id": "crate-4174",
+   "name": "Autograph Capsule | Fnatic | Cluj-Napoca 2015",
+   "category": "autograph",
+   "type": "Autograph Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU6UN_ptelv2bhTwny0JCw-CMMuqT-OfNsIaWQV2SRmbt357M5TC3lxk8j5T_Qmdr4cynFaFc-SswnPYzwBw8"
+  },
+  {
+   "id": "crate-4115",
+   "name": "Autograph Capsule | Fnatic | Cologne 2015",
+   "category": "autograph",
+   "type": "Autograph Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU6lp684nxuAm2FCL3kJf09CEVvqH_bqY7IamSWTPDkbkk6bU7Girkx04i5G2Ewtr_JHuSPwEpCpdwTPlK7Ed74F163Q"
+  },
+  {
+   "id": "crate-4272",
+   "name": "Autograph Capsule | Fnatic | Cologne 2016",
+   "category": "autograph",
+   "type": "Autograph Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU6lp684nxuAm2FyL3kILjs3EO7PD7OfU0dKPCXDXCwugltrA8Ti3hkUwh5DnXzdyud33BOAZzCZVuBbldjBqgs24"
+  },
+  {
+   "id": "crate-4223",
+   "name": "Autograph Capsule | Fnatic | MLG Columbus 2016",
+   "category": "autograph",
+   "type": "Autograph Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU6lpg-YXh-Qu3EEvOmJj0_mwK7qSvPaI4IqLLXTbIkbkl5rhoHX7ixUhxtzuGytetcCnBagQpW5JwW6dU5U1joDJG"
+  },
+  {
+   "id": "crate-4332",
+   "name": "Autograph Capsule | G2 Esports | Atlanta 2017",
+   "category": "autograph",
+   "type": "Autograph Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSW8Vp0-pP1uAm2FiL2zNjjpHVe7vf3PvA1d_aRXTKVlr135rdsG3myx05x5DvSyY2seHqWOwAiFNIuEmsYRccz"
+  },
+  {
+   "id": "crate-4170",
+   "name": "Autograph Capsule | G2 Esports | Cluj-Napoca 2015",
+   "category": "autograph",
+   "type": "Autograph Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU6UN_ptelv2bgE1Onx8e4-HBe66GsOvM7JqOSDWTDlLog5-Q6Snu2zU4mtWrSzNb_ci7BcEZ-XfWxSgOB"
+  },
+  {
+   "id": "crate-4268",
+   "name": "Autograph Capsule | G2 Esports | Cologne 2016",
+   "category": "autograph",
+   "type": "Autograph Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU6lp684nxuAm2FyL2zNjj_3MIvKeoPKFvIvTBXTbExbkh5eM9TXrjx0p-smjSyt-sIHKfP1NxFNIuEpogz9gb"
+  },
+  {
+   "id": "crate-4219",
+   "name": "Autograph Capsule | G2 Esports | MLG Columbus 2016",
+   "category": "autograph",
+   "type": "Autograph Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU6lpg-YXh-Qu3EEvOmcSupHZeu6qrOvBpdqHHDWaSkL4m5LE5F33gkRtx62vRzIuoJX_CZgYjCIwwG7Ax_VCmeQ"
+  },
+  {
+   "id": "crate-4334",
+   "name": "Autograph Capsule | GODSENT | Atlanta 2017",
+   "category": "autograph",
+   "type": "Autograph Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSW8Vp0-pP1uAm2FiL2kZKu-ydf6aGsOKE7d6WRDWLCkrog47I4SX7nzEwisGiDyNeqdyqUOlJyDYwwG7BpmW6HMg"
+  },
+  {
+   "id": "crate-4333",
+   "name": "Autograph Capsule | Gambit Gaming | Atlanta 2017",
+   "category": "autograph",
+   "type": "Autograph Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSW8Vp0-pP1uAm2FiL2n5visyRe7qevaaI4IqeXXTWRx7gu5-IwH3Dmwh5ysGzUn479J3qfPQRzC8RuBbldfXm8lN8"
+  },
+  {
+   "id": "crate-4261",
+   "name": "Autograph Capsule | Gambit Gaming | Cologne 2016",
+   "category": "autograph",
+   "type": "Autograph Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU6lp684nxuAm2FyL2n5vis3dZvfaoPvw_d_GWXjbDleov47VrSy22wURy6muHytquInyUbVBxDJRuBbldLEuKrLE"
+  },
+  {
+   "id": "crate-4212",
+   "name": "Autograph Capsule | Gambit Gaming | MLG Columbus 2016",
+   "category": "autograph",
+   "type": "Autograph Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU6lpg-YXh-Qu3EEvOmZft_2wC7vSsOqJscfLBWmbJk78kteM5GXnrl0x_tWTXyt__dHKeOlAjC5siW6dU5Y9ERWOU"
+  },
+  {
+   "id": "crate-4111",
+   "name": "Autograph Capsule | Group A (Foil) | Cologne 2015",
+   "category": "autograph",
+   "type": "Autograph Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjn_lDkShjjoYbh_ilk6uGia6thL_edCzXAkLtJt_NmWjmMxFMitWrSmNugc3rDbQQhCZt4RLJbtUO6k9zhMbvn7lDdiNkRz3-oiS9M8G81tNIn52G2"
+  },
+  {
+   "id": "crate-4112",
+   "name": "Autograph Capsule | Group B (Foil) | Cologne 2015",
+   "category": "autograph",
+   "type": "Autograph Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjn_lDkShjjoYbh_ilk6uGia6thL_edCzXAkLtJt_NmWjmMx1N-smTTn43_eX3CaAAgCpR3R-IOtxW5kIbkMujq5gffiN5DzCyviixP8G81tM8fsOwE"
+  },
+  {
+   "id": "crate-4113",
+   "name": "Autograph Capsule | Group C (Foil) | Cologne 2015",
+   "category": "autograph",
+   "type": "Autograph Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjn_lDkShjjoYbh_ilk6uGia6thL_edCzXAkLtJt_NmWjmMxlMm52_SmYupcnKROld0X8QjFrVYuka7xNfmP-q3sVeI2ohHnHr2iH9J8G81tFFA8E32"
+  },
+  {
+   "id": "crate-4114",
+   "name": "Autograph Capsule | Group D (Foil) | Cologne 2015",
+   "category": "autograph",
+   "type": "Autograph Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjn_lDkShjjoYbh_ilk6uGia6thL_edCzXAkLtJt_NmWjmMwVNwsDzVztf9dn-Wa1J2W8AlR-cLsEW_ltezMLuz5gDe2Y4RzXr7iXwd8G81tHmFz4zP"
+  },
+  {
+   "id": "crate-4335",
+   "name": "Autograph Capsule | HellRaisers | Atlanta 2017",
+   "category": "autograph",
+   "type": "Autograph Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSW8Vp0-pP1uAm2FiL5koSuq3YK7qKrPfE9dvTDD2bAkLgi47I5HX7llE916mmEzd-rIi-eZwAnCYwwG7BNLaG_Ig"
+  },
+  {
+   "id": "crate-4326",
+   "name": "Autograph Capsule | Legends (Foil) | Atlanta 2017",
+   "category": "autograph",
+   "type": "Autograph Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjn_lDkShjjoYbh_ilk7uaiaap5IaLDXzCvxvx5pfFWHWe3wEh252Tcmd36dnqSawAlDpEhTbIDs0TqldXnZLmx4Q2I399CmSX7kGoXuUIbHrUy"
+  },
+  {
+   "id": "crate-4159",
+   "name": "Autograph Capsule | Legends (Foil) | Cluj-Napoca 2015",
+   "category": "autograph",
+   "type": "Autograph Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjn_lDkShjjoYbh_ilk7P67YvY9caWsCXWf1P5J4q9vHXuxwERx4m2Em9_8eXPEPAYkDpUhF-cPuxnslNa1Zezg51Ta2YpN02yg2W0Kr2kl"
+  },
+  {
+   "id": "crate-4257",
+   "name": "Autograph Capsule | Legends (Foil) | Cologne 2016",
+   "category": "autograph",
+   "type": "Autograph Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjn_lDkShjjoYbh_ilk7P2iZ6NjJaLDXzGvxvx5pfFWHWfnlE506zvXwo78eCrBOgAnDcF0RO5b4RHsk4XiP-zq5QTfi9gWmCX2kGoXuQvgH8d7"
+  },
+  {
+   "id": "crate-4208",
+   "name": "Autograph Capsule | Legends (Foil) | MLG Columbus 2016",
+   "category": "autograph",
+   "type": "Autograph Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjn_lDkShjjoYbh_ilk7P2ifalvNePBXjbG_ulkv_R5cHv9kBt3sGuAnNf6cX6QOAQiX8dyRONfskS7kIexMemxsQbYi94Wyiv8hzQJsHhv0-3qyg"
+  },
+  {
+   "id": "crate-4175",
+   "name": "Autograph Capsule | Luminosity Gaming | Cluj-Napoca 2015",
+   "category": "autograph",
+   "type": "Autograph Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU6UN_ptelv2brVBD40MPjrSYK7aX3OKU9IabEXzCTlu8m57JvHHHiwR505zvWwtqtdS2fOFA-Sswn6vJ7xM4"
+  },
+  {
+   "id": "crate-4116",
+   "name": "Autograph Capsule | Luminosity Gaming | Cologne 2015",
+   "category": "autograph",
+   "type": "Autograph Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU6lp684nxuAm2FCL9i5vp8y1I5ua3b6VgKf6UQGbDkLsltrQ9SS_ilhh15mqAy42hJH6VaQckDZQjQOICtxLskYHnZOr8p1uJylA7Bnc"
+  },
+  {
+   "id": "crate-4224",
+   "name": "Autograph Capsule | Luminosity Gaming | MLG Columbus 2016",
+   "category": "autograph",
+   "type": "Autograph Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU6lpg-YXh-Qu3EEvOkoPt9GwOv_CoMfE1JKjLDTTIx-hwtbM_GnmwzEt_4znVmNn_cSqfbwEkCZJzW6dU5Yu9X8ui"
+  },
+  {
+   "id": "crate-4337",
+   "name": "Autograph Capsule | Natus Vincere | Atlanta 2017",
+   "category": "autograph",
+   "type": "Autograph Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSW8Vp0-pP1uAm2FiL_n4Dps3cLuPP2O_I5daGXDDLHmbskteRrTCzlwx515GjVno2hJHqeblJ1DJZuBbldVL9EeP0"
+  },
+  {
+   "id": "crate-4167",
+   "name": "Autograph Capsule | Natus Vincere | Cluj-Napoca 2015",
+   "category": "autograph",
+   "type": "Autograph Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU6UN_ptelv2bpQAv40M-4_HBe6aT6O6VrdqSSVz-Rmbou57hsF3vnw0x06m-Gzd-tcC2QaAI-Sswn58YGHwM"
+  },
+  {
+   "id": "crate-4117",
+   "name": "Autograph Capsule | Natus Vincere | Cologne 2015",
+   "category": "autograph",
+   "type": "Autograph Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU6lp684nxuAm2FCL_n4DpsyMPuqetO_Q-cfaWXGKUmOsk5udvFn7lkxl3tmnSyNb8dHOQagEpA5VuBbldjaHyoTg"
+  },
+  {
+   "id": "crate-4265",
+   "name": "Autograph Capsule | Natus Vincere | Cologne 2016",
+   "category": "autograph",
+   "type": "Autograph Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU6lp684nxuAm2FyL_n4DpsyQNuPOsaac7caiXWjSVw-om4Lc7HXGxlEsm4TyAn9ivIi6SPVAgCZtuBbld7wae4Ps"
+  },
+  {
+   "id": "crate-4216",
+   "name": "Autograph Capsule | Natus Vincere | MLG Columbus 2016",
+   "category": "autograph",
+   "type": "Autograph Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU6lpg-YXh-Qu3EEvOkJf29GxYtqr3PPU4eKKWCzeTkO1z4rY6HijgxhtztzyEyd-sJSmfOlR0A5N3W6dU5VC4bsZu"
+  },
+  {
+   "id": "crate-4160",
+   "name": "Autograph Capsule | Ninjas in Pyjamas | Cluj-Napoca 2015",
+   "category": "autograph",
+   "type": "Autograph Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU6UN_ptelv2bpSA2_zZTirHtf6vH8P_U9IqbFDz_CmOhz5LBoG3u1xkojsmyAzoz7d3vCaRhgVMU-mYiCyA"
+  },
+  {
+   "id": "crate-4118",
+   "name": "Autograph Capsule | Ninjas in Pyjamas | Cologne 2015",
+   "category": "autograph",
+   "type": "Autograph Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU6lp684nxuAm2FCL_l5jq_DFS4eK3YqVgIePdXj_Bmbh04rE5SXHrw0tx52zXy476In6TagchD5JyRbEO5xe6ldC1PvSiuVKWe6bDMg"
+  },
+  {
+   "id": "crate-4258",
+   "name": "Autograph Capsule | Ninjas in Pyjamas | Cologne 2016",
+   "category": "autograph",
+   "type": "Autograph Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU6lp684nxuAm2FyL_l4auq3Fevvb2OfA0ePSQDzDDmLp3s7BvTiyxx00msT_Xy9uuIyqePVB0CIwwG7A1sLoqmw"
+  },
+  {
+   "id": "crate-4209",
+   "name": "Autograph Capsule | Ninjas in Pyjamas | MLG Columbus 2016",
+   "category": "autograph",
+   "type": "Autograph Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU6lpg-YXh-Qu3EEvOkJ_ws3cIuqeqO_FuJaeQDD_IxLt04OBoFirqx0Ql4GnRnNuseCqUPFImDptuBbld4hztGds"
+  },
+  {
+   "id": "crate-4338",
+   "name": "Autograph Capsule | North | Atlanta 2017",
+   "category": "autograph",
+   "type": "Autograph Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSW8Vp0-pP1uAm2FiL_kYSu-HBavKX4O6VsJvLDWD-WxbYj6LhsSyq2xExysWXVytb_cHnGaQMjWIwwG7Cm3du-pQ"
+  },
+  {
+   "id": "crate-4339",
+   "name": "Autograph Capsule | OpTic Gaming | Atlanta 2017",
+   "category": "autograph",
+   "type": "Autograph Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSW8Vp0-pP1uAm2FiL-joLjsyEO7KT8OfxrcvWXC2bIlLxz5LRtG3nqxRh-5zyHmd2hcXLDZ1VyWJRuBbldrTurcFU"
+  },
+  {
+   "id": "crate-4259",
+   "name": "Autograph Capsule | OpTic Gaming | Cologne 2016",
+   "category": "autograph",
+   "type": "Autograph Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU6lp684nxuAm2FyL-joLjs3tZv_f-PaE9cvWSWGHBkeoisbRoGn7llk51smSDmI2qJSieaw5xDJNuBbldgW7JK0I"
+  },
+  {
+   "id": "crate-4124",
+   "name": "Autograph Capsule | Renegades | Cologne 2015",
+   "category": "autograph",
+   "type": "Autograph Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU6lp684nxuAm2FCLjm5jl-iNf6uHgMKVudqPBCjfBku0v4OJtGS_hzB5xtjuGw9-gci7GZwUoDpJ4QO9e4A74zIMWj_4YTQ"
+  },
+  {
+   "id": "crate-4340",
+   "name": "Autograph Capsule | SK Gaming | Atlanta 2017",
+   "category": "autograph",
+   "type": "Autograph Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSW8Vp0-pP1uAm2FiLildi0rHcMuvSvOqI9cqWVXT_HkboitrU-Hn-2xRl3tTiHzNqheSiQZ1BxFNIuEj81vRuP"
+  },
+  {
+   "id": "crate-4267",
+   "name": "Autograph Capsule | SK Gaming | Cologne 2016",
+   "category": "autograph",
+   "type": "Autograph Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU6lp684nxuAm2FyLildi1r3cOvqT_PvdodKPGWGKWwL4vs-U9THC3wEt16jiDzNysIHuRO1MmFNIuEnIUFdmG"
+  },
+  {
+   "id": "crate-4210",
+   "name": "Autograph Capsule | Splyce | MLG Columbus 2016",
+   "category": "autograph",
+   "type": "Autograph Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU6lpg-YXh-Qu3EEvOjYbs_mwLvKaoPPU0IqXHV2LFx7wg4LA4HHy2lE534G2Hy9yoJH_FPwImCZEkW6dU5ZZYKpzT"
+  },
+  {
+   "id": "crate-4161",
+   "name": "Autograph Capsule | Team Dignitas | Cluj-Napoca 2015",
+   "category": "autograph",
+   "type": "Autograph Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU6UN_ptelv2bjSBq_z8bmqiYJt_OvMaZrIajKDDfBx7cgtecwTSu3lB4j4mndzNatdn2XbxhgVMXmlaKHFw"
+  },
+  {
+   "id": "crate-4273",
+   "name": "Autograph Capsule | Team Dignitas | Cologne 2016",
+   "category": "autograph",
+   "type": "Autograph Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU6lp684nxuAm2FyL1l5GuriRZvvGobPA9cqKVW2WUlewu4-BtFyjixUQj52jVmN37JX-SPQ4jC4wwG7B5BEBT-g"
+  },
+  {
+   "id": "crate-4328",
+   "name": "Autograph Capsule | Team EnVyUs | Atlanta 2017",
+   "category": "autograph",
+   "type": "Autograph Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSW8Vp0-pP1uAm2FiL_iNi5qCECuaSvOfE7cvPGDzfBlushteU7THzhlEl35mrTm42hIn_Da1ApFNIuEvPA0X4j"
+  },
+  {
+   "id": "crate-4173",
+   "name": "Autograph Capsule | Team EnVyUs | Cluj-Napoca 2015",
+   "category": "autograph",
+   "type": "Autograph Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU6UN_ptelv2bpV1P3mpK1_HFeuPCvafM9d6OXXWSRx-8lsrY9F3nlxhkl6z6Eyt6qcniXcEZ-XaTeQA8p"
+  },
+  {
+   "id": "crate-4119",
+   "name": "Autograph Capsule | Team EnVyUs | Cologne 2015",
+   "category": "autograph",
+   "type": "Autograph Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU6lp684nxuAm2FCL0kID56DEVt6SrPPVsIafDVz6Vk-0g6LgxHS3ikUR-5DzcnN6sdnPCawUlA5R5E_lK7Ee6UQa7Gg"
+  },
+  {
+   "id": "crate-4271",
+   "name": "Autograph Capsule | Team EnVyUs | Cologne 2016",
+   "category": "autograph",
+   "type": "Autograph Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU6lp684nxuAm2FyL_iNjh_nsCvvaobPxocfPBWT_Iw78usbE4HnvqxBwl5zvdyIr4IHmfZwNyFNIuEhlFguhd"
+  },
+  {
+   "id": "crate-4222",
+   "name": "Autograph Capsule | Team EnVyUs | MLG Columbus 2016",
+   "category": "autograph",
+   "type": "Autograph Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU6lpg-YXh-Qu3EEvOkICuqiENtqb4PfE-cPXACmSTx7og5bc9S3uwlEslsGWAnoqseC7DOA4gAowwG7B2aGnHXg"
+  },
+  {
+   "id": "crate-4125",
+   "name": "Autograph Capsule | Team Immunity | Cologne 2015",
+   "category": "autograph",
+   "type": "Autograph Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU6lp684nxuAm2FCLlm5ft9C9W-vynfL0jcKHAXmLClrgh6eBtS3CyzRwl6j7cz9b6dnyXbQciXpV2FOQDtkLrk8qnab0GrFpkrA"
+  },
+  {
+   "id": "crate-4127",
+   "name": "Autograph Capsule | Team Kinguin | Cologne 2015",
+   "category": "autograph",
+   "type": "Autograph Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU6lp684nxuAm2FCL6l5jn6CtVoaCsPvFodvOQXmPIxex35rNtGX7klBx15mXcz4z6J3OXPAYjCsByFLYU8k7vHXJSwl8"
+  },
+  {
+   "id": "crate-4341",
+   "name": "Autograph Capsule | Team Liquid | Atlanta 2017",
+   "category": "autograph",
+   "type": "Autograph Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSW8Vp0-pP1uAm2FiL9l4eupXBY6_H3OvZvdvPFXGGTxbkms7VoGSvllk0jsD6Gzo39dSmQaQUjCIwwG7DGwCwxPQ"
+  },
+  {
+   "id": "crate-4165",
+   "name": "Autograph Capsule | Team Liquid | Cluj-Napoca 2015",
+   "category": "autograph",
+   "type": "Autograph Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU6UN_ptelv2brSAy_z5W5r3cOuqL9OqY8dqDECGLIx-8isrVrHC3lxx9y4TmHydr6cCiRbhhgVMUhc-QyLw"
+  },
+  {
+   "id": "crate-4263",
+   "name": "Autograph Capsule | Team Liquid | Cologne 2016",
+   "category": "autograph",
+   "type": "Autograph Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU6lp684nxuAm2FyL9l4eurHMDtqr4avQ_caCVVzHCk7Yh4OAwFnvhk0p25z_Tz9ygdymUZ1MjC4wwG7AGV4_3JA"
+  },
+  {
+   "id": "crate-4214",
+   "name": "Autograph Capsule | Team Liquid | MLG Columbus 2016",
+   "category": "autograph",
+   "type": "Autograph Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU6lpg-YXh-Qu3EEvOkp_xs3IKuKL_PvY0JKnDDzDBw7ly5OIwGSrkxBl15G2EmIqscX7DPVN0X5NuBblduXMxAA0"
+  },
+  {
+   "id": "crate-4172",
+   "name": "Autograph Capsule | Team SoloMid | Cluj-Napoca 2015",
+   "category": "autograph",
+   "type": "Autograph Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU6UN_ptelv2bzUhL9kdjkrCYLvPT5OaU0JfKWXTDJmLcg4LdoHH7ixU0itm3SzNygc3qVb1NyFNIuEjHn03n2"
+  },
+  {
+   "id": "crate-4121",
+   "name": "Autograph Capsule | Team SoloMid | Cologne 2015",
+   "category": "autograph",
+   "type": "Autograph Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU6lp684nxuAm2FCLikZrv8CtfoaKtbv0-IvLBXGTBkb9y6bJvFn_mzUkitmyEmdeudHyRaFV0DcR3RuYU8k7v0S4Y30I"
+  },
+  {
+   "id": "crate-4126",
+   "name": "Autograph Capsule | Team eBettle | Cologne 2015",
+   "category": "autograph",
+   "type": "Autograph Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU6lp684nxuAm2FCL0nJP06S5eofesPfc5JfbDWWHHmbgm4rNqH37lxUQjtjuDn92gcn-SblMnD5skR7MU8k7vPDsfnWQ"
+  },
+  {
+   "id": "crate-4171",
+   "name": "Autograph Capsule | Titan | Cluj-Napoca 2015",
+   "category": "autograph",
+   "type": "Autograph Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU6UN_ptelv2bzSAm_ncfl_CMOuaeqPKY8IvXADGGSku8m57JoSyvkwkVx6jiEntb_dX7FOhhgVMWGER11CQ"
+  },
+  {
+   "id": "crate-4120",
+   "name": "Autograph Capsule | Titan | Cologne 2015",
+   "category": "autograph",
+   "type": "Autograph Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU6lp684nxuAm2FCLll4Lh82wJ6aaoOvNsJqjKVjPAmO8g4rk4Gnq1kx8k6mTUntyseXrEbVcoA8dyW6dU5Ued731v"
+  },
+  {
+   "id": "crate-4163",
+   "name": "Autograph Capsule | Vexed Gaming | Cluj-Napoca 2015",
+   "category": "autograph",
+   "type": "Autograph Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU6UN_ptelv2bxRAW_m8ThqnINvaD-OPA8caHCDGXClup3teVsTi-2wk5xsW7VwousdX2WOhhgVMW6G-YWkA"
+  },
+  {
+   "id": "crate-4342",
+   "name": "Autograph Capsule | Virtus.Pro | Atlanta 2017",
+   "category": "autograph",
+   "type": "Autograph Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSW8Vp0-pP1uAm2FiLnjti5pCFZ6qGsavI9I6HDXzXAkrh14uQ7Snrjx0pw42uDyIyucijCaVUjFNIuEiOOFWg0"
+  },
+  {
+   "id": "crate-4168",
+   "name": "Autograph Capsule | Virtus.Pro | Cluj-Napoca 2015",
+   "category": "autograph",
+   "type": "Autograph Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU6UN_ptelv2bxUVPymsHjq3EJ6qWvbaY5dKCWXTfEx7gnsrk6FyjrwR4jtWzXmNiqc3OecEZ-XUBkJc4q"
+  },
+  {
+   "id": "crate-4122",
+   "name": "Autograph Capsule | Virtus.Pro | Cologne 2015",
+   "category": "autograph",
+   "type": "Autograph Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU6lp684nxuAm2FCLnl4T06DFL_f3gbqA8JKmVWWbHx74l5LQxTXriwhl3sWmAydaqdHrEa1cmCsYhReILuw74zIMIEvTe0w"
+  },
+  {
+   "id": "crate-4266",
+   "name": "Autograph Capsule | Virtus.Pro | Cologne 2016",
+   "category": "autograph",
+   "type": "Autograph Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU6lp684nxuAm2FyLnjtjhpCANuaX5O_E8I6HFXDXHxLoh47JtSirqxBtz5zzRmY2ucS_BbQcnFNIuEl1wDVbf"
+  },
+  {
+   "id": "crate-4217",
+   "name": "Autograph Capsule | Virtus.Pro | MLG Columbus 2016",
+   "category": "autograph",
+   "type": "Autograph Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU6lpg-YXh-Qu3EEvOiIaurHZYvvOvbqA6daiQWjHAlLl35uRqH3rnxx9-4WnXyY6rcX-QOAQpDowwG7DISPDVjg"
+  },
+  {
+   "id": "crate-4336",
+   "name": "Autograph Capsule | mousesports | Atlanta 2017",
+   "category": "autograph",
+   "type": "Autograph Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSW8Vp0-pP1uAm2FiL8jYWu_3QJuaqsafc0d6iSVzfCxO0u5eQ-S3yyk0witzuGm4ygdi6Taw5zCowwG7AXM-6Z9g"
+  },
+  {
+   "id": "crate-4166",
+   "name": "Autograph Capsule | mousesports | Cluj-Napoca 2015",
+   "category": "autograph",
+   "type": "Autograph Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU6UN_ptelv2bqUg6_ncDlqiED7qL6bfQ1dqDLDTXAmLov5LRrFn6xxEkk5WjXyNuod3-VbhhgVMUYZnDczQ"
+  },
+  {
+   "id": "crate-4123",
+   "name": "Autograph Capsule | mousesports | Cologne 2015",
+   "category": "autograph",
+   "type": "Autograph Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU6lp684nxuAm2FCL8kYPz-DFL4OC6e-o1I6nGCzPJlb8n4LZqSnrjlh8isWjUnNqrInqfaAd2DZB2R-AC5hLujJS5YGySWfSf"
+  },
+  {
+   "id": "crate-4264",
+   "name": "Autograph Capsule | mousesports | Cologne 2016",
+   "category": "autograph",
+   "type": "Autograph Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU6lp684nxuAm2FyL8jYWuqXFfuvf-bPc9cfPDWjDGl7kms7VoHyjrkURx4WuAwtr4d3iRbwQiD4wwG7AivHoSFg"
+  },
+  {
+   "id": "crate-4215",
+   "name": "Autograph Capsule | mousesports | MLG Columbus 2016",
+   "category": "autograph",
+   "type": "Autograph Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU6lpg-YXh-Qu3EEvOk4XzsyNZ6_GvO6c8JabAVzLHmegh4-Q4GSriwUgltmTTw4mveX-VZwEjXpFuBbldEiPEuGc"
+  },
+  {
+   "id": "crate-4657",
+   "name": "Berlin 2019 Legends Autograph Capsule",
+   "category": "autograph",
+   "type": "Autograph Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjn_lDkShjjoYbh_ilk7fe8ZK1jcqDCV1iX0-FjoN5lSi62mxk0_TmHmNb9J3mfPwB1WZMiF7INsEW_wNLgY-KxslTc3YsXnCut2H5K7Sp1o7FV5Pj6oxg"
+  },
+  {
+   "id": "crate-4659",
+   "name": "Berlin 2019 Minor Challengers Autograph Capsule",
+   "category": "autograph",
+   "type": "Autograph Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjn_lDkShjjoYbh_ilk7fe8ZK1jcqDCV1iX0-FjoN5qQCenkBMjti-W1I34JC7EaQ8kCZUlTOQDsBK9lNa1Y7vhsVGN34pGxCX_jyNAvS5q5r0cEf1yT7dbb3M"
+  },
+  {
+   "id": "crate-4658",
+   "name": "Berlin 2019 Returning Challengers Autograph Capsule",
+   "category": "autograph",
+   "type": "Autograph Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjn_lDkShjjoYbh_ilk7fe8ZK1jcqDCV1iX0-FjoN5qRyi_mRgptDiXicGuInzCaFB2DMd0FOZZ4xa8l9PkNurmtALXid0Qyi323CgY5n5v5O9WT-N7rR03fcAp"
+  },
+  {
+   "id": "crate-4479",
+   "name": "Boston 2018 Attending Legends Autograph Capsule",
+   "category": "autograph",
+   "type": "Autograph Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjn_lDkShjjoYbh_ilk7f29fKtjcqDCVliX0-FjoN5lSi62mxk0jDORjMGpdH-fZlR1DZF0E-8Dt0O-kNXgZezl51Tb3Y1EniusjyNAu3pr5ewBT-N7rSVqlou9"
+  },
+  {
+   "id": "crate-4459",
+   "name": "Boston 2018 Legends Autograph Capsule",
+   "category": "autograph",
+   "type": "Autograph Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjn_lDkShjjoYbh_ilk7f29fKtjcqDCVliX0-FjoN5lSi62mxk0_WjUyYn8dyiSbwUmXsRyQeQP5hGwwdO2M-3n4VbZgoxMnij9jCJO7Ch1o7FVq6FnCr0"
+  },
+  {
+   "id": "crate-4461",
+   "name": "Boston 2018 Minor Challengers Autograph Capsule",
+   "category": "autograph",
+   "type": "Autograph Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjn_lDkShjjoYbh_ilk7f29fKtjcqDCVliX0-FjoN5qQCenkBMjti-W1N78Jy2RalUlW5MlEbFZsRDslIC2Y-vhswHai9hEzSv92ixL5i894bkcEf1y83v5Am8"
+  },
+  {
+   "id": "crate-4475",
+   "name": "Boston 2018 Minor Challengers with Flash Gaming Autograph Capsule",
+   "category": "autograph",
+   "type": "Autograph Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjn_lDkShjjoYbh_ilk7f29fKtjcqDCVliX0-FjoN5qQCenkBMjti-WpYn1JmWQbAYhDsdyR-EPshe8xoCzYb-w5weNjIwWmyr9jytN53o_6-4LB_Vz5OSJ2DemsSzZ"
+  },
+  {
+   "id": "crate-4460",
+   "name": "Boston 2018 Returning Challengers Autograph Capsule",
+   "category": "autograph",
+   "type": "Autograph Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjn_lDkShjjoYbh_ilk7f29fKtjcqDCVliX0-FjoN5qRyi_mRgptDiXicGpJHzDOgEpCpd3EO9YtxW6l93gNu-2tlDejItBnimth3lOuCo_6-gHT-N7rW8_-Vnb"
+  },
+  {
+   "id": "crate-5231",
+   "name": "Budapest 2025 Challengers Autograph Capsule",
+   "category": "autograph",
+   "type": "Autograph Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJG5zlm-UfvRzd6yenmC4QQlptK76UvmVRjOjYLp_ile_c2-aadmH_KGCjXAk7tJt_NmWjmMlhUmvzGAlIj8MziJbQMgXMB2TeMKshi8ltDlMri07w3di40XmyWv23gcuHxttb4HUfEj87qX0V9cuCOzxg"
+  },
+  {
+   "id": "crate-5233",
+   "name": "Budapest 2025 Champions Autograph Capsule",
+   "category": "autograph",
+   "type": "Autograph Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJG5zlm-UfvRzd6yenmC4QQlptK76UvmVRjOjYLp_ile_c2-aadmH_KGCjXAk7tJt_NmWjmMlhUmvi2MlYHqby_EagclDpVxEbRf5hDrm4DmNbjmtAzbjotHmS_6iChOvys64bpRWKo7uvqAkjbOjYw"
+  },
+  {
+   "id": "crate-5232",
+   "name": "Budapest 2025 Contenders Autograph Capsule",
+   "category": "autograph",
+   "type": "Autograph Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJG5zlm-UfvRzd6yenmC4QQlptK76UvmVRjOjYLp_ile_c2-aadmH_KGCjXAk7tJt_NmWjmMlhIppziLnorrMmXFaFN1X8cjR-4C5BHqkN20Yuy05APWjo9FxSj3hyxBuik4su8KV6Ig5OSJ2AOxiV5w"
+  },
+  {
+   "id": "crate-5230",
+   "name": "Budapest 2025 Legends Autograph Capsule",
+   "category": "autograph",
+   "type": "Autograph Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJG5zlm-UfvRzd6yenmC4QQlptK76UvmVRjOjYLp_ile_c2-aadmH_KGCjXAk7tJt_NmWjmMmRggtjOBicGpdC6QZgAjX8YiQuIJtRe6l9bvMuy04g3Xgo9FmHn_hysc7HtpsuhUT-N7rTVwoDoE"
+  },
+  {
+   "id": "crate-5318",
+   "name": "Cologne 2026 Autograph Capsule",
+   "category": "autograph",
+   "type": "Autograph Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJG5zlm-UfvRzd6yeniY6Vly-oKmuguxDh7-kpnn8ycJv6D4V6d_JfSaGnTekboi4OM7TSziwEUm5GnTmd2oIC2UOg9yApp5RrYI4RHplofmYrjk5xue1dzxs7YNoQ"
+  },
+  {
+   "id": "crate-4938",
+   "name": "Copenhagen 2024 Challengers Autograph Capsule",
+   "category": "autograph",
+   "type": "Autograph Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjn_lDkShjjoYbh_ilk7OKmOvQ_dM-UHGiF0dF1uOBlQyy9khg1oHOAyN_6cCiTbVVxC5dyQeMO4xa-xoHhYrjgsVPa399FzCn_iylMuilt_a9cBuAzgFZD"
+  },
+  {
+   "id": "crate-4940",
+   "name": "Copenhagen 2024 Champions Autograph Capsule",
+   "category": "autograph",
+   "type": "Autograph Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjn_lDkShjjoYbh_ilk7OKmOvQ_dM-UHGiF0dF1uOBkXyC8mw5psDjTwt-vI3rDPwMlWJd0ROMP5xPskdLmNe7n5AeI2YJBmST9iyoavzErvbi0sb1FJQ"
+  },
+  {
+   "id": "crate-4939",
+   "name": "Copenhagen 2024 Contenders Autograph Capsule",
+   "category": "autograph",
+   "type": "Autograph Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjn_lDkShjjoYbh_ilk7OKmOvQ_dM-UHGiF0dF1v-99Sie3kA80_W3QmNuvICmeOwMmWMMlTe5bsxa8x9TkP-nrtVTc349Cm3793SgY7yZ1o7FVloVngOw"
+  },
+  {
+   "id": "crate-4937",
+   "name": "Copenhagen 2024 Legends Autograph Capsule",
+   "category": "autograph",
+   "type": "Autograph Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjn_lDkShjjoYbh_ilk7OKmOvQ_dM-UHGiF0dF6teZsQS2g2xkkt2-AyN6sJX7BOgB1DpImF-UL4EG4xoC1Yr-35lbYjIhEzymshy9XrnE8aQftiTI"
+  },
+  {
+   "id": "crate-4587",
+   "name": "Katowice 2019 Legends Autograph Capsule",
+   "category": "autograph",
+   "type": "Autograph Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjn_lDkShjjoYbh_ilk5PO6Z7NkI_XBXjbJ_ulkv_R5cCW2khgpty7Lytqsci7BaQJ0C5MiEO8IuhGxkNLhYri271fc3oxHyiuv2ilKuC444PFCD_TlpFhABA"
+  },
+  {
+   "id": "crate-4589",
+   "name": "Katowice 2019 Minor Challengers Autograph Capsule",
+   "category": "autograph",
+   "type": "Autograph Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjn_lDkShjjoYbh_ilk5PO6Z7NkI_XBXjbJ_ulkv_R5cCq8mwkivTmAiJy3c3KVaw4kApchReAC4EPtl9ayZOu04FeLgoxHySSrji1Nvyo45LsFWb1lpPMO73jTiA"
+  },
+  {
+   "id": "crate-4588",
+   "name": "Katowice 2019 Returning Challengers Autograph Capsule",
+   "category": "autograph",
+   "type": "Autograph Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjn_lDkShjjoYbh_ilk5PO6Z7NkI_XBXjbJ_ulkv_R5cCq7lBErtjOCn53qb37FagcmXpB3TOMDuhK-lNHmNOzn4ATd3ohAmST_jC5L73k-4L0DVKc7uvqAmYi2foA"
+  },
+  {
+   "id": "crate-4393",
+   "name": "Krakow 2017 Challengers Autograph Capsule",
+   "category": "autograph",
+   "type": "Autograph Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjn_lDkShjjoYbh_ilk5OCvY6t6cqDCWViX0-FjoN44ASq3lEkj6mzRytuocy7BOARxCpNzRu5ftxC4kdPkY7iz4gGL2YgQxCXgznQeuZva5XY"
+  },
+  {
+   "id": "crate-4394",
+   "name": "Krakow 2017 Legends Autograph Capsule",
+   "category": "autograph",
+   "type": "Autograph Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjn_lDkShjjoYbh_ilk5OCvY6t6cqDCWViX0-FjoN47ASy3xUohtT6Dzd2gc3zBOFR2CpciQLRYtRLrm4LjYr-2s1GIiowWy3jgznQe-cT3vvQ"
+  },
+  {
+   "id": "crate-4536",
+   "name": "London 2018 Legends Autograph Capsule",
+   "category": "autograph",
+   "type": "Autograph Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjn_lDkShjjoYbh_ilk4_2gbKtjcqDCVliX0-FjoN5lSi62mxk0_T_dwtagdn_DPVUgX5UmQ7QK4xixkNexZLzktAKMjIpBmHn2iHtK6Cp1o7FVH6ag-yI"
+  },
+  {
+   "id": "crate-4538",
+   "name": "London 2018 Minor Challengers Autograph Capsule",
+   "category": "autograph",
+   "type": "Autograph Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjn_lDkShjjoYbh_ilk4_2gbKtjcqDCVliX0-FjoN5qQCenkBMjti-W1I39cynCOlQpApp5E7RbthbtkNTgMOzh4gzdj49Ez3_5jyMd7Cht4LwcEf1yyX3mQgE"
+  },
+  {
+   "id": "crate-4537",
+   "name": "London 2018 Returning Challengers Autograph Capsule",
+   "category": "autograph",
+   "type": "Autograph Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjn_lDkShjjoYbh_ilk4_2gbKtjcqDCVliX0-FjoN5qRyi_mRgptDiXicH8I3yVawZ2CZciFOBcshbpwdbjP7vmsgeNgokTnn34iXxNuilr6upRT-N7rbSzfU0Q"
+  },
+  {
+   "id": "crate-4901",
+   "name": "Paris 2023 Challengers Autograph Capsule",
+   "category": "autograph",
+   "type": "Autograph Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjn_lDkShjjoYbh_ilk__O8Ybc_cKLAMWCCzvtmj-JhTiW_kBMgti-W1NypdnKRPQMiCMQjFrELt0Ltld3iNu625QePjtoWxCj_h35K63tvsL0cEf1yg7EGlt4"
+  },
+  {
+   "id": "crate-4903",
+   "name": "Paris 2023 Champions Autograph Capsule",
+   "category": "autograph",
+   "type": "Autograph Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjn_lDkShjjoYbh_ilk__O8Ybc_cKLAMWCCzvtmj-JhTiSjnBIpoHPUnI2uc3iSOFciD5F3Q7QKsEK8m4HnY7zjtQaKiI0TyHmv2i9Nuixp_a9cBgV1athl"
+  },
+  {
+   "id": "crate-4902",
+   "name": "Paris 2023 Contenders Autograph Capsule",
+   "category": "autograph",
+   "type": "Autograph Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjn_lDkShjjoYbh_ilk__O8Ybc_cKLAMWCCzvtmj-JmQT22mxkioS7Lm9yvIi_BbVB2WMB1E-IL4xW5kNGyPu_qsVPYiN1HxCyriCwf7ys5sPFCD_TXdwVgyQ"
+  },
+  {
+   "id": "crate-4900",
+   "name": "Paris 2023 Legends Autograph Capsule",
+   "category": "autograph",
+   "type": "Autograph Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjn_lDkShjjoYbh_ilk__O8Ybc_cKLAMWCCzvtmj-1sSCy9kQ5psmqAntj6J36XOwEnA8ZwFOYL4xjrwNflMLzm4gGK2d1GmX35iHtKuzErvbjl0YshDg"
+  },
+  {
+   "id": "crate-4868",
+   "name": "Rio 2022 Challengers Autograph Capsule",
+   "category": "autograph",
+   "type": "Autograph Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjn_lDkShjjoYbh_ilk_fuhOvQ_cs-UHGiF0dF1uOBlQyy9khg1oHPczI77cSmeOwQgD5V3Ee9b5BXqmtGyZe_n7lHaiYtGnCus2Hgb6n5v_a9cBttjt0pr"
+  },
+  {
+   "id": "crate-4870",
+   "name": "Rio 2022 Champions Autograph Capsule",
+   "category": "autograph",
+   "type": "Autograph Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjn_lDkShjjoYbh_ilk_fuhOvQ_cs-UHGiF0dF1uOBkXyC8mw5ptWzdz4r6c3_EbAMoC5ZwRuJbsUXsw4XvZbjqsQSIiI9GmH-o3Hkf5zErvbgNZ1YADg"
+  },
+  {
+   "id": "crate-4869",
+   "name": "Rio 2022 Contenders Autograph Capsule",
+   "category": "autograph",
+   "type": "Autograph Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjn_lDkShjjoYbh_ilk_fuhOvQ_cs-UHGiF0dF1v-99Sie3kA80_WrVyt38dXLBbwQpWJJ2FuULtxm6xtHkNuLksg3cid9Hzyr23yhOuiZ1o7FV0uHCYTs"
+  },
+  {
+   "id": "crate-4867",
+   "name": "Rio 2022 Legends Autograph Capsule",
+   "category": "autograph",
+   "type": "Autograph Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjn_lDkShjjoYbh_ilk_fuhOvQ_cs-UHGiF0dF6teZsQS2g2xt352zSn9_8c3mWPAUhW5BwELYJuhntkIG0Prnq4gDe2YxDmH72iChXrnE87oX_dko"
+  },
+  {
+   "id": "crate-4979",
+   "name": "Shanghai 2024 Challengers Autograph Capsule",
+   "category": "autograph",
+   "type": "Autograph Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJG5zlm-UfvRzd6yemif5AQlptO76UvmVRjOjYLp_ile_c2-aadmH-ObDzXAk7pJt_NmWjmMlhUmvzGAlIj8MziJPVIoXJJ2EeMP4Rm8k4e2Zr_k5ALbjY1NniitiCtN6y06segDAPdwrrqX0V9LUImeEg"
+  },
+  {
+   "id": "crate-4981",
+   "name": "Shanghai 2024 Champions Autograph Capsule",
+   "category": "autograph",
+   "type": "Autograph Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJG5zlm-UfvRzd6yemif5AQlptO76UvmVRjOjYLp_ile_c2-aadmH-ObDzXAk7pJt_NmWjmMlhUmvi2MlYHqb37COFImXMQhRuBfshe4xN3hNb62tVfYj99DzSirjysY7nxj5L0BUfc7uvqAzV2BNwk"
+  },
+  {
+   "id": "crate-4980",
+   "name": "Shanghai 2024 Contenders Autograph Capsule",
+   "category": "autograph",
+   "type": "Autograph Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJG5zlm-UfvRzd6yemif5AQlptO76UvmVRjOjYLp_ile_c2-aadmH-ObDzXAk7pJt_NmWjmMlhIppziLnorrMmWea1N1Csd4Qe5Z4RS5kYexNevg5gfei4hAzy352y4bvSc65usBAPUn5OSJ2MrPd-l0"
+  },
+  {
+   "id": "crate-4978",
+   "name": "Shanghai 2024 Legends Autograph Capsule",
+   "category": "autograph",
+   "type": "Autograph Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJG5zlm-UfvRzd6yemif5AQlptO76UvmVRjOjYLp_ile_c2-aadmH-ObDzXAk7pJt_NmWjmMmRggtjOBicGpd3zFbQQlCMR5R-EOsxm7moLuP7_n4wWK2NgTyn_-hykf7Xk64elRT-N7rWMklBiQ"
+  },
+  {
+   "id": "crate-4816",
+   "name": "Stockholm 2021 Champions Autograph Capsule",
+   "category": "autograph",
+   "type": "Autograph Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjn_lDkShjjoYbh_ilk_Oaha69lcqDBX1iX0-FjoN5qRyi-hRQovS7LyIyqeS2QbgUnCcBzQ7JesBjulofiMrjh71eLg9hEnH_-hi9Ivyk6tvFCD_TIPI341g"
+  },
+  {
+   "id": "crate-4817",
+   "name": "Stockholm 2021 Finalists Autograph Capsule",
+   "category": "autograph",
+   "type": "Autograph Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjn_lDkShjjoYbh_ilk_Oaha69lcqDBX1iX0-FjoN5vRieymRQ0py7Ln9f4IymUbw4gWJIhReYNthjrkdbmNuvmsQOKjYJDyn75jSJPuy9p6vFCD_TstBROEw"
+  },
+  {
+   "id": "crate-4669",
+   "name": "CS20 Case",
+   "category": "case",
+   "type": "Case",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bj35VTqVBP4io_fr3YVvfD9aqVveKaQDDKSl7134bg_HH3hlBty6z7Vn9v6eXmeZgBxWJd0EflK7Efs4hZiKQ"
+  },
+  {
+   "id": "crate-4001",
+   "name": "CS:GO Weapon Case",
+   "category": "case",
+   "type": "Case",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bji61XxRCKg0MSz_nUDvPb-OPFvdKTFDzbAkbp16bY5Gn6wkx9ysj7Xntf9IC6WZgA-Sswnnj45WXo"
+  },
+  {
+   "id": "crate-4004",
+   "name": "CS:GO Weapon Case 2",
+   "category": "case",
+   "type": "Case",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bji61XxRCKj0M-xr3IIvqP5PqI_c6LDCjWUkrdw5LUwTivgkE9wsGnUnNr8InzBP1c-SswnzDatg2g"
+  },
+  {
+   "id": "crate-4010",
+   "name": "CS:GO Weapon Case 3",
+   "category": "case",
+   "type": "Case",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bji61XxRCKi0JS0pCZYvaCvOPI0eaHKWjGVmbovs7ZrHH_nl0oj5mXSzNqqdS7BaAc-SswnOWLoN2Y"
+  },
+  {
+   "id": "crate-4089",
+   "name": "Chroma 2 Case",
+   "category": "case",
+   "type": "Case",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bj35VTqVBP4io_fqmwOuKD2PqI6caDBWDeUkO8uteM9SnDglklw6miEn9j6IHKfblNxA5pxW6dU5UH4LtBe"
+  },
+  {
+   "id": "crate-4233",
+   "name": "Chroma 3 Case",
+   "category": "case",
+   "type": "Case",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bj35VTqVBP4io_frHAVuKf7PaJucPLHW2TExb9z4OdvHirixEomtW7cyduvci2VZ1AiCsR2Q_lK7EdW_VBhrw"
+  },
+  {
+   "id": "crate-4061",
+   "name": "Chroma Case",
+   "category": "case",
+   "type": "Case",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bj35VTqVBP4io_fq2wP7qr6bqI5cvHDCzfBlbcv57JqF3zrxRkj4W6Dwo34dy6QPQAoC5ZyW6dU5cxvklfG"
+  },
+  {
+   "id": "crate-4471",
+   "name": "Clutch Case",
+   "category": "case",
+   "type": "Case",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bj35VTqVBP4io_frHsVtqr8a_dsdKTAWDWVxLgjsrAwHSvgwEQk4m-ByYuqIC2eO1VyD5QiR_lK7EcxQQPYQA"
+  },
+  {
+   "id": "crate-4548",
+   "name": "Danger Zone Case",
+   "category": "case",
+   "type": "Case",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bj35VTqVBP4io_fr3MVv_H4a6FucPPBWjDIkbdz4rg4Syyyxxsi5mzRntuvJCqVbwAgDZBwRPlK7EcZJ5GkQA"
+  },
+  {
+   "id": "crate-4818",
+   "name": "Dreams & Nightmares Case",
+   "category": "case",
+   "type": "Case",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bj35VTqVBP4io_frnIV7Kb5OaU-JqfHDzXFle0u4LY8Gy_kkRgisGzcm4v4J3vDOAQmDMdyRvlK7EcmeCU3yw"
+  },
+  {
+   "id": "crate-4091",
+   "name": "Falchion Case",
+   "category": "case",
+   "type": "Case",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bj35VTqVBP4io_fpWwI7Pb-P6Y5dvPEDGSSlrsh57U8HHHiwx5yt2-Dwo7_JSnCOw8oCJF0W6dU5dgrLNA1"
+  },
+  {
+   "id": "crate-7007",
+   "name": "Fever Case",
+   "category": "case",
+   "type": "Case",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bj35VTqVBP4io_frncVtqv7MPE8JaHHCj_Dl-wk4-NtFirikURy4jiGwo2udHqVaAEjDZp3EflK7EeSMnMs4w"
+  },
+  {
+   "id": "crate-4698",
+   "name": "Fracture Case",
+   "category": "case",
+   "type": "Case",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bj35VTqVBP4io_fr3QV7aD7OP01IfbGDzPCmbsm4LU5GnvkzUsi4WvUmIqtci_CPQNyApsjE_lK7EfrhW545A"
+  },
+  {
+   "id": "crate-7003",
+   "name": "Gallery Case",
+   "category": "case",
+   "type": "Case",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bj35VTqVBP4io_frnYVuPD5baE6IfTFCmSRme0j5eU5SXrjkRwmt2rWnoqhdnjEPQQiDpRxTflK7EePRV2-Kg"
+  },
+  {
+   "id": "crate-4281",
+   "name": "Gamma 2 Case",
+   "category": "case",
+   "type": "Case",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjz61TqQCKj0JfipHMN7aX2bfM9eaPDXT7Glbx1s7Y8HHHnw0sltWXSmYmqcH-UaAU-Sswn_16VNj0"
+  },
+  {
+   "id": "crate-4236",
+   "name": "Gamma Case",
+   "category": "case",
+   "type": "Case",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bj35VTqVBP4io_frHEVtvP5bPZrd6XECmOSxe0v4bRoTnnjwBkitWrRm4yoeX3GagMnCZZ2FPlK7EcEv22BnQ"
+  },
+  {
+   "id": "crate-4288",
+   "name": "Glove Case",
+   "category": "case",
+   "type": "Case",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bj35VTqVBP4io_frHcVuPaoafU1JqiVWWSVkux15OQ8Giiylk0k5mvTnIqpd3PCaQIhWMYkE_lK7EcNeCKW-w"
+  },
+  {
+   "id": "crate-4482",
+   "name": "Horizon Case",
+   "category": "case",
+   "type": "Case",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bj35VTqVBP4io_fr3IV6vSrbfw8eaiWCjWVkewgseM9TXyxl0wi6mSHn9-tIHqUbg5yDpEmEPlK7EcXFmSLsw"
+  },
+  {
+   "id": "crate-4017",
+   "name": "Huntsman Weapon Case",
+   "category": "case",
+   "type": "Case",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bj35VTqVBP4io_frmxY6qr9OqU0cvbKCGTDk7dys7k-S36yzU114GrRmNaoeSmXaVV0WJp0W6dU5Q_KKWwm"
+  },
+  {
+   "id": "crate-4904",
+   "name": "Kilowatt Case",
+   "category": "case",
+   "type": "Case",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bj35VTqVBP4io_frnEVvqf_a6VoIfGSXz7Hlbwg57QwSS_mxhl15jiGyN37c3_GZw91W8BwRflK7EfKsa2sfw"
+  },
+  {
+   "id": "crate-4003",
+   "name": "Operation Bravo Case",
+   "category": "case",
+   "type": "Case",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bj7-lz1QAn4kZjf9CsVuvf7OfQ5IabBVzbHlb915bcwHCjikEp_sTnTn4z6eH6RblQlC8RwFPlK7EdXSP0Ibg"
+  },
+  {
+   "id": "crate-4018",
+   "name": "Operation Breakout Weapon Case",
+   "category": "case",
+   "type": "Case",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bj35VTqVBP4io_fqWxdv_b8O_w5eKXBWWXHw-smtrBvTHDmwEsl4jvWn4z_I3qWZwV1X5ZwW6dU5RcRF1o0"
+  },
+  {
+   "id": "crate-4717",
+   "name": "Operation Broken Fang Case",
+   "category": "case",
+   "type": "Case",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bj35VTqVBP4io_fr3UVu6P-MPQ0dKbCVzLGx7wgtbM6S3jhw0V25m-EnNj7JS7GaQ4nD8QiRflK7EfH0YGFHg"
+  },
+  {
+   "id": "crate-4352",
+   "name": "Operation Hydra Case",
+   "category": "case",
+   "type": "Case",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bj35VTqVBP4io_frHUVt_b6PfY1JfOSXDXJxbgjtLFqHnDqx0Qmtm_Vzdf4ICmUZlJ2C5F2TPlK7EdjN0FcPg"
+  },
+  {
+   "id": "crate-4011",
+   "name": "Operation Phoenix Weapon Case",
+   "category": "case",
+   "type": "Case",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bj35VTqVBP4io_fr2wPtqP5PKVvJPSQDWSSl7sn6eMxHC3hwhl3sDuDztivJHrEagJzWZd3W6dU5fXcT7oM"
+  },
+  {
+   "id": "crate-4790",
+   "name": "Operation Riptide Case",
+   "category": "case",
+   "type": "Case",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bj35VTqVBP4io_fr3sVtvD2O_Q9dqfEXTWSlepz4bA5THnikx915z6BytmuIHiXaAdyDpEhTflK7EdW-TaRMg"
+  },
+  {
+   "id": "crate-4029",
+   "name": "Operation Vanguard Weapon Case",
+   "category": "case",
+   "type": "Case",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bj35VTqVBP4io_fqGwPtvP9MKA_JKOSCGGWmL8useQ6TXywwB8k4T-EyImgeCmXbA4oAsRzW6dU5QwRm5UL"
+  },
+  {
+   "id": "crate-4187",
+   "name": "Operation Wildfire Case",
+   "category": "case",
+   "type": "Case",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bj35VTqVBP4io_frHMVu6r9MaA6ePPAWjbGwrwm47dtTnu2kUl14mzUnomudnqQaQ4iApF5TPlK7Ee3MsZV-w"
+  },
+  {
+   "id": "crate-4695",
+   "name": "Prisma 2 Case",
+   "category": "case",
+   "type": "Case",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bj35VTqVBP4io_fr3cV6vT9avBvefWWDDGTxbZ14rhsTX7qkE90sDiHwt2pdC-TblJ2DsB1QPlK7Ee9riHKAA"
+  },
+  {
+   "id": "crate-4598",
+   "name": "Prisma Case",
+   "category": "case",
+   "type": "Case",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bj35VTqVBP4io_fr3AV6aD8O6BpdKKQVmPEwr1zs-c8Tnngl09w52zTmY2sc3jBag8jXpohE_lK7Ede7E2Kfw"
+  },
+  {
+   "id": "crate-4846",
+   "name": "Recoil Case",
+   "category": "case",
+   "type": "Case",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bj35VTqVBP4io_frnMVu6b-avA-JqSSCjSWwuhz47U9TCzlxh9yt2WGnNqgIi-fbgUkWMNxFPlK7EdIJF6a2Q"
+  },
+  {
+   "id": "crate-4880",
+   "name": "Revolution Case",
+   "category": "case",
+   "type": "Case",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bj35VTqVBP4io_frnAVvfb6aqduc_TFVjTCxbx05OU4S3jilE9w4DzRnImtIy2Sa1JzDJEhRPlK7EcO4U8gfA"
+  },
+  {
+   "id": "crate-4186",
+   "name": "Revolver Case",
+   "category": "case",
+   "type": "Case",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bj35VTqVBP4io_frHIV7qWvOqE9IqSVWGKVlu8v6eM7Girmxkwl4TnWmIv8J36WagEiCpImQvlK7EclOzxxiQ"
+  },
+  {
+   "id": "crate-4138",
+   "name": "Shadow Case",
+   "category": "case",
+   "type": "Case",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bj35VTqVBP4io_fpGxet6H-O_Q6dfXCDzfJl7ci6bZoG3zjx0xz4ziEztj8IiiRa1QkWZdwW6dU5RegDbP-"
+  },
+  {
+   "id": "crate-4620",
+   "name": "Shattered Web Case",
+   "category": "case",
+   "type": "Case",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bj35VTqVBP4io_fr3EVvKD6MKU_cKPKXWHFxLkls7FsSnDqwUl_sWTczoqheHifbwMmD5F1RvlK7Ec_KL6Q_A"
+  },
+  {
+   "id": "crate-4747",
+   "name": "Snakebite Case",
+   "category": "case",
+   "type": "Case",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bj35VTqVBP4io_fr3oVvvT4bfI4dvTLCGTCmLl16ec7TX_mk08k42iHwtqscy-WPVUmCZJ4R_lK7Ed8Q6OYtw"
+  },
+  {
+   "id": "crate-4403",
+   "name": "Spectrum 2 Case",
+   "category": "case",
+   "type": "Case",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bj35VTqVBP4io_frHoVu6D7PaA0JaDACjKUwOom47VrTSzrw0Vx4W_Sydz9JC7FZgckCZYjRPlK7EcPuDAQzw"
+  },
+  {
+   "id": "crate-4351",
+   "name": "Spectrum Case",
+   "category": "case",
+   "type": "Case",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bj35VTqVBP4io_frHQV7qCra_JscqPGCzLCl78ktuAxHSzmzUh_sjvWzdqoI33CaQF2DscjR_lK7EeF3oM7TA"
+  },
+  {
+   "id": "crate-4009",
+   "name": "Winter Offensive Weapon Case",
+   "category": "case",
+   "type": "Case",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bj35VTqVBP4io_frGxZvqX4avxuIabDXDPJxb534uQ-TH-3wk8isGqByIuoIHKRbQRyXpJ2W6dU5a9fuS_R"
+  },
+  {
+   "id": "crate-4002",
+   "name": "eSports 2013 Case",
+   "category": "case",
+   "type": "Case",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjx-UnoUwniocSwrHEV7KaobPdud6HEWjXGmbYl6LIwHn2ywhgh5GzXzdmsc3yRalAkD5R3FvlK7Ed7JoXDRQ"
+  },
+  {
+   "id": "crate-4005",
+   "name": "eSports 2013 Winter Case",
+   "category": "case",
+   "type": "Case",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjx-UnoUwniocSwrHFkvqbgafw-JKHKWTGSw7wmtOMxTX2yw0ki5DyGm4ugcirGPQ4nC5B3EbNetw74zIMdBc4CJw"
+  },
+  {
+   "id": "crate-4019",
+   "name": "eSports 2014 Summer Case",
+   "category": "case",
+   "type": "Case",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjx-UnoUwniocSwrHZk_OejZaF_bvXGWT6Vkughs-A5H321kUQl5myEm9__dHKQaw8gWZtzQ7VYu0a-lYf5d7S1qrUfUsY"
+  },
+  {
+   "id": "crate-4839",
+   "name": "Antwerp 2022 Ancient Souvenir Package",
+   "category": "souvenir",
+   "type": "Souvenir",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bj15E3wRA_hzMayrx1L_f2jZ5tpJc-SAGSZxOBi_uNsFi3kkU905W_SwtipJXqWZg8jW5YkEe9btxfpktLkZL-x5wKMi4hbjXKpvT4lPfc"
+  },
+  {
+   "id": "crate-4837",
+   "name": "Antwerp 2022 Dust II Souvenir Package",
+   "category": "souvenir",
+   "type": "Souvenir",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bj15E3wRA_hzMayrx1L_f2jZ5tpJc-XG3SEk6Al5OI7Ti3kkxgh5jyDwtivcSiWPA4iC8EjR-4L4BLpx9a2Yruz4wOPlcsbmmhLqoY-"
+  },
+  {
+   "id": "crate-4835",
+   "name": "Antwerp 2022 Inferno Souvenir Package",
+   "category": "souvenir",
+   "type": "Souvenir",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bj15E3wRA_hzMayrx1L_f2jZ5tpJc-aAGGV0-B5_uNrTi-ywxkk5W7TzI2scimSbFB1CMd1QOcPsha7wdezNeiz7lHb3oNbjXKpZMl3KNA"
+  },
+  {
+   "id": "crate-4836",
+   "name": "Antwerp 2022 Mirage Souvenir Package",
+   "category": "souvenir",
+   "type": "Souvenir",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bj15E3wRA_hzMayrx1L_f2jZ5tpJc-eB3WRxus45udtF3C2wh92sjzcw42teHKXZgNyCcclQbML4EOxwIW1YuO05wTagpUFk3vrzNKexg"
+  },
+  {
+   "id": "crate-4840",
+   "name": "Antwerp 2022 Nuke Souvenir Package",
+   "category": "souvenir",
+   "type": "Souvenir",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bj15E3wRA_hzMayrx1L_f2jZ5tpJc-dG2yVj7oi4rhtSXiwkRwk5W_VzI2rdniTbVUhWJBxTeBe5kS5lYfmYe3h4lfAy9USZI7vLEE"
+  },
+  {
+   "id": "crate-4838",
+   "name": "Antwerp 2022 Overpass Souvenir Package",
+   "category": "souvenir",
+   "type": "Souvenir",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bj15E3wRA_hzMayrx1L_f2jZ5tpJc-cGGKC0e9lo69rG3CyxR4h4GyBzd6rcHqWOlAhXJB0R7ZY4xm7mtDgZOPr4gLYiY4R02yg2Tiu-RW9"
+  },
+  {
+   "id": "crate-4841",
+   "name": "Antwerp 2022 Vertigo Souvenir Package",
+   "category": "souvenir",
+   "type": "Souvenir",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bj15E3wRA_hzMayrx1L_f2jZ5tpJc-FC3WEyOl5_uM_F3zhlEhzsj_QyoyscnuSZ1IoXpUhTOcDuxjtl9TnMeLgswbe2d5bjXKpW0kdc8A"
+  },
+  {
+   "id": "crate-4348",
+   "name": "Atlanta 2017 Cache Souvenir Package",
+   "category": "souvenir",
+   "type": "Souvenir",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bj1_lXmTwnwzMaxqh1L_f2jZ5tpJc-QD2SYxKAgteI_HSvjzE90tm7Wztj_IC7BZg8hXpIhFrFcsBjpx9fgZeux5lSLlcsbmomGOWpb"
+  },
+  {
+   "id": "crate-4346",
+   "name": "Atlanta 2017 Cobblestone Souvenir Package",
+   "category": "souvenir",
+   "type": "Souvenir",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bj1_lXmTwnwzMaxqh1L_f2jZ5tpJc-QDGWcxKAm4eNsHy_lkxhx52XSytmsIyiQaVcoXJJzR-4IskPrk93lY-nh4w2KlcsbmtkBg_k4"
+  },
+  {
+   "id": "crate-4344",
+   "name": "Atlanta 2017 Dust II Souvenir Package",
+   "category": "souvenir",
+   "type": "Souvenir",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bj1_lXmTwnwzMaxqh1L_f2jZ5tpJc-XG3SEk6Au4ec5HS3rw0p052qHn4mhJHjFbQckAsByROVc4xS8m4LmZbvj5ACNlcsbmgzIAi55"
+  },
+  {
+   "id": "crate-4345",
+   "name": "Atlanta 2017 Mirage Souvenir Package",
+   "category": "souvenir",
+   "type": "Souvenir",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bj1_lXmTwnwzMaxqh1L_f2jZ5tpJc-eB3WRxus4tbU-G3q3zBwhtWyEmdivInPFOgMnWZB0QucM50KxwIbgMeLmsgCL2JUFk3s3nspkuw"
+  },
+  {
+   "id": "crate-4350",
+   "name": "Atlanta 2017 Nuke Souvenir Package",
+   "category": "souvenir",
+   "type": "Souvenir",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bj1_lXmTwnwzMaxqh1L_f2jZ5tpJc-dG2yVj-gvs7JoGirqxE9ysmTQy96hcCiSbFIkCcB2F-YIsUW6k4DvMe3m4wXAy9USYq_ZvCQ"
+  },
+  {
+   "id": "crate-4347",
+   "name": "Atlanta 2017 Overpass Souvenir Package",
+   "category": "souvenir",
+   "type": "Souvenir",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bj1_lXmTwnwzMaxqh1L_f2jZ5tpJc-cGGKC0e9lo688Fn3hwh4jtzzVz9n8JXqSalIkWZB5EbEMthG_w9ziNbzn4VTZ2o8X02yg2WaaSON0"
+  },
+  {
+   "id": "crate-4349",
+   "name": "Atlanta 2017 Train Souvenir Package",
+   "category": "souvenir",
+   "type": "Souvenir",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bj1_lXmTwnwzMaxqh1L_f2jZ5tpJc-HHGaZz6Am6bVtF362xBhy6j7Uy9evIi6Ub1VzCZRxR-YP5xm7xoa2ZO-24Q2KlcsbmrTvx_5P"
+  },
+  {
+   "id": "crate-5124",
+   "name": "Austin 2025 Ancient Souvenir Package",
+   "category": "souvenir",
+   "type": "Souvenir",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJG5zlm-UfvRzd6yenqC9gQlptK76UvmVRjOn4Pzr3IJus2-eqtgL8-XC1iRz-1_te99AXy1wEpxtWnVnIr6JC_CaQQoX5MjF7QMsxC7w4XnP-y2sgCIjohFyCngznQep6hFES4"
+  },
+  {
+   "id": "crate-5122",
+   "name": "Austin 2025 Anubis Souvenir Package",
+   "category": "souvenir",
+   "type": "Souvenir",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJG5zlm-UfvRzd6yenqC9gQlptK76UvmVRjOn4Pzr3IJus2-eqtgL8-XC1iRz_t0ufInTHvlkR8k42_cnI3_dC3EagJyWMByTOcC50awlYXhM-jq4FGP2ogQyDK-0H3Nl39_xA"
+  },
+  {
+   "id": "crate-5123",
+   "name": "Austin 2025 Dust II Souvenir Package",
+   "category": "souvenir",
+   "type": "Souvenir",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJG5zlm-UfvRzd6yenqC9gQlptK76UvmVRjOn4Pzr3IJus2-eqtgL8-XC1iU1P1i4q9tTnnklkwk6zyGn437In-UZlQlAsQhR-dZ4RixlNDhNO3q41CIjooW02yg2fk_M8Eg"
+  },
+  {
+   "id": "crate-5120",
+   "name": "Austin 2025 Inferno Souvenir Package",
+   "category": "souvenir",
+   "type": "Souvenir",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJG5zlm-UfvRzd6yenqC9gQlptK76UvmVRjOn4Pzr3IJus2-eqtgL8-XC1iZz-hzou9mAXixxUl3t2uAnIysdC2Ub1IoD8dxReAK40Ptl4K2MLzi5VPW3tlGzH_gznQeA9NN0rg"
+  },
+  {
+   "id": "crate-5121",
+   "name": "Austin 2025 Mirage Souvenir Package",
+   "category": "souvenir",
+   "type": "Souvenir",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJG5zlm-UfvRzd6yenqC9gQlptK76UvmVRjOn4Pzr3IJus2-eqtgL8-XC1idyPx3t-QnHH2xkUQk62uBntitdn3DPAdyCJR4RedY5kS_m4W2MLjq51De2YwWzzK-0H0bzeKCgA"
+  },
+  {
+   "id": "crate-5125",
+   "name": "Austin 2025 Nuke Souvenir Package",
+   "category": "souvenir",
+   "type": "Souvenir",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJG5zlm-UfvRzd6yenqC9gQlptK76UvmVRjOn4Pzr3IJus2-eqtgL8-XC1ie1OVz_rY9S37kwh8h52_Qy92qcnmTOA8lDZNxQLQDsRe6mtW0ZezmtFPX2NpbjXKpvhIYpf8"
+  },
+  {
+   "id": "crate-5126",
+   "name": "Austin 2025 Train Souvenir Package",
+   "category": "souvenir",
+   "type": "Souvenir",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJG5zlm-UfvRzd6yenqC9gQlptK76UvmVRjOn4Pzr3IJus2-eqtgL8-XC1iE0-9_vq9sHS3qlkUl62TTw9z8dC6TPAV2DMEmFuVcsxPuwd3jNePh4VCLiItB02yg2VepJYOn"
+  },
+  {
+   "id": "crate-4662",
+   "name": "Berlin 2019 Dust II Souvenir Package",
+   "category": "souvenir",
+   "type": "Souvenir",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bj270vrSBOjzse5wjJJ4P-hV6BoH_SGHXPCj7oj47Y4HyiwkUhy5j6Gzt2qcXrBPVBzA5Z4FOJY5hW7xNTvZeixsgDAy9USl0sSteY"
+  },
+  {
+   "id": "crate-4660",
+   "name": "Berlin 2019 Inferno Souvenir Package",
+   "category": "souvenir",
+   "type": "Souvenir",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bj270vrSBOjzse5wjJJ4P-hV6BoH_mdCGKCz-E44LFoHXzqxk9_5W3SyturcnmVPVcnWcAjQLFfsxbqkIDjNuzgsQDbiJUFk3uBV19lLA"
+  },
+  {
+   "id": "crate-4661",
+   "name": "Berlin 2019 Mirage Souvenir Package",
+   "category": "souvenir",
+   "type": "Souvenir",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bj270vrSBOjzse5wjJJ4P-hV6BoH_2aHGaXxKAn4OI5Hnqywkki4T7WzoyrIn6WPVInC5pzTe4N4BHukYLuN-3ntQfflcsbmlnJCBZK"
+  },
+  {
+   "id": "crate-4665",
+   "name": "Berlin 2019 Nuke Souvenir Package",
+   "category": "souvenir",
+   "type": "Souvenir",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bj270vrSBOjzse5wjJJ4P-hV6BoH_6GBWLexbt1s-NsH3DgkU1-sWnSnt2pcXzCPQAhCcZxReMJ5kXqx4eyNOjrtRue1dxZghH5iQ"
+  },
+  {
+   "id": "crate-4663",
+   "name": "Berlin 2019 Overpass Souvenir Package",
+   "category": "souvenir",
+   "type": "Souvenir",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bj270vrSBOjzse5wjJJ4P-hV6BoH_-FC3WAwP1l_rE5HSvjw0t2tm7UzYv7ICiVPwMhC8B5Redb4RDrxNHkYbjrsgfWi4pbjXKpWgdI9Xk"
+  },
+  {
+   "id": "crate-4664",
+   "name": "Berlin 2019 Train Souvenir Package",
+   "category": "souvenir",
+   "type": "Souvenir",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bj270vrSBOjzse5wjJJ4P-hV6BoH-SBD26ej-9y5rI8HHzqlEly4G3QzI6qJHPDPw8mWMAjRLRctkTpwdPjY-nh7wLAy9US6FlZaBQ"
+  },
+  {
+   "id": "crate-4666",
+   "name": "Berlin 2019 Vertigo Souvenir Package",
+   "category": "souvenir",
+   "type": "Souvenir",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bj270vrSBOjzse5wjJJ4P-hV6BoH-aWHHOZxuE457c9S36yxBtz5miEyd3_dy2VZgMmC8YjR-VZ4EawkdGzYrzltQHWipUFk3vMwHfqeQ"
+  },
+  {
+   "id": "crate-4467",
+   "name": "Boston 2018 Cache Souvenir Package",
+   "category": "souvenir",
+   "type": "Souvenir",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bj25UrzThOjzse4wjJJ4P-hV6BoH_OSDW-Vj7t04-dsTijhw0l062yHmNr8JC-fOAYmWMR4FO9e5BXtxNKzMuPh5gbAy9USzSLZmlM"
+  },
+  {
+   "id": "crate-4465",
+   "name": "Boston 2018 Cobblestone Souvenir Package",
+   "category": "souvenir",
+   "type": "Souvenir",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bj25UrzThOjzse4wjJJ4P-hV6BoH_ORDGuVj-gi57M5TXzqx0pwsj_UzIv4dHufOAEmApZ1E-8P5BXsxIHnY-O2sQPAy9USiW38NTw"
+  },
+  {
+   "id": "crate-4463",
+   "name": "Boston 2018 Inferno Souvenir Package",
+   "category": "souvenir",
+   "type": "Souvenir",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bj25UrzThOjzse4wjJJ4P-hV6BoH_mdCGKCz-E4teNsHHq2wkR-sW3SzIuqeX-VPAYiWMYkEbQDukK_mteyZuq04laLj5UFk3t9bA-WVQ"
+  },
+  {
+   "id": "crate-4464",
+   "name": "Boston 2018 Mirage Souvenir Package",
+   "category": "souvenir",
+   "type": "Souvenir",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bj25UrzThOjzse4wjJJ4P-hV6BoH_2aHGaXxKAl5eI6Sn3rwB93tWTQz9qocC_GPQMlXpQmQbYCsxfpl9OyZum2tVDblcsbmhcGw3AW"
+  },
+  {
+   "id": "crate-4469",
+   "name": "Boston 2018 Nuke Souvenir Package",
+   "category": "souvenir",
+   "type": "Souvenir",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bj25UrzThOjzse4wjJJ4P-hV6BoH_6GBWLemOou4-UwSnHnxBxwsm3Tn9-oInvEaVV1DpMiQ7ZctRC4kNKyMenm5Rue1dy5x8oQzw"
+  },
+  {
+   "id": "crate-4466",
+   "name": "Boston 2018 Overpass Souvenir Package",
+   "category": "souvenir",
+   "type": "Souvenir",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bj25UrzThOjzse4wjJJ4P-hV6BoH_-FC3WAwP1l_rE5GnuywERw4GyEzdaoc3qVP1QgCJMkQLEM5ELumtfuY7i34AWMiNlbjXKpg6q8eoQ"
+  },
+  {
+   "id": "crate-4468",
+   "name": "Boston 2018 Train Souvenir Package",
+   "category": "souvenir",
+   "type": "Souvenir",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bj25UrzThOjzse4wjJJ4P-hV6BoH-SBD26ej7olsrQ5HS3qxBlz5D7Qyd_9dC2VOlUgCJojRuZY4xS6x4fiN-Ow4VPAy9USQH44qjM"
+  },
+  {
+   "id": "crate-5223",
+   "name": "Budapest 2025 Ancient Souvenir Package",
+   "category": "souvenir",
+   "type": "Souvenir",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJG5zlm-UfvRzd6yenmC4QQlptK76UvmVRjOnIPkr3IJus2-eqtgL8-XC1iRz-1_te99AX23l0l-4WTWy9yrJH2ROA9yA5R0EOVZtha9w9WzNLy24FGKitlGxSrgznQe9a3peFc"
+  },
+  {
+   "id": "crate-5222",
+   "name": "Budapest 2025 Dust II Souvenir Package",
+   "category": "souvenir",
+   "type": "Souvenir",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJG5zlm-UfvRzd6yenmC4QQlptK76UvmVRjOnIPkr3IJus2-eqtgL8-XC1iU1P1i4q8_HH-wkExx4Tndy9_4eX-QOgEnCpYiR7RZ5BHulN3vZezi5QCN2osX02yg2TQeOBRN"
+  },
+  {
+   "id": "crate-5219",
+   "name": "Budapest 2025 Inferno Souvenir Package",
+   "category": "souvenir",
+   "type": "Souvenir",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJG5zlm-UfvRzd6yenmC4QQlptK76UvmVRjOnIPkr3IJus2-eqtgL8-XC1iZz-hzou9mASjrkx5y4mSGntaodS_DbFR1WJMmELML5hbrloDhNLy34VHWi48XmX_gznQe8eXZM-w"
+  },
+  {
+   "id": "crate-5220",
+   "name": "Budapest 2025 Mirage Souvenir Package",
+   "category": "souvenir",
+   "type": "Souvenir",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJG5zlm-UfvRzd6yenmC4QQlptK76UvmVRjOnIPkr3IJus2-eqtgL8-XC1idyPx3t-QnSSzmkB5_5G3czt6udHzBZ1UlXpN4TLMPtES7xobnMbzmslTW3YhGzTK-0H1MalVC1A"
+  },
+  {
+   "id": "crate-5224",
+   "name": "Budapest 2025 Nuke Souvenir Package",
+   "category": "souvenir",
+   "type": "Souvenir",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJG5zlm-UfvRzd6yenmC4QQlptK76UvmVRjOnIPkr3IJus2-eqtgL8-XC1ie1OVz_uA7SS_ilEUm5mnXntv9JymQZlAhDZp3TLUD4BC-mtzjNLvns1Tb2YlbjXKp2Yke3b8"
+  },
+  {
+   "id": "crate-5221",
+   "name": "Budapest 2025 Overpass Souvenir Package",
+   "category": "souvenir",
+   "type": "Souvenir",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJG5zlm-UfvRzd6yenmC4QQlptK76UvmVRjOnIPkr3IJus2-eqtgL8-XC1if1-tkoOB6XGewx0534DvSy4yqeCjDOlVyX5R3QLNftUG8wIbkYbi04wONjYkUnyT-kGoXuX5b0_qi"
+  },
+  {
+   "id": "crate-5225",
+   "name": "Budapest 2025 Train Souvenir Package",
+   "category": "souvenir",
+   "type": "Souvenir",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJG5zlm-UfvRzd6yenmC4QQlptK76UvmVRjOnIPkr3IJus2-eqtgL8-XC1iE0-9_vq87G3HhwU1x4WrTz9evdnmXbwAkXJZzTbRYsxnrm9LiP-q2tAzb2ItH02yg2d3fjhEF"
+  },
+  {
+   "id": "crate-4278",
+   "name": "Cologne 2016 Cache Souvenir Package",
+   "category": "souvenir",
+   "type": "Souvenir",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bj35VXoRhP0zMaxqx1L_f2jZ5tpJc-QD2SYxKAg4rI6SXC1lkh1sj6DytasdymVbVJzDsBxQ-9cukS-k9WzPrux71bZlcsbmhZVpERH"
+  },
+  {
+   "id": "crate-4276",
+   "name": "Cologne 2016 Cobblestone Souvenir Package",
+   "category": "souvenir",
+   "type": "Souvenir",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bj35VXoRhP0zMaxqx1L_f2jZ5tpJc-QDGWcxKBzsuBqGX3gwxly6mjRz4qhd3LBbw8jX8MiF-JYtRC8xNLlY-jlsQbelcsbmrqh8sbQ"
+  },
+  {
+   "id": "crate-4274",
+   "name": "Cologne 2016 Dust II Souvenir Package",
+   "category": "souvenir",
+   "type": "Souvenir",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bj35VXoRhP0zMaxqx1L_f2jZ5tpJc-XG3SEk6B34uA_THmxkx92sTiBmNmrIirFaAQmX8BxTbEJ4UHqw4DuPri24gCNlcsbmh_qWnC9"
+  },
+  {
+   "id": "crate-4275",
+   "name": "Cologne 2016 Mirage Souvenir Package",
+   "category": "souvenir",
+   "type": "Souvenir",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bj35VXoRhP0zMaxqx1L_f2jZ5tpJc-eB3WRxus44rNoG37jxRh04G2HyYn7InyWaAdzC8B5TbQLsUHtx9yyY7-w5VePiJUFk3tIqaFIzQ"
+  },
+  {
+   "id": "crate-4280",
+   "name": "Cologne 2016 Nuke Souvenir Package",
+   "category": "souvenir",
+   "type": "Souvenir",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bj35VXoRhP0zMaxqx1L_f2jZ5tpJc-dG2yVj7lw47cwH3-ylEgmt2rSnNygInvGbwFxA8AjFucDuhjqm9GzMOzj4gLAy9US1XJ3_FA"
+  },
+  {
+   "id": "crate-4277",
+   "name": "Cologne 2016 Overpass Souvenir Package",
+   "category": "souvenir",
+   "type": "Souvenir",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bj35VXoRhP0zMaxqx1L_f2jZ5tpJc-cGGKC0e9lo69oSn_rwh5xtmmHz92oIHKRbwF1A5pyTOYPsBa-k9HgZr-341bag9kT02yg2RFtcI4d"
+  },
+  {
+   "id": "crate-4279",
+   "name": "Cologne 2016 Train Souvenir Package",
+   "category": "souvenir",
+   "type": "Souvenir",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bj35VXoRhP0zMaxqx1L_f2jZ5tpJc-HHGaZz6AvtLE-HHjilxx3tWXVn9n_eHyRa1BzCsElQbIIsxmwx4DjMb7htAPclcsbmlu8ougM"
+  },
+  {
+   "id": "crate-4930",
+   "name": "Copenhagen 2024 Ancient Souvenir Package",
+   "category": "souvenir",
+   "type": "Souvenir",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bj3-lG1EU-loYby8i9U0ParV6VjI_mWAHPew-1w5-RvTC3lwUoj4G2AyougcirDbwMgDpAlQrIN4EPukNzlYuvg7hue1dxsvyYF4A"
+  },
+  {
+   "id": "crate-4928",
+   "name": "Copenhagen 2024 Anubis Souvenir Package",
+   "category": "souvenir",
+   "type": "Souvenir",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bj3-lG1EU-loYby8i9U0ParV6VjNfKaHSmUkLd36bkxHSrqxBsmtT6EzIn6cCjDOw4nX8F1FOJc4xLsk4HuN-uz-UWA3HCx5SQN"
+  },
+  {
+   "id": "crate-4926",
+   "name": "Copenhagen 2024 Inferno Souvenir Package",
+   "category": "souvenir",
+   "type": "Souvenir",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bj3-lG1EU-loYby8i9U0ParV61jJvWBAGjekL9wsudvHHnhzUkm4W2Az96vcX6UZ1N1X5RwROIKsELuwIDuN7y04xue1dxm9sz2hg"
+  },
+  {
+   "id": "crate-4927",
+   "name": "Copenhagen 2024 Mirage Souvenir Package",
+   "category": "souvenir",
+   "type": "Souvenir",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bj3-lG1EU-loYby8i9U0ParV6lkMvGUCynAxLxw5rQ-TnywwUQj5GnVnNj9dCjFb1cjWZJ1TO4Itxm6ldbvY--x-UWA3At843U9"
+  },
+  {
+   "id": "crate-4931",
+   "name": "Copenhagen 2024 Nuke Souvenir Package",
+   "category": "souvenir",
+   "type": "Souvenir",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bj3-lG1EU-loYby8i9U0ParV6p4K_XdXmHElrogtLkxGXHgl0lw62-EyIyhcyiTZwUlXJV1TeUP40HpxNG0PvSiuVK0aQmXQA"
+  },
+  {
+   "id": "crate-4929",
+   "name": "Copenhagen 2024 Overpass Souvenir Package",
+   "category": "souvenir",
+   "type": "Souvenir",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bj3-lG1EU-loYby8i9U0ParV6t7JeKDD3SDj-wjteAxH3zrwksksmjUyoysJ36fZw4kC5NzFOILsRG5kta2NevjslPAy9USrECBPak"
+  },
+  {
+   "id": "crate-4932",
+   "name": "Copenhagen 2024 Vertigo Souvenir Package",
+   "category": "souvenir",
+   "type": "Souvenir",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bj3-lG1EU-loYby8i9U0ParV7JoMuSaCWjemOtysrU8H3iyx08msTnWyYr4JHOTb1MhDcEjQ-II4BC6k9C0ZuqztRue1dzI2NbPyg"
+  },
+  {
+   "id": "crate-4006",
+   "name": "DreamHack 2013 Souvenir Package",
+   "category": "souvenir",
+   "type": "Souvenir",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjw4k62EiLhjJnt8mxevfSqbqVsJaHKWGWVmOwi5eJtGX7jzUsi6mTXzNb_d3rDPQZzW5okW6dU5dbJcrqx"
+  },
+  {
+   "id": "crate-4035",
+   "name": "DreamHack 2014 Cache Souvenir Package",
+   "category": "souvenir",
+   "type": "Souvenir",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjw4k62FSLhjJnt8h1f6s2taadlJb7CVzbImL0g6bFqGi-3zR5z4m2Bm4mgcniXaQd1A8QmEOUI4Ba9l4HjKaq8sAL7emp8"
+  },
+  {
+   "id": "crate-4036",
+   "name": "DreamHack 2014 Cobblestone Souvenir Package",
+   "category": "souvenir",
+   "type": "Souvenir",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjw4k62FSLhjJnt8h1f6s2taqZhJb7AWWPFwrZy5rY4THq2xEV2tjzcwtutIi-fbwInX5Z1QbZfsBjtkILuKaq8sCWS9maH"
+  },
+  {
+   "id": "crate-4031",
+   "name": "DreamHack 2014 Dust II Souvenir Package",
+   "category": "souvenir",
+   "type": "Souvenir",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjw4k62FSLhjJnt8h1f6s2qfbd5cr7CDTTIkLsg4-A-Fii3wU8k4TjUyov4dniWbVAmWJt3R-MI5xm_xta0Kaq8sO_IzfuM"
+  },
+  {
+   "id": "crate-4032",
+   "name": "DreamHack 2014 Inferno Souvenir Package",
+   "category": "souvenir",
+   "type": "Souvenir",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjw4k62FSLhjJnt8h1f6s2nZqJoMv6cQDeTkrgktLg7Fyrhx0wh5zvRzNurcnOQbAYoDZYhQ7UL5kbrwNbhNuz8p1uJaNjkAo0"
+  },
+  {
+   "id": "crate-4033",
+   "name": "DreamHack 2014 Mirage Souvenir Package",
+   "category": "souvenir",
+   "type": "Souvenir",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjw4k62FSLhjJnt8h1f6s2jYbZsJ_XdCDCWxbontuA-Gi_gzEVw5mTQwtb6dSqTbA8oC8F2QuEDsRe7moLkN_SiuVLrQkv3xg"
+  },
+  {
+   "id": "crate-4034",
+   "name": "DreamHack 2014 Nuke Souvenir Package",
+   "category": "souvenir",
+   "type": "Souvenir",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjw4k62FSLhjJnt8h1f6s2gfa9obqXAVjKTkbomsuBrHXDmxEol6j6Hm4r_I3vBaAVxXJdyQLEI5EK4loH5d7S15UcFkRI"
+  },
+  {
+   "id": "crate-4037",
+   "name": "DreamHack 2014 Overpass Souvenir Package",
+   "category": "souvenir",
+   "type": "Souvenir",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjw4k62FSLhjJnt8h1f6s2hfqF_MPGAHSmVk74n4rFtHXvixB535mmAydytcC7EZwEjX5ZyRbUItxO-w4ezZOO3-UWA3FVu4DJF"
+  },
+  {
+   "id": "crate-4181",
+   "name": "DreamHack Cluj-Napoca 2015 Cache Souvenir Package",
+   "category": "souvenir",
+   "type": "Souvenir",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bj35kztE02gy6nw7y1W4M2qbZtuIfObCynDw-gh6LYxGyjrkUsl52SHm939cC-eaw8hDcByELNesxa_x4LiMO2z-UWA3LPI9PnM"
+  },
+  {
+   "id": "crate-4179",
+   "name": "DreamHack Cluj-Napoca 2015 Cobblestone Souvenir Package",
+   "category": "souvenir",
+   "type": "Souvenir",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bj35kztE02gy6nw7y1W4M2qbZtuIvKfCynBxOp16bZtSXu1w0hy62rWnIz4IijDO1MhD8MmFrIOsBWwk4ezY7ix-UWA3MFLe-ZR"
+  },
+  {
+   "id": "crate-4176",
+   "name": "DreamHack Cluj-Napoca 2015 Dust II Souvenir Package",
+   "category": "souvenir",
+   "type": "Souvenir",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bj35kztE02gy6nw7y1W4M2qbZtpNeOHXCmUk7935rI_GXDlx010627Xztf8dC7Cagd1W8dwQuUJsUa-koa2NOLj-UWA3M6kNEKU"
+  },
+  {
+   "id": "crate-4178",
+   "name": "DreamHack Cluj-Napoca 2015 Inferno Souvenir Package",
+   "category": "souvenir",
+   "type": "Souvenir",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bj35kztE02gy6nw7y1W4M2qbZtkLvaWHGmfj713tLJqSXDikBx16mvVz9uvcHmRPFIhC5ZyRLIKtBTpl9PmMb_r5FHAy9USwmSsHgY"
+  },
+  {
+   "id": "crate-4177",
+   "name": "DreamHack Cluj-Napoca 2015 Mirage Souvenir Package",
+   "category": "souvenir",
+   "type": "Souvenir",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bj35kztE02gy6nw7y1W4M2qbZtgKeKSCWLelexy5LlvSXjqwk5352SEnNmsJ36TbQ9zW5YkRe9Z5hm5xIblZeqx7hue1dxO7GJJCg"
+  },
+  {
+   "id": "crate-4180",
+   "name": "DreamHack Cluj-Napoca 2015 Overpass Souvenir Package",
+   "category": "souvenir",
+   "type": "Souvenir",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bj35kztE02gy6nw7y1W4M2qbZtiNvWBHmaD0qB14eQ7Fnu2kBt-tzyAmY2uJHjGbQ9zXpFyQu4JuxCxxoWzYujltAzWlcsbmgdwiYOH"
+  },
+  {
+   "id": "crate-4182",
+   "name": "DreamHack Cluj-Napoca 2015 Train Souvenir Package",
+   "category": "souvenir",
+   "type": "Souvenir",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bj35kztE02gy6nw7y1W4M2qbZt5MvGaACnAxbcmsbBoTSvrlkgm5DzcyNr6eH2TZw8jXMAlQLFZthm5xoayYe20-UWA3F5WW8hg"
+  },
+  {
+   "id": "crate-4013",
+   "name": "EMS One 2014 Souvenir Package",
+   "category": "souvenir",
+   "type": "Souvenir",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjx50q2FSLhjJnt8mxavfH_bPRvd_GSCzHBxbZ0tLY6Gy3kkRl0tW7cy4n4dXnFOFN1DJZzW6dU5V8ClnPH"
+  },
+  {
+   "id": "crate-4026",
+   "name": "ESL One Cologne 2014 Cache Souvenir Package",
+   "category": "souvenir",
+   "type": "Souvenir",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjx-VW2FSLhjJnt8h1f6s2taadlJb7AWTOTwLhw6Lk9HijlwB5262TVnIyvJ3mTOARxCpp0FuIIsUXpm4LvKaq8sPTeGzME"
+  },
+  {
+   "id": "crate-4027",
+   "name": "ESL One Cologne 2014 Cobblestone Souvenir Package",
+   "category": "souvenir",
+   "type": "Souvenir",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjx-VW2FSLhjJnt8h1f6s2taqZhJb7GCmXDwLp057U8SSiwkxt1tz_Sw46qJC6RZgcpXJJwQrVf5xe7lIfnKaq8sA1qTP9C"
+  },
+  {
+   "id": "crate-4022",
+   "name": "ESL One Cologne 2014 Dust II Souvenir Package",
+   "category": "souvenir",
+   "type": "Souvenir",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjx-VW2FSLhjJnt8h1f6s2qfbd5cr6XCD-VkroktrVoHi2wlBhx5mXXz4r8d3yVbQ5zAsF3RuYD5hO9kdXhKaq8sLHIAjYS"
+  },
+  {
+   "id": "crate-4023",
+   "name": "ESL One Cologne 2014 Inferno Souvenir Package",
+   "category": "souvenir",
+   "type": "Souvenir",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjx-VW2FSLhjJnt8h1f6s2nZqJoMv6cQDHClOolteIwHyi2kBwj4GSGy9_6IyqRbAZzXpZwEO4Ns0LtwNzjZev8p1uJf7PEg0g"
+  },
+  {
+   "id": "crate-4024",
+   "name": "ESL One Cologne 2014 Mirage Souvenir Package",
+   "category": "souvenir",
+   "type": "Souvenir",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjx-VW2FSLhjJnt8h1f6s2jYbZsJ_XdV2XBlehyteM4HXi1lk124W3UydugdyiROwEoXMRxE-AIsxK5kdG1ZfSiuVL9KRVRdw"
+  },
+  {
+   "id": "crate-4025",
+   "name": "ESL One Cologne 2014 Nuke Souvenir Package",
+   "category": "souvenir",
+   "type": "Souvenir",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjx-VW2FSLhjJnt8h1f6s2gfa9obqCVXzWUmbp057k8FijixRt1t2jRydqqIymebVRxXpt0FOYN4xm_wYH5d7S1vukvMDk"
+  },
+  {
+   "id": "crate-4028",
+   "name": "ESL One Cologne 2014 Overpass Souvenir Package",
+   "category": "souvenir",
+   "type": "Souvenir",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjx-VW2FSLhjJnt8h1f6s2hfqF_MPGAHSnIxLYi6bc9Fnrjlx90sT6Byt6qc3PCZ1NzA8ZxTeUOtEK_ktWzP-vn-UWA3B_cRugF"
+  },
+  {
+   "id": "crate-4136",
+   "name": "ESL One Cologne 2015 Cache Souvenir Package",
+   "category": "souvenir",
+   "type": "Souvenir",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjx-VXkThH-mZjlr3IKus2-eqtgL8-XC1iTwO1-ta9qFiq2lEQj426Gytb4eHmUawQkCZV5FuENshbukdziNrmxtALbi98T02yg2ZvtbtKo"
+  },
+  {
+   "id": "crate-4134",
+   "name": "ESL One Cologne 2015 Cobblestone Souvenir Package",
+   "category": "souvenir",
+   "type": "Souvenir",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjx-VXkThH-mZjlr3IKus2-eqtgL8-XC1iTw-x6ta8_HXjgzUl05ziHm4r7dy7FOlUkXsYmRe4MthfqxN2zNu3h7gfXi49N02yg2UbpOSb2"
+  },
+  {
+   "id": "crate-4131",
+   "name": "ESL One Cologne 2015 Dust II Souvenir Package",
+   "category": "souvenir",
+   "type": "Souvenir",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjx-VXkThH-mZjlr3IKus2-eqtgL8-XC1iU1P1i4q9sTC2ylER05j7QnomsJHiQag4nApJwRu8DsULqloKxYrnl7wyP3t9G02yg2YmRsS6G"
+  },
+  {
+   "id": "crate-4133",
+   "name": "ESL One Cologne 2015 Inferno Souvenir Package",
+   "category": "souvenir",
+   "type": "Souvenir",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjx-VXkThH-mZjlr3IKus2-eqtgL8-XC1iZz-hzou9mASjjzE9-tm_Smd2vcy6SZ1QlWJNxTO8NthPqwdbmPu627geP2okTmyrgznQe2HY2Zgc"
+  },
+  {
+   "id": "crate-4132",
+   "name": "ESL One Cologne 2015 Mirage Souvenir Package",
+   "category": "souvenir",
+   "type": "Souvenir",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjx-VXkThH-mZjlr3IKus2-eqtgL8-XC1idyPx3t-QnTC3lxk4k52_UwtavJ3qRa1ciD5V1R-cO5hnsl4LuN-Lm7gyPgopNnDK-0H0AmNuWng"
+  },
+  {
+   "id": "crate-4135",
+   "name": "ESL One Cologne 2015 Overpass Souvenir Package",
+   "category": "souvenir",
+   "type": "Souvenir",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjx-VXkThH-mZjlr3IKus2-eqtgL8-XC1if1-tkoOB6XGewlBkltWvcz9mqcS3FawQnX5VyE-FfsETulNzuZrvj7wOI2IgRn33-kGoXuaDtvDHd"
+  },
+  {
+   "id": "crate-4137",
+   "name": "ESL One Cologne 2015 Train Souvenir Package",
+   "category": "souvenir",
+   "type": "Souvenir",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjx-VXkThH-mZjlr3IKus2-eqtgL8-XC1iE0-9_vq9oGC_gwBkk4TyDzNqrcinGOwQmAsRyEeUCu0awx9bjN-uxtAzdj4pN02yg2dPFwHIG"
+  },
+  {
+   "id": "crate-4083",
+   "name": "ESL One Katowice 2015 Cache Souvenir Package",
+   "category": "souvenir",
+   "type": "Souvenir",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjx-VXsQAn-iZ_j-HALvqeReLZiLf-sCmKvwu91uOQnSnq3wR4msm7RyIyveHqTbFUgXMB1TLQLs0K5wIG2N-PjsQCM2I9BzDK-0H1by-7mfw"
+  },
+  {
+   "id": "crate-4084",
+   "name": "ESL One Katowice 2015 Cobblestone Souvenir Package",
+   "category": "souvenir",
+   "type": "Souvenir",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjx-VXsQAn-iZ_j-HALvqeReLZiLf-sCmKvwux0vOQnF3_mxRx34zjdztf9dH-QPAcnCZJ3Q7MP4UTtlNzvNb-x4wHaithGzDK-0H0u36KbMw"
+  },
+  {
+   "id": "crate-4079",
+   "name": "ESL One Katowice 2015 Dust II Souvenir Package",
+   "category": "souvenir",
+   "type": "Souvenir",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjx-VXsQAn-iZ_j-HALvqeReLZiLf-sCmKvxftlpLMnSS23wE504Grcm4mgJ3OfPAMlDpRxRLZZ5EK4lIfjPu3j4ATegtlGnzK-0H3UToJFDg"
+  },
+  {
+   "id": "crate-4080",
+   "name": "ESL One Katowice 2015 Inferno Souvenir Package",
+   "category": "souvenir",
+   "type": "Souvenir",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjx-VXsQAn-iZ_j-HALvqeReLZiLf-sCmKvyOBwtfNnQGfhxUtx6z6BnNmpcSjBawAnA5F0QLJfs0Lrw9XvP-jn7wbfiY1CxX2okGoXuS0T9AvV"
+  },
+  {
+   "id": "crate-4081",
+   "name": "ESL One Katowice 2015 Mirage Souvenir Package",
+   "category": "souvenir",
+   "type": "Souvenir",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjx-VXsQAn-iZ_j-HALvqeReLZiLf-sCmKvzOdkseZsAXqwxEt_5W7SnN34cH6XOw8lWJIiFuACtETrkdLjNujqtgPcjN9AmS3gznQeEFP9n20"
+  },
+  {
+   "id": "crate-4082",
+   "name": "ESL One Katowice 2015 Nuke Souvenir Package",
+   "category": "souvenir",
+   "type": "Souvenir",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjx-VXsQAn-iZ_j-HALvqeReLZiLf-sCmKvz_t9ta8-THDlxkVx4TjRmdv4cymQZgVxWZZ1Te4JtBC5xoaxM-_g51fe2NoX02yg2RYsHAfT"
+  },
+  {
+   "id": "crate-4085",
+   "name": "ESL One Katowice 2015 Overpass Souvenir Package",
+   "category": "souvenir",
+   "type": "Souvenir",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjx-VXsQAn-iZ_j-HALvqeReLZiLf-sCmKvzvhzovFoXDr9k0h26z-Bm9_8cn_Gb1chCJF0Q-cKu0G9xtS2NrnitlaIg9pDmHqqjjQJsHjDVQj_1A"
+  },
+  {
+   "id": "crate-4594",
+   "name": "Katowice 2019 Cache Souvenir Package",
+   "category": "souvenir",
+   "type": "Souvenir",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bj_603oVhTym8SwrHtk_-ChZatSJPWsDWaTyes4trU8Hy21whl3tznSzdqscC-VOw5xDpV1TeAJtRa4kd3mPr6x7wDWiZUFk3sPJWbqoA"
+  },
+  {
+   "id": "crate-4592",
+   "name": "Katowice 2019 Dust II Souvenir Package",
+   "category": "souvenir",
+   "type": "Souvenir",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bj_603oVhTym8SwrHtk_-ChZatSJPWsCnKD1bw45rA7GnHrk0hx42TXno79d3zCaVNzApBzReJet0W_lYazNLjj5gLfiZUFk3vpn6VvvA"
+  },
+  {
+   "id": "crate-4590",
+   "name": "Katowice 2019 Inferno Souvenir Package",
+   "category": "souvenir",
+   "type": "Souvenir",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bj_603oVhTym8SwrHtk_-ChZatSJPWsB2mWxPx4v69tGivkkUgk5GqHm9j6J3_CaVApCJt2E-8MuxPtl4exZr_m5VPcjY9B02yg2SOGx-2Z"
+  },
+  {
+   "id": "crate-4591",
+   "name": "Katowice 2019 Mirage Souvenir Package",
+   "category": "souvenir",
+   "type": "Souvenir",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bj_603oVhTym8SwrHtk_-ChZatSJPWsA26CwOlz_uAxTXvqwxl05j7QntyvcimRa1UmX8dzTLFfu0LqkYLvYb-wslTc34hbjXKpsgcPS04"
+  },
+  {
+   "id": "crate-4596",
+   "name": "Katowice 2019 Nuke Souvenir Package",
+   "category": "souvenir",
+   "type": "Souvenir",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bj_603oVhTym8SwrHtk_-ChZatSJPWsAHKbxKAn4eBsTC3mlk53tWqDnNv4di6SaAUjX5NxFuZcuxLrldDkMbzl5QbWlcsbmtmiS4Eu"
+  },
+  {
+   "id": "crate-4593",
+   "name": "Katowice 2019 Overpass Souvenir Package",
+   "category": "souvenir",
+   "type": "Souvenir",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bj_603oVhTym8SwrHtk_-ChZatSJPWsAXGV0_53o_InTC3qlxl24GzSyNuqIn-QZlUjW5J3R-EIs0Wwkd3vP7jh4FSMit8TzDK-0H2AZVR1nA"
+  },
+  {
+   "id": "crate-4595",
+   "name": "Katowice 2019 Train Souvenir Package",
+   "category": "souvenir",
+   "type": "Souvenir",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bj_603oVhTym8SwrHtk_-ChZatSJPWsGnWRyOA45-JsTnvnlE93tWWHntj8d3iXPw5zC5EiEeBcuxO6x4fkYeixtVfeipUFk3vbEfzb_w"
+  },
+  {
+   "id": "crate-4400",
+   "name": "Krakow 2017 Cache Souvenir Package",
+   "category": "souvenir",
+   "type": "Souvenir",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bj_-FjsTgqjzse3wjJJ4P-hV6BoH_OSDW-Vj-oktbg-Ti22zURxsmnXm4v7I3zBbwApCJIjEbJYu0PtldXlP-vi5QfAy9USAyhRW9o"
+  },
+  {
+   "id": "crate-4398",
+   "name": "Krakow 2017 Cobblestone Souvenir Package",
+   "category": "souvenir",
+   "type": "Souvenir",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bj_-FjsTgqjzse3wjJJ4P-hV6BoH_ORDGuVj7h0s7Q5GHvgxB5062XTztmuIHKVZlQjDJEhReUDthi7xoWxMerk4VDAy9UScHnfGeo"
+  },
+  {
+   "id": "crate-4396",
+   "name": "Krakow 2017 Inferno Souvenir Package",
+   "category": "souvenir",
+   "type": "Souvenir",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bj_-FjsTgqjzse3wjJJ4P-hV6BoH_mdCGKCz-E457U5HnDiw0xy52jdnI6hcC7CbQFxDsRzQuMIsBDtl4CzNLu27gSL2pUFk3vwmWSPLA"
+  },
+  {
+   "id": "crate-4397",
+   "name": "Krakow 2017 Mirage Souvenir Package",
+   "category": "souvenir",
+   "type": "Souvenir",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bj_-FjsTgqjzse3wjJJ4P-hV6BoH_2aHGaXxKB1tbg5HH_nxE5zsW7TzI2peS7EaAN2CpJ0TbVbsRLukdHjZuLrsQXZlcsbmlwpRn79"
+  },
+  {
+   "id": "crate-4402",
+   "name": "Krakow 2017 Nuke Souvenir Package",
+   "category": "souvenir",
+   "type": "Souvenir",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bj_-FjsTgqjzse3wjJJ4P-hV6BoH_6GBWLexLgjsbY7GH-yxx5w4m_Vm9aqdyqVZlB0DJBwFu9b5hKxkYbvY-3j4hue1dxjrN-rUg"
+  },
+  {
+   "id": "crate-4399",
+   "name": "Krakow 2017 Overpass Souvenir Package",
+   "category": "souvenir",
+   "type": "Souvenir",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bj_-FjsTgqjzse3wjJJ4P-hV6BoH_-FC3WAwP1l_uQ9Tn-wlB934G_Tz9agInmSPAQpC5F1ReYJ4RPqkNa2Zri35VDW2YtbjXKp_KKsY4E"
+  },
+  {
+   "id": "crate-4401",
+   "name": "Krakow 2017 Train Souvenir Package",
+   "category": "souvenir",
+   "type": "Souvenir",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bj_-FjsTgqjzse3wjJJ4P-hV6BoH-SBD26ej7wn6OA9H3qxxU4k5mjUntj7dSmUbVMpW5tyRLENshW_k9TuMuOx41HAy9USulmIlu0"
+  },
+  {
+   "id": "crate-4544",
+   "name": "London 2018 Cache Souvenir Package",
+   "category": "souvenir",
+   "type": "Souvenir",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bj45VfjThOjzse4wjJJ4P-hV6BoH_OSDW-Vj-t1suVtGXCwzUh34m-Dn9n_cXLFZgUkApZ1QuVc4US8kdTuPurn4ATAy9USZV4vkGA"
+  },
+  {
+   "id": "crate-4542",
+   "name": "London 2018 Dust II Souvenir Package",
+   "category": "souvenir",
+   "type": "Souvenir",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bj45VfjThOjzse4wjJJ4P-hV6BoH_SGHXPCj79ysbYwHi23k093tzvRy9isIi_GP1N0WZMjQeJZsxe8w4fnYbjitQTAy9USfZHe1a8"
+  },
+  {
+   "id": "crate-4540",
+   "name": "London 2018 Inferno Souvenir Package",
+   "category": "souvenir",
+   "type": "Souvenir",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bj45VfjThOjzse4wjJJ4P-hV6BoH_mdCGKCz-E44LZtTS_mwE9xt2XSm42hd33DPwNxXJd3Q-8I5EbrxoKzMuPh4QePjpUFk3uQG3tvkw"
+  },
+  {
+   "id": "crate-4541",
+   "name": "London 2018 Mirage Souvenir Package",
+   "category": "souvenir",
+   "type": "Souvenir",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bj45VfjThOjzse4wjJJ4P-hV6BoH_2aHGaXxKAm4LhtFnnik0Qm4W3RytiqJS_DO1cnC5NzFOIPtRftxNG2NOzisVbZlcsbmjApZVCi"
+  },
+  {
+   "id": "crate-4546",
+   "name": "London 2018 Nuke Souvenir Package",
+   "category": "souvenir",
+   "type": "Souvenir",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bj45VfjThOjzse4wjJJ4P-hV6BoH_6GBWLewrt35LI8GHnlk0om42_Wn92vInmQPQJyDpYlFrMPtha_w9K2N-3n5hue1dz59svyCw"
+  },
+  {
+   "id": "crate-4543",
+   "name": "London 2018 Overpass Souvenir Package",
+   "category": "souvenir",
+   "type": "Souvenir",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bj45VfjThOjzse4wjJJ4P-hV6BoH_-FC3WAwP1l_rg8Hii3xU4k5GzVw4r9dnORaw5yA5dxEbJYtRbqwIfgP-rq5wHc2otbjXKpw2xpipc"
+  },
+  {
+   "id": "crate-4545",
+   "name": "London 2018 Train Souvenir Package",
+   "category": "souvenir",
+   "type": "Souvenir",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bj45VfjThOjzse4wjJJ4P-hV6BoH-SBD26ej-witLhtSnq1kE526jyDy9yhJHmTbgBxApV4FLQOtBGwxoW1Yr_r5wLAy9USI1Aa0as"
+  },
+  {
+   "id": "crate-4230",
+   "name": "MLG Columbus 2016 Cache Souvenir Package",
+   "category": "souvenir",
+   "type": "Souvenir",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bj35VXyTB_kjcSwrHRk_-ChZatSJPWsDWaTyes4trFvHSrml013tT6Ewt2teX3GPwZ0WcEmTbUJ4RK6ktSzZezj7wfWgpUFk3tvzWKpPw"
+  },
+  {
+   "id": "crate-4228",
+   "name": "MLG Columbus 2016 Cobblestone Souvenir Package",
+   "category": "souvenir",
+   "type": "Souvenir",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bj35VXyTB_kjcSwrHRk_-ChZatSJPWsDWWSzes44-JvGi-2zUQi5DiBm4z4cSrEOAUhDsB2QrRe5hGwwdbuZrnl7wCKjpUFk3tWzbEgYA"
+  },
+  {
+   "id": "crate-4225",
+   "name": "MLG Columbus 2016 Dust II Souvenir Package",
+   "category": "souvenir",
+   "type": "Souvenir",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bj35VXyTB_kjcSwrHRk_-ChZatSJPWsCnKD1bw4s-c7FyrmlkR05W3dytmgeHKSbg9xDMMkFrIL4RC6wILkN-7g5leIg5UFk3uYze73pw"
+  },
+  {
+   "id": "crate-4227",
+   "name": "MLG Columbus 2016 Inferno Souvenir Package",
+   "category": "souvenir",
+   "type": "Souvenir",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bj35VXyTB_kjcSwrHRk_-ChZatSJPWsB2mWxPx4v69rTHi2k08ht2WEw979cH_EaFUiX5UlR7YOthTtkIfnMry3tQHXjo0Q02yg2cWmvhnM"
+  },
+  {
+   "id": "crate-4226",
+   "name": "MLG Columbus 2016 Mirage Souvenir Package",
+   "category": "souvenir",
+   "type": "Souvenir",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bj35VXyTB_kjcSwrHRk_-ChZatSJPWsA26CwOlz_uNrTXuxzUki5TnUzougJXyRbQIkDZckFLMOuhLpxoXkMuPl4FCP2ohbjXKpAQ1eHv4"
+  },
+  {
+   "id": "crate-4232",
+   "name": "MLG Columbus 2016 Nuke Souvenir Package",
+   "category": "souvenir",
+   "type": "Souvenir",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bj35VXyTB_kjcSwrHRk_-ChZatSJPWsAHKbxKAhsbM6Hii2zRh_sTjUnoqvcCjEZwR1X5ckQ7RftES_wYDuYum37lbYlcsbmhoSWKPo"
+  },
+  {
+   "id": "crate-4229",
+   "name": "MLG Columbus 2016 Overpass Souvenir Package",
+   "category": "souvenir",
+   "type": "Souvenir",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bj35VXyTB_kjcSwrHRk_-ChZatSJPWsAXGV0_53o_InGSqywxsmsjzSn9b7JXOfaw8pW8F5E7MPtBa-kNC1P-iz4wzcjogRnjK-0H0D3guCcQ"
+  },
+  {
+   "id": "crate-4231",
+   "name": "MLG Columbus 2016 Train Souvenir Package",
+   "category": "souvenir",
+   "type": "Souvenir",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bj35VXyTB_kjcSwrHRk_-ChZatSJPWsGnWRyOA46OQ_S36ywB5w427Um9__cnyTOgMmDZMlE-VZsRS7ktHlNu7m5A3fiJUFk3vtXhyvnQ"
+  },
+  {
+   "id": "crate-4897",
+   "name": "Paris 2023 Ancient Souvenir Package",
+   "category": "souvenir",
+   "type": "Souvenir",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjk60vuUk-hzMXf7TBU4v2RbKFSIf6QB2Ke1aAltrFtG3nkxxx14DyDnomudCiUOA52W8R3Ru5euhWwkNGzY7_rsgKNlcsbmthZYkok"
+  },
+  {
+   "id": "crate-4895",
+   "name": "Paris 2023 Anubis Souvenir Package",
+   "category": "souvenir",
+   "type": "Souvenir",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjk60vuUk-hzMXf7TBU4v2RbKFSIf6GDG6Dj-t047Q_GXrrwBlz5W2Bnt6scHvCblAhDpUkTOEDuhO4m4LiZe3i5gTAy9USL1dHC6A"
+  },
+  {
+   "id": "crate-4893",
+   "name": "Paris 2023 Inferno Souvenir Package",
+   "category": "souvenir",
+   "type": "Souvenir",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjk60vuUk-hzMXf7TBU4v2RbKFSKf6VC3WezqAgsrhsFyixwE4m52jUytysI3vBbQ51DJImQ-NbtxO5w9LjY-Lh5ADclcsbmj4tCmqX"
+  },
+  {
+   "id": "crate-4894",
+   "name": "Paris 2023 Mirage Souvenir Package",
+   "category": "souvenir",
+   "type": "Souvenir",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjk60vuUk-hzMXf7TBU4v2RbKFSLfmBD2CVj75z6LM_S322w0l04G7QmYypcX-TZlAoCcN2RLEMukXsk4LvMO2wsVDAy9USqEumK38"
+  },
+  {
+   "id": "crate-4898",
+   "name": "Paris 2023 Nuke Souvenir Package",
+   "category": "souvenir",
+   "type": "Souvenir",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjk60vuUk-hzMXf7TBU4v2RbKFSLuWYCymRlbYgsuI8HX7rlhhxt2_Umdj9JXLGagcnDpIhE-MD5xe8wdXiMOjk-UWA3JoAHXbP"
+  },
+  {
+   "id": "crate-4896",
+   "name": "Paris 2023 Overpass Souvenir Package",
+   "category": "souvenir",
+   "type": "Souvenir",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjk60vuUk-hzMXf7TBU4v2RbKFSL-aWHHeR0v04s-BvHijgkxx1tmiDyt2qeXOVaA50WMYjQ7UN40Wxm9HgYbzhtVDe3pUFk3swwkQ4BA"
+  },
+  {
+   "id": "crate-4899",
+   "name": "Paris 2023 Vertigo Souvenir Package",
+   "category": "souvenir",
+   "type": "Souvenir",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjk60vuUk-hzMXf7TBU4v2RbKFSNvWBGm6XzqBysbM_TCzhlEVz5WyAnNarJXyWPFclW8NwFOEPshLpm9LjMbyw5AbYlcsbmueqdWue"
+  },
+  {
+   "id": "crate-4864",
+   "name": "Rio 2022 Ancient Souvenir Package",
+   "category": "souvenir",
+   "type": "Souvenir",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjm41a1EU-joYby8i9U0ParV6VjI_mWAHPel7wu5bBqHnrkxEt14zuByd-pd3yfagYgCZB4QuMPtBHsl4bnZu-25Bue1dy_oUuJtA"
+  },
+  {
+   "id": "crate-4862",
+   "name": "Rio 2022 Dust II Souvenir Package",
+   "category": "souvenir",
+   "type": "Souvenir",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjm41a1EU-joYby8i9U0ParV6B4M-TBQGHFkrpw5-BqF3qyxk8isGncy9j8InrBPwIoAsF1QecN4BC9lIbgM-P8p1uJqWKKNS0"
+  },
+  {
+   "id": "crate-4860",
+   "name": "Rio 2022 Inferno Souvenir Package",
+   "category": "souvenir",
+   "type": "Souvenir",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjm41a1EU-joYby8i9U0ParV61jJvWBAGjembol5rc9GyvqxEQjtTnSmNqpdnyRawElD8NyFuFeuxS_w4XnM-mwsxue1dyMXtmjQw"
+  },
+  {
+   "id": "crate-4861",
+   "name": "Rio 2022 Mirage Souvenir Package",
+   "category": "souvenir",
+   "type": "Souvenir",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjm41a1EU-joYby8i9U0ParV6lkMvGUCynAmL5w4bk5F3_qzUwjtW6BmIr7InnCZgMhXJV5ReVctEKxkNfvZOmx-UWA3EHNY_eN"
+  },
+  {
+   "id": "crate-4865",
+   "name": "Rio 2022 Nuke Souvenir Package",
+   "category": "souvenir",
+   "type": "Souvenir",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjm41a1EU-joYby8i9U0ParV6p4K_XdWTCVmO0m6bQ7THzlwx8i52WHnIqrcy-Wa1B1C8RxTLEO4Rm_l4XlNfSiuVKkZ-_svg"
+  },
+  {
+   "id": "crate-4863",
+   "name": "Rio 2022 Overpass Souvenir Package",
+   "category": "souvenir",
+   "type": "Souvenir",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjm41a1EU-joYby8i9U0ParV6t7JeKDD3SDj-pz47A8SXnqw0t_5DvVzoyveSnDbQR2XsZzRLZfsBW9xtfvMuOxtgPAy9USE77L80k"
+  },
+  {
+   "id": "crate-4866",
+   "name": "Rio 2022 Vertigo Souvenir Package",
+   "category": "souvenir",
+   "type": "Souvenir",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjm41a1EU-joYby8i9U0ParV7JoMuSaCWjelu0k47hsHXznxBxw5W6Gm4mhcnqTPFIhDJFwF-IN5EO9m4buZevqsxue1dxAqsnDRA"
+  },
+  {
+   "id": "crate-4971",
+   "name": "Shanghai 2024 Ancient Souvenir Package",
+   "category": "souvenir",
+   "type": "Souvenir",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJG5zlm-UfvRzd6yemif5AQlptO76UvmVRjOjZ7hr3IJu82-eqtgL8-XC1iRz-1_te99ASvjlEomsmiBn9-oeHOTbVB0CpAjQbZf4Ra_m4W1Mbzm71ON3d1MmCngznQeaU350-c"
+  },
+  {
+   "id": "crate-4969",
+   "name": "Shanghai 2024 Anubis Souvenir Package",
+   "category": "souvenir",
+   "type": "Souvenir",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJG5zlm-UfvRzd6yemif5AQlptO76UvmVRjOjZ7hr3IJu82-eqtgL8-XC1iRz_t0ufInTXHizBh26m7Ryt_7dy2WP1clC5YjELQMtkTpxoHnNeyx4gLbjo5NyDK-0H3Lvu_stA"
+  },
+  {
+   "id": "crate-4970",
+   "name": "Shanghai 2024 Dust II Souvenir Package",
+   "category": "souvenir",
+   "type": "Souvenir",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJG5zlm-UfvRzd6yemif5AQlptO76UvmVRjOjZ7hr3IJu82-eqtgL8-XC1iU1P1i4q9oTSvrxUR0t2XQwt-oeXjEOAN1AptzF-UC50W-xoLjNb7r4gXa3ohC02yg2bIwV8Dw"
+  },
+  {
+   "id": "crate-4967",
+   "name": "Shanghai 2024 Inferno Souvenir Package",
+   "category": "souvenir",
+   "type": "Souvenir",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJG5zlm-UfvRzd6yemif5AQlptO76UvmVRjOjZ7hr3IJu82-eqtgL8-XC1iZz-hzou9mAS3ql0ght2SHn9z6JXKQPQIlXpImF7ZfukTqk4GzM7_n4laK399GyijgznQeCDcguis"
+  },
+  {
+   "id": "crate-4968",
+   "name": "Shanghai 2024 Mirage Souvenir Package",
+   "category": "souvenir",
+   "type": "Souvenir",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJG5zlm-UfvRzd6yemif5AQlptO76UvmVRjOjZ7hr3IJu82-eqtgL8-XC1idyPx3t-QnFy-2lh9x5miEz9ioIHOSbgFzCcMmFrVeshSwxNO2P-Pi4QHZj9pGyjK-0H36I6RBSg"
+  },
+  {
+   "id": "crate-4972",
+   "name": "Shanghai 2024 Nuke Souvenir Package",
+   "category": "souvenir",
+   "type": "Souvenir",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJG5zlm-UfvRzd6yemif5AQlptO76UvmVRjOjZ7hr3IJu82-eqtgL8-XC1ie1OVz_rA6H3-2kUQltTvRn46qeHmUbw92X5B0FLFe4xW6lYfjPrzjsQDYiINbjXKpXYSSkrU"
+  },
+  {
+   "id": "crate-4973",
+   "name": "Shanghai 2024 Vertigo Souvenir Package",
+   "category": "souvenir",
+   "type": "Souvenir",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJG5zlm-UfvRzd6yemif5AQlptO76UvmVRjOjZ7hr3IJu82-eqtgL8-XC1iGxPxiueZmASy3wU9y5z-HyN2pcHqVZ1dzA5IhFuAK5hexlNDjP--04QfWiIhHmH7gznQe8uF5Wjg"
+  },
+  {
+   "id": "crate-4813",
+   "name": "Stockholm 2021 Ancient Souvenir Package",
+   "category": "souvenir",
+   "type": "Souvenir",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjn_lbkShWjzsSxwjJJ4P-hV6BoH_GdDW6Vz_o44rg5F3y2xBx0sWjRz9aucSmTOAUiCZt5TOYMu0S_k9W2MOnk4AaKiZUFk3u4B9Q2Rw"
+  },
+  {
+   "id": "crate-4811",
+   "name": "Stockholm 2021 Dust II Souvenir Package",
+   "category": "souvenir",
+   "type": "Souvenir",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjn_lbkShWjzsSxwjJJ4P-hV6BoH_SGHXPCj-gg4-M4Sn-wxR9x4j6HmN-gcC_CPVIhCMB2QOZZthTqm9TuMujm5Q3Ay9USPT9sqvk"
+  },
+  {
+   "id": "crate-4809",
+   "name": "Stockholm 2021 Inferno Souvenir Package",
+   "category": "souvenir",
+   "type": "Souvenir",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjn_lbkShWjzsSxwjJJ4P-hV6BoH_mdCGKCz-E4tOM-GH7jlBhxtz-Hz9yveC6fbQYhX8MlRO4Os0bqw4LkM-i07gHfiJUFk3ucTvvj4w"
+  },
+  {
+   "id": "crate-4810",
+   "name": "Stockholm 2021 Mirage Souvenir Package",
+   "category": "souvenir",
+   "type": "Souvenir",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjn_lbkShWjzsSxwjJJ4P-hV6BoH_2aHGaXxKB0s7dtHiu3lkl1sTyEyN_7eHmTaA92Dsd4TbQP5hGxxNWzZei05FTalcsbmo3RwBXU"
+  },
+  {
+   "id": "crate-4814",
+   "name": "Stockholm 2021 Nuke Souvenir Package",
+   "category": "souvenir",
+   "type": "Souvenir",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjn_lbkShWjzsSxwjJJ4P-hV6BoH_6GBWLekOhz4rVtSy2ylxhysWvSmNurJSiQZlB1A8N0F-cP4ELrw9HmNeOxshue1dwR-YfRbg"
+  },
+  {
+   "id": "crate-4812",
+   "name": "Stockholm 2021 Overpass Souvenir Package",
+   "category": "souvenir",
+   "type": "Souvenir",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjn_lbkShWjzsSxwjJJ4P-hV6BoH_-FC3WAwP1l_uA4G3jlkUxw6z7QzYuvcH3CPVMkDZYlRuECuhHpwdfuMuiz5lHWjY5bjXKp2XQFSpU"
+  },
+  {
+   "id": "crate-4815",
+   "name": "Stockholm 2021 Vertigo Souvenir Package",
+   "category": "souvenir",
+   "type": "Souvenir",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjn_lbkShWjzsSxwjJJ4P-hV6BoH-aWHHOZxuE457ExHy3lw0114TzSm4qodXKTagQnA8FwEOdesUW5lNPnZb7r41HX2JUFk3sAS6M-4w"
+  },
+  {
+   "id": "crate-4847",
+   "name": "10 Year Birthday Sticker Capsule",
+   "category": "sticker",
+   "type": "Sticker Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjn_lDkShjjoYbh_ilk7OGpZ_U9H_OSHnSFzes447E8THznxk50tj7dyY6sIC_GPQ8iW8d1FLQLtRnsk9znNOPg5gbdg5UFk3v_toYpgw"
+  },
+  {
+   "id": "crate-4744",
+   "name": "2020 RMR Challengers",
+   "category": "sticker",
+   "type": "Sticker Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjn_lDkShjjoYbh_ilk_f-8OvQ_cM-QBmaczet4t-R7XGfiwUx0tmjVy9agc3PGOlInDpYkTedY5Be7wdbmZL-2tFePi9pFyCn9kGoXuehDKoya"
+  },
+  {
+   "id": "crate-4745",
+   "name": "2020 RMR Contenders",
+   "category": "sticker",
+   "type": "Sticker Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjn_lDkShjjoYbh_ilk_f-8OvQ_cM-QAWmExOBytfN6AX3ql0wktWqEzNmvc3rGPVV2D8N4RLEK5BG5ktDiMO_r7gze3opHyyXgznQeYBMzZEw"
+  },
+  {
+   "id": "crate-4743",
+   "name": "2020 RMR Legends",
+   "category": "sticker",
+   "type": "Sticker Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjn_lDkShjjoYbh_ilk_f-8OvQ_cM-fC2CVz-pl_uQxSy-2xRty5DiDmIugcSjBZ1RxXpdwQbML4Bnrx4fkY-Oz7wDZ3YpbjXKpyrC4iuY"
+  },
+  {
+   "id": "crate-4782",
+   "name": "2021 Community Sticker Capsule",
+   "category": "sticker",
+   "type": "Sticker Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjn_lDkShjjoYbh_ilk7P2jZbFjKeSKXDfCkNF1sfF6WiW22xsjtm7XmImsJHzFPw8gXpMhRbVfs0Lrx9blNO-07wzbi4IXyHqqjCpXrnE8kTJtUHk"
+  },
+  {
+   "id": "crate-4905",
+   "name": "Ambush Sticker Capsule",
+   "category": "sticker",
+   "type": "Sticker Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjn_lDkShjjoYbh_ilk7P2jZbFjKeSKMTXAk7pJs-B5XDy_kFN14mXVz4r4JHuXOAAoXJR2E7UIt0HqwdTuYuKw5gLYjYNAxCn7hi1O8G81tG_FJxt9"
+  },
+  {
+   "id": "crate-4833",
+   "name": "Antwerp 2022 Challengers Sticker Capsule",
+   "category": "sticker",
+   "type": "Sticker Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjn_lDkShjjoYbh_ilk7vy6f6F_MKLDXDWvwuZ3vO1sQS62hw5p5WWDno6veHmXbA8nWJcmFuQPukKxw4HgYuuwsgTb3tlEyST7iC1P7TErvbjE7qnGag"
+  },
+  {
+   "id": "crate-4834",
+   "name": "Antwerp 2022 Contenders Sticker Capsule",
+   "category": "sticker",
+   "type": "Sticker Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjn_lDkShjjoYbh_ilk7vy6f6F_MKLDXDWvwuF4pORnSyyhhlN2tjjVzdmvICjEbFVzAsQjFO5b5xDrw9HnMuPj4gPejY4TzCX_jX5B8G81tAUYRCK3"
+  },
+  {
+   "id": "crate-4832",
+   "name": "Antwerp 2022 Legends Sticker Capsule",
+   "category": "sticker",
+   "type": "Sticker Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjn_lDkShjjoYbh_ilk7vy6f6F_MKLDXDWvzetxte9tXGe3lB9w5DjSy4uveC7BbQRzApIlFrQLsxDrkIbjP7jn5VHZiYIXnyWskGoXuce4Ls9p"
+  },
+  {
+   "id": "crate-4324",
+   "name": "Atlanta 2017 Challengers (Holo/Foil)",
+   "category": "sticker",
+   "type": "Sticker Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjn_lDkShjjoYbh_ilk7uaiaap5IaLDXzCvkbw4tbNsHnG2zRkk4z6HnoqgJS_DOgN1D5txQeUKsxPtxtXvYbvj7wLZj5UFk3sQ2wlziQ"
+  },
+  {
+   "id": "crate-4323",
+   "name": "Atlanta 2017 Legends (Holo/Foil)",
+   "category": "sticker",
+   "type": "Sticker Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjn_lDkShjjoYbh_ilk7uaiaap5IaLDXzCvkb844bVoHS_rxh4k5muDmNuoIn7CPFV0X8BxTbIItEWwxNK2Zuix5gLaiJUFk3vSn3SDmg"
+  },
+  {
+   "id": "crate-5118",
+   "name": "Austin 2025 Challengers Sticker Capsule",
+   "category": "sticker",
+   "type": "Sticker Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJG5zlm-UfvRzd6yenqC9gQlptK76UvmVRjOjYLp_ile_c2-aadmH_GGHTXAk7tJs-loQyW2mxoioS7Ly9-pcCiebFd2C5NyRbFZtES4mtfhYe634FeKj4tGniiviS1OuChqsfFCD_Tcz9djFA"
+  },
+  {
+   "id": "crate-5119",
+   "name": "Austin 2025 Contenders Sticker Capsule",
+   "category": "sticker",
+   "type": "Sticker Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJG5zlm-UfvRzd6yenqC9gQlptK76UvmVRjOjYLp_ile_c2-aadmH_GGHTXAk7tJs-5nWyy9kRg1oHOBzon6ciqfaQRxXMRwRrZY4xm8wNPmN-2w7gPa3o5NzX76jykc5iht_a9cBn7eB-5Y"
+  },
+  {
+   "id": "crate-5117",
+   "name": "Austin 2025 Legends Sticker Capsule",
+   "category": "sticker",
+   "type": "Sticker Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJG5zlm-UfvRzd6yenqC9gQlptK76UvmVRjOjYLp_ile_c2-aadmH_GGHTXAk7tJvORuSie3hlN1sDjSz4r8c3mXZlAkWZEmQbNesRG6lN3uZriw4w2Pi44QmX2tiytA8G81tB5pi67Y"
+  },
+  {
+   "id": "crate-4789",
+   "name": "Battlefield 2042 Sticker Capsule",
+   "category": "sticker",
+   "type": "Sticker Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjn_lDkShjjoYbh_ilk7fT8OPA_H_OSHnSFzes4sbU7GH3kkRh_sGqBy4v6dnPBZgVxA5p2ReQJshi_lNyxMevjtFCL35UFk3tIa4Aftw"
+  },
+  {
+   "id": "crate-4654",
+   "name": "Berlin 2019 Legends (Holo/Foil)",
+   "category": "sticker",
+   "type": "Sticker Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjn_lDkShjjoYbh_ilk7fe8ZK1jcqDCV1icxOlzvuV6AXrgx0104T6Gn46ucnqXbAYgCptzELELsUbrlIezNeuz7gLe2o5ByirgznQeXISis2o"
+  },
+  {
+   "id": "crate-4656",
+   "name": "Berlin 2019 Minor Challengers (Holo/Foil)",
+   "category": "sticker",
+   "type": "Sticker Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjn_lDkShjjoYbh_ilk7fe8ZK1jcqDCV1iTzuBite9tSjug20Rw4j_Uyd6ueC3Cb1AmX8YiTbYDsxnslIezMLjl5Vfdi41HmXr823tXrnE83PKe3oY"
+  },
+  {
+   "id": "crate-4655",
+   "name": "Berlin 2019 Returning Challengers (Holo/Foil)",
+   "category": "sticker",
+   "type": "Sticker Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjn_lDkShjjoYbh_ilk7fe8ZK1jcqDCV1iTye96vORnSCyhhlN24mjQmI2qJHueZ1QjXsF5EbVfsRDtmoDnZeKztQbbiIxHzCr-jCsa8G81tDGoYsmZ"
+  },
+  {
+   "id": "crate-4283",
+   "name": "Bestiary Capsule",
+   "category": "sticker",
+   "type": "Sticker Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjn_lDkShjjoYbh_ilk7fe9fK1sMumsDWaA0vt6ta9qHCu2xEh35m7cw434dX2QbwQlDcAiE7QKthSxkt3nPrjrtgDfjtgQ02yg2QcuS47-"
+  },
+  {
+   "id": "crate-4478",
+   "name": "Boston 2018 Attending Legends (Holo/Foil)",
+   "category": "sticker",
+   "type": "Sticker Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjn_lDkShjjoYbh_ilk7f29fKtjcqDCVlicxOlzvuV6cCeng1Mh5WXRw4qvdHPBbwJxW5B4Ee4D5BO_wN2zM7vl5QfYj4wXnCqvjSkb8G81tFDaQWTH"
+  },
+  {
+   "id": "crate-4456",
+   "name": "Boston 2018 Legends (Holo/Foil)",
+   "category": "sticker",
+   "type": "Sticker Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjn_lDkShjjoYbh_ilk7f29fKtjcqDCVlicxOlzvuV6AXu1kxx_sGjQy4r8eX6RbAF0CcZ0EbFY5Ea-l4XnN77iswPb3otNzC_gznQet2p2wtU"
+  },
+  {
+   "id": "crate-4458",
+   "name": "Boston 2018 Minor Challengers (Holo/Foil)",
+   "category": "sticker",
+   "type": "Sticker Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjn_lDkShjjoYbh_ilk7f29fKtjcqDCVliTzuBite9tSjug2xt24GzQzN2tdHuebQR0DZoiQeILska6wYW2N-jm7gbWgo9EnC6o3S5XrnE8zhbP9mA"
+  },
+  {
+   "id": "crate-4474",
+   "name": "Boston 2018 Minor Challengers with Flash Gaming (Holo/Foil)",
+   "category": "sticker",
+   "type": "Sticker Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjn_lDkShjjoYbh_ilk7f29fKtjcqDCVliTzuBite9tSjugqhsrtHOHnt6tcirBOldyDZQlR-QDska9kNbuMb7r5gWLiIMUzXqr3SMY6ik-_a9cBlwvc_Rw"
+  },
+  {
+   "id": "crate-4457",
+   "name": "Boston 2018 Returning Challengers (Holo/Foil)",
+   "category": "sticker",
+   "type": "Sticker Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjn_lDkShjjoYbh_ilk7f29fKtjcqDCVliTye96vORnSCyhhlMh4DmHnomucCiePwYpWZUjR-YD5BDul9TkM-nl5gDf398QzHj5i35M8G81tKhaWrCG"
+  },
+  {
+   "id": "crate-4729",
+   "name": "Broken Fang Sticker Collection",
+   "category": "sticker",
+   "type": "Sticker Capsule",
+   "image": "https://raw.githubusercontent.com/ByMykel/counter-strike-image-tracker/main/static/panorama/images/econ/weapon_cases/crate_sticker_pack_broken_fang_capsule_png.png"
+  },
+  {
+   "id": "crate-5217",
+   "name": "Budapest 2025 Challengers Sticker Capsule",
+   "category": "sticker",
+   "type": "Sticker Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJG5zlm-UfvRzd6yenmC4QQlptK76UvmVRjOjYLp_ile_c2-aadmH_KGCjXAk7tJs-loQyW2mxoioS7Lz4utc3vBOA5yWZFwTe8IsBPuwIXmMOvjs1SM2YIXnnqv2iJK7SZp5vFCD_R_SFKZ4Q"
+  },
+  {
+   "id": "crate-5218",
+   "name": "Budapest 2025 Contenders Sticker Capsule",
+   "category": "sticker",
+   "type": "Sticker Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJG5zlm-UfvRzd6yenmC4QQlptK76UvmVRjOjYLp_ile_c2-aadmH_KGCjXAk7tJs-5nWyy9kRg1oHPQnNuoc36ePQEgCsQlRrYN4BXtloa0N7nj71GIj9oQnHiq3C5Juic5_a9cBsUgZUjl"
+  },
+  {
+   "id": "crate-5216",
+   "name": "Budapest 2025 Legends Sticker Capsule",
+   "category": "sticker",
+   "type": "Sticker Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJG5zlm-UfvRzd6yenmC4QQlptK76UvmVRjOjYLp_ile_c2-aadmH_KGCjXAk7tJvORuSie3hlMj5GWGyNn_cimfbgMhW8d3Q-cOtRnpxIHlZu3htlGMi9hMz3333CMb8G81tC_mVj8j"
+  },
+  {
+   "id": "crate-4670",
+   "name": "CS20 Sticker Capsule",
+   "category": "sticker",
+   "type": "Sticker Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjn_lDkShjjoYbh_ilk7OH8OJtuIeCAG2uVj-9w6eM-GCrglEol4TjWzdz6cCrBPFRzA5RwTLJYtBW_koa1Yunj5QbAy9USZj0d9Kg"
+  },
+  {
+   "id": "crate-4477",
+   "name": "Chicken Capsule",
+   "category": "sticker",
+   "type": "Sticker Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjn_lDkShjjoYbh_ilk7Pqna69oLs-QD3eD1OJz_rc5Sy3qzRskt2_QntuvdHOTaAAnXJdzR7IK5EKxxNzvYbjn4lTfio1bjXKptyRlJg0"
+  },
+  {
+   "id": "crate-4255",
+   "name": "Cologne 2016 Challengers (Holo/Foil)",
+   "category": "sticker",
+   "type": "Sticker Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjn_lDkShjjoYbh_ilk7P2iZ6NjJaLDXzGvkbw46eQ_GSrhl0h35j_RnoygcniTOgEoCJZ2R-YNtha7wILmYuvm5QHYjZUFk3vGGS8qqQ"
+  },
+  {
+   "id": "crate-4254",
+   "name": "Cologne 2016 Legends (Holo/Foil)",
+   "category": "sticker",
+   "type": "Sticker Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjn_lDkShjjoYbh_ilk7P2iZ6NjJaLDXzGvkb8457A6G3jrwEkh4mTSmIr7eS7DOlJyCcMkEOJctkXrmoG2Ne-wsQTb3pUFk3seXrNv9w"
+  },
+  {
+   "id": "crate-4040",
+   "name": "Cologne 2026 Sticker Capsule",
+   "category": "sticker",
+   "type": "Sticker Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJG5zlm-UfvRzd6yeniY6Vly-oKmuguxDh7-kpnn8ycJv6D4V6d_JfSaGnTekboi4OM7TSziwEUm5GnTmd2oIC2UOg9yApp5RrYI4RHplofmYrjk5xue1dzxs7YNoQ"
+  },
+  {
+   "id": "crate-5316",
+   "name": "Cologne 2026 Sticker Capsule",
+   "category": "sticker",
+   "type": "Sticker Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJG5zlm-UfvRzd6yeniY6Vly-oKmuguxDh7-kpnn8ycJv6D4V6d_JfSaGnTekboi4OM7TSziwEUm5GnTmd2oIC2UOg9yApp5RrYI4RHplofmYrjk5xue1dzxs7YNoQ"
+  },
+  {
+   "id": "crate-5329",
+   "name": "Cologne 2026 Sticker Capsule",
+   "category": "sticker",
+   "type": "Sticker Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJG5zlm-UfvRzd6yeniY6Vly-oKmuguxDh7-kpnn8ycJv6D4V6d_JfSaGnTekboi4OM7TSziwEUm5GnTmd2oIC2UOg9yApp5RrYI4RHplofmYrjk5xue1dzxs7YNoQ"
+  },
+  {
+   "id": "crate-5317",
+   "name": "Cologne 2026 Team Sticker Capsule",
+   "category": "sticker",
+   "type": "Sticker Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJG5zlm-UfvRzd6yeniY6Vly-oKmuguxDh7-kpnn8ycJv6D4V6d_JfSaGnTekboi4OM7TSziwEUm5GnTmd2oIC2UOg9yApp5RrYI4RHplofmYrjk5xue1dzxs7YNoQ"
+  },
+  {
+   "id": "crate-4470",
+   "name": "Community Capsule 2018",
+   "category": "sticker",
+   "type": "Sticker Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjn_lDkShjjoYbh_ilk7P2jZfY9caisXjavwu9mo_RlSmewlBt34WXUwon8dXuQZwQoX5ElFuYNsRS_lIGzNO62s1Tf3o1FzX6skGoXuQobOUT9"
+  },
+  {
+   "id": "crate-4016",
+   "name": "Community Sticker Capsule 1",
+   "category": "sticker",
+   "type": "Sticker Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjn_lDkShjjoYbh_ilk7P2jZbFjKeSKXjbembgi5rJqG3Gyw0R3sGSBnN-hdHiSbwZxX8B5E-MJsBe9wIW2Nb7m7hue1dzqPCVrsQ"
+  },
+  {
+   "id": "crate-4924",
+   "name": "Copenhagen 2024 Challengers Sticker Capsule",
+   "category": "sticker",
+   "type": "Sticker Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjn_lDkShjjoYbh_ilk7OKmOvQ_dM-QBmaczet4t-R7XGfrwEh_tW7TnNagcnyeOAF0DpV0TOAM5ka7ktflYuOz71Dc34hFnyT7kGoXuWbTjaik"
+  },
+  {
+   "id": "crate-4925",
+   "name": "Copenhagen 2024 Contenders Sticker Capsule",
+   "category": "sticker",
+   "type": "Sticker Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjn_lDkShjjoYbh_ilk7OKmOvQ_dM-QAWmExOBytfN6ASzkkB4k4zvdz974In6VbQ8iW5RzFLYOtBC9ltzmMbi3sgHZgoJDmyvgznQeVz5AD80"
+  },
+  {
+   "id": "crate-4923",
+   "name": "Copenhagen 2024 Legends Sticker Capsule",
+   "category": "sticker",
+   "type": "Sticker Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjn_lDkShjjoYbh_ilk7OKmOvQ_dM-fC2CVz-pl_rZvTXDqzRxw523Rm4mocy6QOgUmDcR4Q-8Mu0O5wNPkNuLnsleL3tlbjXKpQyK7hjg"
+  },
+  {
+   "id": "crate-4030",
+   "name": "DreamHack 2014 Legends (Holo/Foil)",
+   "category": "sticker",
+   "type": "Sticker Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjn_lDkShjjoYbh_ilk6_q5OvQ8dM_DXymUk70vtbFoSyi3wUt0tTvdztr7dH7BOgIoDJZ1QeRe4BXrktHvYrzk-UWA3KlVhG0-"
+  },
+  {
+   "id": "crate-4157",
+   "name": "DreamHack Cluj-Napoca 2015 Challengers (Foil)",
+   "category": "sticker",
+   "type": "Sticker Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjn_lDkShjjoYbh_ilk7P67YvY9caWsXjXekrkltuc5TSjkxE9_6jndzduqc33FZwdyCMQmQrMNt0G6ltXjY7_h5Rue1dxSKjz1lA"
+  },
+  {
+   "id": "crate-4156",
+   "name": "DreamHack Cluj-Napoca 2015 Legends (Foil)",
+   "category": "sticker",
+   "type": "Sticker Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjn_lDkShjjoYbh_ilk7P67YvY9caWsXjbew7t3sbFvGyvqzBkk5zmGm42odXrBPwB0WcZ0QO8IsRG8ktbvY-Lq5Bue1dzA87MVmA"
+  },
+  {
+   "id": "crate-4014",
+   "name": "EMS Katowice 2014 Challengers",
+   "category": "sticker",
+   "type": "Sticker Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjn_lDkShjjoYbh_ilk5PO6OvQ8dM_DXynCkLkv6LJrSSrilkRw4GzSw9-qIHmSPFNxWJR2TeIMt0HsltXgYrzq-UWA3Meo50Y4"
+  },
+  {
+   "id": "crate-4015",
+   "name": "EMS Katowice 2014 Legends",
+   "category": "sticker",
+   "type": "Sticker Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjn_lDkShjjoYbh_ilk5PO6OvQ8dM_DXCnHkOgktbhoHyqxxRh0tWiDnIr4dnKSOAUoC5J1TbJZ4Bi8k9HlY-Li-UWA3NcCqy5X"
+  },
+  {
+   "id": "crate-4021",
+   "name": "ESL One Cologne 2014 Challengers",
+   "category": "sticker",
+   "type": "Sticker Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjn_lDkShjjoYbh_ilk7P2iZ6NjJaLDXzOvkbw44uIxHSzqxUlz5Wndn9avJ3PGOg51A5J1FO4N5hixxIbvMbmzswTei5UFk3twnJT98w"
+  },
+  {
+   "id": "crate-4020",
+   "name": "ESL One Cologne 2014 Legends",
+   "category": "sticker",
+   "type": "Sticker Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjn_lDkShjjoYbh_ilk7P2iZ6NjJaLDXzOvkb844rY5G33kwE5-42SGyNz7ci6SaVR2DsF5R7MK5hjuk9W1Nrnk4QSNiZUFk3udWK44YA"
+  },
+  {
+   "id": "crate-4110",
+   "name": "ESL One Cologne 2015 Challengers (Foil)",
+   "category": "sticker",
+   "type": "Sticker Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjn_lDkShjjoYbh_ilk6uGia6thL_edCzXAkLtJ4LMnHnDixx5xsWXUzY2tcX-QZwdzAsNzEeZYtkGxkoW0Yri35wXd2YsXyDK-0H1NbZ4ILQ"
+  },
+  {
+   "id": "crate-4109",
+   "name": "ESL One Cologne 2015 Legends (Foil)",
+   "category": "sticker",
+   "type": "Sticker Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjn_lDkShjjoYbh_ilk6uGia6thL_edCzXAkLtJ4LAnHH7rwklw62iEnIn6eH6SaFApA5p1E-UM4xjskNyzZLjg5ALXjopGzTK-0H3m3v3IHQ"
+  },
+  {
+   "id": "crate-4087",
+   "name": "ESL One Katowice 2015 Challengers (Holo/Foil)",
+   "category": "sticker",
+   "type": "Sticker Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjn_lDkShjjoYbh_ilk6uGiY6V5L-eaDWLCkb8jj7E7AX7lx0t25DjWw4mgJX2SagNzDpZ2R-RbsBe5ldyzMLvj7geI3oNCnn_gznQeMZjWuFY"
+  },
+  {
+   "id": "crate-4086",
+   "name": "ESL One Katowice 2015 Legends (Holo/Foil)",
+   "category": "sticker",
+   "type": "Sticker Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjn_lDkShjjoYbh_ilk6uGiY6V5L-eaDWLCkb8jj7E4AXywwk1y5DuHzouvJHmXPw8oW8FwQuRb50K9lobhY-Lm7gKKitlBzn3gznQe01AEOcg"
+  },
+  {
+   "id": "crate-4090",
+   "name": "Enfu Sticker Capsule",
+   "category": "sticker",
+   "type": "Sticker Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjn_lDkShjjoYbh_ilk6vyofZtuIeCAG2uVj74k5uM9HXDnxh4ksGWGm42vdHrCPFVyWJQlRbZesRXuwNezMumxs1PAy9USfO4IHQ0"
+  },
+  {
+   "id": "crate-4879",
+   "name": "Espionage Sticker Capsule",
+   "category": "sticker",
+   "type": "Sticker Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjn_lDkShjjoYbh_ilk7P2jZbFjKeSKXDfCk9F1sfF6WiW22x5z5W-DmIr9IC6QagAkXJR2Q-9Zs0W6xNLnMeq3tQKKjY9EzCv82ihXrnE8ooX0clM"
+  },
+  {
+   "id": "crate-4599",
+   "name": "Feral Predators Capsule",
+   "category": "sticker",
+   "type": "Sticker Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjn_lDkShjjoYbh_ilk6fe8aahSMOKWCmaEzvxlj-JoXzqmmRhpsDjXn9eqd3jCO1UoDpYmFLYM4xi-ltDjZL_nswaIidgTxSqrjn8auzErvbjuFFEefw"
+  },
+  {
+   "id": "crate-4694",
+   "name": "Half-Life: Alyx Sticker Capsule",
+   "category": "sticker",
+   "type": "Sticker Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjn_lDkShjjoYbh_ilk5_6vZL11H_OSHnSFzes44rk-FyrrkRtw6jvdy9apdHmUOFR0CJdzTOENshi9kNHhZO3mtVbc3ZUFk3spQgh-tw"
+  },
+  {
+   "id": "crate-4597",
+   "name": "Halo Capsule",
+   "category": "sticker",
+   "type": "Sticker Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjn_lDkShjjoYbh_ilk5_OiZ5tuIeCAG2uVj-wjtrBtHn7rwER1sD7RyYv7dnufOlUgA5VzQLMMsUPsltK0N7_n4lbAy9USMaDJrr4"
+  },
+  {
+   "id": "crate-7041",
+   "name": "Jackass Sticker Capsule",
+   "category": "sticker",
+   "type": "Sticker Capsule",
+   "image": "https://cdn.steamstatic.com/apps/730/icons/econ/weapon_cases/crate_sticker_pack_jackass_capsule.ca8176af1668e8a78159820b1e3268322eebcf1f.png"
+  },
+  {
+   "id": "crate-4584",
+   "name": "Katowice 2019 Legends (Holo/Foil)",
+   "category": "sticker",
+   "type": "Sticker Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjn_lDkShjjoYbh_ilk5PO6Z7NkI_XBXjbJ_uJzt-RnSzr9lx50smWGzoytdH_EPAcnC5clRudZ5xG7xtPvMLyztlaK3tpFxC-v2jQJsHiLvWrj0Q"
+  },
+  {
+   "id": "crate-4586",
+   "name": "Katowice 2019 Minor Challengers (Holo/Foil)",
+   "category": "sticker",
+   "type": "Sticker Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjn_lDkShjjoYbh_ilk5PO6Z7NkI_XBXjbJ_u15vvVsQS22hw5p4Grcn9n8dijCPQIpCpVwQ7UM4xDtktbgP76241HY2t4XzH77j3xLujErvbgSeY4OMA"
+  },
+  {
+   "id": "crate-4585",
+   "name": "Katowice 2019 Returning Challengers (Holo/Foil)",
+   "category": "sticker",
+   "type": "Sticker Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjn_lDkShjjoYbh_ilk5PO6Z7NkI_XBXjbJ_u1-se1lSie0kA80_W6Bz46qIimTOwUhCZcjQeEIuxLslte1Yeq05gbXjI5Hn375hyNA7nl1o7FVMdlnavk"
+  },
+  {
+   "id": "crate-4392",
+   "name": "Krakow 2017 Challengers (Holo/Foil)",
+   "category": "sticker",
+   "type": "Sticker Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjn_lDkShjjoYbh_ilk5OCvY6t6cqDCWVjAk6B35bA9Gizmlk504D6Ew42ucn7DZlcgDZJ1F-YJ4xfqwYHmMenr5AbWlcsbmpEnSmyx"
+  },
+  {
+   "id": "crate-4391",
+   "name": "Krakow 2017 Legends (Holo/Foil)",
+   "category": "sticker",
+   "type": "Sticker Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjn_lDkShjjoYbh_ilk5OCvY6t6cqDCWVjAkKBy47VrTXHjwxt-t27Uyt6udy2SbVQmWMdxEeYM50G5x9yxMbnm4AyNlcsbmsdbKaG4"
+  },
+  {
+   "id": "crate-4533",
+   "name": "London 2018 Legends (Holo/Foil)",
+   "category": "sticker",
+   "type": "Sticker Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjn_lDkShjjoYbh_ilk4_2gbKtjcqDCVlicxOlzvuV6AXC2zRh14mjSwtutI3jCagRyDpNxFrIK5hC4lda2Yr605wKIjNkUmyXgznQeq5yneMc"
+  },
+  {
+   "id": "crate-4535",
+   "name": "London 2018 Minor Challengers (Holo/Foil)",
+   "category": "sticker",
+   "type": "Sticker Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjn_lDkShjjoYbh_ilk4_2gbKtjcqDCVliTzuBite9tSjug20Ui4GXdmN-oIn2Wb1UpCpN1Ru5fs0WxkdzuPrm37lGL2t9AxCythn5XrnE85hUXzx0"
+  },
+  {
+   "id": "crate-4534",
+   "name": "London 2018 Returning Challengers (Holo/Foil)",
+   "category": "sticker",
+   "type": "Sticker Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjn_lDkShjjoYbh_ilk4_2gbKtjcqDCVliTye96vORnSCyhhlNy4G7czN-peHuVbAcpWZUlE-dbu0btl9PlYuvk4wyMg9hHyiis2CIb8G81tDr_FN1k"
+  },
+  {
+   "id": "crate-4206",
+   "name": "MLG Columbus 2016 Challengers (Holo/Foil)",
+   "category": "sticker",
+   "type": "Sticker Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjn_lDkShjjoYbh_ilk7P2ifalvNePBXjbG_r4k_rk7HS21zRl-6ziEw4mscX-fOlMgD5V0F-Nc5hftm9TgYu3m4ADZitlbjXKphdDzVNM"
+  },
+  {
+   "id": "crate-4205",
+   "name": "MLG Columbus 2016 Legends (Holo/Foil)",
+   "category": "sticker",
+   "type": "Sticker Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjn_lDkShjjoYbh_ilk7P2ifalvNePBXjbG_r4n_rhoHC3rlkp34T7Umd-sIC_BPw5yDJFzEbMPtULpld21P-_jtgbX34JbjXKprPeE9Ms"
+  },
+  {
+   "id": "crate-4783",
+   "name": "Operation Riptide Sticker Collection",
+   "category": "sticker",
+   "type": "Sticker Capsule",
+   "image": "https://cdn.steamstatic.com/apps/730/icons/econ/weapon_cases/crate_sticker_pack_op_riptide_capsule.67fd73ae623ea83bc7f75991fa69b2dee8feca49.png"
+  },
+  {
+   "id": "crate-4891",
+   "name": "Paris 2023 Challengers Sticker Capsule",
+   "category": "sticker",
+   "type": "Sticker Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjn_lDkShjjoYbh_ilk__O8Ybc_cKLAMWSYwOJ6te9uSjug2x8isG7czNageS2VaAIoD8ZxRbYNsBa4x9XvZO7r4wyK395AmS782H5XrnE8Sh4_4i8"
+  },
+  {
+   "id": "crate-4892",
+   "name": "Paris 2023 Contenders Sticker Capsule",
+   "category": "sticker",
+   "type": "Sticker Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjn_lDkShjjoYbh_ilk__O8Ybc_cKLAMWSfz_pzvuVsXTr9kRki5m_Uwtz7cXKWO1ApCcByRLEO50LtkoWyP7_k4Afdi99GniT4jzQJsHjtsZcvVQ"
+  },
+  {
+   "id": "crate-4890",
+   "name": "Paris 2023 Legends Sticker Capsule",
+   "category": "sticker",
+   "type": "Sticker Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjn_lDkShjjoYbh_ilk__O8Ybc_cKLAMWuVxut4tPInTi_qwUR_5m_TmN79cHyfagMgA8cjQuEMsUW-x4K1P-Ozs1TZ34hNxDK-0H34xwtSCg"
+  },
+  {
+   "id": "crate-4404",
+   "name": "Perfect World Sticker Capsule 1",
+   "category": "sticker",
+   "type": "Sticker Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjn_lDkShjjoYbh_ilk5v6ifalkLvGHC1iTwP5lpe1scHni205_5myHyNatdnqXPQJ1WMR5ELJcsEa5lNezMeuw5ATa2dpAziv4jH5XrnE8y4tT7ug"
+  },
+  {
+   "id": "crate-4405",
+   "name": "Perfect World Sticker Capsule 2",
+   "category": "sticker",
+   "type": "Sticker Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjn_lDkShjjoYbh_ilk5v6ifalkLvGHC1iTwP5lpe1scHnh20Qk6z7Qnoz4JS_BbA92CpBzQeAJ4xnuwdazNOu2tgTW3YoUySX7jn9XrnE8nIHEDMk"
+  },
+  {
+   "id": "crate-4183",
+   "name": "Pinups Capsule",
+   "category": "sticker",
+   "type": "Sticker Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjn_lDkShjjoYbh_ilk__ugfbR-H_OSHnSFzes44-VtHyiyw0t_5z_Wzo2qcnmXbgF2AsYmQuQPsxK4kNGzNu624VHaipUFk3s7RyG0oA"
+  },
+  {
+   "id": "crate-4746",
+   "name": "Poorly Drawn Capsule",
+   "category": "sticker",
+   "type": "Sticker Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjn_lDkShjjoYbh_ilk__2heqh0H_SBD3Ce_u13oPJ8Qyz9lEkisGvTzIr7c3jGP1N1CMZ5TeYCtxC9wNC0N-K37gCKi45BnCT2jzQJsHhOfnUgPw"
+  },
+  {
+   "id": "crate-4719",
+   "name": "Recoil Sticker Collection",
+   "category": "sticker",
+   "type": "Sticker Capsule",
+   "image": "https://raw.githubusercontent.com/ByMykel/counter-strike-image-tracker/main/static/panorama/images/econ/weapon_cases/crate_sticker_pack_recoil_capsule_png.png"
+  },
+  {
+   "id": "crate-4858",
+   "name": "Rio 2022 Challengers Sticker Capsule",
+   "category": "sticker",
+   "type": "Sticker Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjn_lDkShjjoYbh_ilk_fuhOvQ_cs-QBmaczet4t-R7XGe3zU9w6jzdn9qseSiQOlJxCJMjTbFZtUTtwNHuMb6xslfXiYhBmS-okGoXuQCBMtXd"
+  },
+  {
+   "id": "crate-4859",
+   "name": "Rio 2022 Contenders Sticker Capsule",
+   "category": "sticker",
+   "type": "Sticker Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjn_lDkShjjoYbh_ilk_fuhOvQ_cs-QAWmExOBytfN6AXrjkEQm5DvRm9yqInKeOFUhDsR2QLJf5BS4m9PhZb6wsgDWg4gWy3jgznQerfXjWvk"
+  },
+  {
+   "id": "crate-4857",
+   "name": "Rio 2022 Legends Sticker Capsule",
+   "category": "sticker",
+   "type": "Sticker Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjn_lDkShjjoYbh_ilk_fuhOvQ_cs-fC2CVz-pl_uQ_GXvmxxkmtjzRzdaqJX2XZwclDZVxR-de5BK4w4CxMLux71Tb3Y9bjXKp7ETU0XM"
+  },
+  {
+   "id": "crate-4779",
+   "name": "Riptide Surf Shop Sticker Collection",
+   "category": "sticker",
+   "type": "Sticker Capsule",
+   "image": "https://raw.githubusercontent.com/ByMykel/counter-strike-image-tracker/main/static/panorama/images/econ/weapon_cases/crate_sticker_pack_riptide_surfshop_capsule_png.png"
+  },
+  {
+   "id": "crate-4965",
+   "name": "Shanghai 2024 Challengers Sticker Capsule",
+   "category": "sticker",
+   "type": "Sticker Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJG5zlm-UfvRzd6yemif5AQlptO76UvmVRjOjYLp_ile_c2-aadmH-ObDzXAk7pJs-loQyW2mxoioS7Ly4mrdnKSPVUnA8ZzQ-IL5BTuw93nP--wswLXgtgUzC-o2ClNvChtsPFCD_QNpx0wFQ"
+  },
+  {
+   "id": "crate-4966",
+   "name": "Shanghai 2024 Contenders Sticker Capsule",
+   "category": "sticker",
+   "type": "Sticker Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJG5zlm-UfvRzd6yemif5AQlptO76UvmVRjOjYLp_ile_c2-aadmH-ObDzXAk7pJs-5nWyy9kRg1oHPdzoz8cHqRO1IoWMN4EecK5kW-xt20Zryz5lGL3YNGzyn7iSga7ilu_a9cBnONKJCU"
+  },
+  {
+   "id": "crate-4964",
+   "name": "Shanghai 2024 Legends Sticker Capsule",
+   "category": "sticker",
+   "type": "Sticker Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJG5zlm-UfvRzd6yemif5AQlptO76UvmVRjOjYLp_ile_c2-aadmH-ObDzXAk7pJvORuSie3hlN0sD_SzIysdC6Ra1N1CZUhELUP5hjrxtWzM-7ltVCN2Y8RyCX62itK8G81tJokOYd2"
+  },
+  {
+   "id": "crate-4600",
+   "name": "Shattered Web Sticker Collection",
+   "category": "sticker",
+   "type": "Sticker Capsule",
+   "image": "https://cdn.steamstatic.com/apps/730/icons/econ/weapon_cases/crate_sticker_pack_shattered_web_capsule.f80ef75b7761dc78254bfe65d6641c526f0fd69f.png"
+  },
+  {
+   "id": "crate-4547",
+   "name": "Skill Groups Capsule",
+   "category": "sticker",
+   "type": "Sticker Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjn_lDkShjjoYbh_ilk_PmnZKhqMv-GHliTwP5lpe1sAXq1zURy4mjSmdf4ci-eblMoWJtwF-dYtkK4mtfhNujn5QfZiN1An3jgznQeyM23beg"
+  },
+  {
+   "id": "crate-4184",
+   "name": "Slid3 Capsule",
+   "category": "sticker",
+   "type": "Sticker Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjn_lDkShjjoYbh_ilk_P6nbPdSI_GDHXKcxKAms-M5Ti_lwhxztTvWzNivcyjCbVIlCcRzTOQD40PsxtPjY7uw5AXXlcsbmr-GUqzx"
+  },
+  {
+   "id": "crate-4007",
+   "name": "Sticker Capsule",
+   "category": "sticker",
+   "type": "Sticker Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjn_lDkShjjoYbh_ikLvrz-PfRpcKeQCzPEk-p147M_SXrglx8l4m2EnoqvJS2eagchCZQiQeADrFDmxXUYlhnp"
+  },
+  {
+   "id": "crate-4012",
+   "name": "Sticker Capsule 2",
+   "category": "sticker",
+   "type": "Sticker Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjn_lDkShjjoYbh_ikLvbz6Mac1c_SWCjaUk7tytblqTH3rwxki527Sw9j7c32XbQAhWMYlE7ENrFDmxQkjC0Ti"
+  },
+  {
+   "id": "crate-4804",
+   "name": "Stockholm 2021 Challengers Sticker Capsule",
+   "category": "sticker",
+   "type": "Sticker Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjn_lDkShjjoYbh_ilk_Oaha69lcqDBX1iTye96vORnSCyhhlMl4m_dydr4IHvDOgJzXJdzRO4N4US7w4LuM-7r5gyP395An3j2jCtB8G81tPHuRtE0"
+  },
+  {
+   "id": "crate-4805",
+   "name": "Stockholm 2021 Contenders Sticker Capsule",
+   "category": "sticker",
+   "type": "Sticker Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjn_lDkShjjoYbh_ilk_Oaha69lcqDBX1iTzuBite9tSjug20V15D-Gn4n9dSmXOlIiA5d1FuUCtBW5wYDlM77n5FPYi9hHzy79jylXrnE86RHvgCM"
+  },
+  {
+   "id": "crate-4803",
+   "name": "Stockholm 2021 Legends Sticker Capsule",
+   "category": "sticker",
+   "type": "Sticker Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjn_lDkShjjoYbh_ilk_Oaha69lcqDBX1icxOlzvuV6AS_izRhx526Hw9j8dHKVP1QjWcB0E-QC5BW7k9fmY-PqtAzaioMRm3jgznQexd7Cao8"
+  },
+  {
+   "id": "crate-4282",
+   "name": "Sugarface Capsule",
+   "category": "sticker",
+   "type": "Sticker Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjn_lDkShjjoYbh_ilk_OepabZrIfOWMWSR0f1jvOQnHn2xlEp05GTVmYugcnnFbw8kW5R0FLJftBW-k4G1MLy25lDcg98XyTK-0H1ko_Wg8Q"
+  },
+  {
+   "id": "crate-4185",
+   "name": "Team Roles Capsule",
+   "category": "sticker",
+   "type": "Sticker Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjn_lDkShjjoYbh_ilk-_evZZt_L_yWHViTwP5lpe1sASuywR904zjdw4qtdC-XPQJxDZFxRLNbukW4x9TjM-KxtAzf2t1CnHjgznQe-FwSm1o"
+  },
+  {
+   "id": "crate-4784",
+   "name": "The Boardroom Sticker Capsule",
+   "category": "sticker",
+   "type": "Sticker Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjn_lDkShjjoYbh_ilk_OK8YapqcqDBXFiTwP5lpe1sAXHqkEwh52XXntytcnOVPwUmXsR3FO8KtRm6kNG1Mry27lCI2YxNnizgznQeLmU2Ky4"
+  },
+  {
+   "id": "crate-7013",
+   "name": "Warhammer 40,000 Adeptus Astartes Sticker Capsule",
+   "category": "sticker",
+   "type": "Sticker Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjn_lDkShjjoYbh_ilk-PO8YKVgLfWBMWaUxP5ipfJWTCijhggrtnODn9n8eXuQZg4mCMB5Q-IN4BS-wYHiMrjk5gfdj4wXniv_3CJIuig__a9cBpO2qwRG"
+  },
+  {
+   "id": "crate-7015",
+   "name": "Warhammer 40,000 Imperium Sticker Capsule",
+   "category": "sticker",
+   "type": "Sticker Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjn_lDkShjjoYbh_ilk-PO8YKVgLfWBMW6d0etkufRkcCqyhQ4yvzjLw4urI33EPVNyCZskELVYtBO-k4C0MeLg4AXfgolGxCr33S5Aunk44fFCD_RNrutRjA"
+  },
+  {
+   "id": "crate-4616",
+   "name": "Warhammer 40,000 Sticker Capsule",
+   "category": "sticker",
+   "type": "Sticker Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjn_lDkShjjoYbh_ilk-PO8YKVgLfWBMWSR0f1jvOQnHirgl0504WvWnt-gInOebwZyW8EkE-cCsRDqltezZuPj51PdjYsQmDK-0H0BzIakdQ"
+  },
+  {
+   "id": "crate-7011",
+   "name": "Warhammer 40,000 Traitor Astartes Sticker Capsule",
+   "category": "sticker",
+   "type": "Sticker Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjn_lDkShjjoYbh_ilk-PO8YKVgLfWBMXOCwOdiv_NWTCijhggrtnOAyYn7Ii3GbQ4oD5IiQuZZ5kG6wN3gYrzq5AWKjYxEni74hyNMvSpq_a9cBgZ7ad3f"
+  },
+  {
+   "id": "crate-7017",
+   "name": "Warhammer 40,000 Xenos Sticker Capsule",
+   "category": "sticker",
+   "type": "Sticker Capsule",
+   "image": "https://community.akamai.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bjn_lDkShjjoYbh_ilk-PO8YKVgLfWBMX-Vz-Flj-JoXzqmmRhpsW7cw4yhdC6TaAEhWJQhQ-YKtUS9k9G0M-7ntlHcjdpHnCr8jy5O6DErvbiKRbErHw"
+  }
+ ]
+}
