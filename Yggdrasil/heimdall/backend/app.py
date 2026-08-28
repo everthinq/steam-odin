@@ -11,6 +11,7 @@ from ratatoskr_service import RatatoskrService
 from huginn_service import HuginnService, load_csfloat_keys, load_csfloat_proxy
 from notifications import send_notification, notification_channel
 from portfolio_service import PortfolioService
+from backup_service import BackupService
 
 app = Flask(__name__)
 CORS(app)
@@ -20,6 +21,10 @@ steam_service = SteamService()
 ratatoskr_service = RatatoskrService()
 huginn_service = HuginnService(steam_service, ratatoskr_service)
 portfolio_service = PortfolioService(huginn_service)
+# Draupnir point-in-time backups: snapshot portfolios.json on every change +
+# once daily, with GFS retention and safe restore.
+portfolio_backup = BackupService(portfolio_service.path)
+portfolio_service.set_backup(portfolio_backup)
 scheduler = ConfirmationScheduler(settings_manager, steam_service, ratatoskr_service)
 
 # Background CSFloat buy-order sweep state (one at a time). Progress is polled by the UI.
@@ -56,6 +61,8 @@ if _should_start_background_scheduler():
     # then fire LisSkins/Buff-cheaper-than-CSFloat alerts on new crossings.
     huginn_service.start_container_refresh(
         lambda: settings_manager.get_settings())
+    # Draupnir: recurring daily portfolio backups (boot snapshot + daily + prune).
+    portfolio_backup.start_daily_loop()
 
 # Ensure all errors return JSON, not HTML
 @app.errorhandler(404)
@@ -942,6 +949,31 @@ def portfolios_combined():
     data['market'] = market
     return jsonify(data)
 
+def _merge_pricing_status(a, b):
+    """Combine two per-market pricing statuses into one for the spread view.
+    Worst-wins ordering so the UI shows the least-ready state."""
+    order = ['no_token', 'error', 'refreshing', 'fresh']
+    return min(a, b, key=lambda s: order.index(s) if s in order else 0)
+
+@app.route('/api/portfolios/spread', methods=['GET'])
+def portfolios_spread():
+    """Cross-market arbitrage board: buy market vs sell market (fee-aware),
+    across all accounts. Query: ?buy=buff&sell=steam&fee=15."""
+    buy = request.args.get('buy', 'buff')
+    sell = request.args.get('sell', 'steam')
+    try:
+        fee = float(request.args.get('fee', 15))
+    except (TypeError, ValueError):
+        fee = 15.0
+    buy_prices, buy_status = _portfolio_prices(buy)
+    sell_prices, sell_status = _portfolio_prices(sell)
+    data = portfolio_service.spread_board(buy_prices, sell_prices, fee)
+    data['buy_market'] = buy
+    data['sell_market'] = sell
+    data['priced'] = sell_prices is not None
+    data['pricing'] = _merge_pricing_status(buy_status, sell_status)
+    return jsonify(data)
+
 @app.route('/api/portfolios/<pid>/export', methods=['GET'])
 def portfolios_export(pid):
     """Download one portfolio as a CSV (real dollars; re-importable)."""
@@ -1044,6 +1076,41 @@ def portfolios_delete_txn(pid, tid):
     if not result:
         return jsonify({'error': 'not found'}), 404
     return jsonify({'ok': True})
+
+# ---- Draupnir backups (point-in-time restore) -----------------------------
+
+@app.route('/api/portfolios/backups', methods=['GET'])
+def portfolios_backups_list():
+    return jsonify({
+        'backups': portfolio_backup.list_backups(),
+        'stats': portfolio_backup.stats(),
+    })
+
+@app.route('/api/portfolios/backups/snapshot', methods=['POST'])
+def portfolios_backups_snapshot():
+    """Take a manual snapshot now (deduped if nothing changed)."""
+    name = portfolio_backup.snapshot('manual')
+    return jsonify({'ok': True, 'created': name, 'deduped': name is None})
+
+@app.route('/api/portfolios/backups/<name>/download', methods=['GET'])
+def portfolios_backup_download(name):
+    data = portfolio_backup.read_backup(name)
+    if data is None:
+        return jsonify({'error': 'backup not found'}), 404
+    return Response(data, mimetype='application/json', headers={
+        'Content-Disposition': f'attachment; filename="{name}"'})
+
+@app.route('/api/portfolios/backups/restore', methods=['POST'])
+def portfolios_backup_restore():
+    """Restore a snapshot over portfolios.json (current state saved first)."""
+    body = request.get_json(force=True, silent=True) or {}
+    name = body.get('name')
+    result = portfolio_backup.restore(name)
+    if not result.get('ok'):
+        code = 404 if result.get('error') == 'backup not found' else 400
+        return jsonify(result), code
+    portfolio_service.reload()  # pull the restored state into memory
+    return jsonify({'ok': True, 'restored': name})
 
 @app.route('/health', methods=['GET'])
 def health_check():

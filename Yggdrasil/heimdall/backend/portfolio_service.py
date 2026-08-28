@@ -70,6 +70,18 @@ class PortfolioService:
         self.path = path
         self._lock = threading.Lock()
         self._data = self._load()
+        # Optional BackupService, wired by app.py. Every persisted change is
+        # snapshotted for point-in-time restore (deduped by content hash).
+        self._backup = None
+
+    def set_backup(self, backup_service):
+        self._backup = backup_service
+
+    def reload(self):
+        """Re-read the source file into memory — used after a backup restore
+        overwrites portfolios.json underneath us."""
+        with self._lock:
+            self._data = self._load()
 
     # ---- persistence -------------------------------------------------------
 
@@ -92,6 +104,11 @@ class PortfolioService:
                 json.dump(self._data, f, indent=2)
         except Exception as e:
             print(f'[DRAUPNIR] Could not persist portfolios: {e}')
+            return
+        # Snapshot the new state for point-in-time restore. Best-effort and
+        # deduped by content hash — never lets a backup issue break the write.
+        if self._backup is not None:
+            self._backup.snapshot('change')
 
     # ---- transaction shaping ----------------------------------------------
 
@@ -446,4 +463,113 @@ class PortfolioService:
             'holdings': holdings,
             'account_count': len(ps),
             'arbitrage_excluded': arb,
+        }
+
+    def spread_board(self, buy_prices=None, sell_prices=None, sell_fee_pct=15.0):
+        """Cross-market arbitrage board: buy on one market (cheap — e.g. Buff163),
+        exit on another (e.g. Steam), fee-aware. Aggregates every account and drops
+        inter-account moves (is_arbitrage), same as the combined ledger, because the
+        arbitrage spans accounts.
+
+        For each item you still hold it juxtaposes:
+          - avg_cost   — what you actually paid (real cost basis)
+          - buy_price  — the buy market's live price now (is it still cheap to source?)
+          - sell_net   — the sell market's live price net of its fee (your true exit)
+          - live_spread_pct = (sell_net - buy_price) / buy_price
+                         → the arb still open in the market right now (source more?)
+          - margin     = (sell_net - avg_cost) * qty
+                         → your unrealized profit if you exit this holding now
+
+        `buy_prices` / `sell_prices` are {item_name: usd} maps (or None). Returns a
+        rows list (held items, biggest margin first) plus headline aggregates."""
+        buy_prices = buy_prices or {}
+        sell_prices = sell_prices or {}
+        try:
+            fee = float(sell_fee_pct)
+        except (TypeError, ValueError):
+            fee = 15.0
+        fee = min(max(fee, 0.0), 99.0)
+        net_factor = 1.0 - fee / 100.0
+
+        with self._lock:
+            ps = json.loads(json.dumps(list(self._data['portfolios'].values())))
+        txns = []
+        for p in ps:
+            for t in p['transactions']:
+                if t.get('is_arbitrage'):
+                    continue
+                txns.append(t)
+        arb = sum(1 for p in ps for t in p['transactions'] if t.get('is_arbitrage'))
+
+        holdings = self._holdings(txns, None)
+        realized = round(sum(h['realized_pl'] for h in holdings), 2)
+
+        rows = []
+        capital_deployed = 0.0          # cost basis of ALL held items
+        capital_priced = 0.0            # cost basis of held items we can price a sell for
+        exit_value = 0.0                # net proceeds if we sold priced items now
+        unpriced = 0
+        spread_wsum = 0.0               # capital-weighted live market spread
+        spread_w = 0.0
+        for h in holdings:
+            qty = h['net_qty']
+            if qty <= 0:
+                continue
+            avg_cost = h['avg_cost']
+            cost_basis = h['cost_basis']
+            capital_deployed += cost_basis
+            buy_price = buy_prices.get(h['item_name'])
+            sell_price = sell_prices.get(h['item_name'])
+            sell_net = round(sell_price * net_factor, 4) if sell_price is not None else None
+            live_spread_pct = (
+                round((sell_net - buy_price) / buy_price * 100, 2)
+                if (sell_net is not None and buy_price) else None
+            )
+            if sell_net is not None:
+                margin_unit = round(sell_net - avg_cost, 4)
+                margin = round(margin_unit * qty, 2)
+                margin_pct = round((margin_unit / avg_cost) * 100, 2) if avg_cost else None
+                capital_priced += cost_basis
+                exit_value += sell_net * qty
+                if live_spread_pct is not None:
+                    spread_wsum += live_spread_pct * cost_basis
+                    spread_w += cost_basis
+            else:
+                margin_unit = margin = margin_pct = None
+                unpriced += 1
+            rows.append({
+                'item_name': h['item_name'],
+                'net_qty': qty,
+                'avg_cost': avg_cost,
+                'cost_basis': cost_basis,
+                'buy_price': buy_price,
+                'sell_price': sell_price,
+                'sell_net': sell_net,
+                'live_spread_pct': live_spread_pct,
+                'margin_unit': margin_unit,
+                'margin': margin,
+                'margin_pct': margin_pct,
+            })
+
+        # Biggest exit profit on top; unpriced rows sink to the bottom.
+        rows.sort(key=lambda r: (r['margin'] is not None, r['margin'] or 0), reverse=True)
+
+        unrealized = round(exit_value - capital_priced, 2)
+        priced = bool(sell_prices)
+        return {
+            'buy_market': None, 'sell_market': None,   # filled by the route
+            'sell_fee_pct': fee,
+            'account_count': len(ps),
+            'arbitrage_excluded': arb,
+            'holdings_count': len(rows),
+            'unpriced_count': unpriced,
+            'capital_deployed': round(capital_deployed, 2),
+            'exit_value': round(exit_value, 2) if priced else None,
+            'unrealized_spread': unrealized if priced else None,
+            'unrealized_spread_pct': (round(unrealized / capital_priced * 100, 2)
+                                      if (priced and capital_priced) else None),
+            'realized_pl': realized,
+            'avg_spread_pct': round(spread_wsum / spread_w, 2) if spread_w else None,
+            'priced': priced,
+            'rows': rows,
         }

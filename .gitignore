@@ -210,3 +210,5 @@ Yggdrasil/heimdall/backend/settings.json
 Yggdrasil/heimdall/backend/csfloat_keys.json
 # Draupnir portfolio data (personal holdings) is committed on purpose as a backup —
 # it holds no secrets, just item names / prices / dates.
+# ...but the local point-in-time snapshot history stays on-disk only (can be large).
+Yggdrasil/heimdall/backend/backups/
