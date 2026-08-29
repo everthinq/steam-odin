@@ -63,6 +63,9 @@ if _should_start_background_scheduler():
         lambda: settings_manager.get_settings())
     # Draupnir: recurring daily portfolio backups (boot snapshot + daily + prune).
     portfolio_backup.start_daily_loop()
+    # LOOT.Farm auctions: snapshot the feed every 15 min to build the per-lot history
+    # the backtest reads (bids, clear prices, snipe references).
+    huginn_service.start_auction_tracker(lambda: settings_manager.get_settings())
 
 # Ensure all errors return JSON, not HTML
 @app.errorhandler(404)
@@ -691,6 +694,87 @@ def huginn_tradeon_dmarket():
         return jsonify({'error': 'tradeon_token not set in settings'}), 400
     try:
         data = huginn_service.fetch_tradeon_dmarket(token)
+        return jsonify(data)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/huginn/lootfarm/arbitrage', methods=['GET'])
+def huginn_lootfarm_arbitrage():
+    """Buy LF balance cheap → acquire LF item → instant-sell into Steam/Buff/CSFloat buy
+    orders. ?balance= USDT per $1 balance (default 0.5208), ?unlocked=1 (+3%), ?in_stock=1."""
+    token = settings_manager.get_settings().get('tradeon_token', '')
+    try:
+        balance = float(request.args.get('balance', 0.5208))
+    except (TypeError, ValueError):
+        balance = 0.5208
+    unlocked = request.args.get('unlocked', '1') not in ('0', 'false', 'False')
+    in_stock = request.args.get('in_stock', '1') not in ('0', 'false', 'False')
+    try:
+        return jsonify(huginn_service.lootfarm_arbitrage(token, balance, unlocked, in_stock))
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/huginn/lootfarm/auctions', methods=['GET'])
+def huginn_lootfarm_auctions():
+    """Live LOOT.Farm auctions vs your buy sources (win price → Steam resale profit)."""
+    token = settings_manager.get_settings().get('tradeon_token', '')
+    try:
+        return jsonify(huginn_service.fetch_auctions(token))
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/huginn/lootfarm/auctions/backtest', methods=['GET'])
+def huginn_lootfarm_auctions_backtest():
+    """Auction-edge stats from the tracker log + a live-snapshot proof."""
+    token = settings_manager.get_settings().get('tradeon_token', '')
+    try:
+        pct = float(request.args.get('min_profit', 10))
+    except (TypeError, ValueError):
+        pct = 10.0
+    try:
+        return jsonify(huginn_service.auction_backtest(token, pct))
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/huginn/lootfarm/auctions/track', methods=['POST'])
+def huginn_lootfarm_auctions_track():
+    """Manually trigger one auction snapshot into the tracker log."""
+    token = settings_manager.get_settings().get('tradeon_token', '')
+    try:
+        return jsonify(huginn_service.record_auction_snapshot(token))
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/huginn/tradeon/lootfarm', methods=['GET'])
+def huginn_tradeon_lootfarm():
+    """Tradeon (buy) → LOOT.Farm (sell) arbitrage. LootFarm price + limits come
+    from LOOT.Farm's own feed; ?fee= is your LOOT.Farm acceptance fee % (default 5)."""
+    token = settings_manager.get_settings().get('tradeon_token', '')
+    if not token:
+        return jsonify({'error': 'tradeon_token not set in settings'}), 400
+    try:
+        fee = float(request.args.get('fee', 5))
+    except (TypeError, ValueError):
+        fee = 5.0
+    try:
+        data = huginn_service.fetch_tradeon_lootfarm(token, fee)
+        return jsonify(data)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/huginn/tradeon/lisskins-lootfarm', methods=['GET'])
+def huginn_tradeon_lisskins_lootfarm():
+    """LisSkins (buy) → LOOT.Farm (sell/autobuy). LootFarm price + limits from LOOT.Farm's
+    own feed; ?fee= is your LOOT.Farm acceptance fee % (default 5)."""
+    token = settings_manager.get_settings().get('tradeon_token', '')
+    if not token:
+        return jsonify({'error': 'tradeon_token not set in settings'}), 400
+    try:
+        fee = float(request.args.get('fee', 5))
+    except (TypeError, ValueError):
+        fee = 5.0
+    try:
+        data = huginn_service.fetch_lisskins_lootfarm(token, fee)
         return jsonify(data)
     except Exception as e:
         return jsonify({'error': str(e)}), 500

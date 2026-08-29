@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef, useDeferredValue } from 'react';
 import { Link } from 'react-router-dom';
-import { LayoutDashboard, RefreshCw, AlertTriangle, Search, ChevronDown, ArrowRight, Coins, Boxes, Repeat } from 'lucide-react';
+import { LayoutDashboard, RefreshCw, AlertTriangle, Search, ChevronDown, ArrowRight, Coins, Boxes, Repeat, Gavel } from 'lucide-react';
 import { matchesSearchQuery } from '../../utils/transferItems';
 import SteamMarketLink from '../../components/SteamMarketLink';
 import BuffMarketLink from '../../components/BuffMarketLink';
@@ -8,6 +8,8 @@ import LisSkinsMarketLink from '../../components/LisSkinsMarketLink';
 import CSFloatMarketLink from '../../components/CSFloatMarketLink';
 import CollectionFilter from '../../components/CollectionFilter';
 import CaseArbitrage from '../../components/CaseArbitrage';
+import AuctionBoard from '../../components/AuctionBoard';
+import LootfarmArbitrage from '../../components/LootfarmArbitrage';
 import { getTradeonShortLink } from '../../utils/tradeonShortLink';
 
 // Render results in capped pages — the datasets are ~17k rows and painting them all
@@ -25,11 +27,13 @@ const PROFILES = [
     // items we've swept (see the CSFloat buy-orders panel). Data covers owned items.
     { id: 'tradeon-csfloat-autobuy', from: 'Tradeon',  fromSub: 'min', to: 'CSFloat', toSub: 'autobuy', buyMarket: 'TradeOnMarket', sellMarket: 'CsFloat', fetchEndpoint: '/api/huginn/tradeon/csfloat-autobuy', autobuy: true },
     { id: 'tradeon-dmarket',         from: 'Tradeon',  fromSub: 'min', to: 'DMarket', toSub: 'autobuy', buyMarket: 'TradeOnMarket', sellMarket: 'Dmarket', fetchEndpoint: '/api/huginn/tradeon/dmarket' },
+    { id: 'tradeon-lootfarm',        from: 'Tradeon',  fromSub: 'min', to: 'LOOT.Farm', toSub: 'autobuy', buyMarket: 'TradeOnMarket', sellMarket: 'LootFarm', fetchEndpoint: '/api/huginn/tradeon/lootfarm' },
     { id: 'lisskins-steam',          from: 'LisSkins', fromSub: 'min', to: 'Steam',   toSub: 'autobuy', buyMarket: 'LisSkins',      sellMarket: 'Steam',   fetchEndpoint: '/api/huginn/tradeon/lisskins-steam' },
     { id: 'lisskins-buff',           from: 'LisSkins', fromSub: 'min', to: 'Buff163', toSub: 'autobuy', buyMarket: 'LisSkins',      sellMarket: 'Buff',    fetchEndpoint: '/api/huginn/tradeon/lisskins-buff' },
     { id: 'lisskins-csfloat',        from: 'LisSkins', fromSub: 'min', to: 'CSFloat', toSub: 'min',     buyMarket: 'LisSkins',      sellMarket: 'CsFloat', fetchEndpoint: '/api/huginn/tradeon/lisskins-csfloat' },
     { id: 'lisskins-csfloat-autobuy',from: 'LisSkins', fromSub: 'min', to: 'CSFloat', toSub: 'autobuy', buyMarket: 'LisSkins',      sellMarket: 'CsFloat', fetchEndpoint: '/api/huginn/tradeon/lisskins-csfloat-autobuy', autobuy: true },
     { id: 'lisskins-dmarket',        from: 'LisSkins', fromSub: 'min', to: 'DMarket', toSub: 'autobuy', buyMarket: 'LisSkins',      sellMarket: 'Dmarket', fetchEndpoint: '/api/huginn/tradeon/lisskins-dmarket' },
+    { id: 'lisskins-lootfarm',       from: 'LisSkins', fromSub: 'min', to: 'LOOT.Farm', toSub: 'autobuy', buyMarket: 'LisSkins',    sellMarket: 'LootFarm', fetchEndpoint: '/api/huginn/tradeon/lisskins-lootfarm' },
     { id: 'buff-steam',              from: 'Buff163',  fromSub: 'min', to: 'Steam',   toSub: 'autobuy', buyMarket: 'Buff',          sellMarket: 'Steam',   fetchEndpoint: '/api/huginn/tradeon/buff-steam' },
     { id: 'buff-csfloat',            from: 'Buff163',  fromSub: 'min', to: 'CSFloat', toSub: 'min',     buyMarket: 'Buff',          sellMarket: 'CsFloat', fetchEndpoint: '/api/huginn/tradeon/buff-csfloat' },
     { id: 'buff-csfloat-autobuy',    from: 'Buff163',  fromSub: 'min', to: 'CSFloat', toSub: 'autobuy', buyMarket: 'Buff',          sellMarket: 'CsFloat', fetchEndpoint: '/api/huginn/tradeon/buff-csfloat-autobuy', autobuy: true },
@@ -72,6 +76,60 @@ const PriceCell = ({ market, itemName, price, className }) => {
         >
             {text}
         </a>
+    );
+};
+
+// Sell-side overstock (LOOT.Farm autobuy). overstockInfo = { limit, currentCount,
+// overstockScale }, where scale = currentCount/limit*100 (how full the bot is).
+//   • limit 0  → the site has no active buy limit for the item; it forces scale 100
+//     and shows it as "Unstable" (price/acceptance unreliable) — flag red.
+//   • currentCount >= limit (scale >= 100) → "Full", won't take more — red.
+//   • otherwise show how full it is (currentCount/limit), amber when nearly full.
+// Markets without overstock data (every non-LootFarm profile) render a dash.
+const OverstockCell = ({ info, className }) => {
+    if (!info || info.currentCount == null) return <span className={`${className} text-slate-600`}>—</span>;
+    const { limit, currentCount, overstockScale } = info;
+    const scale = overstockScale != null ? overstockScale : (limit > 0 ? Math.round(currentCount / limit * 100) : 100);
+    if (limit === 0) {
+        return <span className={`${className} text-red-400 font-medium`} title={`LOOT.Farm has no active buy limit for this item — shown as "Unstable" on the site (currently holds ${currentCount}). Acceptance/price is unreliable.`}>Unstable</span>;
+    }
+    if (currentCount >= limit) {
+        return <span className={`${className} text-red-400`} title={`LOOT.Farm is full: holds ${currentCount} of ${limit} — won't buy more`}>Full</span>;
+    }
+    const cls = scale >= 80 ? 'text-amber-400' : 'text-slate-300';
+    return <span className={`${className} ${cls}`} title={`LOOT.Farm holds ${currentCount} of ${limit} (${scale}% full)`}>{currentCount}/{limit}</span>;
+};
+
+// LOOT.Farm price tier = its price relative to Steam, shown on their site as the
+// price-tag background color. Thresholds (on the feed `rate` %) and exact hexes are
+// lifted from loot.farm's own CSS/JS: green = cheap vs Steam (best to buy), orange =
+// priced above Steam. Below 80% → untiered (default).
+const lootfarmTier = (rate) => {
+    if (rate == null) return null;
+    if (rate >= 115) return { bg: '#d19705', pct: '105%' };   // orange
+    if (rate >= 110) return { bg: '#8c857c', pct: '100%' };   // gray
+    if (rate >= 95)  return { bg: '#825115', pct: '85%' };    // brown
+    if (rate >= 80)  return { bg: '#00b021', pct: '70%' };    // green
+    return null;
+};
+
+// LOOT.Farm sell price, rendered as a tier-colored tag like their own site.
+const LootfarmSellCell = ({ itemName, price, rate }) => {
+    const tier = lootfarmTier(rate);
+    const href = getTradeonShortLink('LootFarm', itemName);
+    const text = `$${price?.toFixed(2)}`;
+    const title = tier
+        ? `LOOT.Farm tier ${tier.pct} of Steam${rate != null ? ` · rate ${rate}%` : ''}`
+        : (rate != null ? `rate ${rate}% of Steam` : '');
+    const inner = tier
+        ? <span className="inline-block px-2 rounded font-semibold text-white" style={{ backgroundColor: tier.bg, textShadow: '0 0 4px #000' }}>{text}</span>
+        : <span>{text}</span>;
+    return (
+        <div className="text-base text-right tabular-nums text-slate-300" title={title}>
+            {href
+                ? <a href={href} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} className="hover:opacity-80 transition-opacity">{inner}</a>
+                : inner}
+        </div>
     );
 };
 
@@ -166,9 +224,16 @@ const HuginnArbitrage = () => {
 
     const [itemSearch, setItemSearch] = useState('');
     const [inventoryOnly, setInventoryOnly] = useState(false);
+    const [hideUnstable, setHideUnstable] = useState(false);   // LOOT.Farm: drop max=0 (Unstable) rows
     const [includedCollections, setIncludedCollections] = useState([]);
     const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
     const [copiedName, setCopiedName] = useState('');
+    // LOOT.Farm acceptance fee (3–5% by subscription; default 5). Applied to the
+    // LOOT.Farm sell price server-side. Persisted per browser.
+    const [lootfarmFee, setLootfarmFee] = useState(() => {
+        try { const v = Number(localStorage.getItem('huginn_lootfarm_fee')); return Number.isFinite(v) && v > 0 ? v : 5; }
+        catch { return 5; }
+    });
     // Filtering ~17k rows on every keystroke is heavy; defer it so typing stays snappy.
     const deferredSearch = useDeferredValue(itemSearch);
 
@@ -264,7 +329,10 @@ const HuginnArbitrage = () => {
         setTradeonFetching(true);
         setTradeonError(null);
         try {
-            const res = await fetch(profile.fetchEndpoint);
+            const url = profile.sellMarket === 'LootFarm'
+                ? `${profile.fetchEndpoint}?fee=${lootfarmFee || 0}`
+                : profile.fetchEndpoint;
+            const res = await fetch(url);
             const data = await res.json();
             if (!res.ok) throw new Error(data.error || 'Fetch failed');
             if (!Array.isArray(data)) throw new Error('Unexpected response format');
@@ -319,10 +387,11 @@ const HuginnArbitrage = () => {
     const filteredResults = useMemo(() => {
         const q = deferredSearch.trim();
         const cols = includedCollections.length ? new Set(includedCollections) : null;
-        if (!inventoryOnly && !cols && !q) return sortedResults;
+        if (!inventoryOnly && !cols && !q && !hideUnstable) return sortedResults;
         return sortedResults.filter(item => {
             const owned = byHash?.[item.itemName?.marketHashName];
             if (inventoryOnly && !owned) return false;
+            if (hideUnstable && item.secondMarket?.overstockInfo?.limit === 0) return false;
             if (cols && !(owned?.instances || []).some(i => cols.has(i.collection))) {
                 return false;
             }
@@ -332,7 +401,7 @@ const HuginnArbitrage = () => {
             )) return false;
             return true;
         });
-    }, [sortedResults, byHash, deferredSearch, inventoryOnly, includedCollections]);
+    }, [sortedResults, byHash, deferredSearch, inventoryOnly, includedCollections, hideUnstable]);
 
     // Only the first `visibleCount` rows are painted (see PAGE_SIZE note).
     const visibleResults = useMemo(
@@ -343,7 +412,7 @@ const HuginnArbitrage = () => {
     // Reset the window whenever the result set changes so we start from the top.
     useEffect(() => {
         setVisibleCount(PAGE_SIZE);
-    }, [deferredSearch, inventoryOnly, includedCollections, profileId]);
+    }, [deferredSearch, inventoryOnly, includedCollections, profileId, hideUnstable]);
 
     return (
         <div className="h-screen bg-odin-dark flex flex-col overflow-hidden">
@@ -372,6 +441,20 @@ const HuginnArbitrage = () => {
                     >
                         <Boxes size={13} /> Case Arbitrage
                     </button>
+                    <button
+                        type="button"
+                        onClick={() => setView('auctions')}
+                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${view === 'auctions' ? 'bg-amber-600 text-white' : 'text-slate-400 hover:text-white'}`}
+                    >
+                        <Gavel size={13} /> LF Auctions
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => setView('lfarb')}
+                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${view === 'lfarb' ? 'bg-amber-600 text-white' : 'text-slate-400 hover:text-white'}`}
+                    >
+                        <Coins size={13} /> LF Arbitrage
+                    </button>
                 </div>
 
                 {view === 'arbitrage' && (
@@ -394,7 +477,7 @@ const HuginnArbitrage = () => {
             </div>
 
             <div className="flex-1 flex flex-col gap-3 p-6 overflow-hidden max-w-7xl w-full mx-auto">
-                {view === 'cases' ? <CaseArbitrage /> : (<>
+                {view === 'lfarb' ? <LootfarmArbitrage byHash={byHash} /> : view === 'auctions' ? <AuctionBoard /> : view === 'cases' ? <CaseArbitrage /> : (<>
                 {scanError && (
                     <div className="shrink-0 bg-red-500/20 border border-red-500/30 text-red-300 px-4 py-3 rounded-lg text-sm">
                         {scanError}
@@ -527,6 +610,22 @@ const HuginnArbitrage = () => {
                                 </span>
                             )}
                         </button>
+                        {activeProfile.sellMarket === 'LootFarm' && (
+                            <div className="flex items-center gap-1.5 mr-2 shrink-0" title="Your LOOT.Farm acceptance fee (3–5% by subscription level; 5% with no subscription). Applied to the LOOT.Farm sell price. Re-fetch to apply.">
+                                <span className="text-[10px] font-bold tracking-widest text-slate-500 uppercase">LF fee</span>
+                                <input
+                                    type="number" min="0" max="20" step="0.5" value={lootfarmFee}
+                                    onChange={e => {
+                                        const v = e.target.value === '' ? '' : Math.max(0, Math.min(20, Number(e.target.value)));
+                                        setLootfarmFee(v);
+                                        try { if (v !== '') localStorage.setItem('huginn_lootfarm_fee', String(v)); } catch { /* ignore */ }
+                                    }}
+                                    onBlur={e => { if (e.target.value === '') setLootfarmFee(5); }}
+                                    className="w-14 bg-black/30 border border-white/10 rounded px-2 py-1.5 text-slate-200 text-xs tabular-nums focus:outline-none focus:ring-1 focus:ring-amber-500/50"
+                                />
+                                <span className="text-slate-500 text-xs">%</span>
+                            </div>
+                        )}
                         {activeProfile.fetchEndpoint && (
                             <button
                                 type="button"
@@ -598,6 +697,16 @@ const HuginnArbitrage = () => {
                             >
                                 My Inventory
                             </button>
+                            {activeProfile.sellMarket === 'LootFarm' && (
+                                <button
+                                    type="button"
+                                    onClick={() => setHideUnstable(v => !v)}
+                                    title="Hide items LOOT.Farm has no active buy limit for (max 0) — their prices are inflated and won't reliably be honored."
+                                    className={`shrink-0 px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${hideUnstable ? 'bg-red-500/20 border-red-500/40 text-red-300' : 'bg-black/20 border-white/10 text-slate-400 hover:text-white hover:border-white/20'}`}
+                                >
+                                    Hide Unstable
+                                </button>
+                            )}
                             <CollectionFilter
                                 collections={collections}
                                 selected={includedCollections}
@@ -609,11 +718,12 @@ const HuginnArbitrage = () => {
                                 {filteredResults.length !== sortedResults.length && ` (${sortedResults.length} total)`}
                             </span>
                         </div>
-                        <div className="shrink-0 grid grid-cols-[minmax(0,2.5fr)_64px_88px_88px_96px_88px_minmax(0,1fr)] gap-2 px-4 py-2 border-b border-white/5 text-[11px] font-bold tracking-wider text-slate-400 uppercase bg-black/20">
+                        <div className="shrink-0 grid grid-cols-[minmax(0,2.5fr)_64px_88px_88px_84px_96px_88px_minmax(0,1fr)] gap-2 px-4 py-2 border-b border-white/5 text-[11px] font-bold tracking-wider text-slate-400 uppercase bg-black/20">
                             <span>Item</span>
                             <span className="text-right">Owned</span>
                             <span className="text-right">Buy</span>
                             <span className="text-right">Sell</span>
+                            <span className="text-right">Overstock</span>
                             <span className="text-right">Profit</span>
                             <span className="text-right">Profit %</span>
                             <span>Accounts</span>
@@ -637,7 +747,7 @@ const HuginnArbitrage = () => {
                                 return (
                                     <div
                                         key={`${mhn}-${idx}`}
-                                        className="grid grid-cols-[minmax(0,2.5fr)_64px_88px_88px_96px_88px_minmax(0,1fr)] gap-2 items-center px-4 py-2.5 border-b border-white/5 hover:bg-white/[0.03] transition-colors"
+                                        className="grid grid-cols-[minmax(0,2.5fr)_64px_88px_88px_84px_96px_88px_minmax(0,1fr)] gap-2 items-center px-4 py-2.5 border-b border-white/5 hover:bg-white/[0.03] transition-colors"
                                     >
                                         <div className="flex items-center gap-2.5 min-w-0">
                                             {item.imageUrl && (
@@ -675,7 +785,10 @@ const HuginnArbitrage = () => {
 
                                         <span className="text-base text-right font-bold text-amber-400 tabular-nums">{owned ? owned.count : <span className="text-slate-600">—</span>}</span>
                                         <PriceCell market={activeProfile.buyMarket} itemName={mhn} price={item.firstMarket?.price} className="text-base text-right text-slate-300 tabular-nums" />
-                                        <PriceCell market={activeProfile.sellMarket} itemName={mhn} price={item.secondMarket?.price} className="text-base text-right text-slate-300 tabular-nums" />
+                                        {activeProfile.sellMarket === 'LootFarm'
+                                            ? <LootfarmSellCell itemName={mhn} price={item.secondMarket?.price} rate={item.secondMarket?.rate} />
+                                            : <PriceCell market={activeProfile.sellMarket} itemName={mhn} price={item.secondMarket?.price} className="text-base text-right text-slate-300 tabular-nums" />}
+                                        <OverstockCell info={item.secondMarket?.overstockInfo} className="text-sm text-right tabular-nums" />
                                         <span className={`text-base text-right tabular-nums ${(item.profit ?? 0) <= 0 ? 'text-red-400' : 'text-emerald-400'}`}>${item.profit?.toFixed(2)}</span>
                                         <span className={`text-base text-right font-semibold tabular-nums ${(item.profitPercent ?? 0) <= 0 ? 'text-red-400' : 'text-emerald-400'}`}>{item.profitPercent?.toFixed(0)}%</span>
 

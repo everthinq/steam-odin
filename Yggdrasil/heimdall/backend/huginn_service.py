@@ -27,6 +27,9 @@ CASE_HISTORY_FILE = os.path.join(os.path.dirname(__file__), 'cache', 'case_price
 # Which LisSkins/Buff-cheaper-than-CSFloat alerts are currently active, so we only
 # notify on NEW crossings instead of every hourly run.
 CASE_ALERT_STATE_FILE = os.path.join(os.path.dirname(__file__), 'cache', 'case_alert_state.json')
+# LOOT.Farm auction tracker: per-lot trajectory (base, start/last price, bids, a Steam
+# resale reference at capture, cleared-detection) accumulated over time for the backtest.
+LOOTFARM_AUCTION_LOG = os.path.join(os.path.dirname(__file__), 'cache', 'lootfarm_auction_log.json')
 
 _CSFLOAT_API_BASE = 'https://csfloat.com/api/v1'
 _CSFLOAT_UA = ('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 '
@@ -199,6 +202,20 @@ _TRADEON_CSFLOAT_URL  = 'https://api-pulse.tradeon.space/api/table/counter-strik
 _TRADEON_LISSKINS_URL = 'https://api-pulse.tradeon.space/api/table/counter-strike/TradeOnMarket/LisSkins/all'
 _TRADEON_DMARKET_URL  = 'https://api-pulse.tradeon.space/api/table/counter-strike/TradeOnMarket/Dmarket/all'
 
+# LOOT.Farm publishes its own price + limit feed (first-party, refreshed ~every
+# minute). We read the LootFarm leg straight from here instead of pulse; only the
+# buy side (TradeOnMarket min) still comes from pulse. Feed prices are INTEGER CENTS,
+# gross — i.e. before LOOT.Farm's 3–5% acceptance fee — for the trade-locked variant
+# of the item (unlocked items are worth +3%, which we don't add: base price only).
+_LOOTFARM_FEEDS = {
+    'cs':   'https://loot.farm/fullprice.json',
+    'rust': 'https://loot.farm/fullpriceRUST.json',
+    'tf2':  'https://loot.farm/fullpriceTF2.json',
+}
+_LOOTFARM_TTL = 60   # seconds; feed changes at most once a minute
+_LOOTFARM_AUCTION_URL = 'https://loot.farm/botsInventory_Auctions.json'
+_LOOTFARM_AUCTION_TTL = 45   # seconds
+
 # Sales fee taken by the sell-side market: net proceeds = price * (1 - fee).
 STEAM_SALES_FEE = 0.13
 BUFF_SALES_FEE = 0.015
@@ -311,6 +328,11 @@ class HuginnService:
         # Container tracker snapshots — market -> (epoch, {name: {price, count}}). Kept
         # separate from _price_cache because it also carries listing counts (liquidity)
         # and is filtered to the container catalog only. Same non-blocking warm pattern.
+        self._lootfarm_cache = {}   # game -> (fetched_at_epoch, {name: feed_row})
+        self._auction_cache = None  # (fetched_at_epoch, feed_dict)
+        self._buyorder_cache = {}   # market -> (epoch, {name: buy_order_price}) for the LF arb board
+        self._auction_lock = threading.Lock()
+        self._auction_tracker_started = False
         self._container_cache = {}
         self._container_state = {}
         self._container_refresh_started = False
@@ -435,6 +457,441 @@ class HuginnService:
         # Direct pulse profile: Tradeon min -> DMarket autobuy. DMarket takes no sales
         # fee, so pulse's profit already reflects the full autobuy price (no fee to net).
         return self._post_tradeon(_TRADEON_DMARKET_URL, token)
+
+    def _fetch_lootfarm_feed(self, game='cs'):
+        """{market_hash_name: feed_row} from LOOT.Farm's own price feed, cached for
+        _LOOTFARM_TTL seconds. Each row: price (int cents, gross), have, max, rate,
+        tr, res. Raises on network/parse failure so the route can report it."""
+        now = time.time()
+        cached = self._lootfarm_cache.get(game)
+        if cached and now - cached[0] < _LOOTFARM_TTL:
+            return cached[1]
+        url = _LOOTFARM_FEEDS[game]
+        req = urllib.request.Request(url, headers={
+            'User-Agent': 'Mozilla/5.0', 'Accept': 'application/json',
+        })
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            data = json.loads(resp.read().decode('utf-8'))
+        out = {}
+        for row in (data or []):
+            name = row.get('name')
+            if name:
+                out[name] = row
+        self._lootfarm_cache[game] = (now, out)
+        return out
+
+    def fetch_tradeon_lootfarm(self, token, fee_pct=5.0):
+        """Tradeon (min) buy -> LOOT.Farm sell, using LOOT.Farm's OWN feed for the
+        sell side (price + overstock), first-party and fresh, rather than pulse.
+
+        Buy side: TradeOnMarket lowest listing (the firstMarket of any pulse row).
+        Sell side: LOOT.Farm feed price (cents -> USD) net of your acceptance fee
+        (`fee_pct`, default 5%). Overstock (have/max) comes straight from the feed,
+        so the "Unstable"/Full column reflects LOOT.Farm's real limits. Items are
+        joined on market_hash_name; only items present on both sides are returned."""
+        try:
+            fee = float(fee_pct)
+        except (TypeError, ValueError):
+            fee = 5.0
+        fee = min(max(fee, 0.0), 20.0)
+        net_factor = 1.0 - fee / 100.0
+
+        buy_items = self._post_tradeon(_TRADEON_STEAM_URL, token)   # firstMarket = TradeOnMarket min
+        feed = self._fetch_lootfarm_feed('cs')
+
+        combined = []
+        for it in buy_items:
+            name = (it.get('itemName') or {}).get('marketHashName')
+            fm = it.get('firstMarket') or {}
+            buy = fm.get('price')
+            row = feed.get(name)
+            if not name or not buy or row is None:
+                continue
+            gross = (row.get('price') or 0) / 100.0     # feed price is integer cents
+            if not gross:
+                continue
+            sell_net = round(gross * net_factor, 4)
+            profit = sell_net - buy
+            have, mx = row.get('have'), row.get('max')
+            scale = 100 if not mx else round((have or 0) / mx * 100)
+            combined.append({
+                'itemName': it.get('itemName'),
+                'imageUrl': it.get('imageUrl'),
+                'firstMarket': fm,                       # Buy @ TradeOnMarket
+                'secondMarket': {                        # Sell @ LOOT.Farm (net of fee)
+                    'price': sell_net,
+                    'realPrice': sell_net,
+                    'overstockInfo': {'limit': mx, 'currentCount': have, 'overstockScale': scale},
+                    'rate': row.get('rate'),             # LOOT.Farm price as % of Steam (drives tier color)
+                },
+                'profit': round(profit, 3),
+                'profitPercent': round(profit / buy * 100, 2) if buy else None,
+            })
+
+        combined.sort(key=lambda x: (x['profitPercent'] is not None, x['profitPercent'] or 0), reverse=True)
+        return combined
+
+    def fetch_lisskins_lootfarm(self, token, fee_pct=5.0):
+        """LisSkins (min) buy → LOOT.Farm sell (autobuy), same shape as
+        fetch_tradeon_lootfarm but sourcing the buy side from LisSkins' own listing
+        (pulse secondMarket, un-paywalled) instead of TradeOnMarket. Sell side is the
+        LOOT.Farm feed price net of your acceptance fee; overstock + tier come from the
+        feed. Joined on market_hash_name."""
+        try:
+            fee = float(fee_pct)
+        except (TypeError, ValueError):
+            fee = 5.0
+        fee = min(max(fee, 0.0), 20.0)
+        net_factor = 1.0 - fee / 100.0
+
+        buy_items = self._post_tradeon(_TRADEON_LISSKINS_URL, token, _TRADEON_LISSKINS_BODY)
+        feed = self._fetch_lootfarm_feed('cs')
+
+        combined = []
+        for it in buy_items:
+            name = (it.get('itemName') or {}).get('marketHashName')
+            buy_market = it.get('secondMarket') or {}      # LisSkins min listing
+            buy = buy_market.get('price')
+            row = feed.get(name)
+            if not name or not buy or row is None:
+                continue
+            gross = (row.get('price') or 0) / 100.0
+            if not gross:
+                continue
+            sell_net = round(gross * net_factor, 4)
+            profit = sell_net - buy
+            have, mx = row.get('have'), row.get('max')
+            scale = 100 if not mx else round((have or 0) / mx * 100)
+            combined.append({
+                'itemName': it.get('itemName'),
+                'imageUrl': it.get('imageUrl'),
+                'firstMarket': buy_market,               # Buy @ LisSkins
+                'secondMarket': {                        # Sell @ LOOT.Farm (net of fee)
+                    'price': sell_net,
+                    'realPrice': sell_net,
+                    'overstockInfo': {'limit': mx, 'currentCount': have, 'overstockScale': scale},
+                    'rate': row.get('rate'),
+                },
+                'profit': round(profit, 3),
+                'profitPercent': round(profit / buy * 100, 2) if buy else None,
+            })
+
+        combined.sort(key=lambda x: (x['profitPercent'] is not None, x['profitPercent'] or 0), reverse=True)
+        return combined
+
+    # ---- LOOT.Farm auctions ------------------------------------------------
+
+    def _fetch_auctions_raw(self):
+        """Live LOOT.Farm CS2 auctions feed (public), cached _LOOTFARM_AUCTION_TTL s."""
+        now = time.time()
+        if self._auction_cache and now - self._auction_cache[0] < _LOOTFARM_AUCTION_TTL:
+            return self._auction_cache[1]
+        req = urllib.request.Request(_LOOTFARM_AUCTION_URL, headers={
+            'User-Agent': 'Mozilla/5.0', 'Accept': 'application/json', 'Referer': 'https://loot.farm/',
+        })
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            data = json.loads(resp.read().decode('utf-8'))
+        self._auction_cache = (now, data)
+        return data
+
+    @staticmethod
+    def _auction_lots(feed):
+        """Flatten the auction feed into one dict per biddable lot (instance)."""
+        lots = []
+        for key, it in (feed.get('result') or {}).items():
+            name, base, pg, ext = it.get('n'), it.get('p'), it.get('pg'), it.get('e')
+            for grp in (it.get('u') or {}).values():
+                for inst in grp:
+                    lots.append({
+                        'key': key, 'id': inst.get('id'), 'name': name, 'exterior': ext,
+                        'base': base, 'pg': pg, 'current': inst.get('current'),
+                        'bets': inst.get('bets') or 0, 'tradelock': bool(inst.get('tr')),
+                    })
+        return lots
+
+    def _pulse_steam_tradeon(self, token):
+        """{name: steam_autobuy_price}, {name: tradeon_min_price} from one pulse pull."""
+        steam, tradeon = {}, {}
+        try:
+            for it in self._post_tradeon(_TRADEON_STEAM_URL, token):
+                nm = (it.get('itemName') or {}).get('marketHashName')
+                if not nm:
+                    continue
+                sm, fm = it.get('secondMarket') or {}, it.get('firstMarket') or {}
+                if sm.get('price') is not None:
+                    steam[nm] = sm['price']
+                if fm.get('price') is not None:
+                    tradeon[nm] = fm['price']
+        except Exception as e:
+            print(f'[HUGINN] auction pulse prices failed: {e}')
+        return steam, tradeon
+
+    def fetch_auctions(self, token=''):
+        """Live auction board: each auctioned item vs your buy sources. Per item we take
+        the CHEAPEST current lot (what you'd snipe) and join pulse prices — Steam autobuy
+        (resale target, net of 13% fee) and TradeOnMarket min (alt buy source) — to show
+        the flip profit if you win the lot and sell on Steam. Priced by market_hash_name,
+        so float/stickers aren't priced in (approximate)."""
+        feed = self._fetch_auctions_raw()
+        lots = self._auction_lots(feed)
+        by_name = {}
+        for lot in lots:
+            name, cur = lot['name'], lot['current']
+            if not name or cur is None:
+                continue
+            d = by_name.get(name)
+            if d is None:
+                d = by_name[name] = {'name': name, 'exterior': lot['exterior'], 'base': lot['base'],
+                                     'pg': lot['pg'], 'min_current': cur, 'lots': 0, 'bids': 0,
+                                     'tradelock': lot['tradelock']}
+            d['lots'] += 1
+            d['bids'] += lot['bets']
+            d['min_current'] = min(d['min_current'], cur)
+
+        steam, tradeon = self._pulse_steam_tradeon(token)
+        rows = []
+        for d in by_name.values():
+            cur = d['min_current'] / 100.0
+            steam_sell = steam.get(d['name'])
+            tradeon_buy = tradeon.get(d['name'])
+            steam_net = round(steam_sell * (1 - STEAM_SALES_FEE), 4) if steam_sell is not None else None
+            profit = round(steam_net - cur, 3) if steam_net is not None else None
+            rows.append({
+                'itemName': {'marketHashName': d['name']},
+                'exterior': d['exterior'],
+                'base': round((d['base'] or 0) / 100.0, 2),
+                'current': round(cur, 2),
+                'bids': d['bids'], 'lots': d['lots'], 'tradelock': d['tradelock'], 'pg': d['pg'],
+                'steam': round(steam_sell, 2) if steam_sell is not None else None,
+                'steamNet': steam_net,
+                'tradeon': round(tradeon_buy, 2) if tradeon_buy is not None else None,
+                'profit': profit,
+                'profitPercent': round(profit / cur * 100, 2) if (profit is not None and cur) else None,
+            })
+        rows.sort(key=lambda r: (r['profitPercent'] is not None, r['profitPercent'] or 0), reverse=True)
+        return {'rows': rows, 'items': len(rows), 'lots': len(lots), 'timestamp': feed.get('timestamp')}
+
+    # --- auction tracker (persistent per-lot log for the backtest) ---
+
+    def _load_auction_log(self):
+        try:
+            with open(LOOTFARM_AUCTION_LOG, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except Exception:
+            return {'lots': {}, 'updated': 0}
+
+    def _save_auction_log(self, log):
+        try:
+            os.makedirs(os.path.dirname(LOOTFARM_AUCTION_LOG), exist_ok=True)
+            tmp = LOOTFARM_AUCTION_LOG + '.tmp'
+            with open(tmp, 'w', encoding='utf-8') as f:
+                json.dump(log, f)
+            os.replace(tmp, LOOTFARM_AUCTION_LOG)
+        except Exception as e:
+            print(f'[HUGINN] auction log save failed: {e}')
+
+    _AUCTION_LOG_MAX = 20000   # cap on retained cleared lots
+
+    def record_auction_snapshot(self, token=''):
+        """Poll the auction feed once and fold it into the persistent per-lot log: track
+        start/last price, max bids, a Steam resale reference at first sight, and mark lots
+        cleared once they leave the feed. This is what the backtest reads."""
+        feed = self._fetch_auctions_raw()
+        lots = self._auction_lots(feed)
+        now = int(time.time())
+        steam, _ = self._pulse_steam_tradeon(token) if token else ({}, {})
+        with self._auction_lock:
+            log = self._load_auction_log()
+            store = log.setdefault('lots', {})
+            active = set()
+            for lot in lots:
+                lid = lot['id']
+                if not lid:
+                    continue
+                active.add(lid)
+                cur = round((lot['current'] or 0) / 100.0, 2)
+                rec = store.get(lid)
+                if rec is None:
+                    store[lid] = {
+                        'name': lot['name'], 'exterior': lot['exterior'],
+                        'base': round((lot['base'] or 0) / 100.0, 2), 'pg': lot['pg'],
+                        'tradelock': lot['tradelock'], 'first_ts': now, 'last_ts': now,
+                        'start_current': cur, 'last_current': cur, 'max_bets': lot['bets'], 'polls': 1,
+                        'steam_ref': round(steam[lot['name']], 2) if lot['name'] in steam else None,
+                        'cleared': False,
+                    }
+                else:
+                    rec['last_ts'] = now
+                    rec['last_current'] = cur
+                    rec['max_bets'] = max(rec.get('max_bets', 0), lot['bets'])
+                    rec['polls'] = rec.get('polls', 1) + 1
+                    if rec.get('steam_ref') is None and lot['name'] in steam:
+                        rec['steam_ref'] = round(steam[lot['name']], 2)
+            newly_cleared = 0
+            for lid, rec in store.items():
+                if not rec.get('cleared') and lid not in active:
+                    rec['cleared'] = True
+                    rec['cleared_ts'] = now
+                    newly_cleared += 1
+            cleared = [(lid, rec) for lid, rec in store.items() if rec.get('cleared')]
+            if len(cleared) > self._AUCTION_LOG_MAX:
+                cleared.sort(key=lambda x: x[1].get('cleared_ts', 0))
+                for lid, _r in cleared[:len(cleared) - self._AUCTION_LOG_MAX]:
+                    del store[lid]
+            log['updated'] = now
+            self._save_auction_log(log)
+        return {'active': len(active), 'tracked': len(store), 'newly_cleared': newly_cleared, 'updated': now}
+
+    def start_auction_tracker(self, settings_provider, interval=900):
+        """Background loop that snapshots the auction feed every `interval` s."""
+        if getattr(self, '_auction_tracker_started', False):
+            return
+        self._auction_tracker_started = True
+        threading.Thread(target=self._auction_tracker_loop,
+                         args=(settings_provider, interval), daemon=True).start()
+        print(f'[HUGINN] auction tracker started (every {interval}s)')
+
+    def _auction_tracker_loop(self, settings_provider, interval):
+        while True:
+            try:
+                settings = settings_provider() if callable(settings_provider) else (settings_provider or {})
+                token = (settings or {}).get('tradeon_token') or ''
+                res = self.record_auction_snapshot(token)
+                print(f"[HUGINN] auction snapshot: active={res['active']} tracked={res['tracked']} cleared+{res['newly_cleared']}")
+            except Exception as e:
+                print(f'[HUGINN] auction tracker error: {e}')
+            time.sleep(interval)
+
+    def auction_backtest(self, token='', min_profit_pct=10.0):
+        """Measure the auction edge from the tracker log, plus a live-snapshot proof.
+
+        From CLEARED lots: did it attract bids, and how far above base did it clear
+        (seller-side upside)? For 0-bid cleared lots you could have won at base — compare
+        base to the Steam resale reference captured then (buyer snipe edge). Also runs the
+        snipe test on the CURRENT snapshot so there's a number before the log fills."""
+        log = self._load_auction_log()
+        store = log.get('lots', {})
+        cleared = [r for r in store.values() if r.get('cleared')]
+        bid = [r for r in cleared if (r.get('max_bets') or 0) > 0]
+        nobid = [r for r in cleared if not (r.get('max_bets') or 0)]
+
+        def _pct(a, b):
+            return round((a - b) / b * 100, 2) if b else None
+
+        markups = [m for m in (_pct(r['last_current'], r['base']) for r in bid if r.get('base')) if m is not None]
+        avg_markup = round(sum(markups) / len(markups), 2) if markups else None
+
+        snipes = []
+        for r in nobid:
+            ref, base = r.get('steam_ref'), r.get('base')
+            if ref is None or not base:
+                continue
+            snipes.append(_pct(ref * (1 - STEAM_SALES_FEE), base))
+        snipes = [s for s in snipes if s is not None]
+        good = sum(1 for s in snipes if s >= min_profit_pct)
+
+        live = self.fetch_auctions(token)
+        live_profitable = sum(1 for row in live['rows'] if (row.get('profitPercent') or -1) >= min_profit_pct)
+
+        return {
+            'log_updated': log.get('updated'),
+            'cleared_lots': len(cleared), 'bid_lots': len(bid), 'nobid_lots': len(nobid),
+            'bid_rate_pct': round(len(bid) / len(cleared) * 100, 1) if cleared else None,
+            'avg_clear_markup_pct': avg_markup,
+            'snipe_samples': len(snipes), 'profitable_snipes': good, 'min_profit_pct': min_profit_pct,
+            'live_items': live['items'], 'live_profitable': live_profitable,
+            'note': 'Backtest strengthens as the tracker accumulates cleared lots; live_* is the current snapshot.',
+        }
+
+    # ---- LOOT.Farm arbitrage board (buy balance cheap -> LF item -> sell buy order) ---
+
+    _BUYORDER_MARKETS = {'steam': _TRADEON_STEAM_URL, 'buff': _TRADEON_BUFF_URL}
+    _BUYORDER_TTL = 300   # seconds; buy-order maps cached and reused across requests
+
+    def _buyorder_map(self, token, market):
+        """{name: highest buy-order price} for a market, cached _BUYORDER_TTL s. These
+        are instant-sell prices (secondMarketPriceType 'Buy'), unlike the valuation
+        cache which holds listings ('Sell')."""
+        now = time.time()
+        cached = self._buyorder_cache.get(market)
+        if cached and now - cached[0] < self._BUYORDER_TTL:
+            return cached[1]
+        body = copy.deepcopy(_TRADEON_STEAM_BODY)
+        body['secondMarketOptions']['secondMarketPriceType'] = 'Buy'
+        out = {}
+        for it in self._post_tradeon(self._BUYORDER_MARKETS[market], token, body):
+            n = (it.get('itemName') or {}).get('marketHashName')
+            sm = it.get('secondMarket') or {}
+            if n and sm.get('price') is not None:
+                out[n] = sm['price']
+        self._buyorder_cache[market] = (now, out)
+        return out
+
+    def lootfarm_arbitrage(self, token='', balance_rate=0.5208, unlocked=True, in_stock=True):
+        """The core play: buy LOOT.Farm balance cheap (from the USDT OTC trader) → acquire
+        an item from LOOT.Farm → sell it instantly into a Steam/Buff/CSFloat BUY ORDER.
+
+        For each LOOT.Farm item we compute the real USDT cost of acquiring it
+          cost = LF_price × (1.03 if unlocked else 1.0) × balance_rate
+        and the net proceeds of instant-selling into each market's buy order (Steam 13%,
+        Buff 1.5%, CSFloat 2% fees). Steam pays into locked Steam wallet, so it's flagged
+        real_cash=False. Ranked by the best real-cash exit's profit.
+
+        `balance_rate` = USDT paid per $1 of LF balance (0.5208 = the trader's +92%).
+        Steam/Buff buy orders come from pulse (cached); CSFloat from its buy-orders sweep
+        cache (sparse — only swept items)."""
+        try:
+            balance_rate = float(balance_rate)
+        except (TypeError, ValueError):
+            balance_rate = 0.5208
+        markup = 1.03 if unlocked else 1.0
+        feed = self._fetch_lootfarm_feed('cs')
+        steam_bo = self._buyorder_map(token, 'steam') if token else {}
+        buff_bo = self._buyorder_map(token, 'buff') if token else {}
+        csf_bo = (self.get_csfloat_buy_orders_cache() or {}).get('by_name', {})
+
+        fees = {'steam': STEAM_SALES_FEE, 'buff': BUFF_SALES_FEE, 'csfloat': CSFLOAT_SALES_FEE}
+        real_cash = {'steam': False, 'buff': True, 'csfloat': True}   # Steam = locked wallet
+        rows = []
+        for name, r in feed.items():
+            lf = (r.get('price') or 0) / 100.0
+            if not lf:
+                continue
+            have, mx = r.get('have') or 0, r.get('max') or 0
+            tr, res = r.get('tr') or 0, r.get('res') or 0
+            avail = max(0, have - tr - res)   # buyable NOW: total minus trade-locked minus reserved
+            if in_stock and avail <= 0:
+                continue
+            cost = round(lf * markup * balance_rate, 4)
+            exits = {}
+            raw = {'steam': steam_bo.get(name), 'buff': buff_bo.get(name),
+                   'csfloat': (csf_bo.get(name) or {}).get('price')}
+            for mk, price in raw.items():
+                if price is not None:
+                    exits[mk] = round(price * (1 - fees[mk]), 4)
+            # best exit overall and best REAL-CASH exit (Buff/CSFloat)
+            best_mk = max(exits, key=exits.get) if exits else None
+            rc = {mk: v for mk, v in exits.items() if real_cash[mk]}
+            best_rc = max(rc, key=rc.get) if rc else None
+            profit = round(exits[best_rc] - cost, 3) if best_rc else None
+            rows.append({
+                'itemName': {'marketHashName': name},
+                'lf': round(lf, 2), 'have': have, 'max': mx, 'tr': tr, 'res': res, 'avail': avail, 'rate': r.get('rate'),
+                'cost': cost,
+                'steam': exits.get('steam'), 'buff': exits.get('buff'), 'csfloat': exits.get('csfloat'),
+                'bestMarket': best_mk, 'bestNet': exits.get(best_mk) if best_mk else None,
+                'bestRealMarket': best_rc, 'bestRealNet': exits.get(best_rc) if best_rc else None,
+                'profit': profit,
+                'profitPercent': round(profit / cost * 100, 2) if (profit is not None and cost) else None,
+            })
+        # profitable real-cash flips first; unpriced sink
+        rows.sort(key=lambda x: (x['profitPercent'] is not None, x['profitPercent'] or -1e9), reverse=True)
+        return {
+            'rows': rows, 'items': len(rows),
+            'balance_rate': round(balance_rate, 4), 'unlocked': unlocked, 'in_stock': in_stock,
+            'csfloat_coverage': len(csf_bo),
+            'priced': bool(steam_bo or buff_bo or csf_bo),
+        }
 
     def _combine_arbitrage(self, token, buy_url, buy_body, sell_url, sell_fee, sell_body=None):
         """Combine a buy-side market's min prices with a sell-side market's autobuy prices.
