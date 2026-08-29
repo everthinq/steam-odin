@@ -1,9 +1,9 @@
 import React, { useMemo, useState } from 'react';
-import { RefreshCw, Search, TrendingUp, TrendingDown, ChevronDown } from 'lucide-react';
+import { RefreshCw, Search, TrendingUp, TrendingDown, ChevronDown, ArrowLeftRight } from 'lucide-react';
 import { matchesSearchQuery } from '../utils/transferItems';
 
-// Read-only ledger across ALL accounts (arbitrage legs already excluded by the
-// backend). The point is the headline: overall, is the trading profitable? Then
+// Read-only ledger across ALL accounts (arbitrage excluded from P/L — tracked on
+// its own tab). The point is the headline: overall, is the trading profitable? Then
 // supporting Holdings + Transactions tables, the latter tagged with the account
 // each leg happened on.
 const ITEM_IMG_BASE = 'https://api.steamapis.com/image/item/730/';
@@ -19,7 +19,7 @@ const money = (v) => v == null ? '—' : `$${v.toLocaleString(undefined, { minim
 const plClass = (v) => v == null ? 'text-slate-400' : v > 0 ? 'text-emerald-400' : v < 0 ? 'text-red-400' : 'text-slate-400';
 const plStr = (v) => v == null ? '—' : `${v > 0 ? '+' : ''}${money(v)}`;
 
-const PAGE_SIZE = 10;
+const PAGE_SIZE = 100;
 
 const SectionHead = ({ title, open, onToggle, count, total, search, setSearch, placeholder }) => (
     <div className="flex items-center gap-3 flex-wrap mb-2">
@@ -94,8 +94,8 @@ const CombinedLedger = ({ data, loading, pricing }) => {
                             {pct != null && <span className={`text-lg font-semibold tabular-nums ${plClass(data.total_pl)}`}>({up ? '+' : ''}{pct.toFixed(1)}%)</span>}
                         </div>
                         <p className="text-xs text-slate-500 mt-1">
-                            {data.account_count} accounts · {data.holdings_count} holdings · {data.txn_count} real transactions
-                            {data.arbitrage_excluded > 0 && ` · ${data.arbitrage_excluded} arbitrage legs excluded`}
+                            {data.account_count} accounts · {data.holdings_count} holdings · {data.txn_count} transactions
+                            {data.arbitrage_count > 0 && ` · ${data.arbitrage_count} arbitrage legs excluded (see Arbitrage tab)`}
                         </p>
                     </div>
                     <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-sm">
@@ -197,6 +197,11 @@ const CombinedLedger = ({ data, loading, pricing }) => {
                                                     <ItemIcon name={t.item_name} />
                                                     <span>
                                                         <span onClick={() => copyItemName(t.item_name)} title={`${t.item_name}\n(click to copy)`} className="cursor-pointer transition-colors hover:text-white">{t.item_name}</span>
+                                                        {t.is_arbitrage && (
+                                                            <span className="ml-2 inline-flex items-center gap-1 align-middle text-[10px] font-medium text-sky-300 bg-sky-500/15 px-1.5 py-0.5 rounded" title="Arbitrage deal — also counted in the Arbitrage tab">
+                                                                <ArrowLeftRight size={10} /> arb
+                                                            </span>
+                                                        )}
                                                         {copiedName === t.item_name && <span className="ml-2 text-xs font-medium text-emerald-400">Copied!</span>}
                                                         {t.note && <span className="block text-[11px] text-slate-600 truncate max-w-[220px]">{t.note}</span>}
                                                     </span>

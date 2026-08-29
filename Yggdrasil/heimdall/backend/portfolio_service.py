@@ -143,9 +143,9 @@ class PortfolioService:
             'date': (raw.get('date') or '').strip() or _today(),
             'note': (raw.get('note') or '').strip(),
             'fee_percent': fee_percent,
-            # Marks a leg of an inter-account move (buy on one of your accounts,
-            # sell on another). Excluded from the combined ledger so moving items
-            # between your own accounts doesn't distort overall profit.
+            # Marks a leg of an arbitrage deal: buy cheap on one market, sell dear
+            # on another (may span your own accounts). Counted and valued by the
+            # Arbitrage tab; included in the combined ledger as real profit.
             'is_arbitrage': bool(raw.get('is_arbitrage')),
             'created_at': raw.get('created_at') or _now(),
         }
@@ -410,13 +410,23 @@ class PortfolioService:
             'priced': priced,
         }
 
+    @staticmethod
+    def _non_arb(txns):
+        """Transactions with arbitrage-tagged legs dropped. Arbitrage is a
+        cross-account strategy tracked on its own tab, so it's kept out of a single
+        account's holdings and P/L (which should reflect that account's own
+        inventory and trading, not flips that merely passed through it)."""
+        return [t for t in txns if not t.get('is_arbitrage')]
+
     def list_portfolios(self, prices=None):
         with self._lock:
             ps = list(self._data['portfolios'].values())
         out = []
         for p in ps:
-            holdings = self._holdings(p['transactions'], prices)
-            out.append(self._summarize(p, holdings))
+            holdings = self._holdings(self._non_arb(p['transactions']), prices)
+            s = self._summarize(p, holdings)
+            s['arbitrage_count'] = sum(1 for t in p['transactions'] if t.get('is_arbitrage'))
+            out.append(s)
         out.sort(key=lambda s: s['created_at'])
         return out
 
@@ -426,9 +436,12 @@ class PortfolioService:
             if not p:
                 return None
             p = json.loads(json.dumps(p))  # snapshot under lock
-        holdings = self._holdings(p['transactions'], prices)
+        # P/L and holdings exclude arbitrage legs, but the transaction list below
+        # still shows every leg (tagged ones carry the "arb" badge).
+        holdings = self._holdings(self._non_arb(p['transactions']), prices)
         return {
             **self._summarize(p, holdings),
+            'arbitrage_count': sum(1 for t in p['transactions'] if t.get('is_arbitrage')),
             # Newest first, with created_at as a tiebreaker so a just-added
             # transaction always appears at the top of its date.
             'transactions': sorted(p['transactions'],
@@ -438,138 +451,240 @@ class PortfolioService:
         }
 
     def combined_ledger(self, prices=None):
-        """One ledger across ALL accounts, so you can see whether the arbitrage is
-        profitable overall. Inter-account moves (transactions flagged
-        is_arbitrage) are dropped — both the sell leg on the source account and
-        the buy leg on the destination — so shuffling items between your own
-        accounts nets to nothing. Each transaction is tagged with its account."""
+        """One ledger across ALL accounts. Accounts are physically separate books —
+        a non-arbitrage skin bought on one account is sold from that same account —
+        so cost basis must NOT be blended across accounts. We therefore compute each
+        account's holdings with its own avg cost (exactly as the per-account view
+        does) and ADD them up. Combined P/L is thus the exact sum of the accounts.
+
+        Arbitrage legs (is_arbitrage) are excluded from P/L and holdings — arbitrage
+        is a separate strategy on its own tab — but the transaction list still shows
+        every leg, tagged with its account (arbitrage legs badged)."""
         with self._lock:
             ps = json.loads(json.dumps(list(self._data['portfolios'].values())))
-        txns = []
+
+        txns = []            # all legs (incl. arbitrage) for the transaction list
+        merged = {}          # item_name -> additive aggregate of per-account holdings
         for p in ps:
             for t in p['transactions']:
-                if t.get('is_arbitrage'):
-                    continue
                 txns.append({**t, 'account': p['name'], 'portfolio_id': p['id']})
-        holdings = self._holdings(txns, prices)
-        pseudo = {'id': 'combined', 'name': 'All accounts',
-                  'created_at': '', 'updated_at': '', 'transactions': txns}
-        arb = sum(1 for p in ps for t in p['transactions'] if t.get('is_arbitrage'))
+            # Per-account holdings (own avg cost), then merge additively by item.
+            for h in self._holdings(self._non_arb(p['transactions']), prices):
+                m = merged.get(h['item_name'])
+                if m is None:
+                    m = merged[h['item_name']] = {
+                        'item_name': h['item_name'], 'buy_qty': 0, 'buy_cost': 0.0,
+                        'sell_qty': 0, 'sell_proceeds': 0.0, 'net_qty': 0,
+                        'cost_basis': 0.0, 'realized_pl': 0.0,
+                        'current_price': None, 'market_value': None, 'unrealized_pl': None,
+                    }
+                m['buy_qty'] += h['buy_qty']
+                m['buy_cost'] += h['buy_cost']
+                m['sell_qty'] += h['sell_qty']
+                m['sell_proceeds'] += h['sell_proceeds']
+                m['net_qty'] += h['net_qty']
+                m['cost_basis'] += h['cost_basis']
+                m['realized_pl'] += h['realized_pl']
+                if h['current_price'] is not None:
+                    m['current_price'] = h['current_price']
+                if h['market_value'] is not None:
+                    m['market_value'] = (m['market_value'] or 0.0) + h['market_value']
+                if h['unrealized_pl'] is not None:
+                    m['unrealized_pl'] = (m['unrealized_pl'] or 0.0) + h['unrealized_pl']
+
+        holdings = []
+        for m in merged.values():
+            net, buy_qty = m['net_qty'], m['buy_qty']
+            # Held avg cost keeps avg_cost × net_qty == cost_basis in the table;
+            # for fully-sold items fall back to the pooled buy average.
+            avg_cost = (m['cost_basis'] / net) if net > 0 else ((m['buy_cost'] / buy_qty) if buy_qty else 0.0)
+            mv = m['market_value']
+            holdings.append({
+                'item_name': m['item_name'],
+                'buy_qty': buy_qty, 'buy_cost': round(m['buy_cost'], 2),
+                'sell_qty': m['sell_qty'], 'sell_proceeds': round(m['sell_proceeds'], 2),
+                'avg_cost': round(avg_cost, 4),
+                'net_qty': net,
+                'cost_basis': round(m['cost_basis'], 2),
+                'current_price': m['current_price'],
+                'market_value': round(mv, 2) if mv is not None else None,
+                'realized_pl': round(m['realized_pl'], 2),
+                'unrealized_pl': round(m['unrealized_pl'], 2) if m['unrealized_pl'] is not None else None,
+            })
+        holdings.sort(key=lambda x: (x['market_value'] or x['cost_basis'] or 0), reverse=True)
+
+        # Summary from the merged (already per-account-correct) holdings.
+        invested = sum(h['buy_cost'] for h in holdings)
+        cost_basis = sum(h['cost_basis'] for h in holdings)
+        current_value = sum(h['market_value'] if h['market_value'] is not None else h['cost_basis'] for h in holdings)
+        realized = sum(h['realized_pl'] for h in holdings)
+        unrealized = sum(h['unrealized_pl'] or 0 for h in holdings)
+        priced = any(h['current_price'] is not None for h in holdings)
+        held = [h for h in holdings if h['net_qty'] > 0]
+        arb = sum(1 for t in txns if t.get('is_arbitrage'))
         return {
-            **self._summarize(pseudo, holdings),
+            'id': 'combined', 'name': 'All accounts', 'created_at': '', 'updated_at': '',
+            'txn_count': len(txns),
+            'holdings_count': len(held),
+            'unpriced_count': sum(1 for h in held if h['current_price'] is None),
+            'invested': round(invested, 2),
+            'cost_basis': round(cost_basis, 2),
+            'current_value': round(current_value, 2) if priced else None,
+            'realized_pl': round(realized, 2),
+            'unrealized_pl': round(unrealized, 2) if priced else None,
+            'total_pl': round(realized + unrealized, 2) if priced else round(realized, 2),
+            'priced': priced,
             'transactions': sorted(txns,
                                    key=lambda t: (t.get('date') or '', t.get('created_at') or ''),
                                    reverse=True),
             'holdings': holdings,
             'account_count': len(ps),
-            'arbitrage_excluded': arb,
+            'arbitrage_count': arb,
         }
 
-    def spread_board(self, buy_prices=None, sell_prices=None, sell_fee_pct=15.0):
-        """Cross-market arbitrage board: buy on one market (cheap — e.g. Buff163),
-        exit on another (e.g. Steam), fee-aware. Aggregates every account and drops
-        inter-account moves (is_arbitrage), same as the combined ledger, because the
-        arbitrage spans accounts.
+    @staticmethod
+    def _is_steam(platform):
+        """True if a platform is Steam. Steam balance is locked wallet money, not
+        withdrawable cash, so its arbitrage is tracked as a separate category rather
+        than mixed into the real-cash total."""
+        return 'steam' in (platform or '').strip().lower()
 
-        For each item you still hold it juxtaposes:
-          - avg_cost   — what you actually paid (real cost basis)
-          - buy_price  — the buy market's live price now (is it still cheap to source?)
-          - sell_net   — the sell market's live price net of its fee (your true exit)
-          - live_spread_pct = (sell_net - buy_price) / buy_price
-                         → the arb still open in the market right now (source more?)
-          - margin     = (sell_net - avg_cost) * qty
-                         → your unrealized profit if you exit this holding now
+    def arbitrage_deals(self, prices=None):
+        """Count and value your tagged arbitrage deals (transactions flagged
+        is_arbitrage), pooled across ALL accounts — a play can source on one
+        account/market and sell on another, so it's never scoped to one account.
 
-        `buy_prices` / `sell_prices` are {item_name: usd} maps (or None). Returns a
-        rows list (held items, biggest margin first) plus headline aggregates."""
-        buy_prices = buy_prices or {}
-        sell_prices = sell_prices or {}
-        try:
-            fee = float(sell_fee_pct)
-        except (TypeError, ValueError):
-            fee = 15.0
-        fee = min(max(fee, 0.0), 99.0)
-        net_factor = 1.0 - fee / 100.0
+        Realized profit uses the same avg-cost method as the rest of Draupnir,
+        applied to the tagged subset: buys build the cost basis, sells realize the
+        spread. Cross-account and cross-date pairs fall out naturally, so we don't
+        try to match individual buy↔sell legs.
 
+        Every SELL leg is split into a category by where it settled: `steam`
+        (locked wallet money) vs `market` (real, withdrawable cash). Realized P/L is
+        additive across sell legs, so each category's total is exact; the shared
+        avg-cost basis is pooled across all tagged buys of an item. Steam profit is
+        counted at face value but kept in its own bucket so it's never confused with
+        real cash.
+
+        `prices` is an optional {item_name: usd} map, used only to value tagged
+        inventory that's still open (bought to flip, not yet sold)."""
         with self._lock:
             ps = json.loads(json.dumps(list(self._data['portfolios'].values())))
         txns = []
+        accounts = set()
+        open_buys = 0
         for p in ps:
             for t in p['transactions']:
-                if t.get('is_arbitrage'):
+                if not t.get('is_arbitrage'):
                     continue
-                txns.append(t)
-        arb = sum(1 for p in ps for t in p['transactions'] if t.get('is_arbitrage'))
+                txns.append({**t, 'account': p['name']})
+                accounts.add(p['name'])
+                if t['type'] != 'sell':
+                    open_buys += 1
 
-        holdings = self._holdings(txns, None)
-        realized = round(sum(h['realized_pl'] for h in holdings), 2)
+        holdings = self._holdings(txns, prices)
+        avg_cost = {h['item_name']: h['avg_cost'] for h in holdings}
 
-        rows = []
-        capital_deployed = 0.0          # cost basis of ALL held items
-        capital_priced = 0.0            # cost basis of held items we can price a sell for
-        exit_value = 0.0                # net proceeds if we sold priced items now
-        unpriced = 0
-        spread_wsum = 0.0               # capital-weighted live market spread
-        spread_w = 0.0
-        for h in holdings:
-            qty = h['net_qty']
-            if qty <= 0:
+        # Bucket each sell leg into steam vs market and tally per-item within each.
+        cats = {'market': {'realized_pl': 0.0, 'closed_deals': 0, 'units_flipped': 0,
+                           'cost_of_sold': 0.0, 'proceeds': 0.0, '_items': {}},
+                'steam':  {'realized_pl': 0.0, 'closed_deals': 0, 'units_flipped': 0,
+                           'cost_of_sold': 0.0, 'proceeds': 0.0, '_items': {}}}
+        for t in txns:
+            if t['type'] != 'sell':
                 continue
-            avg_cost = h['avg_cost']
-            cost_basis = h['cost_basis']
-            capital_deployed += cost_basis
-            buy_price = buy_prices.get(h['item_name'])
-            sell_price = sell_prices.get(h['item_name'])
-            sell_net = round(sell_price * net_factor, 4) if sell_price is not None else None
-            live_spread_pct = (
-                round((sell_net - buy_price) / buy_price * 100, 2)
-                if (sell_net is not None and buy_price) else None
-            )
-            if sell_net is not None:
-                margin_unit = round(sell_net - avg_cost, 4)
-                margin = round(margin_unit * qty, 2)
-                margin_pct = round((margin_unit / avg_cost) * 100, 2) if avg_cost else None
-                capital_priced += cost_basis
-                exit_value += sell_net * qty
-                if live_spread_pct is not None:
-                    spread_wsum += live_spread_pct * cost_basis
-                    spread_w += cost_basis
-            else:
-                margin_unit = margin = margin_pct = None
-                unpriced += 1
-            rows.append({
-                'item_name': h['item_name'],
-                'net_qty': qty,
-                'avg_cost': avg_cost,
-                'cost_basis': cost_basis,
-                'buy_price': buy_price,
-                'sell_price': sell_price,
-                'sell_net': sell_net,
-                'live_spread_pct': live_spread_pct,
-                'margin_unit': margin_unit,
-                'margin': margin,
-                'margin_pct': margin_pct,
+            cat = cats['steam' if self._is_steam(t.get('platform')) else 'market']
+            item, qty, price = t['item_name'], t['qty'], t['price']
+            ac = avg_cost.get(item, 0.0)
+            cost, proc = ac * qty, price * qty
+            rp = proc - cost
+            cat['realized_pl'] += rp
+            cat['closed_deals'] += 1
+            cat['units_flipped'] += qty
+            cat['cost_of_sold'] += cost
+            cat['proceeds'] += proc
+            d = cat['_items'].setdefault(item, {'item_name': item, 'sell_qty': 0, 'avg_cost': ac,
+                                                'cost_of_sold': 0.0, 'proceeds': 0.0, 'realized_pl': 0.0})
+            d['sell_qty'] += qty
+            d['cost_of_sold'] += cost
+            d['proceeds'] += proc
+            d['realized_pl'] += rp
+
+        def _finish(cat):
+            rows = []
+            for d in cat['_items'].values():
+                d['cost_of_sold'] = round(d['cost_of_sold'], 2)
+                d['proceeds'] = round(d['proceeds'], 2)
+                d['realized_pl'] = round(d['realized_pl'], 2)
+                d['margin_pct'] = round(d['realized_pl'] / d['cost_of_sold'] * 100, 2) if d['cost_of_sold'] else None
+                rows.append(d)
+            rows.sort(key=lambda r: r['realized_pl'], reverse=True)
+            cost = round(cat['cost_of_sold'], 2)
+            realized = round(cat['realized_pl'], 2)
+            return {
+                'realized_pl': realized,
+                'closed_deals': cat['closed_deals'],
+                'units_flipped': cat['units_flipped'],
+                'cost_of_sold': cost,
+                'proceeds': round(cat['proceeds'], 2),
+                'avg_margin_pct': round(realized / cost * 100, 2) if cost else None,
+                'items': len(rows),
+                'rows': rows,
+            }
+        market, steam = _finish(cats['market']), _finish(cats['steam'])
+
+        # Open inventory (bought to flip, not yet sold) — category-agnostic.
+        open_units = open_cost = open_value = open_priced_cost = 0.0
+        for h in holdings:
+            oq = max(h['net_qty'], 0)
+            if oq <= 0:
+                continue
+            open_units += oq
+            open_cost += h['cost_basis']
+            if h['market_value'] is not None:
+                open_value += h['market_value']
+                open_priced_cost += h['cost_basis']
+        priced = any(h['current_price'] is not None for h in holdings)
+        open_unrealized = round(open_value - open_priced_cost, 2)
+
+        # Per-leg ledger: every tagged transaction with account, date and category.
+        legs = []
+        for t in txns:
+            price, qty = t['price'], t['qty']
+            is_sell = t['type'] == 'sell'
+            st = self._is_steam(t.get('platform'))
+            legs.append({
+                'id': t.get('id'),
+                'item_name': t['item_name'],
+                'account': t['account'],
+                'date': t.get('date', ''),
+                'type': t['type'],
+                'qty': qty,
+                'price': round(price, 4),
+                'total': round(price * qty, 2),
+                'platform': t.get('platform', ''),
+                'steam': st,
+                'category': ('steam' if st else 'market') if is_sell else None,
+                'note': t.get('note', ''),
+                'realized_pl': (round((price - avg_cost.get(t['item_name'], 0.0)) * qty, 2)
+                                if is_sell else None),
             })
+        legs.sort(key=lambda l: l['date'], reverse=True)
 
-        # Biggest exit profit on top; unpriced rows sink to the bottom.
-        rows.sort(key=lambda r: (r['margin'] is not None, r['margin'] or 0), reverse=True)
-
-        unrealized = round(exit_value - capital_priced, 2)
-        priced = bool(sell_prices)
         return {
-            'buy_market': None, 'sell_market': None,   # filled by the route
-            'sell_fee_pct': fee,
             'account_count': len(ps),
-            'arbitrage_excluded': arb,
-            'holdings_count': len(rows),
-            'unpriced_count': unpriced,
-            'capital_deployed': round(capital_deployed, 2),
-            'exit_value': round(exit_value, 2) if priced else None,
-            'unrealized_spread': unrealized if priced else None,
-            'unrealized_spread_pct': (round(unrealized / capital_priced * 100, 2)
-                                      if (priced and capital_priced) else None),
-            'realized_pl': realized,
-            'avg_spread_pct': round(spread_wsum / spread_w, 2) if spread_w else None,
+            'accounts_used': sorted(accounts),
+            'items': len(holdings),
+            'open_buys': open_buys,
+            'closed_deals': market['closed_deals'] + steam['closed_deals'],
+            'units_flipped': market['units_flipped'] + steam['units_flipped'],
+            'realized_pl': round(market['realized_pl'] + steam['realized_pl'], 2),
+            'market': market,
+            'steam': steam,
+            'open_units': int(open_units),
+            'open_cost': round(open_cost, 2),
+            'open_value': round(open_value, 2) if priced else None,
+            'open_unrealized': open_unrealized if priced else None,
             'priced': priced,
-            'rows': rows,
+            'legs': legs,
         }

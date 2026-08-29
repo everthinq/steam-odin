@@ -940,7 +940,7 @@ def portfolios_import():
 
 @app.route('/api/portfolios/combined', methods=['GET'])
 def portfolios_combined():
-    """Single ledger across all accounts (arbitrage legs excluded) — overall view."""
+    """Single ledger across all accounts (arbitrage flips included) — overall view."""
     market = request.args.get('market', 'steam')
     prices, status = _portfolio_prices(market)
     data = portfolio_service.combined_ledger(prices)
@@ -949,29 +949,16 @@ def portfolios_combined():
     data['market'] = market
     return jsonify(data)
 
-def _merge_pricing_status(a, b):
-    """Combine two per-market pricing statuses into one for the spread view.
-    Worst-wins ordering so the UI shows the least-ready state."""
-    order = ['no_token', 'error', 'refreshing', 'fresh']
-    return min(a, b, key=lambda s: order.index(s) if s in order else 0)
-
-@app.route('/api/portfolios/spread', methods=['GET'])
-def portfolios_spread():
-    """Cross-market arbitrage board: buy market vs sell market (fee-aware),
-    across all accounts. Query: ?buy=buff&sell=steam&fee=15."""
-    buy = request.args.get('buy', 'buff')
-    sell = request.args.get('sell', 'steam')
-    try:
-        fee = float(request.args.get('fee', 15))
-    except (TypeError, ValueError):
-        fee = 15.0
-    buy_prices, buy_status = _portfolio_prices(buy)
-    sell_prices, sell_status = _portfolio_prices(sell)
-    data = portfolio_service.spread_board(buy_prices, sell_prices, fee)
-    data['buy_market'] = buy
-    data['sell_market'] = sell
-    data['priced'] = sell_prices is not None
-    data['pricing'] = _merge_pricing_status(buy_status, sell_status)
+@app.route('/api/portfolios/arbitrage', methods=['GET'])
+def portfolios_arbitrage():
+    """Count and value your tagged arbitrage deals, pooled across all accounts,
+    split into steam (locked wallet) vs market (real cash) categories.
+    ?market= prices any still-open tagged inventory (default steam)."""
+    market = request.args.get('market', 'steam')
+    prices, status = _portfolio_prices(market)
+    data = portfolio_service.arbitrage_deals(prices)
+    data['open_market'] = market
+    data['pricing'] = status
     return jsonify(data)
 
 @app.route('/api/portfolios/<pid>/export', methods=['GET'])

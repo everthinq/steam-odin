@@ -14,7 +14,7 @@ const MARKETS = [
 
 // Tables can get very long (thousands of rows after an import), so each is
 // collapsible and paginated — only PAGE_SIZE rows paint until "Load more".
-const PAGE_SIZE = 10;
+const PAGE_SIZE = 100;
 
 // Item icons are looked up by market_hash_name (same source Ratatoskr uses) —
 // no icon hash needed, which suits Draupnir since CSV imports only give a name.
@@ -361,6 +361,11 @@ const DraupnirPortfolio = () => {
                             <Tile label="Realized P/L" value={plStr(data.realized_pl)} cls={plClass(data.realized_pl)} />
                             <Tile label="Total P/L" value={plStr(data.total_pl)} cls={plClass(data.total_pl)} />
                         </div>
+                        {data.arbitrage_count > 0 && (
+                            <p className="text-xs text-sky-300/70 -mt-2">
+                                {data.arbitrage_count} arbitrage {data.arbitrage_count === 1 ? 'leg' : 'legs'} excluded from this account's P/L — counted in the Arbitrage tab.
+                            </p>
+                        )}
                         {data.pricing === 'refreshing' && pollRef.current < MAX_POLLS && (
                             <p className="flex items-center gap-1.5 text-xs text-slate-400 -mt-2"><RefreshCw size={12} className="animate-spin" /> Fetching live prices…</p>
                         )}
@@ -442,7 +447,7 @@ const DraupnirPortfolio = () => {
                                 <button
                                     type="button"
                                     onClick={() => setForm(f => ({ ...f, is_arbitrage: !f.is_arbitrage }))}
-                                    title="Mark this as moving an item between your own accounts. Arbitrage legs are excluded from the combined 'All accounts' view so moves don't distort overall profit."
+                                    title="Mark this as part of an arbitrage deal — buy cheap on one market, sell dear on another (may span your own accounts). Counted and valued in the Arbitrage tab."
                                     className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-sm font-medium border transition-colors ${form.is_arbitrage ? 'bg-sky-500/20 text-sky-300 border-sky-500/40' : 'text-slate-400 border-white/10 hover:bg-white/5'}`}
                                 >
                                     <ArrowLeftRight size={14} /> Arbitrage
@@ -562,7 +567,7 @@ const DraupnirPortfolio = () => {
                                                                         <span className="ml-2 text-xs font-medium text-emerald-400">Copied!</span>
                                                                     )}
                                                                     {t.is_arbitrage && (
-                                                                        <span className="ml-2 inline-flex items-center gap-1 align-middle text-[10px] font-medium text-sky-300 bg-sky-500/15 px-1.5 py-0.5 rounded" title="Inter-account move — excluded from the combined view">
+                                                                        <span className="ml-2 inline-flex items-center gap-1 align-middle text-[10px] font-medium text-sky-300 bg-sky-500/15 px-1.5 py-0.5 rounded" title="Arbitrage deal — counted in the Arbitrage tab">
                                                                             <ArrowLeftRight size={10} /> arb
                                                                         </span>
                                                                     )}

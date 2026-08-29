@@ -4,7 +4,7 @@
       "id": "fbf692611b3c",
       "name": "everthinklol",
       "created_at": "2026-07-21T13:40:18.177768+00:00",
-      "updated_at": "2026-08-28T18:51:49.056296+00:00",
+      "updated_at": "2026-08-29T11:04:22.821727+00:00",
       "transactions": [
         {
           "id": "3ea474874554",
@@ -76,6 +76,7 @@
           "date": "2026-06-09",
           "note": "",
           "fee_percent": 0.0,
+          "is_arbitrage": true,
           "created_at": "2026-07-21T13:40:18.173044+00:00"
         },
         {
@@ -88,6 +89,7 @@
           "date": "2026-06-09",
           "note": "",
           "fee_percent": 0.0,
+          "is_arbitrage": true,
           "created_at": "2026-07-21T13:40:18.173049+00:00"
         },
         {
@@ -124,6 +126,7 @@
           "date": "2026-06-08",
           "note": "",
           "fee_percent": 0.0,
+          "is_arbitrage": true,
           "created_at": "2026-07-21T13:40:18.173062+00:00"
         },
         {
@@ -136,6 +139,7 @@
           "date": "2026-06-08",
           "note": "buff after fees",
           "fee_percent": 0.0,
+          "is_arbitrage": true,
           "created_at": "2026-07-21T13:40:18.173066+00:00"
         },
         {
@@ -1756,6 +1760,7 @@
           "date": "2026-06-22",
           "note": "",
           "fee_percent": 0.0,
+          "is_arbitrage": true,
           "created_at": "2026-07-21T13:40:18.174050+00:00"
         },
         {
@@ -1768,6 +1773,7 @@
           "date": "2026-06-09",
           "note": "",
           "fee_percent": 0.0,
+          "is_arbitrage": true,
           "created_at": "2026-07-21T13:40:18.174059+00:00"
         },
         {
@@ -1780,6 +1786,7 @@
           "date": "2026-06-09",
           "note": "buff after fees",
           "fee_percent": 0.0,
+          "is_arbitrage": true,
           "created_at": "2026-07-21T13:40:18.174063+00:00"
         },
         {
@@ -1792,6 +1799,7 @@
           "date": "2026-06-10",
           "note": "",
           "fee_percent": 0.0,
+          "is_arbitrage": true,
           "created_at": "2026-07-21T13:40:18.174068+00:00"
         },
         {
@@ -1804,6 +1812,7 @@
           "date": "2026-06-10",
           "note": "buff after fees",
           "fee_percent": 0.0,
+          "is_arbitrage": true,
           "created_at": "2026-07-21T13:40:18.174072+00:00"
         },
         {
@@ -1816,6 +1825,7 @@
           "date": "2026-06-10",
           "note": "",
           "fee_percent": 0.0,
+          "is_arbitrage": true,
           "created_at": "2026-07-21T13:40:18.174076+00:00"
         },
         {
@@ -1828,6 +1838,7 @@
           "date": "2026-06-21",
           "note": "",
           "fee_percent": 0.0,
+          "is_arbitrage": true,
           "created_at": "2026-07-21T13:40:18.174290+00:00"
         },
         {
@@ -7883,7 +7894,7 @@
           "id": "f5dbdac018f1",
           "item_name": "Recoil Case",
           "type": "buy",
-          "qty": 140,
+          "qty": 141,
           "price": 0.27,
           "platform": "lisskins",
           "date": "2026-08-25",
@@ -8026,7 +8037,7 @@
           "id": "06aecdddd8f8",
           "item_name": "Sticker | High Heat",
           "type": "buy",
-          "qty": 49,
+          "qty": 44,
           "price": 0.34,
           "platform": "lisskins",
           "date": "2026-08-28",
@@ -8104,7 +8115,7 @@
           "id": "6dc901ddd2c6",
           "item_name": "Sticker | High Heat",
           "type": "buy",
-          "qty": 39,
+          "qty": 44,
           "price": 0.35,
           "platform": "lisskins",
           "date": "2026-08-28",
@@ -8117,7 +8128,7 @@
           "id": "d60011e09990",
           "item_name": "Sticker | High Heat",
           "type": "sell",
-          "qty": 39,
+          "qty": 44,
           "price": 0.37,
           "platform": "csfloat",
           "date": "2026-08-28",
@@ -8125,6 +8136,71 @@
           "fee_percent": 0.0,
           "is_arbitrage": true,
           "created_at": "2026-08-28T18:51:49.056276+00:00"
+        },
+        {
+          "id": "8c241a7ec564",
+          "item_name": "Gamma Case",
+          "type": "buy",
+          "qty": 11,
+          "price": 2.77,
+          "platform": "lisskins",
+          "date": "2026-08-28",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": false,
+          "created_at": "2026-08-28T20:23:09.574615+00:00"
+        },
+        {
+          "id": "56cdf1da79f9",
+          "item_name": "Fracture Case",
+          "type": "buy",
+          "qty": 193,
+          "price": 0.43,
+          "platform": "lisskins",
+          "date": "2026-08-28",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": false,
+          "created_at": "2026-08-28T20:23:43.730079+00:00"
+        },
+        {
+          "id": "5a3957e4aa36",
+          "item_name": "Maximus | Sabre",
+          "type": "sell",
+          "qty": 2,
+          "price": 5.31,
+          "platform": "csfloat",
+          "date": "2026-08-29",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": true,
+          "created_at": "2026-08-29T10:03:22.806117+00:00"
+        },
+        {
+          "id": "9fcfa78a1787",
+          "item_name": "Sticker | SAW (Glitter) | Copenhagen 2024",
+          "type": "sell",
+          "qty": 4,
+          "price": 0.81,
+          "platform": "steam",
+          "date": "2026-08-29",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": true,
+          "created_at": "2026-08-29T10:42:12.870439+00:00"
+        },
+        {
+          "id": "6ec15fca0d31",
+          "item_name": "Maximus | Sabre",
+          "type": "sell",
+          "qty": 1,
+          "price": 5.29,
+          "platform": "csfloat",
+          "date": "2026-08-29",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": true,
+          "created_at": "2026-08-29T11:04:22.821705+00:00"
         }
       ]
     },
@@ -10044,7 +10120,7 @@
       "id": "99c18756f9ee",
       "name": "everthinklol1",
       "created_at": "2026-07-21T14:49:46.392883+00:00",
-      "updated_at": "2026-08-28T12:00:03.012821+00:00",
+      "updated_at": "2026-08-29T13:34:31.661706+00:00",
       "transactions": [
         {
           "id": "ed83a19ba6bc",
@@ -12975,6 +13051,162 @@
           "fee_percent": 0.0,
           "is_arbitrage": true,
           "created_at": "2026-08-28T12:00:03.012776+00:00"
+        },
+        {
+          "id": "65ba5ecbcad3",
+          "item_name": "Gamma Case",
+          "type": "buy",
+          "qty": 22,
+          "price": 2.77,
+          "platform": "lisskins",
+          "date": "2026-08-28",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": false,
+          "created_at": "2026-08-28T23:19:34.463510+00:00"
+        },
+        {
+          "id": "7cb383eae9f7",
+          "item_name": "Gamma 2 Case",
+          "type": "buy",
+          "qty": 11,
+          "price": 2.72,
+          "platform": "lisskins",
+          "date": "2026-08-28",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": false,
+          "created_at": "2026-08-28T23:34:09.107736+00:00"
+        },
+        {
+          "id": "074eb2db52c7",
+          "item_name": "CS20 Case",
+          "type": "buy",
+          "qty": 16,
+          "price": 0.88,
+          "platform": "lisskins",
+          "date": "2026-08-29",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": false,
+          "created_at": "2026-08-29T01:30:21.784380+00:00"
+        },
+        {
+          "id": "d94ad638c97a",
+          "item_name": "Maximus | Sabre",
+          "type": "buy",
+          "qty": 2,
+          "price": 5.1,
+          "platform": "lisskins",
+          "date": "2026-08-29",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": true,
+          "created_at": "2026-08-29T10:02:02.271413+00:00"
+        },
+        {
+          "id": "6867171bd4f3",
+          "item_name": "Negev | Ultralight (Factory New)",
+          "type": "buy",
+          "qty": 1,
+          "price": 0.37,
+          "platform": "buff163",
+          "date": "2026-08-29",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": false,
+          "created_at": "2026-08-29T10:34:44.429072+00:00"
+        },
+        {
+          "id": "d0d385eb7996",
+          "item_name": "Sticker | SAW (Glitter) | Copenhagen 2024",
+          "type": "buy",
+          "qty": 4,
+          "price": 0.53,
+          "platform": "lisskins",
+          "date": "2026-08-29",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": true,
+          "created_at": "2026-08-29T10:41:34.329670+00:00"
+        },
+        {
+          "id": "4101d0b3b7ad",
+          "item_name": "Sticker | Blue Gem (Glitter)",
+          "type": "buy",
+          "qty": 2,
+          "price": 2.01,
+          "platform": "lisskins",
+          "date": "2026-08-29",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": true,
+          "created_at": "2026-08-29T10:48:36.660292+00:00"
+        },
+        {
+          "id": "707b2760d366",
+          "item_name": "Sticker | Blue Gem (Glitter)",
+          "type": "sell",
+          "qty": 2,
+          "price": 2.94,
+          "platform": "steam",
+          "date": "2026-08-29",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": true,
+          "created_at": "2026-08-29T10:49:39.833841+00:00"
+        },
+        {
+          "id": "e7e556cb45e3",
+          "item_name": "Fracture Case",
+          "type": "buy",
+          "qty": 8,
+          "price": 0.43,
+          "platform": "lisskins",
+          "date": "2026-08-29",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": false,
+          "created_at": "2026-08-29T10:52:32.923069+00:00"
+        },
+        {
+          "id": "4c822f289a55",
+          "item_name": "Recoil Case",
+          "type": "buy",
+          "qty": 130,
+          "price": 0.27,
+          "platform": "lisskins",
+          "date": "2026-08-29",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": false,
+          "created_at": "2026-08-29T10:54:28.518366+00:00"
+        },
+        {
+          "id": "0988b4eba98d",
+          "item_name": "Maximus | Sabre",
+          "type": "buy",
+          "qty": 1,
+          "price": 5.08,
+          "platform": "lisskins",
+          "date": "2026-08-29",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": true,
+          "created_at": "2026-08-29T11:03:52.608530+00:00"
+        },
+        {
+          "id": "bf455a0b1b99",
+          "item_name": "Maximus | Sabre",
+          "type": "buy",
+          "qty": 3,
+          "price": 5.08,
+          "platform": "lisskins",
+          "date": "2026-08-29",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": false,
+          "created_at": "2026-08-29T11:12:51.355200+00:00"
         }
       ]
     },

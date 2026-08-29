@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Link } from 'react-router-dom';
-import { LayoutDashboard, Coins, Plus, Upload, RefreshCw, Search, LayoutGrid, Layers, History, ArrowLeftRight, ArrowRight } from 'lucide-react';
+import { LayoutDashboard, Coins, Plus, Upload, RefreshCw, Search, LayoutGrid, Layers, History, Repeat } from 'lucide-react';
 import { ConfirmDialog, PromptDialog } from '../../components/DraupnirDialog';
 import PortfolioCard from '../../components/PortfolioCard';
 import CombinedLedger from '../../components/CombinedLedger';
-import SpreadBoard from '../../components/SpreadBoard';
+import ArbitrageDeals from '../../components/ArbitrageDeals';
 import BackupsPanel from '../../components/BackupsPanel';
 import {
     loadPortfolioLayout,
@@ -28,13 +28,10 @@ const DraupnirPortfolios = () => {
     const [priced, setPriced] = useState(false);
     const [pricing, setPricing] = useState('refreshing');   // no_token | fresh | refreshing | error
     const [market, setMarket] = useState('steam');
-    const [viewMode, setViewMode] = useState('accounts');   // 'accounts' | 'combined' | 'spread'
+    const [viewMode, setViewMode] = useState('accounts');   // 'accounts' | 'combined' | 'arbitrage'
     const [combined, setCombined] = useState(null);
-    // Spread view: buy cheap on one market, exit (fee-aware) on another.
-    const [spread, setSpread] = useState(null);
-    const [buyMarket, setBuyMarket] = useState('buff');
-    const [sellMarket, setSellMarket] = useState('steam');
-    const [sellFee, setSellFee] = useState(15);
+    // Arbitrage view: count + value your tagged deals across all accounts.
+    const [arbitrage, setArbitrage] = useState(null);
     const [searchQuery, setSearchQuery] = useState('');
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
@@ -54,13 +51,13 @@ const DraupnirPortfolios = () => {
         try {
             let url;
             if (mode === 'combined') url = `/api/portfolios/combined?market=${mkt}`;
-            else if (mode === 'spread') url = `/api/portfolios/spread?buy=${buyMarket}&sell=${sellMarket}&fee=${sellFee}`;
+            else if (mode === 'arbitrage') url = `/api/portfolios/arbitrage?market=${mkt}`;
             else url = `/api/portfolios?market=${mkt}`;
             const res = await fetch(url);
             if (!res.ok) throw new Error('Failed to load portfolios');
             const data = await res.json();
             if (mode === 'combined') setCombined(data);
-            else if (mode === 'spread') setSpread(data);
+            else if (mode === 'arbitrage') setArbitrage(data);
             else setPortfolios(data.portfolios || []);
             setPriced(!!data.priced);
             setPricing(data.pricing || 'fresh');
@@ -74,14 +71,14 @@ const DraupnirPortfolios = () => {
     };
 
     // Load on mount / market / view-mode / spread-param change (renders instantly from cost basis).
-    useEffect(() => { pollRef.current = 0; setLoading(true); fetchList(market, viewMode); }, [market, viewMode, buyMarket, sellMarket, sellFee]);
+    useEffect(() => { pollRef.current = 0; setLoading(true); fetchList(market, viewMode); }, [market, viewMode]);
 
     // While prices warm in the background, re-poll a few times so they fill in.
     useEffect(() => {
         if (pricing !== 'refreshing' || pollRef.current >= MAX_POLLS) return;
         const t = setTimeout(() => { pollRef.current += 1; fetchList(market, viewMode); }, 3000);
         return () => clearTimeout(t);
-    }, [fetchSeq, pricing, market, viewMode, buyMarket, sellMarket, sellFee]);
+    }, [fetchSeq, pricing, market, viewMode]);
 
     // Keep the saved layout in sync as portfolios are created/deleted.
     const idsKey = useMemo(() => portfolios.map(p => String(p.id)).sort().join(','), [portfolios]);
@@ -263,11 +260,11 @@ const DraupnirPortfolios = () => {
                             <Layers size={14} /> Combined
                         </button>
                         <button
-                            onClick={() => setViewMode('spread')}
-                            title="Cross-market arbitrage: buy cheap on one market, exit (fee-aware) on another"
-                            className={`flex items-center gap-1.5 px-3 py-2 text-sm font-medium transition-colors ${viewMode === 'spread' ? 'bg-yellow-600 text-white' : 'text-slate-400 hover:bg-white/5'}`}
+                            onClick={() => setViewMode('arbitrage')}
+                            title="Your tagged arbitrage deals — count and profit, pooled across all accounts"
+                            className={`flex items-center gap-1.5 px-3 py-2 text-sm font-medium transition-colors ${viewMode === 'arbitrage' ? 'bg-yellow-600 text-white' : 'text-slate-400 hover:bg-white/5'}`}
                         >
-                            <ArrowLeftRight size={14} /> Spread
+                            <Repeat size={14} /> Arbitrage
                         </button>
                     </div>
                     {viewMode === 'accounts' && (
@@ -285,46 +282,18 @@ const DraupnirPortfolios = () => {
                             )}
                         </div>
                     )}
-                    {viewMode === 'spread' ? (
-                        <div className="flex items-center gap-2 flex-wrap">
-                            <span className="text-[10px] font-bold tracking-widest text-slate-600 uppercase">Buy on</span>
-                            <select
-                                value={buyMarket} onChange={e => setBuyMarket(e.target.value)}
-                                className="bg-odin-blue/60 border border-white/10 rounded-lg px-2 py-1.5 text-sky-200 focus:outline-none focus:ring-1 focus:ring-yellow-500/50"
-                            >
-                                {MARKETS.map(m => <option key={m.id} value={m.id}>{m.label}</option>)}
-                            </select>
-                            <ArrowRight size={14} className="text-slate-500" />
-                            <span className="text-[10px] font-bold tracking-widest text-slate-600 uppercase">Sell on</span>
-                            <select
-                                value={sellMarket} onChange={e => setSellMarket(e.target.value)}
-                                className="bg-odin-blue/60 border border-white/10 rounded-lg px-2 py-1.5 text-emerald-200 focus:outline-none focus:ring-1 focus:ring-yellow-500/50"
-                            >
-                                {MARKETS.map(m => <option key={m.id} value={m.id}>{m.label}</option>)}
-                            </select>
-                            <span className="text-[10px] font-bold tracking-widest text-slate-600 uppercase">Fee</span>
-                            <div className="flex items-center">
-                                <input
-                                    type="number" min="0" max="99" step="0.5"
-                                    value={sellFee}
-                                    onChange={e => setSellFee(e.target.value === '' ? '' : Math.min(99, Math.max(0, Number(e.target.value))))}
-                                    onBlur={e => { if (e.target.value === '') setSellFee(0); }}
-                                    className="w-16 bg-odin-blue/60 border border-white/10 rounded-lg px-2 py-1.5 text-slate-200 tabular-nums focus:outline-none focus:ring-1 focus:ring-yellow-500/50"
-                                />
-                                <span className="ml-1 text-slate-500">%</span>
-                            </div>
-                        </div>
-                    ) : (
-                        <div className="flex items-center gap-2">
-                            <span className="text-[10px] font-bold tracking-widest text-slate-600 uppercase">Value on</span>
-                            <select
-                                value={market} onChange={e => setMarket(e.target.value)}
-                                className="bg-odin-blue/60 border border-white/10 rounded-lg px-2 py-1.5 text-slate-200 focus:outline-none focus:ring-1 focus:ring-yellow-500/50"
-                            >
-                                {MARKETS.map(m => <option key={m.id} value={m.id}>{m.label}</option>)}
-                            </select>
-                        </div>
-                    )}
+                    <div className="flex items-center gap-2">
+                        <span className="text-[10px] font-bold tracking-widest text-slate-600 uppercase">
+                            {viewMode === 'arbitrage' ? 'Open at' : 'Value on'}
+                        </span>
+                        <select
+                            value={market} onChange={e => setMarket(e.target.value)}
+                            title={viewMode === 'arbitrage' ? 'Market used to value any still-open tagged inventory' : 'Market used to value holdings'}
+                            className="bg-odin-blue/60 border border-white/10 rounded-lg px-2 py-1.5 text-slate-200 focus:outline-none focus:ring-1 focus:ring-yellow-500/50"
+                        >
+                            {MARKETS.map(m => <option key={m.id} value={m.id}>{m.label}</option>)}
+                        </select>
+                    </div>
                     {pricing === 'refreshing' && pollRef.current < MAX_POLLS && (
                         <span className="flex items-center gap-1.5 text-xs text-slate-400">
                             <RefreshCw size={12} className="animate-spin" /> Fetching live prices…
@@ -346,8 +315,8 @@ const DraupnirPortfolios = () => {
                     <p className="-mt-1 text-xs text-slate-600">Drag cards to reorder · Pin to keep at the top</p>
                 )}
 
-                {viewMode === 'spread' ? (
-                    <SpreadBoard data={spread} loading={loading} pricing={pricing} marketLabel={marketLabel} />
+                {viewMode === 'arbitrage' ? (
+                    <ArbitrageDeals data={arbitrage} loading={loading} pricing={pricing} marketLabel={marketLabel} />
                 ) : viewMode === 'combined' ? (
                     <CombinedLedger data={combined} loading={loading} pricing={pricing} />
                 ) : loading ? (
