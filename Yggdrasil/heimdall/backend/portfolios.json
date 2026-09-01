@@ -4,7 +4,7 @@
       "id": "fbf692611b3c",
       "name": "everthinklol",
       "created_at": "2026-07-21T13:40:18.177768+00:00",
-      "updated_at": "2026-09-01T21:59:43.642309+00:00",
+      "updated_at": "2026-09-01T22:38:45.714302+00:00",
       "transactions": [
         {
           "id": "3ea474874554",
@@ -8388,7 +8388,7 @@
           "id": "267a12bc9a4e",
           "item_name": "Fracture Case",
           "type": "buy",
-          "qty": 16,
+          "qty": 18,
           "price": 0.41,
           "platform": "lisskins",
           "date": "2026-09-02",
