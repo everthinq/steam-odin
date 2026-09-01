@@ -13950,7 +13950,7 @@
       "id": "589eb04fc956",
       "name": "hidey_spidey",
       "created_at": "2026-07-21T14:49:46.495709+00:00",
-      "updated_at": "2026-09-01T10:48:52.338878+00:00",
+      "updated_at": "2026-09-01T13:59:49.154054+00:00",
       "transactions": [
         {
           "id": "7567c6dad2c1",
@@ -15130,7 +15130,7 @@
           "id": "b3ed173cdabb",
           "item_name": "Fracture Case",
           "type": "buy",
-          "qty": 3,
+          "qty": 23,
           "price": 0.41,
           "platform": "lisskins",
           "date": "2026-08-31",
@@ -15268,6 +15268,32 @@
           "fee_percent": 0.0,
           "is_arbitrage": true,
           "created_at": "2026-09-01T10:37:03.822176+00:00"
+        },
+        {
+          "id": "de4f53111df9",
+          "item_name": "Sticker | High Heat",
+          "type": "buy",
+          "qty": 21,
+          "price": 0.35,
+          "platform": "lisskins",
+          "date": "2026-09-01",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": false,
+          "created_at": "2026-09-01T13:35:23.212987+00:00"
+        },
+        {
+          "id": "b61302bcbd99",
+          "item_name": "Gamma Case",
+          "type": "buy",
+          "qty": 16,
+          "price": 2.86,
+          "platform": "lisskins",
+          "date": "2026-09-01",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": false,
+          "created_at": "2026-09-01T13:55:35.799659+00:00"
         }
       ]
     },
