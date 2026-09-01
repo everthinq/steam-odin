@@ -160,6 +160,16 @@ class SecureStorage:
         except Exception as e:
             log.error('pre-migration backup of %s failed: %s', steamid, e)
 
+    # ---- generic encrypted blobs (reused by the Mimir credential vault) -----
+
+    def encrypt_json(self, data):
+        """Serialize *data* to JSON and Fernet-encrypt it under the current key."""
+        return self._fernet.encrypt(json.dumps(data).encode())
+
+    def decrypt_json(self, blob):
+        """Inverse of :meth:`encrypt_json`; raises InvalidToken on a wrong key."""
+        return json.loads(self._fernet.decrypt(blob))
+
     def list_accounts(self):
         return [p.stem for p in self.storage_dir.glob('*.maFile')]
 

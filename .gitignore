@@ -205,6 +205,9 @@ token.txt
 .heimdall_salt
 **/.heimdall_key
 **/.heimdall_salt
+# Mimir credential vault (encrypted login/password/email store — NEVER commit)
+credentials.vault
+**/credentials.vault
 
 # Heimdall runtime data (maFiles/ folder itself may contain README + .gitkeep)
 Yggdrasil/heimdall/backend/logs/

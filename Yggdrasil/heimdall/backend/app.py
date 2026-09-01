@@ -9,6 +9,7 @@ from ratatoskr_service import RatatoskrService
 from huginn_service import HuginnService
 from portfolio_service import PortfolioService
 from backup_service import BackupService
+from mimir_service import MimirService
 from logging_setup import setup_logging
 from context import ctx
 from routes import register_blueprints
@@ -31,6 +32,9 @@ portfolio_service = PortfolioService(huginn_service)
 portfolio_backup = BackupService(portfolio_service.path)
 portfolio_service.set_backup(portfolio_backup)
 scheduler = ConfirmationScheduler(settings_manager, steam_service, ratatoskr_service)
+# Mimir: encrypted credential vault (login/password/email/comment), sharing the
+# maFile encryption key. SteamService.get_password falls back to it by login.
+mimir_service = MimirService(steam_service.storage)
 
 # Expose the singletons to the route blueprints (read from context.ctx at
 # request time — see context.py and the routes/ package).
@@ -41,6 +45,7 @@ ctx.huginn_service = huginn_service
 ctx.portfolio_service = portfolio_service
 ctx.portfolio_backup = portfolio_backup
 ctx.scheduler = scheduler
+ctx.mimir_service = mimir_service
 register_blueprints(app)
 
 

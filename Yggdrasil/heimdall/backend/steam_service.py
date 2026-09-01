@@ -275,16 +275,27 @@ class SteamService:
         return self.storage.load_account(steamid)
 
     def get_password(self, steamid):
-        """Retrieve the stored password for an account."""
+        """Retrieve the stored password for an account.
+
+        SDA maFiles do not carry a password, so first try any password field an
+        imported maFile might have, then fall back to the Mimir credential vault
+        keyed by the account's Steam login (``account_name``).
+        """
         data = self.storage.load_account(steamid)
-        # Note: In a real scenario, this should be encrypted. 
-        # For this implementation, we assume it's stored in 'account_password' or similar field from import.
-        # If it's encrypted in maFile (e.g. SDA), we might need to decrypt it if we knew the key.
-        # However, the user said "decrypt it and use the password from there".
-        # Standard maFiles from SDA usually don't store the password unless explicitly added or in a specific format.
-        # But if the user says it's there, let's look for likely fields.
-        if not data: return None
-        return data.get('account_password') or data.get('password') or data.get('Session', {}).get('Password')
+        if not data:
+            return None
+        pw = (data.get('account_password') or data.get('password')
+              or data.get('Session', {}).get('Password'))
+        if pw:
+            return pw
+        login = data.get('account_name')
+        if login:
+            from context import ctx  # lazy import avoids a startup import cycle
+            if ctx.mimir_service:
+                cred = ctx.mimir_service.get_by_login(login)
+                if cred and cred.get('password'):
+                    return cred['password']
+        return None
 
     def generate_code(self, shared_secret):
         if not shared_secret:

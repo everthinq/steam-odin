@@ -16,6 +16,7 @@ class _Context:
     portfolio_service = None
     portfolio_backup = None
     scheduler = None
+    mimir_service = None
 
 
 ctx = _Context()

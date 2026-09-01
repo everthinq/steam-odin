@@ -9,6 +9,7 @@ import RatatoskrAutoStore from './pages/ratatoskr/AutoStore';
 import HuginnArbitrage from './pages/huginn/Arbitrage';
 import DraupnirPortfolios from './pages/draupnir/Portfolios';
 import DraupnirPortfolio from './pages/draupnir/Portfolio';
+import MimirVault from './pages/mimir/Vault';
 import './index.css';
 
 function App() {
@@ -29,6 +30,9 @@ function App() {
           {/* Draupnir Routes (portfolio tracker) */}
           <Route path="/draupnir" element={<DraupnirPortfolios />} />
           <Route path="/draupnir/:portfolioId" element={<DraupnirPortfolio />} />
+
+          {/* Mímir Routes (credential vault) */}
+          <Route path="/mimir" element={<MimirVault />} />
 
           {/* Ratatoskr Routes */}
           <Route path="/ratatoskr/:steamid" element={<RatatoskrLayout />}>

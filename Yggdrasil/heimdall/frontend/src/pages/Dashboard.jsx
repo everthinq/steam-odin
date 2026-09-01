@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Plus, RefreshCw, Search, Trash2, Settings, Eye, EyeOff, TrendingUp, Coins } from 'lucide-react';
+import { Plus, RefreshCw, Search, Trash2, Settings, Eye, EyeOff, TrendingUp, Coins, KeyRound } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import AccountCard from '../components/AccountCard';
 import GlobalConfirmationsModal from '../components/GlobalConfirmationsModal';
@@ -213,6 +213,18 @@ const Dashboard = () => {
                             <div>
                                 <p className="text-sm font-semibold text-yellow-100 font-serif">Draupnir</p>
                                 <p className="text-xs text-slate-500">The Hoard — Portfolio tracker</p>
+                            </div>
+                        </Link>
+                        <Link
+                            to="/mimir"
+                            className="inline-flex items-center gap-3 px-4 py-3 bg-odin-blue/40 border border-cyan-500/20 rounded-xl hover:bg-odin-blue/60 hover:border-cyan-500/40 transition-all"
+                        >
+                            <div className="p-2 bg-cyan-900/30 rounded-lg border border-cyan-600/30">
+                                <KeyRound size={18} className="text-cyan-400" />
+                            </div>
+                            <div>
+                                <p className="text-sm font-semibold text-cyan-100 font-serif">Mímir</p>
+                                <p className="text-xs text-slate-500">The Keeper — Credential vault</p>
                             </div>
                         </Link>
                     </div>

@@ -340,17 +340,33 @@ class HuginnService:
         self._container_refresh_started = False
 
     def _ensure_session(self, steam_id, account_data):
+        account_name = account_data.get('account_name')
         if self.rat.get_status(steam_id).get('status') == 'connected':
+            # A live session is itself proof the login works — stamp it green so a
+            # scan over already-connected accounts still refreshes their health.
+            self._record_login(account_name, True)
             return True
         password = self.steam.get_password(steam_id)
         if not password:
+            self._record_login(account_name, False, 'no password in vault')
             return False
         result = self.rat.login(
-            account_name=account_data.get('account_name'),
+            account_name=account_name,
             password=password,
             shared_secret=account_data.get('shared_secret'),
         )
-        return 'error' not in result
+        ok = 'error' not in result
+        self._record_login(account_name, ok, result.get('error'))
+        return ok
+
+    @staticmethod
+    def _record_login(account_name, ok, error=None):
+        """Best-effort stamp of a login outcome onto the Mimir credential."""
+        if not account_name:
+            return
+        from context import ctx
+        if ctx.mimir_service:
+            ctx.mimir_service.record_login_result(account_name, ok, error)
 
     def _ingest(self, by_hash, items, account_name, steam_id, location, storage_unit=None):
         for item in items:
