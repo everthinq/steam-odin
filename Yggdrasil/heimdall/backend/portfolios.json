@@ -4,7 +4,7 @@
       "id": "fbf692611b3c",
       "name": "everthinklol",
       "created_at": "2026-07-21T13:40:18.177768+00:00",
-      "updated_at": "2026-09-01T10:38:05.826935+00:00",
+      "updated_at": "2026-09-01T18:54:56.219552+00:00",
       "transactions": [
         {
           "id": "3ea474874554",
@@ -8362,7 +8362,7 @@
           "id": "ec5c5e4eb60d",
           "item_name": "SCAR-20 | Trail Blazer (Field-Tested)",
           "type": "sell",
-          "qty": 7,
+          "qty": 8,
           "price": 0.44,
           "platform": "steam",
           "date": "2026-09-01",
@@ -13950,7 +13950,7 @@
       "id": "589eb04fc956",
       "name": "hidey_spidey",
       "created_at": "2026-07-21T14:49:46.495709+00:00",
-      "updated_at": "2026-09-01T16:02:32.376289+00:00",
+      "updated_at": "2026-09-01T18:58:39.209805+00:00",
       "transactions": [
         {
           "id": "7567c6dad2c1",
@@ -15325,7 +15325,7 @@
           "id": "87856c43f5c6",
           "item_name": "Dreams & Nightmares Case",
           "type": "buy",
-          "qty": 6,
+          "qty": 15,
           "price": 1.08,
           "platform": "lisskins",
           "date": "2026-09-01",
@@ -15333,6 +15333,45 @@
           "fee_percent": 0.0,
           "is_arbitrage": false,
           "created_at": "2026-09-01T15:14:30.043043+00:00"
+        },
+        {
+          "id": "6fef59c09c99",
+          "item_name": "Sticker | Hello M4A1-S",
+          "type": "buy",
+          "qty": 4,
+          "price": 0.28,
+          "platform": "lisskins",
+          "date": "2026-09-01",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": false,
+          "created_at": "2026-09-01T18:26:27.261531+00:00"
+        },
+        {
+          "id": "e5fc5c34256a",
+          "item_name": "SCAR-20 | Trail Blazer (Field-Tested)",
+          "type": "buy",
+          "qty": 1,
+          "price": 0.27,
+          "platform": "lisskins",
+          "date": "2026-09-01",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": true,
+          "created_at": "2026-09-01T18:41:42.879904+00:00"
+        },
+        {
+          "id": "a4969684c40c",
+          "item_name": "Shadow Case",
+          "type": "buy",
+          "qty": 8,
+          "price": 1.55,
+          "platform": "lisskins",
+          "date": "2026-09-01",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": false,
+          "created_at": "2026-09-01T18:58:39.209768+00:00"
         }
       ]
     },
