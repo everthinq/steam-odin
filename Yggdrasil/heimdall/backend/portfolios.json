@@ -13950,7 +13950,7 @@
       "id": "589eb04fc956",
       "name": "hidey_spidey",
       "created_at": "2026-07-21T14:49:46.495709+00:00",
-      "updated_at": "2026-09-01T14:32:06.636099+00:00",
+      "updated_at": "2026-09-01T15:14:30.043075+00:00",
       "transactions": [
         {
           "id": "7567c6dad2c1",
@@ -15286,7 +15286,7 @@
           "id": "b61302bcbd99",
           "item_name": "Gamma Case",
           "type": "buy",
-          "qty": 16,
+          "qty": 17,
           "price": 2.86,
           "platform": "lisskins",
           "date": "2026-09-01",
@@ -15299,7 +15299,7 @@
           "id": "453ee6305c53",
           "item_name": "Clutch Case",
           "type": "buy",
-          "qty": 10,
+          "qty": 36,
           "price": 0.48,
           "platform": "lisskins",
           "date": "2026-09-01",
@@ -15307,6 +15307,32 @@
           "fee_percent": 0.0,
           "is_arbitrage": false,
           "created_at": "2026-09-01T14:32:06.636070+00:00"
+        },
+        {
+          "id": "4a1a97c51aac",
+          "item_name": "Fracture Case",
+          "type": "buy",
+          "qty": 150,
+          "price": 0.41,
+          "platform": "lisskins",
+          "date": "2026-09-01",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": false,
+          "created_at": "2026-09-01T15:13:33.486353+00:00"
+        },
+        {
+          "id": "87856c43f5c6",
+          "item_name": "Dreams & Nightmares Case",
+          "type": "buy",
+          "qty": 6,
+          "price": 1.08,
+          "platform": "lisskins",
+          "date": "2026-09-01",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": false,
+          "created_at": "2026-09-01T15:14:30.043043+00:00"
         }
       ]
     },
