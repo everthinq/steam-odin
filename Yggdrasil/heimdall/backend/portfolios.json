@@ -4,7 +4,7 @@
       "id": "fbf692611b3c",
       "name": "everthinklol",
       "created_at": "2026-07-21T13:40:18.177768+00:00",
-      "updated_at": "2026-09-01T18:54:56.219552+00:00",
+      "updated_at": "2026-09-01T21:59:43.642309+00:00",
       "transactions": [
         {
           "id": "3ea474874554",
@@ -8383,6 +8383,32 @@
           "fee_percent": 0.0,
           "is_arbitrage": true,
           "created_at": "2026-09-01T10:32:41.543358+00:00"
+        },
+        {
+          "id": "267a12bc9a4e",
+          "item_name": "Fracture Case",
+          "type": "buy",
+          "qty": 16,
+          "price": 0.41,
+          "platform": "lisskins",
+          "date": "2026-09-02",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": false,
+          "created_at": "2026-09-01T21:43:45.880096+00:00"
+        },
+        {
+          "id": "995a676b6e51",
+          "item_name": "Fracture Case",
+          "type": "buy",
+          "qty": 1,
+          "price": 0.43,
+          "platform": "lisskins",
+          "date": "2026-09-02",
+          "note": "tampermonkey works here",
+          "fee_percent": 0.0,
+          "is_arbitrage": false,
+          "created_at": "2026-09-01T21:59:43.642294+00:00"
         }
       ]
     },
@@ -13950,7 +13976,7 @@
       "id": "589eb04fc956",
       "name": "hidey_spidey",
       "created_at": "2026-07-21T14:49:46.495709+00:00",
-      "updated_at": "2026-09-01T19:52:03.952054+00:00",
+      "updated_at": "2026-09-01T21:36:46.741098+00:00",
       "transactions": [
         {
           "id": "7567c6dad2c1",
@@ -15390,7 +15416,7 @@
           "id": "1bc341cdc51a",
           "item_name": "Fracture Case",
           "type": "buy",
-          "qty": 151,
+          "qty": 184,
           "price": 0.41,
           "platform": "lisskins",
           "date": "2026-09-01",
