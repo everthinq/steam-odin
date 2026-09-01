@@ -29,12 +29,15 @@ Every operation is best-effort and self-contained: a backup failure logs and
 returns, it never propagates into (and breaks) a portfolio write.
 """
 import hashlib
+import logging
 import os
 import re
 import shutil
 import threading
 import time
 from datetime import datetime, timezone, timedelta
+
+logger = logging.getLogger(__name__)
 
 BACKUPS_DIR = os.path.join(os.path.dirname(__file__), 'backups', 'portfolios')
 
@@ -99,7 +102,7 @@ class BackupService:
                 os.replace(tmp, dest)  # atomic
                 return name
         except Exception as e:
-            print(f'[DRAUPNIR-BACKUP] snapshot failed: {e}')
+            logger.error(f'[DRAUPNIR-BACKUP] snapshot failed: {e}')
             return None
 
     # ---- listing -----------------------------------------------------------
@@ -168,7 +171,7 @@ class BackupService:
                 os.replace(tmp, self.source_path)  # atomic
             return {'ok': True, 'error': None}
         except Exception as e:
-            print(f'[DRAUPNIR-BACKUP] restore failed: {e}')
+            logger.error(f'[DRAUPNIR-BACKUP] restore failed: {e}')
             return {'ok': False, 'error': str(e)}
 
     def read_backup(self, name):
@@ -223,7 +226,7 @@ class BackupService:
                             pass
                 return removed
         except Exception as e:
-            print(f'[DRAUPNIR-BACKUP] prune failed: {e}')
+            logger.error(f'[DRAUPNIR-BACKUP] prune failed: {e}')
             return 0
 
     def stats(self):
@@ -251,7 +254,7 @@ class BackupService:
         self._stop.clear()
         self._thread = threading.Thread(target=self._loop, daemon=True)
         self._thread.start()
-        print('[DRAUPNIR-BACKUP] Started daily portfolio backup loop.')
+        logger.info('[DRAUPNIR-BACKUP] Started daily portfolio backup loop.')
 
     def stop(self):
         self._stop.set()

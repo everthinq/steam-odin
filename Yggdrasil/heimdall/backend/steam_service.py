@@ -13,6 +13,7 @@ from datetime import datetime, timedelta
 from hashlib import sha1
 from storage import SecureStorage
 
+logger = logging.getLogger(__name__)  # general diagnostics; steam_debug logger is separate
 
 _STEAMID64_BASE = 76561197960265728
 
@@ -97,7 +98,7 @@ def _trim_steam_log(path, max_age_days=_LOG_RETENTION_DAYS):
             shutil.copyfileobj(src, dst, length=1024 * 1024)
         os.replace(tmp, path)
     except OSError as e:
-        print(f"[STEAM DEBUG] Log trim failed: {e}")
+        logger.error(f"[STEAM DEBUG] Log trim failed: {e}")
 
 
 def _get_steam_debug_logger():
@@ -173,7 +174,7 @@ class SteamService:
                 proxies['http'] = socks_proxy
                 proxies['https'] = socks_proxy
             except ImportError:
-                print("Warning: SOCKS_PROXY set but 'requests[socks]' not installed.")
+                logger.warning("Warning: SOCKS_PROXY set but 'requests[socks]' not installed.")
         
         return proxies if proxies else None
 
@@ -198,13 +199,13 @@ class SteamService:
         )
         log_body = f"[STEAM DEBUG] {label} body:\n{snippet}\n--- END {label} ---\n"
 
-        print(log_header)
-        print(log_body)
+        logger.info(log_header)
+        logger.info(log_body)
 
         try:
             _get_steam_debug_logger().info(log_header + "\n" + log_body)
         except Exception as e:
-            print(f"[STEAM DEBUG] Failed to write log file: {e}")
+            logger.error(f"[STEAM DEBUG] Failed to write log file: {e}")
 
     def import_account(self, mafile_data, filename=None):
         """Fixed import to avoid JS rounding errors by using the filename."""
@@ -216,7 +217,7 @@ class SteamService:
         if filename:
             # Splits by dot and take the first part: '76561198123456789'
             steamid = str(filename.split('.')[0]) 
-            print(f"[IMPORT] Using SteamID from filename: {steamid}")
+            logger.info(f"[IMPORT] Using SteamID from filename: {steamid}")
 
         # 2. Fallback to internal data ONLY as a string
         if not steamid or not steamid.isdigit():
@@ -419,7 +420,7 @@ class SteamService:
         wait = self._mobileconf_backoff_sec
         self._mobileconf_cooldown_until = time.time() + wait
         self._mobileconf_backoff_sec = min(wait * 2, self._MOBILECONF_COOLDOWN_MAX)
-        print(
+        logger.error(
             f"[AUTH] mobileconf transient error — backing off {int(wait)}s "
             f"(next {int(self._mobileconf_backoff_sec)}s)"
         )
@@ -427,7 +428,7 @@ class SteamService:
     def _reset_mobileconf_cooldown(self):
         """Clear the backoff after a successful request."""
         if self._mobileconf_backoff_sec != self._MOBILECONF_COOLDOWN_BASE:
-            print("[AUTH] mobileconf recovered — backoff reset")
+            logger.info("[AUTH] mobileconf recovered — backoff reset")
         self._mobileconf_cooldown_until = 0
         self._mobileconf_backoff_sec = self._MOBILECONF_COOLDOWN_BASE
 
@@ -475,9 +476,9 @@ class SteamService:
                 session_data['RefreshToken'] = body['refresh_token']
             data['Session'] = session_data
 
-            print(f"[AUTH] AccessToken REFRESHED for {steamid}")
+            logger.info(f"[AUTH] AccessToken REFRESHED for {steamid}")
             self.storage.save_account(steamid, data)
-            print(f"[STORAGE] Persisted refreshed session to {steamid}.maFile")
+            logger.info(f"[STORAGE] Persisted refreshed session to {steamid}.maFile")
 
             return {'success': True, 'access_token': new_access, 'steamid': stored_steamid}
         except Exception as e:
@@ -504,7 +505,7 @@ class SteamService:
             refreshed = self._refresh_access_token(steamid, data)
             if refreshed.get('success'):
                 return refreshed
-            print(f"[AUTH] Refresh failed for {steamid}: {refreshed.get('message')}")
+            logger.error(f"[AUTH] Refresh failed for {steamid}: {refreshed.get('message')}")
 
         # Fallback: full login
         auth = self.begin_auth_session(username, password)
@@ -523,9 +524,9 @@ class SteamService:
         data['Session'] = session_data
 
         # LOG FULL LOGIN PERSISTENCE
-        print(f"[AUTH] New AccessToken obtained via FULL LOGIN for {final_steamid}")
+        logger.info(f"[AUTH] New AccessToken obtained via FULL LOGIN for {final_steamid}")
         self.storage.save_account(steamid, data)
-        print(f"[STORAGE] Persisted new login session to {steamid}.maFile")
+        logger.info(f"[STORAGE] Persisted new login session to {steamid}.maFile")
 
         result = {'success': True, 'access_token': access_token, 'steamid': final_steamid}
         if '_session' in auth:
@@ -567,10 +568,10 @@ class SteamService:
         
         try:
             self.storage.save_account(steamid, data)
-            print(f"[AUTH] Updated session cookies for {steamid} from external source")
+            logger.info(f"[AUTH] Updated session cookies for {steamid} from external source")
             return {'success': True}
         except Exception as e:
-            print(f"[AUTH] Failed to save updated session for {steamid}: {e}")
+            logger.error(f"[AUTH] Failed to save updated session for {steamid}: {e}")
             return {'success': False, 'message': str(e)}
 
     def clear_web_session(self, steamid):
@@ -585,7 +586,7 @@ class SteamService:
             session_data.pop('WebSessionId', None)
             data['Session'] = session_data
             self.storage.save_account(steamid, data)
-            print(f"[AUTH] Cleared web session tokens for {steamid}")
+            logger.info(f"[AUTH] Cleared web session tokens for {steamid}")
 
         return {'success': True}
 
@@ -786,7 +787,7 @@ class SteamService:
             # First fetch failed. Try exactly one session refresh + retry to cover a
             # genuinely stale token. Only one refresh happens (the cooldown gates any
             # further attempts), so this can't spiral into a login storm.
-            print(f"[AUTH] Confirmation fetch failed for {steamid}, refreshing session once...")
+            logger.error(f"[AUTH] Confirmation fetch failed for {steamid}, refreshing session once...")
             data = self.storage.load_account(steamid) or data
             refresh_result = self._ensure_access_token(
                 steamid, data, username, password, expected_steamid=steamid, force_refresh=True
@@ -887,7 +888,7 @@ class SteamService:
         if self._note_transient(parsed):
             return parsed
 
-        print(f"First attempt failed for confirmation {cid}. Refreshing session and retrying...")
+        logger.error(f"First attempt failed for confirmation {cid}. Refreshing session and retrying...")
         retry = attempt_action(force_refresh=True)
         if retry.get('success'):
             self._reset_mobileconf_cooldown()
@@ -971,7 +972,7 @@ class SteamService:
         if self._note_transient(parsed):
             return parsed
 
-        print(f"Batch confirm failed for {steamid} ({len(items)} items). Refreshing session and retrying...")
+        logger.error(f"Batch confirm failed for {steamid} ({len(items)} items). Refreshing session and retrying...")
         retry = attempt_action(force_refresh=True)
         if retry.get('success'):
             self._reset_mobileconf_cooldown()

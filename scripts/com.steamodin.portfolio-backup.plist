@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  launchd agent: run the portfolio backup hourly.
+
+  Install:
+    1. Edit the path below to your repo if it differs.
+    2. cp scripts/com.steamodin.portfolio-backup.plist ~/Library/LaunchAgents/
+    3. launchctl load ~/Library/LaunchAgents/com.steamodin.portfolio-backup.plist
+  Disable:
+    launchctl unload ~/Library/LaunchAgents/com.steamodin.portfolio-backup.plist
+
+  Push auth: the script pushes over HTTPS to GitHub, so the credential must be
+  cached (git credential helper / osxkeychain) or use an SSH remote. Test once
+  by running scripts/backup_portfolios.sh by hand before enabling.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.steamodin.portfolio-backup</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/everthinq/Projects/steam-odin/scripts/backup_portfolios.sh</string>
+    </array>
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Minute</key>
+        <integer>0</integer>
+    </dict>
+    <key>StandardOutPath</key>
+    <string>/Users/everthinq/Projects/steam-odin/Yggdrasil/heimdall/backend/logs/portfolio-backup.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/everthinq/Projects/steam-odin/Yggdrasil/heimdall/backend/logs/portfolio-backup.err.log</string>
+</dict>
+</plist>

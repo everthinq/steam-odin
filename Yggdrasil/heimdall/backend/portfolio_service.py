@@ -8,10 +8,15 @@ file (gitignored — it's personal holdings data), guarded by a lock.
 import csv
 import io
 import json
+import logging
 import os
 import threading
 import uuid
 from datetime import datetime, timezone
+
+from jsonio import atomic_write_json
+
+log = logging.getLogger(__name__)
 
 PORTFOLIOS_FILE = os.path.join(os.path.dirname(__file__), 'portfolios.json')
 
@@ -69,13 +74,20 @@ class PortfolioService:
         self.huginn = huginn_service
         self.path = path
         self._lock = threading.Lock()
-        self._data = self._load()
-        # Optional BackupService, wired by app.py. Every persisted change is
-        # snapshotted for point-in-time restore (deduped by content hash).
+        # Optional BackupService, wired by app.py via set_backup(). Every
+        # persisted change is snapshotted for point-in-time restore (deduped by
+        # content hash), and it doubles as the corruption-recovery source in
+        # _load(). Set before _load() so recovery is available on first read.
         self._backup = None
+        self._data = self._load()
 
     def set_backup(self, backup_service):
         self._backup = backup_service
+        # If the boot load hit a corrupt file before the backup was available,
+        # retry recovery now that we can read snapshots.
+        if getattr(self, '_last_load_corrupt', False):
+            with self._lock:
+                self._data = self._load()
 
     def reload(self):
         """Re-read the source file into memory — used after a backup restore
@@ -86,24 +98,61 @@ class PortfolioService:
     # ---- persistence -------------------------------------------------------
 
     def _load(self):
+        """Read the store, self-healing from the newest good backup if the live
+        file is corrupt (rather than silently starting empty).
+
+        Sets ``self._last_load_corrupt`` so :meth:`set_backup` can retry the
+        recovery once the backup service is wired (the boot load runs before
+        it). A *missing* file is a legitimately-empty install, not corruption."""
+        self._last_load_corrupt = False
         if not os.path.exists(self.path):
             return {'portfolios': {}}
         try:
             with open(self.path) as f:
                 data = json.load(f)
-            data.setdefault('portfolios', {})
-            return data
+            if isinstance(data, dict):
+                data.setdefault('portfolios', {})
+                return data
+            log.error('portfolios.json did not parse to an object')
+        except (json.JSONDecodeError, OSError, ValueError) as e:
+            log.error('portfolios.json unreadable: %s', e)
+
+        # Existed but did not parse -> corruption. Try the newest good backup.
+        recovered = self._recover_from_backup()
+        if isinstance(recovered, dict):
+            recovered.setdefault('portfolios', {})
+            return recovered
+        self._last_load_corrupt = True  # couldn't recover yet; retry after wiring
+        return {'portfolios': {}}
+
+    def _recover_from_backup(self):
+        """Recovery hook for :func:`read_json`: parse the newest snapshot whose
+        JSON is intact. Returns a dict, or None if no usable backup exists."""
+        if self._backup is None:
+            return None
+        try:
+            for entry in self._backup.list_backups():  # newest-first
+                raw = self._backup.read_backup(entry['name'])
+                if not raw:
+                    continue
+                try:
+                    parsed = json.loads(raw)
+                except (json.JSONDecodeError, ValueError):
+                    continue
+                if isinstance(parsed, dict):
+                    log.warning('recovered portfolios from backup %s',
+                                entry['name'])
+                    return parsed
         except Exception as e:
-            print(f'[DRAUPNIR] Could not read {self.path}: {e}')
-            return {'portfolios': {}}
+            log.error('backup recovery failed: %s', e)
+        return None
 
     def _persist(self):
         """Caller must hold self._lock."""
         try:
-            with open(self.path, 'w') as f:
-                json.dump(self._data, f, indent=2)
+            atomic_write_json(self.path, self._data, indent=2)
         except Exception as e:
-            print(f'[DRAUPNIR] Could not persist portfolios: {e}')
+            log.error('could not persist portfolios: %s', e)
             return
         # Snapshot the new state for point-in-time restore. Best-effort and
         # deduped by content hash — never lets a backup issue break the write.

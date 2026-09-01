@@ -1,0 +1,11 @@
+# Baseline lint config. Kept lenient so CI focuses on real bugs, not style churn
+# across the existing codebase; tighten `select` over time.
+line-length = 100
+target-version = "py311"
+
+[lint]
+# E9/F = syntax errors + pyflakes (undefined names, unused imports) — high signal.
+select = ["E9", "F"]
+
+[lint.per-file-ignores]
+"tests/*" = ["F401"]

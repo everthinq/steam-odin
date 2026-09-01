@@ -115,6 +115,7 @@ coverage.xml
 *.py,cover
 .hypothesis/
 .pytest_cache/
+.ruff_cache/
 cover/
 
 # Flask
@@ -199,6 +200,11 @@ token.txt
 # Steam Guard maFiles (NEVER commit — contains shared_secret, identity_secret, session tokens)
 *.maFile
 **/*.maFile
+# maFile encryption key + salt (auto-generated when HEIMDALL_SECRET_KEY is unset — NEVER commit)
+.heimdall_key
+.heimdall_salt
+**/.heimdall_key
+**/.heimdall_salt
 
 # Heimdall runtime data (maFiles/ folder itself may contain README + .gitkeep)
 Yggdrasil/heimdall/backend/logs/

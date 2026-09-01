@@ -1,5 +1,8 @@
+import logging
 import requests
 import os
+
+logger = logging.getLogger(__name__)
 
 RATATOSKR_URL = os.environ.get('RATATOSKR_URL', 'http://localhost:3030')
 
@@ -25,7 +28,7 @@ class RatatoskrService:
             response.raise_for_status()
             return response.json()
         except requests.exceptions.RequestException as e:
-            print(f"Ratatoskr Login Error: {e}")
+            logger.error(f"Ratatoskr Login Error: {e}")
             if e.response:
                 return {"error": e.response.json().get('error', 'Login failed'), "details": e.response.text}
             return {"error": "Failed to connect to Ratatoskr"}
@@ -58,7 +61,7 @@ class RatatoskrService:
                 return {"success": True, "message": "Already disconnected"}
             return {"error": response.json().get("error", "Disconnect failed")}
         except requests.exceptions.RequestException as e:
-            print(f"Ratatoskr Disconnect Error: {e}")
+            logger.error(f"Ratatoskr Disconnect Error: {e}")
             return {"error": "Failed to connect to Ratatoskr"}
 
     def move_item(self, steam_id, item_id, source, target, casket_id=None):
@@ -77,7 +80,7 @@ class RatatoskrService:
             response.raise_for_status()
             return response.json()
         except requests.exceptions.RequestException as e:
-            print(f"Ratatoskr Move Error: {e}")
+            logger.error(f"Ratatoskr Move Error: {e}")
             if e.response:
                  return {"error": e.response.json().get('error', 'Move failed')}
             return {"error": "Failed to connect to Ratatoskr"}
@@ -96,7 +99,7 @@ class RatatoskrService:
             response.raise_for_status()
             return response.json()
         except requests.exceptions.RequestException as e:
-            print(f"Ratatoskr Batch Move Error: {e}")
+            logger.error(f"Ratatoskr Batch Move Error: {e}")
             if e.response:
                 return {"error": e.response.json().get('error', 'Batch move failed')}
             return {"error": "Failed to connect to Ratatoskr"}
@@ -108,7 +111,7 @@ class RatatoskrService:
             response.raise_for_status()
             return response.json()
         except requests.exceptions.RequestException as e:
-            print(f"Ratatoskr Move Status Error: {e}")
+            logger.error(f"Ratatoskr Move Status Error: {e}")
             return {"error": "Failed to fetch move status from Ratatoskr"}
 
     def get_move_delay(self):
@@ -118,7 +121,7 @@ class RatatoskrService:
             response.raise_for_status()
             return response.json()
         except requests.exceptions.RequestException as e:
-            print(f"Ratatoskr Move Delay GET Error: {e}")
+            logger.error(f"Ratatoskr Move Delay GET Error: {e}")
             return {"error": "Failed to fetch move delay from Ratatoskr"}
 
     def set_move_delay(self, delay_ms):
@@ -132,7 +135,7 @@ class RatatoskrService:
             response.raise_for_status()
             return response.json()
         except requests.exceptions.RequestException as e:
-            print(f"Ratatoskr Move Delay SET Error: {e}")
+            logger.error(f"Ratatoskr Move Delay SET Error: {e}")
             if e.response:
                 return {"error": e.response.json().get('error', 'Failed to set move delay')}
             return {"error": "Failed to connect to Ratatoskr"}
@@ -148,7 +151,7 @@ class RatatoskrService:
             response.raise_for_status()
             return response.json()
         except requests.exceptions.RequestException as e:
-            print(f"Ratatoskr Protected Accounts SET Error: {e}")
+            logger.error(f"Ratatoskr Protected Accounts SET Error: {e}")
             return {"error": "Failed to set protected accounts"}
 
     def get_session_idle_timeout(self):
@@ -158,7 +161,7 @@ class RatatoskrService:
             response.raise_for_status()
             return response.json()
         except requests.exceptions.RequestException as e:
-            print(f"Ratatoskr Session Idle GET Error: {e}")
+            logger.error(f"Ratatoskr Session Idle GET Error: {e}")
             return {"error": "Failed to fetch session idle timeout from Ratatoskr"}
 
     def set_session_idle_timeout(self, idle_timeout_ms):
@@ -172,7 +175,7 @@ class RatatoskrService:
             response.raise_for_status()
             return response.json()
         except requests.exceptions.RequestException as e:
-            print(f"Ratatoskr Session Idle SET Error: {e}")
+            logger.error(f"Ratatoskr Session Idle SET Error: {e}")
             if e.response:
                 return {"error": e.response.json().get('error', 'Failed to set session idle timeout')}
             return {"error": "Failed to connect to Ratatoskr"}
@@ -217,7 +220,7 @@ class RatatoskrService:
             response.raise_for_status()
             return response.json()
         except requests.exceptions.RequestException as e:
-            print(f"Ratatoskr Casket Rename Error: {e}")
+            logger.error(f"Ratatoskr Casket Rename Error: {e}")
             if e.response:
                 body = e.response.json()
                 return {"error": body.get("error", "Rename failed")}

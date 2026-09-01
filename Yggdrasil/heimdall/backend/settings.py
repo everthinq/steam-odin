@@ -1,6 +1,11 @@
 import json
+import logging
 import os
 import threading
+
+from jsonio import atomic_write_json
+
+log = logging.getLogger(__name__)
 
 SETTINGS_FILE = 'settings.json'
 
@@ -58,7 +63,7 @@ class SettingsManager:
             with open(SETTINGS_FILE, 'r') as f:
                 return {**DEFAULT_SETTINGS, **json.load(f)}
         except Exception as e:
-            print(f"[SETTINGS] Failed to load settings: {e}")
+            log.error('failed to load settings: %s', e)
             return DEFAULT_SETTINGS.copy()
 
     def save_settings(self, new_settings):
@@ -81,13 +86,12 @@ class SettingsManager:
             return self._persist()
 
     def _persist(self):
-        """Write current settings to disk. Caller must hold self.lock."""
+        """Write current settings to disk atomically. Caller must hold self.lock."""
         try:
-            with open(SETTINGS_FILE, 'w') as f:
-                json.dump(self.settings, f, indent=4)
+            atomic_write_json(SETTINGS_FILE, self.settings, indent=4)
             return True
         except Exception as e:
-            print(f"[SETTINGS] Failed to save settings: {e}")
+            log.error('failed to save settings: %s', e)
             return False
 
     def append_auto_store_history(self, record):

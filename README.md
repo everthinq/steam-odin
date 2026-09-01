@@ -4,20 +4,24 @@
 
 ## 🗺️ The Realms (Project Structure)
 
-This monorepo contains multiple applications, each named after a figure from Norse mythology:
+This monorepo contains two deployable realms, plus several tools that live
+inside Heimdall — each named after a figure from Norse mythology:
 
-- **`Yggdrasil/heimdall`** (Authenticator): The Watchman.
-    - *Role:* Syncs with Steam servers, generates TOTP codes, and manages session tokens.
-    - *Tech:* Flask + React.
-- **`Yggdrasil/ratatoskr`** (Casemove): The Courier.
-    - *Role:* Moves items between Storage Units and Inventory.
-    - *Tech:* Steam-user & Global Offensive libraries.
-- **`Yggdrasil/huginn`** (Skinsprice): The Scout.
-    - *Role:* Scours marketplaces to find the best deals.
-- **Huginn** (Arbitrage): The Scout — a tool within Heimdall.
-    - *Role:* Cross-market arbitrage profiles (Tradeon/LisSkins/Buff/CSFloat/DMarket) using live pulse prices.
-- **Draupnir** (Portfolio Tracker): The Hoard — a tool within Heimdall.
-    - *Role:* Tracks buy/sell transactions per portfolio with live valuation & profit/loss. Imports Pricempire CSV exports.
+- **`Yggdrasil/heimdall`** — The Watchman. The main suite (Flask backend + React
+  frontend). Started as the Steam authenticator (TOTP codes, session tokens,
+  confirmations) and now hosts the tools below.
+    - *Tech:* Flask + React/Vite.
+- **`Yggdrasil/ratatoskr`** — The Courier. Node service that moves items between
+  Storage Units and inventory via the Steam-user & Global Offensive libraries.
+  Driven from Heimdall's Ratatoskr pages.
+
+Tools **within Heimdall** (frontend pages under `heimdall/frontend/src/pages/`):
+
+- **Draupnir** (Portfolio Tracker): The Hoard. Tracks buy/sell transactions per
+  portfolio with avg-cost P/L and live valuation; point-in-time backups; CSV import.
+- **Huginn** (Arbitrage / Skins Scout): The Scout. Cross-market price scouting &
+  arbitrage profiles (Tradeon/LisSkins/Buff/CSFloat/DMarket) using live pulse
+  prices; Case Arbitrage tracker and price alerts.
 
 > [!NOTE]
 > The `apps` directory has been renamed to **`Yggdrasil`** (The World Tree), which contains the individual realms (applications).
@@ -54,6 +58,20 @@ make ragnarok
 The `docker-compose.yml` orchestrates all services.
 - **Heimdall Frontend**: http://localhost:3000
 - **Heimdall Backend**: http://localhost:5001
+
+### Tests
+
+Backend tests (avg-cost math, crash-safe JSON I/O, maFile encryption/migration,
+write validation) run with pytest:
+
+```bash
+cd Yggdrasil/heimdall/backend
+pip install -r requirements-dev.txt
+pytest
+```
+
+CI (`.github/workflows/ci.yml`) runs the backend tests + ruff + `pip-audit`, and
+the frontend lint + build, on every push and pull request.
 
 ## 🔒 Security (open source)
 

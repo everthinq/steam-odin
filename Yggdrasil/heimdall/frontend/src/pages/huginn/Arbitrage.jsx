@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useMemo, useRef, useDeferredValue } from 'react';
+import React, { useState, useEffect, useMemo, useDeferredValue } from 'react';
 import { Link } from 'react-router-dom';
-import { LayoutDashboard, RefreshCw, AlertTriangle, Search, ChevronDown, ArrowRight, Coins, Boxes, Repeat, Gavel } from 'lucide-react';
+import { LayoutDashboard, RefreshCw, AlertTriangle, Search, ChevronDown, Coins, Boxes, Repeat, Gavel } from 'lucide-react';
 import { matchesSearchQuery } from '../../utils/transferItems';
 import SteamMarketLink from '../../components/SteamMarketLink';
 import BuffMarketLink from '../../components/BuffMarketLink';
@@ -10,7 +10,10 @@ import CollectionFilter from '../../components/CollectionFilter';
 import CaseArbitrage from '../../components/CaseArbitrage';
 import AuctionBoard from '../../components/AuctionBoard';
 import LootfarmArbitrage from '../../components/LootfarmArbitrage';
-import { getTradeonShortLink } from '../../utils/tradeonShortLink';
+import PriceCell from '../../components/arbitrage/PriceCell';
+import OverstockCell from '../../components/arbitrage/OverstockCell';
+import LootfarmSellCell from '../../components/arbitrage/LootfarmSellCell';
+import ProfilePicker from '../../components/arbitrage/ProfilePicker';
 
 // Render results in capped pages — the datasets are ~17k rows and painting them all
 // at once freezes the page. Rows are sorted best-profit-first, so the first page is
@@ -46,153 +49,6 @@ const PROFILES = [
     { id: 'dmarket-csfloat',         from: 'DMarket',  fromSub: 'min', to: 'CSFloat', toSub: 'min',     buyMarket: 'Dmarket',       sellMarket: 'CsFloat', fetchEndpoint: '/api/huginn/tradeon/dmarket-csfloat' },
     { id: 'dmarket-csfloat-autobuy', from: 'DMarket',  fromSub: 'min', to: 'CSFloat', toSub: 'autobuy', buyMarket: 'Dmarket',       sellMarket: 'CsFloat', fetchEndpoint: '/api/huginn/tradeon/dmarket-csfloat-autobuy', autobuy: true },
 ];
-
-// Group profiles by their buy market ("from"), preserving array order, so the picker
-// can show tidy sections instead of one long flat list as profiles multiply.
-const groupProfiles = (profiles) => {
-    const groups = [];
-    const byFrom = {};
-    for (const p of profiles) {
-        if (!byFrom[p.from]) { byFrom[p.from] = { from: p.from, items: [] }; groups.push(byFrom[p.from]); }
-        byFrom[p.from].items.push(p);
-    }
-    return groups;
-};
-
-// A right-aligned price. When `market` is set, it links to that market's pulse
-// short-link for the item; otherwise it's plain text.
-const PriceCell = ({ market, itemName, price, className }) => {
-    const text = `$${price?.toFixed(2)}`;
-    const href = market ? getTradeonShortLink(market, itemName) : null;
-    if (!href) return <span className={className}>{text}</span>;
-    return (
-        <a
-            href={href}
-            target="_blank"
-            rel="noopener noreferrer"
-            title={`Open on ${market === 'TradeOnMarket' ? 'Tradeon' : market}`}
-            onClick={(e) => e.stopPropagation()}
-            className={`${className} hover:text-amber-300 hover:underline transition-colors`}
-        >
-            {text}
-        </a>
-    );
-};
-
-// Sell-side overstock (LOOT.Farm autobuy). overstockInfo = { limit, currentCount,
-// overstockScale }, where scale = currentCount/limit*100 (how full the bot is).
-//   • limit 0  → the site has no active buy limit for the item; it forces scale 100
-//     and shows it as "Unstable" (price/acceptance unreliable) — flag red.
-//   • currentCount >= limit (scale >= 100) → "Full", won't take more — red.
-//   • otherwise show how full it is (currentCount/limit), amber when nearly full.
-// Markets without overstock data (every non-LootFarm profile) render a dash.
-const OverstockCell = ({ info, className }) => {
-    if (!info || info.currentCount == null) return <span className={`${className} text-slate-600`}>—</span>;
-    const { limit, currentCount, overstockScale } = info;
-    const scale = overstockScale != null ? overstockScale : (limit > 0 ? Math.round(currentCount / limit * 100) : 100);
-    if (limit === 0) {
-        return <span className={`${className} text-red-400 font-medium`} title={`LOOT.Farm has no active buy limit for this item — shown as "Unstable" on the site (currently holds ${currentCount}). Acceptance/price is unreliable.`}>Unstable</span>;
-    }
-    if (currentCount >= limit) {
-        return <span className={`${className} text-red-400`} title={`LOOT.Farm is full: holds ${currentCount} of ${limit} — won't buy more`}>Full</span>;
-    }
-    const cls = scale >= 80 ? 'text-amber-400' : 'text-slate-300';
-    return <span className={`${className} ${cls}`} title={`LOOT.Farm holds ${currentCount} of ${limit} (${scale}% full)`}>{currentCount}/{limit}</span>;
-};
-
-// LOOT.Farm price tier = its price relative to Steam, shown on their site as the
-// price-tag background color. Thresholds (on the feed `rate` %) and exact hexes are
-// lifted from loot.farm's own CSS/JS: green = cheap vs Steam (best to buy), orange =
-// priced above Steam. Below 80% → untiered (default).
-const lootfarmTier = (rate) => {
-    if (rate == null) return null;
-    if (rate >= 115) return { bg: '#d19705', pct: '105%' };   // orange
-    if (rate >= 110) return { bg: '#8c857c', pct: '100%' };   // gray
-    if (rate >= 95)  return { bg: '#825115', pct: '85%' };    // brown
-    if (rate >= 80)  return { bg: '#00b021', pct: '70%' };    // green
-    return null;
-};
-
-// LOOT.Farm sell price, rendered as a tier-colored tag like their own site.
-const LootfarmSellCell = ({ itemName, price, rate }) => {
-    const tier = lootfarmTier(rate);
-    const href = getTradeonShortLink('LootFarm', itemName);
-    const text = `$${price?.toFixed(2)}`;
-    const title = tier
-        ? `LOOT.Farm tier ${tier.pct} of Steam${rate != null ? ` · rate ${rate}%` : ''}`
-        : (rate != null ? `rate ${rate}% of Steam` : '');
-    const inner = tier
-        ? <span className="inline-block px-2 rounded font-semibold text-white" style={{ backgroundColor: tier.bg, textShadow: '0 0 4px #000' }}>{text}</span>
-        : <span>{text}</span>;
-    return (
-        <div className="text-base text-right tabular-nums text-slate-300" title={title}>
-            {href
-                ? <a href={href} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} className="hover:opacity-80 transition-opacity">{inner}</a>
-                : inner}
-        </div>
-    );
-};
-
-const MarketBadge = ({ name, sub, dim }) => (
-    <span className={`flex items-baseline gap-1 ${dim ? 'opacity-50' : ''}`}>
-        <span className="font-semibold text-white">{name}</span>
-        <span className="text-[10px] text-slate-500">({sub})</span>
-    </span>
-);
-
-const ProfilePicker = ({ profiles, value, onChange }) => {
-    const [open, setOpen] = useState(false);
-    const ref = useRef(null);
-    const active = profiles.find(p => p.id === value) ?? profiles[0];
-
-    useEffect(() => {
-        const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
-        document.addEventListener('mousedown', handler);
-        return () => document.removeEventListener('mousedown', handler);
-    }, []);
-
-    return (
-        <div ref={ref} className="relative shrink-0">
-            <button
-                type="button"
-                onClick={() => setOpen(o => !o)}
-                className="flex items-center gap-2.5 px-3 py-2 rounded-xl bg-odin-blue/60 border border-amber-500/20 hover:border-amber-500/40 hover:bg-odin-blue/80 transition-all text-sm"
-            >
-                <MarketBadge name={active.from} sub={active.fromSub} />
-                <ArrowRight size={13} className="text-amber-500/60 shrink-0" />
-                <MarketBadge name={active.to} sub={active.toSub} />
-                <ChevronDown size={13} className={`text-slate-500 ml-1 transition-transform ${open ? 'rotate-180' : ''}`} />
-            </button>
-
-            {open && (
-                <div className="absolute top-full left-0 mt-1.5 z-50 min-w-[15rem] max-h-[70vh] overflow-y-auto custom-scrollbar bg-[#0d1520] border border-white/10 rounded-xl shadow-2xl shadow-black/60 py-1">
-                    {groupProfiles(profiles).map(group => (
-                        <div key={group.from}>
-                            <div className="flex items-center gap-1.5 px-3 pt-2.5 pb-1 text-[10px] font-bold uppercase tracking-wider text-slate-500">
-                                Buy on {group.from}
-                            </div>
-                            {group.items.map(p => {
-                                const isActive = p.id === value;
-                                return (
-                                    <button
-                                        key={p.id}
-                                        type="button"
-                                        onClick={() => { onChange(p.id); setOpen(false); }}
-                                        className={`w-full flex items-center gap-2 pl-5 pr-4 py-2 text-sm transition-colors text-left ${isActive ? 'bg-amber-500/10 text-white' : 'hover:bg-white/[0.04] text-slate-300'}`}
-                                    >
-                                        <ArrowRight size={12} className={isActive ? 'text-amber-500/60 shrink-0' : 'text-slate-600 shrink-0'} />
-                                        <MarketBadge name={p.to} sub={p.toSub} dim={!isActive} />
-                                        {isActive && <span className="ml-auto w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0" />}
-                                    </button>
-                                );
-                            })}
-                        </div>
-                    ))}
-                </div>
-            )}
-        </div>
-    );
-};
 
 const formatTs = (ts) => {
     if (!ts) return null;

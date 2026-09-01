@@ -23,7 +23,7 @@ import TransferQueueModal from '../../components/TransferQueueModal';
 import TransferProgressBar from '../../components/TransferProgressBar';
 import SteamMarketLink from '../../components/SteamMarketLink';
 import { CollectionFilterPanel } from '../../components/CollectionFilter';
-import { getItemImageUrl, getStickerImageUrl } from '../../utils/ratatoskrImages';
+import { getStickerImageUrl } from '../../utils/ratatoskrImages';
 import {
     tagInventoryItems,
     tagCasketItems,
@@ -36,204 +36,16 @@ import {
     formatTradeHoldLabel,
     itemsHaveTradeHold,
 } from '../../utils/transferItems';
+import PickCheckbox from '../../components/transfer/PickCheckbox';
+import CollapsibleSection from '../../components/transfer/CollapsibleSection';
+import ItemThumb from '../../components/transfer/ItemThumb';
+import GroupQtyInput from '../../components/transfer/GroupQtyInput';
+import PricingSampleReport from '../../components/transfer/PricingSampleReport';
+import { getCasketCount, getItemCollection, transferRowSurfaceClass } from '../../utils/transferView';
 
 const STORAGE_CAPACITY = 1000;
-const NO_COLLECTION_LABEL = 'No collection';
 const TRANSFER_HEADER_BTN =
     'inline-flex items-center justify-center gap-2 h-10 px-4 rounded-lg text-sm font-medium transition-all shrink-0';
-
-const getCasketCount = (c) => c.item_storage_total ?? 0;
-
-const getItemCollection = (item) => {
-    const name = item.item_collection?.trim();
-    return name || NO_COLLECTION_LABEL;
-};
-
-const TRADE_HOLD_ROW_IDLE =
-    'border-l-2 border-orange-500/50 bg-orange-950/30 hover:bg-orange-950/40';
-const TRADE_HOLD_ROW_SELECTED = 'border-l-2 border-orange-400 bg-orange-500/15';
-const TRADE_HOLD_VARIANT_IDLE =
-    'border-l-2 border-orange-500/35 bg-orange-950/20';
-const TRADE_HOLD_VARIANT_SELECTED = 'border-l-2 border-orange-400/80 bg-orange-500/10';
-
-const transferRowSurfaceClass = (onTradeHold, selected, { variant = false } = {}) => {
-    if (!onTradeHold) {
-        return selected !== 'none' ? 'bg-amber-500/10' : 'hover:bg-white/5';
-    }
-    if (selected !== 'none') {
-        return variant ? TRADE_HOLD_VARIANT_SELECTED : TRADE_HOLD_ROW_SELECTED;
-    }
-    return variant ? TRADE_HOLD_VARIANT_IDLE : TRADE_HOLD_ROW_IDLE;
-};
-
-const PickCheckbox = ({ checked, partial = false, onChange, label }) => (
-    <button
-        type="button"
-        role="checkbox"
-        aria-checked={checked || partial}
-        aria-label={label}
-        onClick={(e) => {
-            e.stopPropagation();
-            onChange();
-        }}
-        className={`p-1 rounded border transition-colors shrink-0 ${checked
-            ? 'bg-emerald-600/30 border-emerald-500/50 text-emerald-400'
-            : partial
-              ? 'bg-amber-600/20 border-amber-500/40 text-amber-400'
-              : 'border-white/10 text-slate-500 hover:border-white/20'
-            }`}
-    >
-        {checked ? (
-            <Check size={14} />
-        ) : partial ? (
-            <Minus size={14} />
-        ) : (
-            <span className="block w-3.5 h-3.5" />
-        )}
-    </button>
-);
-
-const CollapsibleSection = ({ title, icon: Icon, open, onToggle, summary, headerRight, children }) => (
-    <div className="mb-3 rounded-xl border border-white/10 bg-black/20 overflow-hidden">
-        <button
-            type="button"
-            onClick={onToggle}
-            className="w-full flex items-center gap-2 px-3 py-2.5 text-left hover:bg-white/[0.03] transition-colors"
-            aria-expanded={open}
-        >
-            <ChevronDown
-                size={16}
-                className={`shrink-0 text-slate-500 transition-transform ${open ? '' : '-rotate-90'}`}
-            />
-            {Icon && <Icon size={14} className="text-amber-400/80 shrink-0" />}
-            <span className="text-xs font-bold tracking-widest text-slate-500 shrink-0">{title}</span>
-            {!open && summary && (
-                <span className="text-xs text-slate-400 truncate min-w-0">{summary}</span>
-            )}
-            {headerRight && <div className="ml-auto flex items-center gap-2 shrink-0">{headerRight}</div>}
-        </button>
-        {open && <div className="px-3 pb-3 border-t border-white/5">{children}</div>}
-    </div>
-);
-
-const PricingSampleReport = ({ report, onDismiss }) => {
-    if (!report?.items?.length) return null;
-
-    const sorted = [...report.items].sort((a, b) =>
-        (a.item_name || '').localeCompare(b.item_name || '')
-    );
-
-    return (
-        <div className="mb-6 rounded-2xl border border-bifrost-cyan/25 bg-gradient-to-b from-bifrost-cyan/10 to-transparent overflow-hidden">
-            <div className="flex items-start justify-between gap-3 px-4 py-3 border-b border-white/10 bg-black/20">
-                <div className="min-w-0">
-                    <h3 className="text-base font-semibold text-white">Now in your inventory</h3>
-                    <p className="text-xs text-slate-400 mt-1 leading-relaxed">
-                        {sorted.length} different skin{sorted.length === 1 ? '' : 's'} — we moved{' '}
-                        <span className="text-bifrost-cyan">one of each</span> from storage so price
-                        sites can see your full collection.
-                    </p>
-                </div>
-                <button
-                    type="button"
-                    onClick={onDismiss}
-                    className="shrink-0 p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 transition-colors"
-                    aria-label="Dismiss list"
-                >
-                    <X size={18} />
-                </button>
-            </div>
-            <ul className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-2 p-3 max-h-80 overflow-y-auto custom-scrollbar">
-                {sorted.map((item) => (
-                    <li
-                        key={item.item_id}
-                        className="flex items-center gap-2.5 p-2.5 rounded-xl border border-white/5 bg-odin-blue/40 hover:bg-odin-blue/60 transition-colors"
-                    >
-                        <ItemThumb item={item.representative || item} />
-                        <div className="min-w-0 flex-1">
-                            <div className="flex items-center gap-1 min-w-0">
-                                <span className="text-sm text-white truncate">{item.item_name}</span>
-                                <SteamMarketLink itemName={item.item_name} />
-                            </div>
-                            {item.item_wear_name && (
-                                <p className="text-[11px] text-slate-500 truncate">{item.item_wear_name}</p>
-                            )}
-                        </div>
-                    </li>
-                ))}
-            </ul>
-        </div>
-    );
-};
-
-const ItemThumb = ({ item }) => {
-    const [failed, setFailed] = useState(false);
-    const src = getItemImageUrl(item);
-
-    if (!src || failed) {
-        return (
-            <div className="w-9 h-9 shrink-0 rounded bg-black/30 flex items-center justify-center">
-                <Package size={14} className="text-slate-600" />
-            </div>
-        );
-    }
-
-    return (
-        <img
-            src={src}
-            alt=""
-            className="w-9 h-9 object-contain shrink-0 rounded bg-black/20"
-            loading="lazy"
-            referrerPolicy="no-referrer"
-            onError={() => setFailed(true)}
-        />
-    );
-};
-
-const GroupQtyInput = ({ selectedQty, maxQty, onCommit }) => {
-    const [draft, setDraft] = useState(String(selectedQty));
-
-    useEffect(() => {
-        setDraft(String(selectedQty));
-    }, [selectedQty]);
-
-    const commit = (raw) => {
-        const parsed = raw === '' ? 0 : parseInt(raw, 10);
-        const n = Math.max(0, Math.min(maxQty, Number.isNaN(parsed) ? 0 : parsed));
-        onCommit(n);
-        setDraft(String(n));
-    };
-
-    return (
-        <div className="flex items-center justify-center gap-1 text-xs tabular-nums">
-            <input
-                type="text"
-                inputMode="numeric"
-                value={draft}
-                onChange={(e) => {
-                    const v = e.target.value;
-                    if (v === '' || /^\d+$/.test(v)) {
-                        setDraft(v);
-                        if (v !== '') {
-                            const parsed = parseInt(v, 10);
-                            if (!Number.isNaN(parsed)) onCommit(parsed);
-                        }
-                    }
-                }}
-                onBlur={() => commit(draft)}
-                onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                        commit(draft);
-                        e.currentTarget.blur();
-                    }
-                }}
-                className="w-10 h-7 text-center bg-black/40 border border-white/10 rounded text-white focus:outline-none focus:border-amber-500/50"
-                aria-label={`Quantity to move out of ${maxQty}`}
-            />
-            <span className="text-slate-400 whitespace-nowrap font-medium">/ {maxQty}</span>
-        </div>
-    );
-};
 
 const RatatoskrTransfer = () => {
     const { steamid } = useOutletContext();

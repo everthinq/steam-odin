@@ -1,7 +1,10 @@
+import logging
 import random
 import threading
 import time
 from datetime import datetime, timezone
+
+logger = logging.getLogger(__name__)
 
 # Storage units hold up to 1000 items (mirrors STORAGE_CAPACITY in the frontend).
 STORAGE_CAPACITY = 1000
@@ -27,13 +30,13 @@ class ConfirmationScheduler:
         self.stop_event.clear()
         self.thread = threading.Thread(target=self._run_loop, daemon=True)
         self.thread.start()
-        print("[SCHEDULER] Started background confirmation checker.")
+        logger.info("[SCHEDULER] Started background confirmation checker.")
 
     def stop(self):
         if self.thread:
             self.stop_event.set()
             self.thread.join(timeout=2)
-            print("[SCHEDULER] Stopped background confirmation checker.")
+            logger.info("[SCHEDULER] Stopped background confirmation checker.")
 
     @staticmethod
     def _confirm_polling_on(settings):
@@ -66,7 +69,7 @@ class ConfirmationScheduler:
         try:
             self.ratatoskr_service.set_protected_accounts(protected)
         except Exception as e:
-            print(f"[AUTO-STORE] Failed to sync protected accounts: {e}")
+            logger.error(f"[AUTO-STORE] Failed to sync protected accounts: {e}")
 
     def _run_loop(self):
         while not self.stop_event.is_set():
@@ -78,13 +81,13 @@ class ConfirmationScheduler:
                 try:
                     self._check_all_accounts(settings)
                 except Exception as e:
-                    print(f"[SCHEDULER] Error in check loop: {e}")
+                    logger.error(f"[SCHEDULER] Error in check loop: {e}")
 
             if self._auto_store_on(settings):
                 try:
                     self._auto_store_sweep(settings)
                 except Exception as e:
-                    print(f"[SCHEDULER] Error in auto-store sweep: {e}")
+                    logger.error(f"[SCHEDULER] Error in auto-store sweep: {e}")
 
             # Sleep for the configured interval, checking stop_event frequently
             interval = max(10, settings.get("check_interval", 300))
@@ -98,10 +101,10 @@ class ConfirmationScheduler:
         # If mobileconf is in backoff, skip the whole sweep so we don't keep hitting it.
         cooldown = self.steam_service._mobileconf_cooldown_remaining()
         if cooldown:
-            print(f"[SCHEDULER] Skipping sweep — mobileconf backoff active ({int(cooldown)}s left)")
+            logger.warning(f"[SCHEDULER] Skipping sweep — mobileconf backoff active ({int(cooldown)}s left)")
             return
 
-        print(f"[{datetime.now().strftime('%H:%M:%S')}] [SCHEDULER] Checking confirmations for all accounts...")
+        logger.info(f"[{datetime.now().strftime('%H:%M:%S')}] [SCHEDULER] Checking confirmations for all accounts...")
         accounts = self.steam_service.get_all_accounts_data()
 
         for i, account in enumerate(accounts):
@@ -109,10 +112,10 @@ class ConfirmationScheduler:
             try:
                 self._process_account(steamid, settings)
             except Exception as e:
-                print(f"[SCHEDULER] Failed to process {steamid}: {e}")
+                logger.error(f"[SCHEDULER] Failed to process {steamid}: {e}")
             # Stop the sweep immediately if the backoff was tripped mid-run.
             if self.steam_service._mobileconf_cooldown_remaining():
-                print("[SCHEDULER] mobileconf backoff tripped mid-sweep — aborting remaining accounts")
+                logger.info("[SCHEDULER] mobileconf backoff tripped mid-sweep — aborting remaining accounts")
                 break
             if i < len(accounts) - 1:
                 time.sleep(1)
@@ -121,14 +124,14 @@ class ConfirmationScheduler:
         # 1. Fetch confirmations
         result = self.steam_service.get_confirmations(steamid)
         if not result.get('success'):
-            print(f"[SCHEDULER] Failed to fetch for {steamid}: {result.get('message')}")
+            logger.error(f"[SCHEDULER] Failed to fetch for {steamid}: {result.get('message')}")
             return
 
         confirmations = result.get('confirmations', [])
         if not confirmations:
             return
 
-        print(f"[SCHEDULER] Found {len(confirmations)} confirmations for {steamid}")
+        logger.info(f"[SCHEDULER] Found {len(confirmations)} confirmations for {steamid}")
 
         # 2. Collect everything to accept, then approve it all in ONE batch call.
         auto_market = settings.get("auto_confirm_market")
@@ -146,7 +149,7 @@ class ConfirmationScheduler:
             cid = conf.get('id')
             ck = conf.get('nonce') or conf.get('key')
             if cid is None or not ck:
-                print(
+                logger.warning(
                     f"[SCHEDULER] Skipping malformed confirmation for {steamid}: "
                     f"id={cid!r} nonce/key={ck!r} keys={list(conf.keys())}"
                 )
@@ -158,18 +161,18 @@ class ConfirmationScheduler:
                 skipped += 1
 
         if skipped:
-            print(f"[SCHEDULER] {steamid}: {skipped} confirmation(s) not eligible "
+            logger.info(f"[SCHEDULER] {steamid}: {skipped} confirmation(s) not eligible "
                   f"(auto_market={auto_market}, auto_trades={auto_trades})")
 
         if not to_accept:
             return
 
-        print(f"[SCHEDULER] Auto-accepting {len(to_accept)} confirmation(s) for {steamid} in one batch")
+        logger.info(f"[SCHEDULER] Auto-accepting {len(to_accept)} confirmation(s) for {steamid} in one batch")
         res = self.steam_service.act_on_confirmations_batch(steamid, to_accept, 'allow')
         if res.get('success'):
-            print(f"[SCHEDULER] Accepted {res.get('accepted', len(to_accept))} for {steamid}")
+            logger.info(f"[SCHEDULER] Accepted {res.get('accepted', len(to_accept))} for {steamid}")
         else:
-            print(f"[SCHEDULER] Batch accept failed for {steamid}: {res.get('message')}")
+            logger.error(f"[SCHEDULER] Batch accept failed for {steamid}: {res.get('message')}")
 
     # ------------------------------------------------------------------
     # Auto-store watcher: sweep watched items from inventory into storage.
@@ -191,11 +194,11 @@ class ConfirmationScheduler:
             try:
                 self._auto_store_account(steamid, watch)
             except Exception as e:
-                print(f"[AUTO-STORE] Failed for {steamid}: {e}")
+                logger.error(f"[AUTO-STORE] Failed for {steamid}: {e}")
 
     def _auto_store_account(self, steamid, watch):
         if not self._ensure_connected(steamid):
-            print(f"[AUTO-STORE] {steamid} not connected and could not auto-connect — skipping")
+            logger.error(f"[AUTO-STORE] {steamid} not connected and could not auto-connect — skipping")
             return
 
         items = self._fetch_inventory_items(steamid)
@@ -232,7 +235,7 @@ class ConfirmationScheduler:
         caskets = (self.ratatoskr_service.get_caskets(steamid) or {}).get("caskets") or []
         plan, unplaced = self._plan_casket_moves(loose_ids, caskets)
         if not plan:
-            print(f"[AUTO-STORE] {steamid}: no storage room for {len(loose_ids)} item(s)")
+            logger.info(f"[AUTO-STORE] {steamid}: no storage room for {len(loose_ids)} item(s)")
             return
 
         for casket_id, batch_ids in plan:
@@ -240,7 +243,7 @@ class ConfirmationScheduler:
                 steamid, batch_ids, "inventory", "casket", casket_id
             )
             if res.get("error"):
-                print(f"[AUTO-STORE] {steamid}: move to {casket_id} failed: {res.get('error')}")
+                logger.error(f"[AUTO-STORE] {steamid}: move to {casket_id} failed: {res.get('error')}")
                 continue
 
             casket_name = self._casket_label(caskets, casket_id)
@@ -251,13 +254,13 @@ class ConfirmationScheduler:
                     "item_name": id_to_name.get(iid),
                     "issued_at": now,
                 }
-            print(
+            logger.info(
                 f"[AUTO-STORE] {steamid}: issued {len(batch_ids)} move(s) → "
                 f"'{casket_name}' ({casket_id}); confirming once they leave inventory"
             )
 
         if unplaced:
-            print(f"[AUTO-STORE] {steamid}: {len(unplaced)} item(s) had no room left")
+            logger.info(f"[AUTO-STORE] {steamid}: {len(unplaced)} item(s) had no room left")
 
     def _reconcile_inflight(self, steamid, present_ids, now, queue_busy):
         """Confirm previously-issued moves against the live inventory.
@@ -284,7 +287,7 @@ class ConfirmationScheduler:
                 slot["items"][name] = slot["items"].get(name, 0) + 1
                 inflight.pop(iid, None)
             elif not queue_busy and (now - meta.get("issued_at", now)) > _INFLIGHT_TTL_SEC:
-                print(f"[AUTO-STORE] {steamid}: item {iid} never moved (likely trade-held) — releasing guard")
+                logger.info(f"[AUTO-STORE] {steamid}: item {iid} never moved (likely trade-held) — releasing guard")
                 inflight.pop(iid, None)
 
         if not confirmed:
@@ -293,7 +296,7 @@ class ConfirmationScheduler:
         account_name = self._account_name(steamid)
         for cid, slot in confirmed.items():
             breakdown = ", ".join(f"{qty}× {nm}" for nm, qty in slot["items"].items())
-            print(f"[AUTO-STORE] {steamid}: confirmed {slot['count']} stored in '{slot['name']}' ({cid}): {breakdown}")
+            logger.info(f"[AUTO-STORE] {steamid}: confirmed {slot['count']} stored in '{slot['name']}' ({cid}): {breakdown}")
             self.settings_manager.append_auto_store_history({
                 "ts": datetime.now(timezone.utc).isoformat(),
                 "steamid": steamid,
@@ -367,7 +370,7 @@ class ConfirmationScheduler:
         for attempt in range(retries):
             resp = self.ratatoskr_service.get_inventory(steamid) or {}
             if resp.get("error"):
-                print(f"[AUTO-STORE] {steamid}: inventory fetch error: {resp.get('error')}")
+                logger.error(f"[AUTO-STORE] {steamid}: inventory fetch error: {resp.get('error')}")
                 return None
             items = resp.get("items")
             if items:
@@ -394,14 +397,14 @@ class ConfirmationScheduler:
         account_name = data.get("account_name")
         password = self.steam_service.get_password(steamid)
         if not password:
-            print(f"[AUTO-STORE] {steamid}: no stored password — connect it once manually to enable auto-store")
+            logger.info(f"[AUTO-STORE] {steamid}: no stored password — connect it once manually to enable auto-store")
             return False
 
-        print(f"[AUTO-STORE] Auto-connecting {steamid} ({account_name})…")
+        logger.info(f"[AUTO-STORE] Auto-connecting {steamid} ({account_name})…")
         result = self.ratatoskr_service.login(
             account_name, password=password, shared_secret=data.get("shared_secret")
         )
         if result.get("error"):
-            print(f"[AUTO-STORE] {steamid}: auto-connect failed: {result.get('error')}")
+            logger.error(f"[AUTO-STORE] {steamid}: auto-connect failed: {result.get('error')}")
             return False
         return True

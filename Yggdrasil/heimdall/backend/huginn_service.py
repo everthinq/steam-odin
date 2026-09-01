@@ -1,13 +1,17 @@
 import copy
 import json
+import logging
 import os
 import threading
 import time
 import urllib.request
 import urllib.error
 import urllib.parse
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
+from jsonio import atomic_write_json
 from notifications import send_notification, notification_channel, edit_notification, delete_notification
+
+logger = logging.getLogger(__name__)  # 'log' is used locally for the auction log
 
 # Only the inventory scan is cached to disk (it's expensive to produce). Arbitrage
 # prices are fetched live on demand and held in the browser session, never cached.
@@ -89,7 +93,7 @@ def load_csfloat_keys():
         with open(CSFLOAT_KEYS_FILE) as f:
             data = json.load(f)
     except Exception as e:
-        print(f'[HUGINN] Could not read {CSFLOAT_KEYS_FILE}: {e}')
+        logger.error(f'[HUGINN] Could not read {CSFLOAT_KEYS_FILE}: {e}')
         return []
     out = []
     for entry in (data.get('keys') or []):
@@ -138,11 +142,9 @@ class CSFloatKeyManager:
 
     def _save(self):
         try:
-            os.makedirs(os.path.dirname(self.state_path), exist_ok=True)
-            with open(self.state_path, 'w') as f:
-                json.dump(self._state, f)
+            atomic_write_json(self.state_path, self._state, indent=None)
         except Exception as e:
-            print(f'[HUGINN] Could not persist CSFloat key state: {e}')
+            logger.error(f'[HUGINN] Could not persist CSFloat key state: {e}')
 
     def _remaining(self, key):
         s = self._state.get(key)
@@ -156,7 +158,7 @@ class CSFloatKeyManager:
             s['strikes'] += 1
             s['cooldown_until'] = time.time() + _CSFLOAT_COOLDOWN_STEP_SEC * s['strikes']
             self._save()
-            print(f'[HUGINN] CSFloat key …{key[-6:]} benched {int(_CSFLOAT_COOLDOWN_STEP_SEC * s["strikes"] / 60)}m '
+            logger.info(f'[HUGINN] CSFloat key …{key[-6:]} benched {int(_CSFLOAT_COOLDOWN_STEP_SEC * s["strikes"] / 60)}m '
                   f'(strike {s["strikes"]})')
 
     def mark_ok(self, key):
@@ -380,10 +382,10 @@ class HuginnService:
             account_data = self.steam.get_account(steam_id) or {}
 
             if not self._ensure_session(steam_id, account_data):
-                print(f'[HUGINN] Skipping {account_name} — no session')
+                logger.warning(f'[HUGINN] Skipping {account_name} — no session')
                 continue
 
-            print(f'[HUGINN] Scanning {account_name}…')
+            logger.info(f'[HUGINN] Scanning {account_name}…')
 
             inv = self.rat.get_inventory(steam_id)
             inv_items = [i for i in (inv.get('items') or []) if i.get('def_index') != 1201]
@@ -405,9 +407,7 @@ class HuginnService:
             'by_hash': by_hash,
         }
 
-        os.makedirs(os.path.dirname(CACHE_PATH), exist_ok=True)
-        with open(CACHE_PATH, 'w') as f:
-            json.dump(result, f)
+        atomic_write_json(CACHE_PATH, result, indent=None)
 
         return result
 
@@ -623,7 +623,7 @@ class HuginnService:
                 if fm.get('price') is not None:
                     tradeon[nm] = fm['price']
         except Exception as e:
-            print(f'[HUGINN] auction pulse prices failed: {e}')
+            logger.error(f'[HUGINN] auction pulse prices failed: {e}')
         return steam, tradeon
 
     def fetch_auctions(self, token=''):
@@ -682,13 +682,9 @@ class HuginnService:
 
     def _save_auction_log(self, log):
         try:
-            os.makedirs(os.path.dirname(LOOTFARM_AUCTION_LOG), exist_ok=True)
-            tmp = LOOTFARM_AUCTION_LOG + '.tmp'
-            with open(tmp, 'w', encoding='utf-8') as f:
-                json.dump(log, f)
-            os.replace(tmp, LOOTFARM_AUCTION_LOG)
+            atomic_write_json(LOOTFARM_AUCTION_LOG, log, indent=None)
         except Exception as e:
-            print(f'[HUGINN] auction log save failed: {e}')
+            logger.error(f'[HUGINN] auction log save failed: {e}')
 
     _AUCTION_LOG_MAX = 20000   # cap on retained cleared lots
 
@@ -749,7 +745,7 @@ class HuginnService:
         self._auction_tracker_started = True
         threading.Thread(target=self._auction_tracker_loop,
                          args=(settings_provider, interval), daemon=True).start()
-        print(f'[HUGINN] auction tracker started (every {interval}s)')
+        logger.info(f'[HUGINN] auction tracker started (every {interval}s)')
 
     def _auction_tracker_loop(self, settings_provider, interval):
         while True:
@@ -757,9 +753,9 @@ class HuginnService:
                 settings = settings_provider() if callable(settings_provider) else (settings_provider or {})
                 token = (settings or {}).get('tradeon_token') or ''
                 res = self.record_auction_snapshot(token)
-                print(f"[HUGINN] auction snapshot: active={res['active']} tracked={res['tracked']} cleared+{res['newly_cleared']}")
+                logger.info(f"[HUGINN] auction snapshot: active={res['active']} tracked={res['tracked']} cleared+{res['newly_cleared']}")
             except Exception as e:
-                print(f'[HUGINN] auction tracker error: {e}')
+                logger.error(f'[HUGINN] auction tracker error: {e}')
             time.sleep(interval)
 
     def auction_backtest(self, token='', min_profit_pct=10.0):
@@ -1127,9 +1123,7 @@ class HuginnService:
             'interrupted': bool(reason),
             'reason': reason,
         }
-        os.makedirs(os.path.dirname(CSFLOAT_BUYORDERS_CACHE), exist_ok=True)
-        with open(CSFLOAT_BUYORDERS_CACHE, 'w') as f:
-            json.dump(result, f)
+        atomic_write_json(CSFLOAT_BUYORDERS_CACHE, result, indent=None)
         return result
 
     def fetch_csfloat_buy_orders(self, token=None, names=None, progress=None, key_pairs=None, wait_cb=None):
@@ -1152,7 +1146,7 @@ class HuginnService:
             raise ValueError('No CSFloat API keys configured (edit csfloat_keys.json)')
         proxy = load_csfloat_proxy()
         if proxy:
-            print(f'[HUGINN] CSFloat sweep routing through proxy {proxy.split("@")[-1]}')
+            logger.info(f'[HUGINN] CSFloat sweep routing through proxy {proxy.split("@")[-1]}')
 
         if names is None:
             scan = self.get_cache()
@@ -1166,14 +1160,14 @@ class HuginnService:
                 }
                 names = [n for n in names if n in csfloat_listed]
             except Exception as e:
-                print(f'[HUGINN] CSFloat candidate pre-filter failed, using full owned set: {e}')
+                logger.error(f'[HUGINN] CSFloat candidate pre-filter failed, using full owned set: {e}')
 
         total = len(names)
         processed, by_name, started_at = self._resumable_state(names)
         started_at = started_at or datetime.now(timezone.utc).isoformat()
         todo = [n for n in names if n not in processed]
         if processed:
-            print(f'[HUGINN] Resuming CSFloat sweep: {len(processed)}/{total} already done, '
+            logger.info(f'[HUGINN] Resuming CSFloat sweep: {len(processed)}/{total} already done, '
                   f'{len(todo)} to go, {len(by_name)} priced so far')
         if progress:
             progress(len(processed), total, None, len(by_name))
@@ -1194,14 +1188,14 @@ class HuginnService:
                     if consecutive_waits > _CSFLOAT_MAX_AUTO_WAITS:
                         paused = True
                         reason = 'all CSFloat keys still cooling after several auto-resumes — resume manually'
-                        print(f'[HUGINN] CSFloat sweep paused at {len(processed)}/{total}: {reason}')
+                        logger.info(f'[HUGINN] CSFloat sweep paused at {len(processed)}/{total}: {reason}')
                         break
                     wait_s = self.csfloat_keys.min_cooldown_remaining(keys) + 5
                     self._write_buyorders_cache(by_name, processed, total, started_at, complete=False)
                     resume_at = time.time() + wait_s
                     if wait_cb:
                         wait_cb(resume_at)
-                    print(f'[HUGINN] all CSFloat keys cooling at {len(processed)}/{total}; '
+                    logger.info(f'[HUGINN] all CSFloat keys cooling at {len(processed)}/{total}; '
                           f'auto-resuming in {int(wait_s // 60)}m{int(wait_s % 60)}s')
                     time.sleep(wait_s)
                     if wait_cb:
@@ -1218,10 +1212,10 @@ class HuginnService:
                     continue                      # key throttled → bench it, try next key
                 except _CSFloatUnavailable as e:
                     self.csfloat_keys.mark_ok(key) # not the key's fault (proxy IP) — don't bench
-                    print(f'[HUGINN] CSFloat item skipped ({name!r}): {e}')
+                    logger.info(f'[HUGINN] CSFloat item skipped ({name!r}): {e}')
                     break                         # skip this item, keep the sweep going
                 except Exception as e:
-                    print(f'[HUGINN] CSFloat buy-order fetch failed for {name!r}: {e}')
+                    logger.error(f'[HUGINN] CSFloat buy-order fetch failed for {name!r}: {e}')
                     break                         # skip this item, keep the sweep going
 
             if paused:
@@ -1368,7 +1362,7 @@ class HuginnService:
             try:
                 names.update(self.price_map(token, 'steam').keys())
             except Exception as e:
-                print(f'[DRAUPNIR] known_item_names steam fetch failed: {e}')
+                logger.error(f'[DRAUPNIR] known_item_names steam fetch failed: {e}')
         return names
 
     def _refresh_prices_bg(self, token, market):
@@ -1378,7 +1372,7 @@ class HuginnService:
                 self._price_cache[market] = (time.time(), prices)
                 self._price_state[market] = 'ok'
         except Exception as e:
-            print(f'[DRAUPNIR] price refresh failed ({market}): {e}')
+            logger.error(f'[DRAUPNIR] price refresh failed ({market}): {e}')
             with self._price_lock:
                 self._price_state[market] = 'error'
 
@@ -1423,7 +1417,14 @@ class HuginnService:
     # Markets whose pulse price is shown but excluded from the cheapest/dearest/spread
     # math because it's not actionable (DMarket "Sell" prices are often unfillable).
     _CONTAINER_NOISE_MARKETS = frozenset({'dmarket'})
-    _CASE_HISTORY_MAX_DAYS = 120
+    # Price history is a long-horizon research asset (multi-year rotation
+    # patterns, the 6-month bottom-call verification), so we keep it effectively
+    # forever. To stay light, entries older than _CASE_HISTORY_FULL_DAYS are
+    # compacted from the rich per-market dict down to just the day's low (a bare
+    # float, which _hist_price already reads); a full recent year keeps full
+    # detail. _CASE_HISTORY_MAX_DAYS is only a 10-year safety ceiling.
+    _CASE_HISTORY_FULL_DAYS = 365
+    _CASE_HISTORY_MAX_DAYS = 3650
 
     def _load_containers(self, categories=None):
         """Load the bundled container catalog. Optionally filter to a set of
@@ -1432,7 +1433,7 @@ class HuginnService:
             with open(CONTAINERS_FILE, 'r', encoding='utf-8') as f:
                 data = json.load(f)
         except Exception as e:
-            print(f'[HUGINN] container catalog load failed: {e}')
+            logger.error(f'[HUGINN] container catalog load failed: {e}')
             return []
         items = data.get('containers', [])
         if categories:
@@ -1477,7 +1478,7 @@ class HuginnService:
                 self._container_cache[market] = (time.time(), snap)
                 self._container_state[market] = 'ok'
         except Exception as e:
-            print(f'[HUGINN] container snapshot refresh failed ({market}): {e}')
+            logger.error(f'[HUGINN] container snapshot refresh failed ({market}): {e}')
             with self._price_lock:
                 self._container_state[market] = 'error'
 
@@ -1510,19 +1511,40 @@ class HuginnService:
         except Exception:
             return {}
 
+    @classmethod
+    def _compact_history(cls, history, full_cutoff):
+        """Return *history* with each series capped at the 10-year ceiling and
+        entries older than *full_cutoff* (an ISO date) collapsed from the rich
+        per-market dict to the day's low float. Pure — no I/O — so it's testable
+        and can't corrupt the live file."""
+        out = {}
+        for name, series in history.items():
+            items = sorted(series.items())
+            if len(items) > cls._CASE_HISTORY_MAX_DAYS:
+                items = items[-cls._CASE_HISTORY_MAX_DAYS:]
+            compacted = {}
+            for day, entry in items:
+                if day < full_cutoff and isinstance(entry, dict):
+                    low = cls._hist_price(entry)  # dict -> day's low float
+                    compacted[day] = low if low is not None else entry
+                else:
+                    compacted[day] = entry
+            out[name] = compacted
+        return out
+
     def _save_case_history(self, history):
-        """Persist snapshots, pruning each series to the most recent N days."""
+        """Persist snapshots. Old entries are compacted (not dropped) to keep a
+        long research history without unbounded file growth: beyond
+        _CASE_HISTORY_FULL_DAYS the rich per-market dict is collapsed to the
+        day's low; a 10-year ceiling is the only hard cap."""
         try:
-            for name, series in list(history.items()):
-                if len(series) > self._CASE_HISTORY_MAX_DAYS:
-                    history[name] = dict(sorted(series.items())[-self._CASE_HISTORY_MAX_DAYS:])
-            os.makedirs(os.path.dirname(CASE_HISTORY_FILE), exist_ok=True)
-            tmp = CASE_HISTORY_FILE + '.tmp'
-            with open(tmp, 'w', encoding='utf-8') as f:
-                json.dump(history, f)
-            os.replace(tmp, CASE_HISTORY_FILE)
+            full_cutoff = (datetime.now(timezone.utc).date()
+                           - timedelta(days=self._CASE_HISTORY_FULL_DAYS)
+                           ).isoformat()
+            history = self._compact_history(history, full_cutoff)
+            atomic_write_json(CASE_HISTORY_FILE, history, indent=None)
         except Exception as e:
-            print(f'[HUGINN] case history save failed: {e}')
+            logger.error('case history save failed: %s', e)
 
     @staticmethod
     def _hist_price(entry):
@@ -1703,7 +1725,7 @@ class HuginnService:
         self._container_refresh_started = True
         threading.Thread(target=self._container_refresh_loop,
                          args=(settings_provider, default_interval), daemon=True).start()
-        print(f'[HUGINN] container refresh loop started (poll default {default_interval}s)')
+        logger.info(f'[HUGINN] container refresh loop started (poll default {default_interval}s)')
 
     def _refresh_one(self, token, market):
         try:
@@ -1712,7 +1734,7 @@ class HuginnService:
                 self._container_cache[market] = (time.time(), snap)
                 self._container_state[market] = 'ok'
         except Exception as e:
-            print(f'[HUGINN] container refresh failed ({market}): {e}')
+            logger.error(f'[HUGINN] container refresh failed ({market}): {e}')
             with self._price_lock:
                 self._container_state[market] = 'error'
 
@@ -1751,22 +1773,22 @@ class HuginnService:
                         try:
                             self.cases_prices(token, None)   # daily history (own once/day guard)
                         except Exception as e:
-                            print(f'[HUGINN] history record failed: {e}')
+                            logger.error(f'[HUGINN] history record failed: {e}')
                         last_full = now
-                        print('[HUGINN] full container refresh from pulse')
+                        logger.info('[HUGINN] full container refresh from pulse')
                     elif alerts_on:
                         self._refresh_markets(token, self._ALERT_MARKETS, parallel=True)
                     if alerts_on:
                         try:
                             res = self.run_case_alerts(settings)
                             if res.get('new'):
-                                print(f"[HUGINN] case alerts: {res['new']} new, sent={res.get('sent')}")
+                                logger.info(f"[HUGINN] case alerts: {res['new']} new, sent={res.get('sent')}")
                         except Exception as e:
-                            print(f'[HUGINN] case alerts failed: {e}')
+                            logger.error(f'[HUGINN] case alerts failed: {e}')
                 else:
-                    print('[HUGINN] container refresh skipped — no tradeon_token yet')
+                    logger.info('[HUGINN] container refresh skipped — no tradeon_token yet')
             except Exception as e:
-                print(f'[HUGINN] container refresh loop error: {e}')
+                logger.error(f'[HUGINN] container refresh loop error: {e}')
             time.sleep(interval)
 
     # --- Case Arbitrage price alerts (LisSkins/Buff cheaper than CSFloat) ----
@@ -1799,13 +1821,9 @@ class HuginnService:
 
     def _save_alert_state(self, state):
         try:
-            os.makedirs(os.path.dirname(CASE_ALERT_STATE_FILE), exist_ok=True)
-            tmp = CASE_ALERT_STATE_FILE + '.tmp'
-            with open(tmp, 'w', encoding='utf-8') as f:
-                json.dump(state, f, indent=1)
-            os.replace(tmp, CASE_ALERT_STATE_FILE)
+            atomic_write_json(CASE_ALERT_STATE_FILE, state, indent=1)
         except Exception as e:
-            print(f'[HUGINN] alert state save failed: {e}')
+            logger.error(f'[HUGINN] alert state save failed: {e}')
 
     def _format_alert_messages(self, alerts, owned_map=None):
         """Return (plain, html). Grouped one block per case (all its cheaper markets
