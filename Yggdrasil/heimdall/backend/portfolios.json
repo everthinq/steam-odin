@@ -4,7 +4,7 @@
       "id": "fbf692611b3c",
       "name": "everthinklol",
       "created_at": "2026-07-21T13:40:18.177768+00:00",
-      "updated_at": "2026-09-02T11:21:05.068708+00:00",
+      "updated_at": "2026-09-02T14:47:19.516783+00:00",
       "transactions": [
         {
           "id": "3ea474874554",
@@ -8461,6 +8461,84 @@
           "fee_percent": 0.0,
           "is_arbitrage": true,
           "created_at": "2026-09-02T11:18:10.911816+00:00"
+        },
+        {
+          "id": "89d08bbdb126",
+          "item_name": "Clutch Case",
+          "type": "buy",
+          "qty": 40,
+          "price": 0.47,
+          "platform": "lisskins",
+          "date": "2026-09-02",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": false,
+          "created_at": "2026-09-02T14:40:37.223307+00:00"
+        },
+        {
+          "id": "ff8b54f819be",
+          "item_name": "Clutch Case",
+          "type": "buy",
+          "qty": 1,
+          "price": 0.48,
+          "platform": "lisskins",
+          "date": "2026-09-02",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": false,
+          "created_at": "2026-09-02T14:40:43.254317+00:00"
+        },
+        {
+          "id": "9798431aa1f6",
+          "item_name": "Fracture Case",
+          "type": "buy",
+          "qty": 174,
+          "price": 0.41,
+          "platform": "lisskins",
+          "date": "2026-09-02",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": false,
+          "created_at": "2026-09-02T14:42:23.933105+00:00"
+        },
+        {
+          "id": "5fce1797cda7",
+          "item_name": "Gamma 2 Case",
+          "type": "buy",
+          "qty": 10,
+          "price": 2.71,
+          "platform": "lisskins",
+          "date": "2026-09-02",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": false,
+          "created_at": "2026-09-02T14:46:04.026768+00:00"
+        },
+        {
+          "id": "62fa5f25dcdf",
+          "item_name": "Dreams & Nightmares Case",
+          "type": "buy",
+          "qty": 2,
+          "price": 1.08,
+          "platform": "lisskins",
+          "date": "2026-09-02",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": false,
+          "created_at": "2026-09-02T14:46:17.554764+00:00"
+        },
+        {
+          "id": "839a23132d05",
+          "item_name": "Recoil Case",
+          "type": "buy",
+          "qty": 1,
+          "price": 0.26,
+          "platform": "lisskins",
+          "date": "2026-09-02",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": false,
+          "created_at": "2026-09-02T14:47:19.516762+00:00"
         }
       ]
     },
