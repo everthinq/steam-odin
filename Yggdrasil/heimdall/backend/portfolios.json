@@ -4,7 +4,7 @@
       "id": "fbf692611b3c",
       "name": "everthinklol",
       "created_at": "2026-07-21T13:40:18.177768+00:00",
-      "updated_at": "2026-09-02T14:47:19.516783+00:00",
+      "updated_at": "2026-09-02T21:09:12.138637+00:00",
       "transactions": [
         {
           "id": "3ea474874554",
@@ -8531,7 +8531,7 @@
           "id": "839a23132d05",
           "item_name": "Recoil Case",
           "type": "buy",
-          "qty": 1,
+          "qty": 3,
           "price": 0.26,
           "platform": "lisskins",
           "date": "2026-09-02",
