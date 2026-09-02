@@ -4,7 +4,7 @@
       "id": "fbf692611b3c",
       "name": "everthinklol",
       "created_at": "2026-07-21T13:40:18.177768+00:00",
-      "updated_at": "2026-09-02T10:58:15.544627+00:00",
+      "updated_at": "2026-09-02T11:21:05.068708+00:00",
       "transactions": [
         {
           "id": "3ea474874554",
@@ -8405,7 +8405,7 @@
           "price": 0.43,
           "platform": "lisskins",
           "date": "2026-09-02",
-          "note": "tampermonkey works here",
+          "note": "tampermonkey - 09/02/2026, 12:58 AM",
           "fee_percent": 0.0,
           "is_arbitrage": false,
           "created_at": "2026-09-01T21:59:43.642294+00:00"
@@ -8414,7 +8414,7 @@
           "id": "8a71221e520c",
           "item_name": "Enforcer | Phoenix",
           "type": "sell",
-          "qty": 1,
+          "qty": 2,
           "price": 4.66,
           "platform": "csfloat",
           "date": "2026-09-02",
@@ -8424,17 +8424,43 @@
           "created_at": "2026-09-02T10:57:24.067414+00:00"
         },
         {
-          "id": "3ab85dd50eeb",
+          "id": "5e7deeeb95d8",
           "item_name": "Enforcer | Phoenix",
           "type": "buy",
-          "qty": 1,
-          "price": 4.52,
+          "qty": 2,
+          "price": 4.56,
           "platform": "lisskins",
           "date": "2026-09-02",
-          "note": "lisskins  09/02/2026, 01:51 PM",
+          "note": "lisskins  09/02/2026, 02:04 PM",
           "fee_percent": 0.0,
           "is_arbitrage": true,
-          "created_at": "2026-09-02T10:57:39.155761+00:00"
+          "created_at": "2026-09-02T11:05:46.178267+00:00"
+        },
+        {
+          "id": "fab6ce844c21",
+          "item_name": "Chroma 3 Case",
+          "type": "buy",
+          "qty": 4,
+          "price": 2.97,
+          "platform": "lisskins",
+          "date": "2026-09-02",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": true,
+          "created_at": "2026-09-02T11:18:01.538414+00:00"
+        },
+        {
+          "id": "a4d7cd77ccc8",
+          "item_name": "Chroma 3 Case",
+          "type": "sell",
+          "qty": 4,
+          "price": 2.99,
+          "platform": "csfloat",
+          "date": "2026-09-02",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": true,
+          "created_at": "2026-09-02T11:18:10.911816+00:00"
         }
       ]
     },
