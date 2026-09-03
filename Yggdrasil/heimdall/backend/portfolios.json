@@ -4,7 +4,7 @@
       "id": "fbf692611b3c",
       "name": "everthinklol",
       "created_at": "2026-07-21T13:40:18.177768+00:00",
-      "updated_at": "2026-09-03T19:51:12.165383+00:00",
+      "updated_at": "2026-09-03T20:26:46.242056+00:00",
       "transactions": [
         {
           "id": "3ea474874554",
@@ -8543,6 +8543,19 @@
           "fee_percent": 0.0,
           "is_arbitrage": true,
           "created_at": "2026-09-03T19:10:28.048389+00:00"
+        },
+        {
+          "id": "f90f5be36b36",
+          "item_name": "Sticker | ZywOo | Berlin 2019",
+          "type": "sell",
+          "qty": 13,
+          "price": 0.36,
+          "platform": "steam",
+          "date": "2026-09-03",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": true,
+          "created_at": "2026-09-03T20:26:46.242035+00:00"
         }
       ]
     },
@@ -13811,7 +13824,7 @@
       "id": "9929cee577f7",
       "name": "harold_cavill",
       "created_at": "2026-07-21T14:49:46.466613+00:00",
-      "updated_at": "2026-09-03T19:52:18.132480+00:00",
+      "updated_at": "2026-09-03T20:50:47.072939+00:00",
       "transactions": [
         {
           "id": "da78df72fae8",
@@ -14183,17 +14196,82 @@
           "created_at": "2026-09-03T19:47:02.631340+00:00"
         },
         {
-          "id": "0c8de2befb53",
-          "item_name": "Gamma 2 Case",
+          "id": "218abb28e9af",
+          "item_name": "Recoil Case",
           "type": "buy",
-          "qty": 4,
-          "price": 2.7,
+          "qty": 2,
+          "price": 0.25,
           "platform": "lisskins",
           "date": "2026-09-03",
           "note": "",
           "fee_percent": 0.0,
           "is_arbitrage": false,
-          "created_at": "2026-09-03T19:52:18.132459+00:00"
+          "created_at": "2026-09-03T20:23:54.163158+00:00"
+        },
+        {
+          "id": "1c47d76a2fb7",
+          "item_name": "Sticker | ZywOo | Berlin 2019",
+          "type": "buy",
+          "qty": 13,
+          "price": 0.23,
+          "platform": "lisskins",
+          "date": "2026-09-03",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": true,
+          "created_at": "2026-09-03T20:24:53.566149+00:00"
+        },
+        {
+          "id": "5b52be622b46",
+          "item_name": "Clutch Case",
+          "type": "buy",
+          "qty": 8,
+          "price": 0.48,
+          "platform": "lisskins",
+          "date": "2026-09-03",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": false,
+          "created_at": "2026-09-03T20:33:26.196992+00:00"
+        },
+        {
+          "id": "cc3dc8a513b7",
+          "item_name": "Gamma 2 Case",
+          "type": "buy",
+          "qty": 9,
+          "price": 2.69,
+          "platform": "lisskins",
+          "date": "2026-09-03",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": false,
+          "created_at": "2026-09-03T20:38:52.677466+00:00"
+        },
+        {
+          "id": "5429ff98c4bd",
+          "item_name": "Falchion Case",
+          "type": "buy",
+          "qty": 4,
+          "price": 1.49,
+          "platform": "lisskins",
+          "date": "2026-09-03",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": false,
+          "created_at": "2026-09-03T20:45:33.152343+00:00"
+        },
+        {
+          "id": "b54fc87b82ef",
+          "item_name": "Revolver Case",
+          "type": "buy",
+          "qty": 11,
+          "price": 2.57,
+          "platform": "lisskins",
+          "date": "2026-09-03",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": false,
+          "created_at": "2026-09-03T20:50:47.072916+00:00"
         }
       ]
     },
