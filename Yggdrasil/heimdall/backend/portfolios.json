@@ -13798,7 +13798,7 @@
       "id": "9929cee577f7",
       "name": "harold_cavill",
       "created_at": "2026-07-21T14:49:46.466613+00:00",
-      "updated_at": "2026-08-22T00:14:13.559416+00:00",
+      "updated_at": "2026-09-03T07:33:58.915561+00:00",
       "transactions": [
         {
           "id": "da78df72fae8",
@@ -14090,6 +14090,32 @@
           "fee_percent": 0.0,
           "is_arbitrage": true,
           "created_at": "2026-08-22T00:14:07.347110+00:00"
+        },
+        {
+          "id": "96a237d383ea",
+          "item_name": "Recoil Case",
+          "type": "buy",
+          "qty": 4,
+          "price": 0.25,
+          "platform": "lisskins",
+          "date": "2026-09-03",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": false,
+          "created_at": "2026-09-03T07:32:52.713928+00:00"
+        },
+        {
+          "id": "a4b2bea05e29",
+          "item_name": "Fracture Case",
+          "type": "buy",
+          "qty": 363,
+          "price": 0.41,
+          "platform": "lisskins",
+          "date": "2026-09-03",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": false,
+          "created_at": "2026-09-03T07:33:11.618182+00:00"
         }
       ]
     },
