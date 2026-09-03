@@ -7,8 +7,8 @@ from settings import SettingsManager
 from scheduler import ConfirmationScheduler
 from ratatoskr_service import RatatoskrService
 from huginn_service import HuginnService
-from portfolio_service import PortfolioService
-from backup_service import BackupService
+from draupnir_service import DraupnirService
+from draupnir_backup_service import BackupService
 from mimir_service import MimirService
 from logging_setup import setup_logging
 from context import ctx
@@ -26,11 +26,11 @@ settings_manager = SettingsManager()
 steam_service = SteamService()
 ratatoskr_service = RatatoskrService()
 huginn_service = HuginnService(steam_service, ratatoskr_service)
-portfolio_service = PortfolioService(huginn_service)
+draupnir_service = DraupnirService(huginn_service)
 # Draupnir point-in-time backups: snapshot portfolios.json on every change +
 # once daily, with GFS retention and safe restore.
-portfolio_backup = BackupService(portfolio_service.path)
-portfolio_service.set_backup(portfolio_backup)
+draupnir_backup = BackupService(draupnir_service.path)
+draupnir_service.set_backup(draupnir_backup)
 scheduler = ConfirmationScheduler(settings_manager, steam_service, ratatoskr_service)
 # Mimir: encrypted credential vault (login/password/email/comment), sharing the
 # maFile encryption key. SteamService.get_password falls back to it by login.
@@ -42,8 +42,8 @@ ctx.settings_manager = settings_manager
 ctx.steam_service = steam_service
 ctx.ratatoskr_service = ratatoskr_service
 ctx.huginn_service = huginn_service
-ctx.portfolio_service = portfolio_service
-ctx.portfolio_backup = portfolio_backup
+ctx.draupnir_service = draupnir_service
+ctx.draupnir_backup = draupnir_backup
 ctx.scheduler = scheduler
 ctx.mimir_service = mimir_service
 register_blueprints(app)
@@ -67,7 +67,7 @@ if _should_start_background_scheduler():
     huginn_service.start_container_refresh(
         lambda: settings_manager.get_settings())
     # Draupnir: recurring daily portfolio backups (boot snapshot + daily + prune).
-    portfolio_backup.start_daily_loop()
+    draupnir_backup.start_daily_loop()
     # LOOT.Farm auctions: snapshot the feed every 15 min to build the per-lot history
     # the backtest reads (bids, clear prices, snipe references).
     huginn_service.start_auction_tracker(lambda: settings_manager.get_settings())

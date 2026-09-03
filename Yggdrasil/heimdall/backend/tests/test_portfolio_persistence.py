@@ -1,12 +1,12 @@
-"""Persistence + corruption self-healing through the real PortfolioService
+"""Persistence + corruption self-healing through the real DraupnirService
 (Critical fix #1 atomic writes, #7 recovery-on-corrupt)."""
 import json
 
-from portfolio_service import PortfolioService
+from draupnir_service import DraupnirService
 
 
 def _make(tmp_path):
-    return PortfolioService(huginn_service=None,
+    return DraupnirService(huginn_service=None,
                             path=str(tmp_path / 'portfolios.json'))
 
 
@@ -56,7 +56,7 @@ def test_corrupt_file_recovers_from_backup(tmp_path):
     # The live file is truncated garbage.
     path.write_text('{ "portfolios": { corrupted ')
 
-    svc = PortfolioService(huginn_service=None, path=str(path))
+    svc = DraupnirService(huginn_service=None, path=str(path))
     # Boot load couldn't recover yet (no backup wired) -> flagged.
     assert getattr(svc, '_last_load_corrupt', False) is True
     # Wiring the backup triggers a recovery re-load.
@@ -67,7 +67,7 @@ def test_corrupt_file_recovers_from_backup(tmp_path):
 
 def test_missing_file_is_empty_not_corrupt(tmp_path):
     # A brand-new install (no file) is legitimately empty, never flagged corrupt.
-    svc = PortfolioService(huginn_service=None,
+    svc = DraupnirService(huginn_service=None,
                            path=str(tmp_path / 'does_not_exist.json'))
     assert svc._data == {'portfolios': {}}
     assert getattr(svc, '_last_load_corrupt', False) is False

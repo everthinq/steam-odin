@@ -3,7 +3,7 @@ import { X, History, RotateCcw, Download, Camera, RefreshCw, Check, AlertTriangl
 import { ConfirmDialog } from './DraupnirDialog';
 
 // Draupnir backups browser — lists point-in-time snapshots of portfolios.json
-// and lets you restore, download, or take one now. Backend: /api/portfolios/backups*.
+// and lets you restore, download, or take one now. Backend: /api/draupnir/portfolios/backups*.
 const REASON_STYLE = {
     change: { label: 'change', cls: 'text-sky-300 bg-sky-500/10' },
     daily: { label: 'daily', cls: 'text-emerald-300 bg-emerald-500/10' },
@@ -40,7 +40,7 @@ const BackupsPanel = ({ onClose, onRestored }) => {
 
     const load = useCallback(async () => {
         try {
-            const r = await fetch('/api/portfolios/backups');
+            const r = await fetch('/api/draupnir/portfolios/backups');
             if (!r.ok) throw new Error('Failed to load backups');
             const d = await r.json();
             setBackups(d.backups || []);
@@ -62,7 +62,7 @@ const BackupsPanel = ({ onClose, onRestored }) => {
     const snapshotNow = async () => {
         setBusy('snapshot');
         try {
-            const r = await fetch('/api/portfolios/backups/snapshot', { method: 'POST' });
+            const r = await fetch('/api/draupnir/portfolios/backups/snapshot', { method: 'POST' });
             const d = await r.json();
             flash(true, d.deduped ? 'Already up to date — no change since the last snapshot.' : 'Snapshot saved.');
             load();
@@ -75,7 +75,7 @@ const BackupsPanel = ({ onClose, onRestored }) => {
         setConfirm(null);
         setBusy('restore');
         try {
-            const r = await fetch('/api/portfolios/backups/restore', {
+            const r = await fetch('/api/draupnir/portfolios/backups/restore', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ name }),
@@ -150,7 +150,7 @@ const BackupsPanel = ({ onClose, onRestored }) => {
                                             <div className="text-[11px] text-slate-600 font-mono truncate">{b.hash} · {fmtSize(b.size)}</div>
                                         </div>
                                         <a
-                                            href={`/api/portfolios/backups/${b.name}/download`}
+                                            href={`/api/draupnir/portfolios/backups/${b.name}/download`}
                                             className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 text-xs transition-colors opacity-0 group-hover:opacity-100"
                                             title="Download this snapshot"
                                         >

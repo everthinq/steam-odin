@@ -50,9 +50,9 @@ const DraupnirPortfolios = () => {
     const fetchList = async (mkt = market, mode = viewMode) => {
         try {
             let url;
-            if (mode === 'combined') url = `/api/portfolios/combined?market=${mkt}`;
-            else if (mode === 'arbitrage') url = `/api/portfolios/arbitrage?market=${mkt}`;
-            else url = `/api/portfolios?market=${mkt}`;
+            if (mode === 'combined') url = `/api/draupnir/portfolios/combined?market=${mkt}`;
+            else if (mode === 'arbitrage') url = `/api/draupnir/portfolios/arbitrage?market=${mkt}`;
+            else url = `/api/draupnir/portfolios?market=${mkt}`;
             const res = await fetch(url);
             if (!res.ok) throw new Error('Failed to load portfolios');
             const data = await res.json();
@@ -105,7 +105,7 @@ const DraupnirPortfolios = () => {
         kind: 'prompt', title: 'New portfolio', label: 'Portfolio name',
         confirmLabel: 'Create', placeholder: 'e.g. Main hoard',
         onConfirm: async (name) => {
-            await fetch('/api/portfolios', {
+            await fetch('/api/draupnir/portfolios', {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ name }),
             });
@@ -133,7 +133,7 @@ const DraupnirPortfolios = () => {
             for (const file of files) {
                 const csv = await file.text();
                 const name = file.name.replace(/\.csv$/i, '');
-                await fetch('/api/portfolios/import', {
+                await fetch('/api/draupnir/portfolios/import', {
                     method: 'POST', headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ name, csv }),
                 });
@@ -152,7 +152,7 @@ const DraupnirPortfolios = () => {
         e.preventDefault();
         e.stopPropagation();
         const a = document.createElement('a');
-        a.href = `/api/portfolios/${p.id}/export`;
+        a.href = `/api/draupnir/portfolios/${p.id}/export`;
         a.download = `${p.name}.csv`;
         document.body.appendChild(a);
         a.click();
@@ -173,7 +173,7 @@ const DraupnirPortfolios = () => {
             title: `Delete "${p.name}"?`,
             message: 'This permanently deletes the portfolio and all of its transactions.',
             onConfirm: async () => {
-                await fetch(`/api/portfolios/${p.id}`, { method: 'DELETE' });
+                await fetch(`/api/draupnir/portfolios/${p.id}`, { method: 'DELETE' });
                 fetchList();
             },
         });

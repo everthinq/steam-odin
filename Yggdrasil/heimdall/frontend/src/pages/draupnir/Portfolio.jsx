@@ -97,7 +97,7 @@ const DraupnirPortfolio = () => {
 
     const fetchDetail = useCallback(async (mkt) => {
         try {
-            const res = await fetch(`/api/portfolios/${portfolioId}?market=${mkt}`);
+            const res = await fetch(`/api/draupnir/portfolios/${portfolioId}?market=${mkt}`);
             if (res.status === 404) { setError('Portfolio not found'); return; }
             if (!res.ok) throw new Error('Failed to load portfolio');
             setData(await res.json());
@@ -160,7 +160,7 @@ const DraupnirPortfolio = () => {
         if (q.trim().length < 2) { setItemSuggests([]); return; }
         suggestTimer.current = setTimeout(async () => {
             try {
-                const res = await fetch(`/api/portfolios/item-search?market=${market}&q=${encodeURIComponent(q.trim())}`);
+                const res = await fetch(`/api/draupnir/portfolios/item-search?market=${market}&q=${encodeURIComponent(q.trim())}`);
                 const d = await res.json();
                 setItemSuggests(d.items || []);
                 setHighlightIdx(-1);
@@ -208,7 +208,7 @@ const DraupnirPortfolio = () => {
 
     const checkItemKnown = async (name) => {
         try {
-            const res = await fetch('/api/portfolios/validate-item', {
+            const res = await fetch('/api/draupnir/portfolios/validate-item', {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ name }),
             });
@@ -225,8 +225,8 @@ const DraupnirPortfolio = () => {
         };
         const wasAdd = !editingId;
         const url = editingId
-            ? `/api/portfolios/${portfolioId}/transactions/${editingId}`
-            : `/api/portfolios/${portfolioId}/transactions`;
+            ? `/api/draupnir/portfolios/${portfolioId}/transactions/${editingId}`
+            : `/api/draupnir/portfolios/${portfolioId}/transactions`;
         try {
             const res = await fetch(url, {
                 method: editingId ? 'PATCH' : 'POST',
@@ -290,7 +290,7 @@ const DraupnirPortfolio = () => {
         title: 'Delete this transaction?',
         message: `${t.type === 'sell' ? 'Sell' : 'Buy'} ${t.qty} × ${t.item_name} — this can't be undone.`,
         onConfirm: async () => {
-            await fetch(`/api/portfolios/${portfolioId}/transactions/${t.id}`, { method: 'DELETE' });
+            await fetch(`/api/draupnir/portfolios/${portfolioId}/transactions/${t.id}`, { method: 'DELETE' });
             fetchDetail(market);
         },
     });
@@ -299,7 +299,7 @@ const DraupnirPortfolio = () => {
         kind: 'prompt', title: 'Rename portfolio', label: 'Portfolio name',
         initial: data?.name || '', confirmLabel: 'Save',
         onConfirm: async (name) => {
-            await fetch(`/api/portfolios/${portfolioId}`, {
+            await fetch(`/api/draupnir/portfolios/${portfolioId}`, {
                 method: 'PATCH', headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ name }),
             });
@@ -312,7 +312,7 @@ const DraupnirPortfolio = () => {
         title: `Delete "${data?.name}"?`,
         message: 'This permanently deletes the portfolio and all of its transactions.',
         onConfirm: async () => {
-            await fetch(`/api/portfolios/${portfolioId}`, { method: 'DELETE' });
+            await fetch(`/api/draupnir/portfolios/${portfolioId}`, { method: 'DELETE' });
             navigate('/draupnir');
         },
     });

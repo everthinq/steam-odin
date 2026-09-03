@@ -3,7 +3,7 @@
 These lock down cost basis, realized P/L (avg-cost method), and unrealized P/L
 so a refactor can't silently move the numbers Ivan trades on.
 """
-from portfolio_service import PortfolioService, _demojibake
+from draupnir_service import DraupnirService, _demojibake
 
 
 def _txn(item, typ, qty, price):
@@ -17,7 +17,7 @@ def test_avg_cost_and_realized_pl():
         _txn('Fracture Case', 'buy', 100, 4.0),
         _txn('Fracture Case', 'sell', 50, 10.0),
     ]
-    (h,) = PortfolioService._holdings(txns, prices=None)
+    (h,) = DraupnirService._holdings(txns, prices=None)
     assert h['avg_cost'] == 3.0
     assert h['net_qty'] == 150
     assert h['cost_basis'] == 450.0        # 3.00 * 150
@@ -30,7 +30,7 @@ def test_unrealized_pl_with_price():
     txns = [
         _txn('Revolution Case', 'buy', 200, 0.18),
     ]
-    (h,) = PortfolioService._holdings(txns, prices={'Revolution Case': 0.30})
+    (h,) = DraupnirService._holdings(txns, prices={'Revolution Case': 0.30})
     assert h['avg_cost'] == 0.18
     assert h['net_qty'] == 200
     assert h['cost_basis'] == 36.0                 # 0.18 * 200
@@ -43,7 +43,7 @@ def test_fully_sold_position_has_no_market_value():
         _txn('Kilowatt Case', 'buy', 10, 0.10),
         _txn('Kilowatt Case', 'sell', 10, 0.25),
     ]
-    (h,) = PortfolioService._holdings(txns, prices={'Kilowatt Case': 0.20})
+    (h,) = DraupnirService._holdings(txns, prices={'Kilowatt Case': 0.20})
     assert h['net_qty'] == 0
     assert h['realized_pl'] == 1.5                  # 2.50 - 0.10*10
     assert h['market_value'] is None               # net_qty == 0 -> not valued
@@ -57,10 +57,10 @@ def test_summarize_falls_back_to_cost_basis_for_unpriced():
         _txn('Priced Case', 'buy', 100, 1.0),
         _txn('Unpriced Case', 'buy', 100, 2.0),
     ]
-    holdings = PortfolioService._holdings(txns, prices={'Priced Case': 3.0})
+    holdings = DraupnirService._holdings(txns, prices={'Priced Case': 3.0})
     p = {'id': 'x', 'name': 'n', 'created_at': 't', 'updated_at': 't',
          'transactions': txns}
-    s = PortfolioService._summarize(p, holdings)
+    s = DraupnirService._summarize(p, holdings)
     assert s['invested'] == 300.0            # 100*1 + 100*2
     assert s['cost_basis'] == 300.0
     assert s['current_value'] == 500.0       # priced 300 + unpriced cost-basis 200

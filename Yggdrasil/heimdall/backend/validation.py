@@ -1,7 +1,7 @@
 """Request-body validation for the Draupnir write endpoints (fix #5).
 
 The store is hand-entered, irreplaceable data, and the normalizer
-(``PortfolioService._clean_txn``) *silently* coerces bad input — ``price="abc"``
+(``DraupnirService._clean_txn``) *silently* coerces bad input — ``price="abc"``
 becomes ``0.0``, a garbage ``qty`` becomes ``1`` — which corrupts P/L without
 telling anyone. These validators reject clearly-invalid payloads at the API
 boundary so the caller gets a 400 instead of a quietly-wrong ledger.

@@ -18,27 +18,27 @@ def _rule_count(bp, prefix):
     return len([r for r in app.url_map.iter_rules() if prefix in r.rule])
 
 
-def test_portfolios_blueprint_registers_all_routes():
-    from routes.portfolios import bp
+def test_draupnir_blueprint_registers_all_routes():
+    from routes.draupnir import bp
     rules = _rules_for(bp)
     expected = {
-        '/api/portfolios',
-        '/api/portfolios/import',
-        '/api/portfolios/combined',
-        '/api/portfolios/arbitrage',
-        '/api/portfolios/<pid>/export',
-        '/api/portfolios/validate-item',
-        '/api/portfolios/item-search',
-        '/api/portfolios/<pid>',
-        '/api/portfolios/<pid>/transactions',
-        '/api/portfolios/<pid>/transactions/<tid>',
-        '/api/portfolios/backups',
-        '/api/portfolios/backups/snapshot',
-        '/api/portfolios/backups/<name>/download',
-        '/api/portfolios/backups/restore',
+        '/api/draupnir/portfolios',
+        '/api/draupnir/portfolios/import',
+        '/api/draupnir/portfolios/combined',
+        '/api/draupnir/portfolios/arbitrage',
+        '/api/draupnir/portfolios/<pid>/export',
+        '/api/draupnir/portfolios/validate-item',
+        '/api/draupnir/portfolios/item-search',
+        '/api/draupnir/portfolios/<pid>',
+        '/api/draupnir/portfolios/<pid>/transactions',
+        '/api/draupnir/portfolios/<pid>/transactions/<tid>',
+        '/api/draupnir/portfolios/backups',
+        '/api/draupnir/portfolios/backups/snapshot',
+        '/api/draupnir/portfolios/backups/<name>/download',
+        '/api/draupnir/portfolios/backups/restore',
     }
     missing = expected - rules
-    assert not missing, f'missing portfolio routes: {missing}'
+    assert not missing, f'missing draupnir routes: {missing}'
 
 
 def test_ratatoskr_blueprint_registers_all_routes():
@@ -83,7 +83,7 @@ def test_register_blueprints_wires_onto_app():
     app = Flask(__name__)
     register_blueprints(app)
     rules = {r.rule for r in app.url_map.iter_rules()}
-    for want in ['/api/portfolios', '/api/portfolios/backups/restore',
+    for want in ['/api/draupnir/portfolios', '/api/draupnir/portfolios/backups/restore',
                  '/api/ratatoskr/login', '/api/accounts', '/api/settings',
                  '/api/confirmations/check-all']:
         assert want in rules, f'missing after register_blueprints: {want}'

@@ -1,4 +1,5 @@
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { useEffect } from 'react';
+import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import Dashboard from './pages/Dashboard';
 import AddAccount from './pages/AddAccount';
 import Confirmations from './pages/Confirmations';
@@ -12,9 +13,28 @@ import DraupnirPortfolio from './pages/draupnir/Portfolio';
 import MimirVault from './pages/mimir/Vault';
 import './index.css';
 
+// Sets the browser tab title to the tool that is open right now.
+function TitleManager() {
+  const { pathname } = useLocation();
+
+  useEffect(() => {
+    let title = 'Heimdall';
+    if (pathname.startsWith('/ratatoskr')) title = 'Ratatoskr';
+    else if (pathname.startsWith('/huginn')) title = 'Huginn';
+    else if (pathname.startsWith('/draupnir')) title = 'Draupnir';
+    else if (pathname.startsWith('/mimir')) title = 'Mímir';
+    else if (pathname.startsWith('/add-account')) title = 'Add account';
+    else if (pathname.includes('/confirmations')) title = 'Confirmations';
+    document.title = title;
+  }, [pathname]);
+
+  return null;
+}
+
 function App() {
   return (
     <Router>
+      <TitleManager />
       <div className="background-container">
         <div className="background-image" />
       </div>

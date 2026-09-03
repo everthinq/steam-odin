@@ -69,7 +69,7 @@ def _cents_to_usd(v):
         return None
 
 
-class PortfolioService:
+class DraupnirService:
     def __init__(self, huginn_service=None, path=PORTFOLIOS_FILE):
         self.huginn = huginn_service
         self.path = path

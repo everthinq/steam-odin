@@ -13,8 +13,8 @@ class _Context:
     steam_service = None
     ratatoskr_service = None
     huginn_service = None
-    portfolio_service = None
-    portfolio_backup = None
+    draupnir_service = None
+    draupnir_backup = None
     scheduler = None
     mimir_service = None
 

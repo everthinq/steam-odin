@@ -10,7 +10,7 @@ Design
   ``backups/portfolios/`` dir. The hash in the name lets us dedupe identical
   states cheaply (no reading of file bodies to list history).
 * **Two triggers, one guarantee**:
-    - *change* — `PortfolioService._persist()` calls `snapshot('change')` after
+    - *change* — `DraupnirService._persist()` calls `snapshot('change')` after
       every write, so every distinct state the data ever passed through is
       preserved → true "restore to any point" granularity.
     - *daily*  — a daemon loop takes a `daily` snapshot (and prunes) once a day

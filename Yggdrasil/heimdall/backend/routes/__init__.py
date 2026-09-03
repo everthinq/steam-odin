@@ -11,14 +11,14 @@ def register_blueprints(app):
     blueprint import error can't break module import at collection time."""
     from routes.accounts import bp as accounts_bp
     from routes.settings import bp as settings_bp
-    from routes.portfolios import bp as portfolios_bp
+    from routes.draupnir import bp as draupnir_bp
     from routes.ratatoskr import bp as ratatoskr_bp
     from routes.huginn import bp as huginn_bp
     from routes.mimir import bp as mimir_bp
 
     app.register_blueprint(accounts_bp)
     app.register_blueprint(settings_bp)
-    app.register_blueprint(portfolios_bp)
+    app.register_blueprint(draupnir_bp)
     app.register_blueprint(ratatoskr_bp)
     app.register_blueprint(huginn_bp)
     app.register_blueprint(mimir_bp)
