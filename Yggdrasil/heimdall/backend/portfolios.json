@@ -13798,7 +13798,7 @@
       "id": "9929cee577f7",
       "name": "harold_cavill",
       "created_at": "2026-07-21T14:49:46.466613+00:00",
-      "updated_at": "2026-09-03T07:33:58.915561+00:00",
+      "updated_at": "2026-09-03T12:18:06.500479+00:00",
       "transactions": [
         {
           "id": "da78df72fae8",
@@ -14116,6 +14116,19 @@
           "fee_percent": 0.0,
           "is_arbitrage": false,
           "created_at": "2026-09-03T07:33:11.618182+00:00"
+        },
+        {
+          "id": "df43d498eb30",
+          "item_name": "Clutch Case",
+          "type": "buy",
+          "qty": 1,
+          "price": 0.48,
+          "platform": "lisskins",
+          "date": "2026-09-03",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": false,
+          "created_at": "2026-09-03T12:18:06.500461+00:00"
         }
       ]
     },
