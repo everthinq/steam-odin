@@ -4,7 +4,7 @@
       "id": "fbf692611b3c",
       "name": "everthinklol",
       "created_at": "2026-07-21T13:40:18.177768+00:00",
-      "updated_at": "2026-09-02T22:40:44.044920+00:00",
+      "updated_at": "2026-09-03T19:51:12.165383+00:00",
       "transactions": [
         {
           "id": "3ea474874554",
@@ -8530,6 +8530,19 @@
           "fee_percent": 0.0,
           "is_arbitrage": false,
           "created_at": "2026-09-02T14:47:19.516762+00:00"
+        },
+        {
+          "id": "4be24b62a7c4",
+          "item_name": "Enforcer | Phoenix",
+          "type": "sell",
+          "qty": 5,
+          "price": 4.66,
+          "platform": "csfloat",
+          "date": "2026-09-03",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": true,
+          "created_at": "2026-09-03T19:10:28.048389+00:00"
         }
       ]
     },
@@ -13798,7 +13811,7 @@
       "id": "9929cee577f7",
       "name": "harold_cavill",
       "created_at": "2026-07-21T14:49:46.466613+00:00",
-      "updated_at": "2026-09-03T18:50:30.649311+00:00",
+      "updated_at": "2026-09-03T19:52:18.132480+00:00",
       "transactions": [
         {
           "id": "da78df72fae8",
@@ -14142,6 +14155,45 @@
           "fee_percent": 0.0,
           "is_arbitrage": false,
           "created_at": "2026-09-03T15:16:09.301521+00:00"
+        },
+        {
+          "id": "17bed270510d",
+          "item_name": "Enforcer | Phoenix",
+          "type": "buy",
+          "qty": 5,
+          "price": 4.53,
+          "platform": "lisskins",
+          "date": "2026-09-03",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": true,
+          "created_at": "2026-09-03T19:02:27.447800+00:00"
+        },
+        {
+          "id": "0f5875cf4a19",
+          "item_name": "Shattered Web Case",
+          "type": "buy",
+          "qty": 1,
+          "price": 4.2,
+          "platform": "lisskins",
+          "date": "2026-09-03",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": false,
+          "created_at": "2026-09-03T19:47:02.631340+00:00"
+        },
+        {
+          "id": "0c8de2befb53",
+          "item_name": "Gamma 2 Case",
+          "type": "buy",
+          "qty": 4,
+          "price": 2.7,
+          "platform": "lisskins",
+          "date": "2026-09-03",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": false,
+          "created_at": "2026-09-03T19:52:18.132459+00:00"
         }
       ]
     },
