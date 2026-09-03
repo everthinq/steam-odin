@@ -13824,7 +13824,7 @@
       "id": "9929cee577f7",
       "name": "harold_cavill",
       "created_at": "2026-07-21T14:49:46.466613+00:00",
-      "updated_at": "2026-09-03T21:53:40.082675+00:00",
+      "updated_at": "2026-09-03T22:28:00.851558+00:00",
       "transactions": [
         {
           "id": "da78df72fae8",
@@ -14350,6 +14350,71 @@
           "fee_percent": 0.0,
           "is_arbitrage": false,
           "created_at": "2026-09-03T21:53:32.558043+00:00"
+        },
+        {
+          "id": "e53e40b335a9",
+          "item_name": "Revolver Case",
+          "type": "buy",
+          "qty": 4,
+          "price": 2.57,
+          "platform": "lisskins",
+          "date": "2026-09-04",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": false,
+          "created_at": "2026-09-03T22:18:18.005825+00:00"
+        },
+        {
+          "id": "34fe0f0d0ab9",
+          "item_name": "Gamma 2 Case",
+          "type": "buy",
+          "qty": 7,
+          "price": 2.7,
+          "platform": "lisskins",
+          "date": "2026-09-04",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": false,
+          "created_at": "2026-09-03T22:22:22.187618+00:00"
+        },
+        {
+          "id": "388761ead428",
+          "item_name": "Sticker | High Heat",
+          "type": "buy",
+          "qty": 2,
+          "price": 0.35,
+          "platform": "lisskins",
+          "date": "2026-09-04",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": false,
+          "created_at": "2026-09-03T22:23:20.350428+00:00"
+        },
+        {
+          "id": "a4e2c5d86384",
+          "item_name": "CS20 Case",
+          "type": "buy",
+          "qty": 1,
+          "price": 0.88,
+          "platform": "lisskins",
+          "date": "2026-09-04",
+          "note": "09/04/2026, 01:23 AM",
+          "fee_percent": 0.0,
+          "is_arbitrage": false,
+          "created_at": "2026-09-03T22:24:20.863024+00:00"
+        },
+        {
+          "id": "1f6f4aab1793",
+          "item_name": "Recoil Case",
+          "type": "buy",
+          "qty": 1,
+          "price": 0.25,
+          "platform": "lisskins",
+          "date": "2026-09-04",
+          "note": "09/04/2026, 01:26 AM",
+          "fee_percent": 0.0,
+          "is_arbitrage": false,
+          "created_at": "2026-09-03T22:28:00.851534+00:00"
         }
       ]
     },
