@@ -13798,7 +13798,7 @@
       "id": "9929cee577f7",
       "name": "harold_cavill",
       "created_at": "2026-07-21T14:49:46.466613+00:00",
-      "updated_at": "2026-09-03T16:39:02.178993+00:00",
+      "updated_at": "2026-09-03T18:50:30.649311+00:00",
       "transactions": [
         {
           "id": "da78df72fae8",
@@ -14134,7 +14134,7 @@
           "id": "9a39d6605fcb",
           "item_name": "Gamma 2 Case",
           "type": "buy",
-          "qty": 6,
+          "qty": 13,
           "price": 2.69,
           "platform": "lisskins",
           "date": "2026-09-03",
