@@ -28,6 +28,7 @@ Design
 Every operation is best-effort and self-contained: a backup failure logs and
 returns, it never propagates into (and breaks) a portfolio write.
 """
+import gzip
 import hashlib
 import logging
 import os
@@ -47,9 +48,11 @@ _DAILY_UNTIL_DAYS = 90
 _WEEKLY_UNTIL_DAYS = 730
 
 _VALID_REASONS = ('change', 'daily', 'boot', 'manual', 'pre-restore')
-# portfolios__20260823T224700Z__change__1a2b3c4d.json
+# portfolios__20260823T224700Z__change__1a2b3c4d.json[.gz]
+# Snapshots are gzip-compressed (.json.gz); the plain .json form is still
+# accepted so any legacy/un-migrated snapshot keeps working unchanged.
 _NAME_RE = re.compile(
-    r'^portfolios__(\d{8}T\d{6}Z)__([a-z-]+)__([0-9a-f]{8})\.json$')
+    r'^portfolios__(\d{8}T\d{6}Z)__([a-z-]+)__([0-9a-f]{8})\.json(?:\.gz)?$')
 _TS_FMT = '%Y%m%dT%H%M%SZ'
 
 
@@ -94,16 +97,31 @@ class BackupService:
                     return None
 
                 ts = _utcnow().strftime(_TS_FMT)
-                name = f'portfolios__{ts}__{reason}__{digest}.json'
+                # Snapshots are gzip-compressed on disk (~10x smaller). The name
+                # still carries the sha1 of the *uncompressed* content, so dedup
+                # and integrity checks are unaffected by compression.
+                name = f'portfolios__{ts}__{reason}__{digest}.json.gz'
                 tmp = os.path.join(self.backup_dir, f'.{name}.tmp')
                 dest = os.path.join(self.backup_dir, name)
-                with open(tmp, 'wb') as f:
+                with gzip.open(tmp, 'wb') as f:
                     f.write(data)
                 os.replace(tmp, dest)  # atomic
                 return name
         except Exception as e:
             logger.error(f'[DRAUPNIR-BACKUP] snapshot failed: {e}')
             return None
+
+    # ---- reading -----------------------------------------------------------
+
+    @staticmethod
+    def _read_snapshot_bytes(path):
+        """Uncompressed JSON bytes of a snapshot, whether it's stored as a
+        gzip-compressed ``.json.gz`` or a legacy plain ``.json`` file."""
+        if path.endswith('.gz'):
+            with gzip.open(path, 'rb') as f:
+                return f.read()
+        with open(path, 'rb') as f:
+            return f.read()
 
     # ---- listing -----------------------------------------------------------
 
@@ -163,8 +181,7 @@ class BackupService:
         self.snapshot('pre-restore')
         try:
             with self._lock:
-                with open(src, 'rb') as f:
-                    data = f.read()
+                data = self._read_snapshot_bytes(src)
                 tmp = f'{self.source_path}.restore.tmp'
                 with open(tmp, 'wb') as f:
                     f.write(data)
@@ -175,15 +192,14 @@ class BackupService:
             return {'ok': False, 'error': str(e)}
 
     def read_backup(self, name):
-        """Raw bytes of one snapshot (for download), or None."""
+        """Uncompressed JSON bytes of one snapshot (for download), or None."""
         if not _NAME_RE.match(name or ''):
             return None
         path = os.path.join(self.backup_dir, name)
         if not os.path.exists(path):
             return None
         try:
-            with open(path, 'rb') as f:
-                return f.read()
+            return self._read_snapshot_bytes(path)
         except OSError:
             return None
 

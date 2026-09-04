@@ -225,8 +225,11 @@ def portfolios_backup_download(name):
     data = ctx.draupnir_backup.read_backup(name)
     if data is None:
         return jsonify({'error': 'backup not found'}), 404
+    # read_backup returns decompressed JSON, so the download is always a usable
+    # .json even though snapshots are gzip-compressed on disk.
+    filename = name[:-3] if name.endswith('.gz') else name
     return Response(data, mimetype='application/json', headers={
-        'Content-Disposition': f'attachment; filename="{name}"'})
+        'Content-Disposition': f'attachment; filename="{filename}"'})
 
 
 @bp.route('/api/draupnir/portfolios/backups/restore', methods=['POST'])
