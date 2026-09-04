@@ -1,0 +1,8 @@
+# Deps are installed inside the image from package files; the production build
+# output is regenerated. Keep the host copies out of the build context.
+node_modules/
+dist/
+npm-debug.log*
+.env
+.DS_Store
+.git/

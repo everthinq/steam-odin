@@ -1,6 +1,29 @@
 const fs = require('fs');
 const VDF = require('@node-steam/vdf');
 
+// Static lookup tables — hoisted to module scope so they aren't re-allocated on
+// every item during an inventory/casket conversion.
+const RARITY_NAMES = {
+  1: 'Consumer Grade',
+  2: 'Industrial Grade',
+  3: 'Mil-Spec',
+  4: 'Restricted',
+  5: 'Classified',
+  6: 'Covert',
+  7: 'Contraband',
+};
+const RARITY_COLORS = {
+  1: '#b0c3d9', // Consumer
+  2: '#5e98d9', // Industrial
+  3: '#4b69ff', // Mil-Spec
+  4: '#8847ff', // Restricted
+  5: '#d32ce6', // Classified
+  6: '#eb4b4b', // Covert
+  7: '#e4ae39', // Contraband
+};
+const SKIN_WEAR_VALUES = [0.07, 0.15, 0.38, 0.45, 1];
+const SKIN_WEAR_NAMES = ['Factory New', 'Minimal Wear', 'Field-Tested', 'Well-Worn', 'Battle-Scarred'];
+
 // Helper to process items_game.json structure
 function updateItemsLoop(jsonData, keyToRun) {
   const returnDict = {};
@@ -337,29 +360,11 @@ class items {
   }
 
   itemProcessorGetRarityName(rarity) {
-    const rarityDict = {
-      1: 'Consumer Grade',
-      2: 'Industrial Grade',
-      3: 'Mil-Spec',
-      4: 'Restricted',
-      5: 'Classified',
-      6: 'Covert',
-      7: 'Contraband',
-    };
-    return rarityDict[rarity] || 'Common';
+    return RARITY_NAMES[rarity] || 'Common';
   }
 
   itemProcessorGetRarityColor(rarity) {
-    const colorDict = {
-      1: '#b0c3d9', // Consumer
-      2: '#5e98d9', // Industrial
-      3: '#4b69ff', // Mil-Spec
-      4: '#8847ff', // Restricted
-      5: '#d32ce6', // Classified
-      6: '#eb4b4b', // Covert
-      7: '#e4ae39', // Contraband
-    };
-    return colorDict[rarity] || '#b0c3d9';
+    return RARITY_COLORS[rarity] || '#b0c3d9';
   }
 
   itemProcessorHasStickersApplied(returnDict, storageRow) {
@@ -415,12 +420,6 @@ class items {
 
     if (imageURL == 'econ/test/test_quest_icon') {
       return `Quest Item (${storageRow['def_index']})`;
-    }
-
-    // DEBUG: Log storageRow keys for first few items
-    if (Math.random() < 0.05) {
-      console.log('Item Keys:', Object.keys(storageRow));
-      console.log('Paint Index check:', 'paint_index:', storageRow['paint_index'], 'paintIndex:', storageRow['paintIndex']);
     }
 
     // Music kit check
@@ -643,8 +642,7 @@ class items {
     let stringFormatted = csgoString.replace('#', '').toLowerCase();
 
     if (!this.translation[stringFormatted]) {
-      console.warn(`Missing translation for: ${csgoString} -> ${stringFormatted}`);
-      return csgoString; // Fallback to key
+      return csgoString; // Fallback to key (missing translations are expected)
     }
 
     return this.translation[stringFormatted].replaceAll('"', '');
@@ -912,20 +910,11 @@ class items {
 }
 
 function getSkinWearName(paintWear) {
-  const skinWearValues = [0.07, 0.15, 0.38, 0.45, 1];
-  const skinWearNames = [
-    'Factory New',
-    'Minimal Wear',
-    'Field-Tested',
-    'Well-Worn',
-    'Battle-Scarred',
-  ];
-
-  for (const [key, value] of Object.entries(skinWearValues)) {
+  for (const [key, value] of Object.entries(SKIN_WEAR_VALUES)) {
     if (paintWear > value) {
       continue;
     }
-    return skinWearNames[key];
+    return SKIN_WEAR_NAMES[key];
   }
 }
 

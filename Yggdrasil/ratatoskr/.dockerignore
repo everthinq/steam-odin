@@ -1,0 +1,7 @@
+# Deps are installed inside the image from package*.json — never ship the host
+# node_modules into the build context (it's large and platform-specific).
+node_modules/
+npm-debug.log*
+.env
+.DS_Store
+.git/

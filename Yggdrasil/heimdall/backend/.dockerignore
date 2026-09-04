@@ -1,0 +1,28 @@
+# Secrets & per-user runtime data — must never be baked into an image layer.
+# At runtime these are provided by the compose volume mount, not the image.
+maFiles/
+*.maFile
+*.vault
+csfloat_keys.json
+settings.json
+.env
+
+# Regenerable / large runtime data (123MB+ of portfolio backups, scan caches).
+cache/
+backups/
+logs/
+*.log
+portfolios.json
+
+# Python build artifacts and local dev tooling — not needed in the image.
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.ruff_cache/
+.tmp/
+.tmp-*
+.pre-migration/
+.DS_Store
+tests/
+requirements-dev.txt

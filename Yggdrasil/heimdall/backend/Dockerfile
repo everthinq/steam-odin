@@ -4,10 +4,8 @@ FROM python:3.9-slim
 # Set the working directory in the container
 WORKDIR /app
 
-# Copy the current directory contents into the container at /app
-COPY . /app
-
-# Install system dependencies for cryptography
+# System dependencies for cryptography — rarely change, so keep this layer
+# above the code copy for maximum build-cache reuse.
 RUN apt-get update && apt-get install -y \
     build-essential \
     libssl-dev \
@@ -15,8 +13,14 @@ RUN apt-get update && apt-get install -y \
     python3-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Install any needed packages specified in requirements.txt
+# Install Python deps first (cached unless requirements.txt changes) so a plain
+# code edit doesn't trigger a full pip reinstall on every rebuild.
+COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
+
+# Then copy the application code (see .dockerignore — secrets, caches, backups
+# and __pycache__ are excluded from the image).
+COPY . /app
 
 # Make port 5000 available to the world outside this container
 EXPOSE 5000
