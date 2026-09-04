@@ -4,7 +4,7 @@
       "id": "fbf692611b3c",
       "name": "everthinklol",
       "created_at": "2026-07-21T13:40:18.177768+00:00",
-      "updated_at": "2026-09-04T11:34:21.438512+00:00",
+      "updated_at": "2026-09-04T12:14:43.200405+00:00",
       "transactions": [
         {
           "id": "3ea474874554",
@@ -8569,6 +8569,19 @@
           "fee_percent": 0.0,
           "is_arbitrage": true,
           "created_at": "2026-09-04T08:19:14.848491+00:00"
+        },
+        {
+          "id": "187786cf4031",
+          "item_name": "Enforcer | Phoenix",
+          "type": "sell",
+          "qty": 1,
+          "price": 4.81,
+          "platform": "csfloat",
+          "date": "2026-09-04",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": true,
+          "created_at": "2026-09-04T12:14:43.200393+00:00"
         }
       ]
     },
@@ -13837,7 +13850,7 @@
       "id": "9929cee577f7",
       "name": "harold_cavill",
       "created_at": "2026-07-21T14:49:46.466613+00:00",
-      "updated_at": "2026-09-04T08:19:38.948021+00:00",
+      "updated_at": "2026-09-04T12:54:08.145286+00:00",
       "transactions": [
         {
           "id": "da78df72fae8",
@@ -14186,7 +14199,7 @@
           "id": "17bed270510d",
           "item_name": "Enforcer | Phoenix",
           "type": "buy",
-          "qty": 5,
+          "qty": 6,
           "price": 4.53,
           "platform": "lisskins",
           "date": "2026-09-03",
@@ -14454,6 +14467,19 @@
           "fee_percent": 0.0,
           "is_arbitrage": true,
           "created_at": "2026-09-04T08:19:38.947991+00:00"
+        },
+        {
+          "id": "f416e4816637",
+          "item_name": "Gamma 2 Case",
+          "type": "buy",
+          "qty": 8,
+          "price": 2.69,
+          "platform": "lisskins",
+          "date": "2026-09-04",
+          "note": "09/04/2026, 01:22 PM",
+          "fee_percent": 0.0,
+          "is_arbitrage": false,
+          "created_at": "2026-09-04T12:15:38.413859+00:00"
         }
       ]
     },
