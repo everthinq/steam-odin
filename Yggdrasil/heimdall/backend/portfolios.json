@@ -4,7 +4,7 @@
       "id": "fbf692611b3c",
       "name": "everthinklol",
       "created_at": "2026-07-21T13:40:18.177768+00:00",
-      "updated_at": "2026-09-03T20:26:46.242056+00:00",
+      "updated_at": "2026-09-04T08:19:14.848519+00:00",
       "transactions": [
         {
           "id": "3ea474874554",
@@ -8556,6 +8556,19 @@
           "fee_percent": 0.0,
           "is_arbitrage": true,
           "created_at": "2026-09-03T20:26:46.242035+00:00"
+        },
+        {
+          "id": "8a71812fd34f",
+          "item_name": "Prof. Shahmat | Elite Crew",
+          "type": "sell",
+          "qty": 1,
+          "price": 6.41,
+          "platform": "csfloat",
+          "date": "2026-09-04",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": true,
+          "created_at": "2026-09-04T08:19:14.848491+00:00"
         }
       ]
     },
@@ -13824,7 +13837,7 @@
       "id": "9929cee577f7",
       "name": "harold_cavill",
       "created_at": "2026-07-21T14:49:46.466613+00:00",
-      "updated_at": "2026-09-03T22:28:00.851558+00:00",
+      "updated_at": "2026-09-04T08:19:38.948021+00:00",
       "transactions": [
         {
           "id": "da78df72fae8",
@@ -14415,6 +14428,32 @@
           "fee_percent": 0.0,
           "is_arbitrage": false,
           "created_at": "2026-09-03T22:28:00.851534+00:00"
+        },
+        {
+          "id": "60f9767d5491",
+          "item_name": "Sticker | High Heat",
+          "type": "buy",
+          "qty": 3,
+          "price": 0.35,
+          "platform": "lisskins",
+          "date": "2026-09-04",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": false,
+          "created_at": "2026-09-04T08:17:01.089704+00:00"
+        },
+        {
+          "id": "3da6360f5973",
+          "item_name": "Prof. Shahmat | Elite Crew",
+          "type": "buy",
+          "qty": 1,
+          "price": 6.03,
+          "platform": "lisskins",
+          "date": "2026-09-04",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": true,
+          "created_at": "2026-09-04T08:19:38.947991+00:00"
         }
       ]
     },
