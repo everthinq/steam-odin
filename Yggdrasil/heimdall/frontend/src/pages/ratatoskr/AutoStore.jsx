@@ -5,6 +5,27 @@ import { Boxes, Plus, X, Play, History, PackageCheck, Info, User, Lock } from 'l
 // Handy quick-add suggestions the user is actively buying.
 const SUGGESTED_ITEMS = ['Fracture Case', 'Recoil Case', 'Snakebite Case', 'Clutch Case'];
 
+// Module-scope so its identity is stable — defining it inside the component
+// would remount every <Switch> on each render.
+const Switch = ({ on, onClick, disabled }) => (
+    <button
+        type="button"
+        onClick={onClick}
+        disabled={disabled}
+        role="switch"
+        aria-checked={on}
+        className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors disabled:opacity-50 ${
+            on ? 'bg-emerald-500' : 'bg-white/15'
+        }`}
+    >
+        <span
+            className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${
+                on ? 'translate-x-5' : 'translate-x-0.5'
+            }`}
+        />
+    </button>
+);
+
 const timeAgo = (iso) => {
     if (!iso) return '';
     const then = new Date(iso).getTime();
@@ -152,24 +173,6 @@ const RatatoskrAutoStore = () => {
         );
     }
 
-    const Switch = ({ on, onClick, disabled }) => (
-        <button
-            type="button"
-            onClick={onClick}
-            disabled={disabled}
-            role="switch"
-            aria-checked={on}
-            className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors disabled:opacity-50 ${
-                on ? 'bg-emerald-500' : 'bg-white/15'
-            }`}
-        >
-            <span
-                className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${
-                    on ? 'translate-x-5' : 'translate-x-0.5'
-                }`}
-            />
-        </button>
-    );
 
     return (
         <div className="animate-in fade-in duration-500 max-w-3xl">

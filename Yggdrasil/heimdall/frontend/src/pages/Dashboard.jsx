@@ -93,8 +93,14 @@ const Dashboard = () => {
         });
     }, [accountIdsKey, accounts]);
 
-    const filteredAccounts = accounts.filter((account) =>
-        account.account_name.toLowerCase().includes(searchQuery.toLowerCase())
+    // Memoized so the sort below (its dependency) doesn't re-run on unrelated
+    // renders (search focus, drag state, pin toggles) — only when the accounts
+    // list or the query actually changes.
+    const filteredAccounts = useMemo(
+        () => accounts.filter((account) =>
+            account.account_name.toLowerCase().includes(searchQuery.toLowerCase())
+        ),
+        [accounts, searchQuery]
     );
 
     const displayAccounts = useMemo(

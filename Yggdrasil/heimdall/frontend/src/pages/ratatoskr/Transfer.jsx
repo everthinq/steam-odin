@@ -620,15 +620,24 @@ const RatatoskrTransfer = () => {
         });
     };
 
-    const filteredCaskets = caskets.filter(
-        (c) => matchesSearchQuery([casketDisplayName(c)], unitSearch) && matchesMode(c)
+    const filteredCaskets = useMemo(
+        () => caskets.filter(
+            (c) => matchesSearchQuery([casketDisplayName(c)], unitSearch) && matchesMode(c)
+        ),
+        // matchesMode/casketDisplayName are pure over (transferMode, caskets).
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+        [caskets, unitSearch, transferMode]
     );
 
     const selectedIds = transferMode === 'to' ? selectedInvItems : selectedCasketItems;
     const setSelectedIds = transferMode === 'to' ? setSelectedInvItems : setSelectedCasketItems;
 
+    // Membership set so the per-row selected-qty scans are O(group), not
+    // O(group × selectedCount) via Array.includes on every render.
+    const selectedIdsSet = useMemo(() => new Set(selectedIds), [selectedIds]);
+
     const getIdsSelectedQty = (itemIds) =>
-        itemIds.filter((id) => selectedIds.includes(id)).length;
+        itemIds.filter((id) => selectedIdsSet.has(id)).length;
 
     const getGroupSelectedQty = (group) => getIdsSelectedQty(group.item_ids);
 
