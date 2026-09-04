@@ -4,7 +4,7 @@
       "id": "fbf692611b3c",
       "name": "everthinklol",
       "created_at": "2026-07-21T13:40:18.177768+00:00",
-      "updated_at": "2026-09-04T12:14:43.200405+00:00",
+      "updated_at": "2026-09-04T13:04:50.172910+00:00",
       "transactions": [
         {
           "id": "3ea474874554",
@@ -8561,7 +8561,7 @@
           "id": "8a71812fd34f",
           "item_name": "Prof. Shahmat | Elite Crew",
           "type": "sell",
-          "qty": 1,
+          "qty": 2,
           "price": 6.41,
           "platform": "csfloat",
           "date": "2026-09-04",
@@ -13850,7 +13850,7 @@
       "id": "9929cee577f7",
       "name": "harold_cavill",
       "created_at": "2026-07-21T14:49:46.466613+00:00",
-      "updated_at": "2026-09-04T12:54:08.145286+00:00",
+      "updated_at": "2026-09-04T13:12:04.777611+00:00",
       "transactions": [
         {
           "id": "da78df72fae8",
@@ -14480,6 +14480,45 @@
           "fee_percent": 0.0,
           "is_arbitrage": false,
           "created_at": "2026-09-04T12:15:38.413859+00:00"
+        },
+        {
+          "id": "3010d3dc16e8",
+          "item_name": "Sticker | High Heat",
+          "type": "buy",
+          "qty": 3,
+          "price": 0.35,
+          "platform": "lisskins",
+          "date": "2026-09-04",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": false,
+          "created_at": "2026-09-04T13:03:50.549907+00:00"
+        },
+        {
+          "id": "ed4e6808d2c1",
+          "item_name": "Prof. Shahmat | Elite Crew",
+          "type": "buy",
+          "qty": 1,
+          "price": 6.06,
+          "platform": "lisskins",
+          "date": "2026-09-04",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": true,
+          "created_at": "2026-09-04T13:04:21.309854+00:00"
+        },
+        {
+          "id": "4264d134dd2a",
+          "item_name": "Dreams & Nightmares Case",
+          "type": "buy",
+          "qty": 23,
+          "price": 1.03,
+          "platform": "lisskins",
+          "date": "2026-09-04",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": false,
+          "created_at": "2026-09-04T13:12:04.777588+00:00"
         }
       ]
     },
