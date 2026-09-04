@@ -327,6 +327,10 @@ class HuginnService:
         self._price_cache = {}   # market -> (fetched_at_epoch, {name: price}) for portfolio valuation
         self._price_state = {}   # market -> 'refreshing' | 'ok' | 'error'
         self._price_lock = threading.Lock()
+        # Bumped on every _price_cache write so known_item_names() (hit per typeahead
+        # keystroke) can memoize its unioned name set instead of rebuilding it each call.
+        self._price_cache_gen = 0
+        self._known_names_cache = None   # (gen, set) — non-empty results only
         # Container tracker snapshots — market -> (epoch, {name: {price, count}}). Kept
         # separate from _price_cache because it also carries listing counts (liquidity)
         # and is filtered to the container catalog only. Same non-blocking warm pattern.
@@ -338,6 +342,10 @@ class HuginnService:
         self._container_cache = {}
         self._container_state = {}
         self._container_refresh_started = False
+        # Bundled container catalog is immutable at runtime → parse once, cache the
+        # full list and the derived name set (both read-only to callers).
+        self._containers_all = None
+        self._container_names_set = None
 
     def _ensure_session(self, steam_id, account_data):
         account_name = account_data.get('account_name')
@@ -1362,6 +1370,7 @@ class HuginnService:
         with self._price_lock:
             self._price_cache[market] = (time.time(), prices)
             self._price_state[market] = 'ok'
+            self._price_cache_gen += 1
         return prices
 
     def known_item_names(self, token, block=True):
@@ -1370,12 +1379,20 @@ class HuginnService:
         to a one-time blocking Steam fetch if nothing is cached yet (used for the
         one-off validate check); block=False stays non-blocking (used for typeahead
         on every keystroke)."""
-        names = set()
         with self._price_lock:
+            gen = self._price_cache_gen
+            cache = self._known_names_cache
+            if cache is not None and cache[0] == gen:
+                # Cached non-empty union — callers only ever union it, never mutate.
+                return cache[1]
+            names = set()
             for _, m in self._price_cache.values():
                 names.update(m.keys())
+            if names:
+                self._known_names_cache = (gen, names)
         if not names and block and token:
             try:
+                names = set()  # fresh set; nothing non-empty was cached
                 names.update(self.price_map(token, 'steam').keys())
             except Exception as e:
                 logger.error(f'[DRAUPNIR] known_item_names steam fetch failed: {e}')
@@ -1387,6 +1404,7 @@ class HuginnService:
             with self._price_lock:
                 self._price_cache[market] = (time.time(), prices)
                 self._price_state[market] = 'ok'
+                self._price_cache_gen += 1
         except Exception as e:
             logger.error(f'[DRAUPNIR] price refresh failed ({market}): {e}')
             with self._price_lock:
@@ -1443,22 +1461,27 @@ class HuginnService:
     _CASE_HISTORY_MAX_DAYS = 3650
 
     def _load_containers(self, categories=None):
-        """Load the bundled container catalog. Optionally filter to a set of
-        category slugs ('case', 'sticker', 'souvenir', 'autograph')."""
-        try:
-            with open(CONTAINERS_FILE, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-        except Exception as e:
-            logger.error(f'[HUGINN] container catalog load failed: {e}')
-            return []
-        items = data.get('containers', [])
+        """Bundled container catalog ('case', 'sticker', 'souvenir', 'autograph').
+
+        The file is immutable during a run, so it's parsed once and cached; an
+        optional category filter returns a fresh filtered list off the cache."""
+        if self._containers_all is None:
+            try:
+                with open(CONTAINERS_FILE, 'r', encoding='utf-8') as f:
+                    self._containers_all = json.load(f).get('containers', [])
+            except Exception as e:
+                logger.error(f'[HUGINN] container catalog load failed: {e}')
+                return []
+        items = self._containers_all
         if categories:
             wanted = set(categories)
             items = [c for c in items if c.get('category') in wanted]
         return items
 
     def _container_names(self):
-        return {c['name'] for c in self._load_containers(None)}
+        if self._container_names_set is None:
+            self._container_names_set = {c['name'] for c in self._load_containers(None)}
+        return self._container_names_set
 
     # --- container market snapshots (price + listing count, non-blocking) ---
 
@@ -1593,11 +1616,13 @@ class HuginnService:
         c = min(f + 1, len(s) - 1)
         return s[f] if f == c else s[f] + (s[c] - s[f]) * (k - f)
 
-    def _history_trend(self, series, current):
-        """% change of cheapest price vs ~7 daily snapshots ago (nearest earlier)."""
+    def _history_trend(self, series, current, dates=None):
+        """% change of cheapest price vs ~7 daily snapshots ago (nearest earlier).
+
+        `dates` may be passed pre-sorted to avoid re-sorting the series."""
         if not series or current is None:
             return None
-        dates = sorted(series.keys())
+        dates = dates if dates is not None else sorted(series.keys())
         if len(dates) < 2:
             return None
         prior = self._hist_price(series[dates[-8] if len(dates) >= 8 else dates[0]])
@@ -1605,10 +1630,11 @@ class HuginnService:
             return None
         return round((current - prior) / prior * 100, 2)
 
-    def _history_sparkline(self, series, points=30):
+    def _history_sparkline(self, series, points=30, dates=None):
         if not series:
             return []
-        out = [self._hist_price(series[d]) for d in sorted(series.keys())[-points:]]
+        dates = dates if dates is not None else sorted(series.keys())
+        out = [self._hist_price(series[d]) for d in dates[-points:]]
         return [p for p in out if p is not None]
 
     def cases_prices(self, token, categories=None):
@@ -1689,10 +1715,11 @@ class HuginnService:
                             cur[0] = _p; dirty = True
                         if _p > cur[1]:
                             cur[1] = _p; dirty = True
-                row['trend_pct'] = self._history_trend(series, cheapest)
-                row['sparkline'] = self._history_sparkline(series)
+                days = sorted(series.keys())  # sort once, reuse for all three reads
+                row['trend_pct'] = self._history_trend(series, cheapest, dates=days)
+                row['sparkline'] = self._history_sparkline(series, dates=days)
                 # temporal "hot": today's net profit % vs this item's own median
-                priors = [self._hist_profit(series[d]) for d in sorted(series.keys())[:-1]]
+                priors = [self._hist_profit(series[d]) for d in days[:-1]]
                 priors = [f for f in priors if f is not None]
                 if len(priors) >= 5 and profit_pct is not None:
                     med = self._median(priors)

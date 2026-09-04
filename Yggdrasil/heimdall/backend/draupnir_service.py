@@ -74,6 +74,10 @@ class DraupnirService:
         self.huginn = huginn_service
         self.path = path
         self._lock = threading.Lock()
+        # Bumped whenever the store changes, so all_item_names() (hit per typeahead
+        # keystroke) can memoize its name set instead of rescanning every transaction.
+        self._store_gen = 0
+        self._names_cache = None   # (gen, set)
         # Optional BackupService, wired by app.py via set_backup(). Every
         # persisted change is snapshotted for point-in-time restore (deduped by
         # content hash), and it doubles as the corruption-recovery source in
@@ -88,12 +92,14 @@ class DraupnirService:
         if getattr(self, '_last_load_corrupt', False):
             with self._lock:
                 self._data = self._load()
+                self._store_gen += 1
 
     def reload(self):
         """Re-read the source file into memory — used after a backup restore
         overwrites portfolios.json underneath us."""
         with self._lock:
             self._data = self._load()
+            self._store_gen += 1   # store replaced → invalidate the memoized name set
 
     # ---- persistence -------------------------------------------------------
 
@@ -149,6 +155,7 @@ class DraupnirService:
 
     def _persist(self):
         """Caller must hold self._lock."""
+        self._store_gen += 1   # invalidate the memoized name set
         try:
             atomic_write_json(self.path, self._data, indent=2)
         except Exception as e:
@@ -239,13 +246,18 @@ class DraupnirService:
         """Every distinct item_name across all portfolios — names the user has
         already used (e.g. via import) count as valid even if pulse no longer
         lists them."""
-        names = set()
         with self._lock:
+            gen = self._store_gen
+            if self._names_cache is not None and self._names_cache[0] == gen:
+                # Callers only ever union this set, never mutate it.
+                return self._names_cache[1]
+            names = set()
             for p in self._data['portfolios'].values():
                 for t in p['transactions']:
                     if t.get('item_name'):
                         names.add(t['item_name'])
-        return names
+            self._names_cache = (gen, names)
+            return names
 
     # ---- transaction CRUD --------------------------------------------------
 
