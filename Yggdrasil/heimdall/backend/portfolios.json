@@ -13850,7 +13850,7 @@
       "id": "9929cee577f7",
       "name": "harold_cavill",
       "created_at": "2026-07-21T14:49:46.466613+00:00",
-      "updated_at": "2026-09-04T14:32:56.833558+00:00",
+      "updated_at": "2026-09-04T15:49:57.845647+00:00",
       "transactions": [
         {
           "id": "da78df72fae8",
@@ -14532,6 +14532,45 @@
           "fee_percent": 0.0,
           "is_arbitrage": false,
           "created_at": "2026-09-04T14:32:56.833538+00:00"
+        },
+        {
+          "id": "76542b9e5692",
+          "item_name": "Recoil Case",
+          "type": "buy",
+          "qty": 35,
+          "price": 0.26,
+          "platform": "lisskins",
+          "date": "2026-09-04",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": false,
+          "created_at": "2026-09-04T15:35:10.708029+00:00"
+        },
+        {
+          "id": "4b68964175f8",
+          "item_name": "Sticker | Flex",
+          "type": "buy",
+          "qty": 58,
+          "price": 0.77,
+          "platform": "lisskins",
+          "date": "2026-09-04",
+          "note": "09/04/2026, 06:32 PM",
+          "fee_percent": 0.0,
+          "is_arbitrage": false,
+          "created_at": "2026-09-04T15:35:44.993232+00:00"
+        },
+        {
+          "id": "5af50fa44ca9",
+          "item_name": "Recoil Case",
+          "type": "buy",
+          "qty": 2,
+          "price": 0.25,
+          "platform": "lisskins",
+          "date": "2026-09-04",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": false,
+          "created_at": "2026-09-04T15:49:57.845621+00:00"
         }
       ]
     },
