@@ -12,6 +12,13 @@ STORAGE_CAPACITY = 1000
 # move gets retried on a later sweep instead of being skipped forever.
 _INFLIGHT_TTL_SEC = 15 * 60
 
+# Proactive session keep-alive. Steam web access tokens live ~24h; we sweep every
+# few hours and renew any account with less than the min-TTL left, so confirmations
+# never fall back to a long-dead token (the fleet-wide `needauth` outage). This runs
+# regardless of the auto-confirm settings — token freshness is a separate concern.
+_KEEPALIVE_INTERVAL_SEC = 4 * 3600   # how often to run the freshness sweep
+_KEEPALIVE_MIN_TTL_SEC = 8 * 3600    # renew any account with less than this left
+
 
 class ConfirmationScheduler:
     def __init__(self, settings_manager, steam_service, ratatoskr_service=None):
@@ -23,6 +30,8 @@ class ConfirmationScheduler:
         # steamid -> {item_id: queued_at_epoch} for moves already handed to Ratatoskr
         # but not yet reflected in inventory, so we don't double-queue them.
         self._auto_store_inflight = {}
+        # Last time the proactive token keep-alive sweep ran (0 = run on first loop).
+        self._last_keepalive = 0.0
 
     def start(self):
         if self.thread and self.thread.is_alive():
@@ -77,6 +86,16 @@ class ConfirmationScheduler:
 
             self._sync_protected_accounts(settings)
 
+            # Keep every account's web token fresh on a slow cadence, independent
+            # of whether auto-confirm is on, so a stale token never silently breaks
+            # confirmations again.
+            if time.time() - self._last_keepalive >= _KEEPALIVE_INTERVAL_SEC:
+                self._last_keepalive = time.time()
+                try:
+                    self._keepalive_sessions()
+                except Exception as e:
+                    logger.error(f"[KEEPALIVE] sweep error: {e}")
+
             if self._confirm_polling_on(settings):
                 try:
                     self._check_all_accounts(settings)
@@ -96,6 +115,48 @@ class ConfirmationScheduler:
                 if self.stop_event.is_set():
                     break
                 time.sleep(1)
+
+    def _keepalive_sessions(self):
+        """Proactively refresh each account's web token before it expires.
+
+        Only accounts within ``_KEEPALIVE_MIN_TTL_SEC`` of expiry are touched, and
+        a healthy account's refresh is a single cheap token exchange (no full login).
+        Any account that can't be kept logged in is logged loudly with the likely
+        cause, so a broken account (missing vault password, bad credentials) is
+        caught here rather than when the confirmations UI needs it.
+        """
+        accounts = self.steam_service.get_all_accounts_data()
+        renewed = 0
+        failures = []
+        for i, account in enumerate(accounts):
+            steamid = account['steamid']
+            try:
+                status = self.steam_service.ensure_fresh_session(
+                    steamid, min_ttl_seconds=_KEEPALIVE_MIN_TTL_SEC
+                )
+            except Exception as e:
+                failures.append((steamid, str(e)))
+                continue
+
+            if status.get('state') == 'renewed':
+                renewed += 1
+            elif not status.get('ok'):
+                failures.append((steamid, status.get('message') or status.get('state')))
+                # Steam rate-limited us — stop hammering and finish next sweep.
+                if '429' in str(status.get('message') or ''):
+                    logger.warning("[KEEPALIVE] hit Steam rate limit — aborting rest of sweep")
+                    break
+
+            if i < len(accounts) - 1:
+                time.sleep(1)
+
+        # Always log a one-line heartbeat so "still healthy" is visible in the log.
+        logger.info(f"[KEEPALIVE] session sweep: {len(accounts)} checked, "
+                    f"{renewed} renewed, {len(failures)} failed")
+        for steamid, why in failures:
+            name = self._account_name(steamid)
+            logger.error(f"[KEEPALIVE] Could not keep {steamid} ({name}) logged in: {why} "
+                         f"— add its password to the Mimir vault or re-import the maFile")
 
     def _check_all_accounts(self, settings):
         # If mobileconf is in backoff, skip the whole sweep so we don't keep hitting it.

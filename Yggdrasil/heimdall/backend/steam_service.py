@@ -275,26 +275,23 @@ class SteamService:
         return self.storage.load_account(steamid)
 
     def get_password(self, steamid):
-        """Retrieve the stored password for an account.
+        """Retrieve an account's password from the Mimir credential vault.
 
-        SDA maFiles do not carry a password, so first try any password field an
-        imported maFile might have, then fall back to the Mimir credential vault
-        keyed by the account's Steam login (``account_name``).
+        SDA maFiles never carry a password (verified across the whole fleet), so
+        we don't read them for one — the vault, keyed by the account's Steam
+        login (``account_name``), is the single source of truth.
         """
         data = self.storage.load_account(steamid)
         if not data:
             return None
-        pw = (data.get('account_password') or data.get('password')
-              or data.get('Session', {}).get('Password'))
-        if pw:
-            return pw
         login = data.get('account_name')
-        if login:
-            from context import ctx  # lazy import avoids a startup import cycle
-            if ctx.mimir_service:
-                cred = ctx.mimir_service.get_by_login(login)
-                if cred and cred.get('password'):
-                    return cred['password']
+        if not login:
+            return None
+        from context import ctx  # lazy import avoids a startup import cycle
+        if ctx.mimir_service:
+            cred = ctx.mimir_service.get_by_login(login)
+            if cred and cred.get('password'):
+                return cred['password']
         return None
 
     def generate_code(self, shared_secret):
@@ -447,6 +444,28 @@ class SteamService:
         """Prefer Ratatoskr web session while connected; fall back to mobile AccessToken."""
         return session_data.get('WebAccessToken') or session_data.get('AccessToken')
 
+    @staticmethod
+    def _token_ttl_seconds(token):
+        """Seconds until a Steam access-token JWT expires.
+
+        Returns 0 for a missing, expired, or unparseable token — callers treat
+        that as "needs refresh". This is what keeps a long-dead cached token
+        (the 190-day-stale AccessToken that caused the fleet-wide `needauth`)
+        from being handed out before we try to renew it.
+        """
+        if not token:
+            return 0
+        try:
+            payload = token.split('.')[1]
+            payload += '=' * (-len(payload) % 4)
+            claims = json.loads(base64.urlsafe_b64decode(payload))
+            exp = claims.get('exp')
+            if not exp:
+                return 0
+            return max(0, int(exp - time.time()))
+        except Exception:
+            return 0
+
     def _refresh_access_token(self, steamid, data):
         """Exchange RefreshToken for a new AccessToken (independent of Ratatoskr)."""
         session_data = data.get('Session') or {}
@@ -508,7 +527,9 @@ class SteamService:
 
         if not force_refresh:
             cached = self._pick_session_token(session_data)
-            if cached:
+            # Only reuse a cached token that is still valid — an expired one just
+            # earns a `needauth` from Steam, so fall through to refresh/re-login.
+            if cached and self._token_ttl_seconds(cached) > 120:
                 return {'success': True, 'access_token': cached, 'steamid': stored_steamid}
 
         # Refresh token (survives Ratatoskr logOff)
@@ -543,6 +564,39 @@ class SteamService:
         if '_session' in auth:
             result['_session'] = auth['_session']
         return result
+
+    def ensure_fresh_session(self, steamid, min_ttl_seconds=6 * 3600):
+        """Proactively guarantee a usable web AccessToken, refreshing only if needed.
+
+        Returns a small status dict for health reporting. It refreshes (or, if the
+        stored RefreshToken is dead, fully re-logs-in) *only* when the stored token
+        is missing or within ``min_ttl_seconds`` of expiry, so a periodic keep-alive
+        sweep costs almost nothing while everything is healthy. This is the proactive
+        counterpart to the on-demand renewal inside :meth:`get_confirmations`.
+        """
+        data = self.storage.load_account(steamid)
+        if not data:
+            return {'steamid': steamid, 'ok': False, 'state': 'no-account'}
+
+        session_data = data.get('Session') or {}
+        ttl = self._token_ttl_seconds(self._pick_session_token(session_data))
+        if ttl >= min_ttl_seconds:
+            return {'steamid': steamid, 'ok': True, 'state': 'fresh', 'ttl': ttl}
+
+        username = data.get('account_name') or session_data.get('AccountName')
+        password = self.get_password(steamid)
+        result = self._ensure_access_token(
+            steamid, data, username, password, expected_steamid=steamid, force_refresh=True
+        )
+        if result.get('success'):
+            new_ttl = self._token_ttl_seconds(result.get('access_token'))
+            return {'steamid': steamid, 'ok': True, 'state': 'renewed', 'ttl': new_ttl}
+
+        # Couldn't renew — usually a missing vault password or bad credentials.
+        # Surface it loudly so a broken account is noticed before the UI needs it.
+        return {'steamid': steamid, 'ok': False, 'state': 'failed',
+                'message': result.get('message'),
+                'no_password': password is None}
 
     def update_session_cookies(self, steamid, access_token, steam_login_secure, session_id):
         """
@@ -779,7 +833,7 @@ class SteamService:
             return {'success': False, 'message': 'identity_secret missing from maFile'}
 
         username = data.get('account_name') or data.get('Session', {}).get('AccountName')
-        password = data.get('account_password')
+        password = self.get_password(steamid)  # maFile field first, then Mimir vault
 
         backoff = self._cooldown_response()
         if backoff:
@@ -840,7 +894,7 @@ class SteamService:
         identity_secret = data.get('identity_secret')
         session_data = data.get('Session', {})
         username = data.get('account_name') or session_data.get('AccountName')
-        password = data.get('account_password')
+        password = self.get_password(steamid)  # maFile field first, then Mimir vault
 
         backoff = self._cooldown_response()
         if backoff:
@@ -926,7 +980,7 @@ class SteamService:
         identity_secret = data.get('identity_secret')
         session_data = data.get('Session', {})
         username = data.get('account_name') or session_data.get('AccountName')
-        password = data.get('account_password')
+        password = self.get_password(steamid)  # maFile field first, then Mimir vault
 
         backoff = self._cooldown_response()
         if backoff:
