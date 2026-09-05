@@ -26,6 +26,11 @@ Tools **within Heimdall** (frontend pages under `heimdall/frontend/src/pages/`):
 > [!NOTE]
 > The `apps` directory has been renamed to **`Yggdrasil`** (The World Tree), which contains the individual realms (applications).
 
+> [!TIP]
+> New to the codebase? Read **[ARCHITECTURE.md](ARCHITECTURE.md)** for how the
+> pieces fit together (topology, request flow, the Steam token lifecycle, the
+> data model). AI coding agents should start with **[CLAUDE.md](CLAUDE.md)**.
+
 ## ⚔️ Commands of Power
 
 We use `make` to command the fleet. Speaking the old names (`build`, `up`) will still work, but the true commands are:
