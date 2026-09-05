@@ -51,6 +51,15 @@ DEFAULT_SETTINGS = {
     # CSFloat ~1min and Steam ~5min, so hourly is too slow to catch cheap-case windows.
     # The full 6-market UI/history refresh still runs hourly regardless.
     "case_poll_interval_sec": 600,      # 10 minutes
+    # --- Gjallarhorn (event-rotation cockpit) ---
+    # Instant-redeploy market whitelist: which markets do NOT lock your balance for
+    # days after a sale, so the proceeds can be re-spent on the freshly-limited case
+    # right away. Filled in gradually from the UI. Each entry:
+    #   {id, display, holdDays (0 = usable immediately), instantRedeploy, notes}
+    "gjallarhorn_market_holds": [],
+    # Target basket: the freshly-limited case(s)/item(s) to rotate INTO. Each entry
+    # {name}; the page prices them and shows how many your capital buys.
+    "gjallarhorn_targets": [],
 }
 
 # How many auto-store move records to keep in the history log.

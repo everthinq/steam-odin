@@ -212,6 +212,9 @@ Yggdrasil/heimdall/backend/cache/
 Yggdrasil/heimdall/backend/settings.json
 # CSFloat API keys (rotation pool) — secrets, keep local
 Yggdrasil/heimdall/backend/csfloat_keys.json
+# Telegram caller account (api_hash + login session for ring-alerts) — SECRET, keep local
+Yggdrasil/heimdall/backend/telegram_caller.json
+telegram_caller.session
 # Draupnir portfolio data (personal holdings) is committed on purpose as a backup —
 # it holds no secrets, just item names / prices / dates.
 # ...but the local point-in-time snapshot history stays on-disk only (can be large).

@@ -10,6 +10,9 @@ from huginn_service import HuginnService
 from draupnir_service import DraupnirService
 from draupnir_backup_service import BackupService
 from mimir_service import MimirService
+from steam_market_service import SteamMarketService
+from gjallarhorn_service import GjallarhornService
+from telegram_caller import TelegramCaller
 from logging_setup import setup_logging
 from context import ctx
 from routes import register_blueprints
@@ -35,6 +38,16 @@ scheduler = ConfirmationScheduler(settings_manager, steam_service, ratatoskr_ser
 # Mimir: encrypted credential vault (login/password/email/comment), sharing the
 # maFile encryption key. SteamService.get_password falls back to it by login.
 mimir_service = MimirService(steam_service.storage)
+# Gjallarhorn: event-rotation cockpit. SteamMarketService supplies Steam Market
+# liquidity (volume/spread); GjallarhornService joins it with Draupnir holdings,
+# Ratatoskr inventory (tradable-now), and the pulse price map.
+steam_market_service = SteamMarketService(steam_service)
+gjallarhorn_service = GjallarhornService(
+    draupnir_service, huginn_service, steam_market_service,
+    ratatoskr_service, steam_service)
+# Telegram caller: rings a target from a burner user account (a bot can't call)
+# for Gjallarhorn event alerts. No-op until telegram_caller.json is set up.
+telegram_caller = TelegramCaller()
 
 # Expose the singletons to the route blueprints (read from context.ctx at
 # request time — see context.py and the routes/ package).
@@ -46,6 +59,9 @@ ctx.draupnir_service = draupnir_service
 ctx.draupnir_backup = draupnir_backup
 ctx.scheduler = scheduler
 ctx.mimir_service = mimir_service
+ctx.steam_market_service = steam_market_service
+ctx.gjallarhorn_service = gjallarhorn_service
+ctx.telegram_caller = telegram_caller
 register_blueprints(app)
 
 

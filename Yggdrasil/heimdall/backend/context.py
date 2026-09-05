@@ -17,6 +17,9 @@ class _Context:
     draupnir_backup = None
     scheduler = None
     mimir_service = None
+    steam_market_service = None
+    gjallarhorn_service = None
+    telegram_caller = None
 
 
 ctx = _Context()

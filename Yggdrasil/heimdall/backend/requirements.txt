@@ -5,3 +5,6 @@ cryptography==41.0.7
 requests==2.31.0
 requests[socks]==2.31.0
 rsa==4.9.1
+# Telethon: userbot MTProto client used only by telegram_caller.py to RING a target
+# (phone.requestCall) for Gjallarhorn event alerts. A bot cannot place calls.
+telethon==1.36.0

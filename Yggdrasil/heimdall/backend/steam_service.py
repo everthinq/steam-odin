@@ -350,6 +350,25 @@ class SteamService:
             'mobileClientVersion': '777777 3.6.1',
         }
 
+    def web_session_cookie(self, min_ttl_seconds=300):
+        """(steamid, cookies) for the first account with a still-fresh web session,
+        for authenticated steamcommunity.com reads (e.g. Market pricehistory).
+
+        Returns None when no account currently holds a usable web token — callers
+        must degrade gracefully (public Market endpoints still work without it).
+        The token is minted by a live Ratatoskr session and kept fresh by the
+        scheduler keep-alive; it expires ~24h after the last login."""
+        for steamid in self.storage.list_accounts():
+            data = self.storage.load_account(steamid)
+            if not data:
+                continue
+            session_data = data.get('Session') or {}
+            token = self._pick_session_token(session_data)
+            if token and self._token_ttl_seconds(token) >= min_ttl_seconds:
+                return steamid, self._get_cookies(
+                    steamid, token, session_data.get('WebSessionId'))
+        return None
+
     def _to_account_id(self, steamid):
         """Steam mobile confirmations expect account id, not SteamID64."""
         return str(int(steamid) - _STEAMID64_BASE)

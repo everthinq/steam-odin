@@ -255,6 +255,114 @@ def huginn_tradeon_pair():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+# --- Gjallarhorn (event-rotation cockpit) ------------------------------------
+
+@bp.route('/api/huginn/gjallarhorn/rotation', methods=['GET'])
+def gjallarhorn_rotation():
+    """Sell list: held items scored for how well they fund a rotation into a
+    freshly-limited case. ?portfolio=combined|<pid>&market=steam&steamid=<id>.
+    steamid (optional) overlays a connected account's tradable-now status."""
+    settings = ctx.settings_manager.get_settings()
+    token = settings.get('tradeon_token', '')
+    portfolio = request.args.get('portfolio', 'combined')
+    market = request.args.get('market', 'steam')
+    steamid = request.args.get('steamid') or None
+    try:
+        return jsonify(ctx.gjallarhorn_service.rotation(token, portfolio, market, steamid))
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@bp.route('/api/huginn/gjallarhorn/accounts', methods=['GET'])
+def gjallarhorn_accounts():
+    """Accounts available for the tradable-now overlay + readiness (SteamID64,
+    name, and whether Ratatoskr currently has a live session for it)."""
+    out = []
+    for account in ctx.steam_service.get_all_accounts_data():
+        status = ctx.ratatoskr_service.get_status(account['steamid'])
+        out.append({
+            'steamid': account['steamid'],
+            'account_name': account['account_name'],
+            'connected': status.get('status') == 'connected',
+        })
+    return jsonify(out)
+
+
+@bp.route('/api/huginn/gjallarhorn/readiness', methods=['GET'])
+def gjallarhorn_readiness():
+    """Free storage-unit slots + loose-inventory count for a connected account."""
+    steamid = request.args.get('steamid')
+    if not steamid:
+        return jsonify({'error': 'steamid required'}), 400
+    try:
+        return jsonify(ctx.gjallarhorn_service.readiness(steamid))
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@bp.route('/api/huginn/gjallarhorn/holds', methods=['GET'])
+def gjallarhorn_holds_get():
+    """The instant-redeploy market whitelist (markets that don't lock balance)."""
+    return jsonify(ctx.settings_manager.get_settings().get('gjallarhorn_market_holds') or [])
+
+
+@bp.route('/api/huginn/gjallarhorn/holds', methods=['POST'])
+def gjallarhorn_holds_set():
+    """Replace the whitelist: {"holds": [{id, display, holdDays, instantRedeploy, notes}]}."""
+    body = request.get_json(silent=True) or {}
+    holds = body.get('holds')
+    if not isinstance(holds, list):
+        return jsonify({'error': 'holds array required'}), 400
+    clean = ctx.gjallarhorn_service.clean_holds(holds)
+    ctx.settings_manager.save_settings({'gjallarhorn_market_holds': clean})
+    return jsonify(clean)
+
+
+@bp.route('/api/huginn/gjallarhorn/targets', methods=['GET'])
+def gjallarhorn_targets_get():
+    """Priced target basket. ?capital=<usd> adds units-buyable per target."""
+    settings = ctx.settings_manager.get_settings()
+    token = settings.get('tradeon_token', '')
+    targets = [t.get('name') for t in (settings.get('gjallarhorn_targets') or []) if t.get('name')]
+    capital = request.args.get('capital', type=float)
+    market = request.args.get('market', 'steam')
+    try:
+        return jsonify(ctx.gjallarhorn_service.basket(token, targets, capital, market))
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@bp.route('/api/huginn/gjallarhorn/targets', methods=['POST'])
+def gjallarhorn_targets_set():
+    """Replace the target basket: {"targets": [{"name": "Kilowatt Case"}, ...]}."""
+    body = request.get_json(silent=True) or {}
+    targets = body.get('targets')
+    if not isinstance(targets, list):
+        return jsonify({'error': 'targets array required'}), 400
+    clean = ctx.gjallarhorn_service.clean_targets(targets)
+    ctx.settings_manager.save_settings({'gjallarhorn_targets': clean})
+    return jsonify(clean)
+
+
+@bp.route('/api/huginn/gjallarhorn/ring/status', methods=['GET'])
+def gjallarhorn_ring_status():
+    """Whether the Telegram caller (burner account) is set up, and who it rings."""
+    return jsonify(ctx.telegram_caller.status())
+
+
+@bp.route('/api/huginn/gjallarhorn/ring', methods=['POST'])
+def gjallarhorn_ring():
+    """Ring the target on Telegram (event alarm). Optional {"seconds": 8}. A bot
+    can't call, so this rings from the configured burner user account via MTProto."""
+    body = request.get_json(silent=True) or {}
+    try:
+        seconds = int(body.get('seconds', 8))
+    except (TypeError, ValueError):
+        seconds = 8
+    result = ctx.telegram_caller.ring(seconds)
+    return jsonify(result), (200 if result.get('ok') else 400)
+
+
 @bp.route('/api/huginn/lootfarm/arbitrage', methods=['GET'])
 def huginn_lootfarm_arbitrage():
     """Buy LF balance cheap → acquire LF item → instant-sell into Steam/Buff/CSFloat buy

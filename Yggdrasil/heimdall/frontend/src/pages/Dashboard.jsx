@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Plus, RefreshCw, Search, Trash2, Settings, Eye, EyeOff, TrendingUp, Coins, KeyRound } from 'lucide-react';
+import { Plus, RefreshCw, Search, Trash2, Settings, Eye, EyeOff, TrendingUp, Coins, KeyRound, Siren } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import AccountCard from '../components/AccountCard';
 import GlobalConfirmationsModal from '../components/GlobalConfirmationsModal';
@@ -207,6 +207,18 @@ const Dashboard = () => {
                             <div>
                                 <p className="text-sm font-semibold text-amber-100 font-serif">Huginn</p>
                                 <p className="text-xs text-slate-500">The Scout — Arbitrage &amp; deals</p>
+                            </div>
+                        </Link>
+                        <Link
+                            to="/huginn/gjallarhorn"
+                            className="inline-flex items-center gap-3 px-4 py-3 bg-odin-blue/40 border border-amber-500/20 rounded-xl hover:bg-odin-blue/60 hover:border-amber-500/40 transition-all"
+                        >
+                            <div className="p-2 bg-amber-900/30 rounded-lg border border-amber-600/30">
+                                <Siren size={18} className="text-amber-500" />
+                            </div>
+                            <div>
+                                <p className="text-sm font-semibold text-amber-100 font-serif">Gjallarhorn</p>
+                                <p className="text-xs text-slate-500">The Horn — Event rotation</p>
                             </div>
                         </Link>
                         <Link
