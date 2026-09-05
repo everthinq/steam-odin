@@ -491,6 +491,11 @@ app.get('/casket/:steamid/:casketid', (req, res) => {
     session.lastActivity = Date.now();
 
     session.csgo.getCasketContents(casketid, (err, items) => {
+        // The GC can invoke this callback more than once (it is tied to the
+        // customizationNotification event). Responding twice throws
+        // ERR_HTTP_HEADERS_SENT, which is uncaught here and crashes the process —
+        // so respond exactly once.
+        if (res.headersSent) return;
         if (err) {
             console.error('Error getting casket contents:', err);
             return res.status(500).json({ error: 'Failed to get casket contents', details: err.message });
