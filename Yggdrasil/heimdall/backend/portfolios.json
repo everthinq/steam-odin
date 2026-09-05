@@ -4,7 +4,7 @@
       "id": "fbf692611b3c",
       "name": "everthinklol",
       "created_at": "2026-07-21T13:40:18.177768+00:00",
-      "updated_at": "2026-09-05T07:53:18.569526+00:00",
+      "updated_at": "2026-09-05T14:53:17.874849+00:00",
       "transactions": [
         {
           "id": "3ea474874554",
@@ -8595,6 +8595,71 @@
           "fee_percent": 0.0,
           "is_arbitrage": false,
           "created_at": "2026-09-05T07:53:18.569509+00:00"
+        },
+        {
+          "id": "c5e2a3bdcbb7",
+          "item_name": "Glock-18 | Green Line (Minimal Wear)",
+          "type": "sell",
+          "qty": 2,
+          "price": 1.11,
+          "platform": "cs.money.trade",
+          "date": "2026-09-05",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": true,
+          "created_at": "2026-09-05T14:46:40.536944+00:00"
+        },
+        {
+          "id": "f3d2bac22827",
+          "item_name": "Glock-18 | Green Line (Minimal Wear)",
+          "type": "buy",
+          "qty": 2,
+          "price": 1.07,
+          "platform": "lisskins",
+          "date": "2026-09-05",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": true,
+          "created_at": "2026-09-05T14:47:17.839412+00:00"
+        },
+        {
+          "id": "34784d78c284",
+          "item_name": "Recoil Case",
+          "type": "buy",
+          "qty": 1,
+          "price": 0.25,
+          "platform": "lisskins",
+          "date": "2026-09-05",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": false,
+          "created_at": "2026-09-05T14:49:22.958041+00:00"
+        },
+        {
+          "id": "4f7e43e01550",
+          "item_name": "Sticker | Ninjas in Pyjamas (Gold) | 2020 RMR",
+          "type": "sell",
+          "qty": 1,
+          "price": 1.21,
+          "platform": "cs.money.trade",
+          "date": "2026-09-05",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": true,
+          "created_at": "2026-09-05T14:53:04.241363+00:00"
+        },
+        {
+          "id": "b185a5b7e133",
+          "item_name": "Sticker | Ninjas in Pyjamas (Gold) | 2020 RMR",
+          "type": "buy",
+          "qty": 1,
+          "price": 1.18,
+          "platform": "lisskins",
+          "date": "2026-09-05",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": true,
+          "created_at": "2026-09-05T14:53:17.874819+00:00"
         }
       ]
     },
