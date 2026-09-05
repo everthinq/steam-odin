@@ -197,6 +197,63 @@ def huginn_tradeon_dmarket():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+@bp.route('/api/huginn/markets', methods=['GET'])
+def huginn_markets():
+    """Market registry for the arbitrage UI: ids, display names, autobuy support, and
+    effective sell fees. Drives the generated buy->sell profile list on the frontend."""
+    settings = ctx.settings_manager.get_settings()
+    return jsonify(ctx.huginn_service.market_registry(settings))
+
+@bp.route('/api/huginn/markets/fees', methods=['POST'])
+def huginn_markets_fees():
+    """Update the editable per-market sell fees ({"fees": {marketId: fraction}}). Only
+    known market ids and fractions in [0, 1) are kept; merged into settings.json."""
+    body = request.get_json(silent=True) or {}
+    fees = body.get('fees')
+    if not isinstance(fees, dict):
+        return jsonify({'error': 'fees object required'}), 400
+    known = ctx.huginn_service.market_ids()
+    clean = {}
+    for market_id, value in fees.items():
+        if market_id not in known:
+            continue
+        try:
+            fraction = float(value)
+        except (TypeError, ValueError):
+            continue
+        if 0 <= fraction < 1:
+            clean[market_id] = fraction
+    current = dict(ctx.settings_manager.get_settings().get('huginn_market_fees') or {})
+    current.update(clean)
+    ctx.settings_manager.save_settings({'huginn_market_fees': current})
+    return jsonify({'huginn_market_fees': current})
+
+@bp.route('/api/huginn/tradeon/pair', methods=['GET'])
+def huginn_tradeon_pair():
+    """Generated arbitrage pair: ?buy=<id>&sell=<id>&mode=autobuy|min[&fee=<fraction>].
+    Buys at the buy market's min listing and sells at the sell market's autobuy (or min),
+    synthesised through TradeOnMarket. Same row shape as the fixed profiles."""
+    settings = ctx.settings_manager.get_settings()
+    token = settings.get('tradeon_token', '')
+    if not token:
+        return jsonify({'error': 'tradeon_token not set in settings'}), 400
+    buy = request.args.get('buy', '')
+    sell = request.args.get('sell', '')
+    mode = request.args.get('mode', 'autobuy')
+    known = ctx.huginn_service.market_ids()
+    if buy not in known or sell not in known:
+        return jsonify({'error': 'unknown market'}), 400
+    if mode not in ('autobuy', 'min'):
+        mode = 'autobuy'
+    fee = request.args.get('fee', type=float)
+    if fee is None:
+        fee = ctx.huginn_service.market_fee(sell, settings)
+    try:
+        data = ctx.huginn_service.fetch_generated_pair(token, buy, sell, mode, fee)
+        return jsonify(data)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 @bp.route('/api/huginn/lootfarm/arbitrage', methods=['GET'])
 def huginn_lootfarm_arbitrage():
     """Buy LF balance cheap → acquire LF item → instant-sell into Steam/Buff/CSFloat buy

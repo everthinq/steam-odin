@@ -23,6 +23,11 @@ DEFAULT_SETTINGS = {
     # to fetch CSFloat buy-order (autobuy) prices for owned items. settings.json is
     # gitignored — keep the real key there.
     "csfloat_api_key": "",
+    # Per-market sell-side fees for Huginn's generated arbitrage pairs, as
+    # {marketId: fraction} (e.g. {"Steam": 0.13}). Overrides the built-in defaults;
+    # markets without a confirmed fee default to 0 until set here. Editable from the
+    # Huginn arbitrage UI. settings.json is gitignored.
+    "huginn_market_fees": {},
     # --- Ratatoskr auto-store watcher ---
     # When enabled, the scheduler watches the connected (or auto-connected)
     # accounts in `auto_store_accounts` and moves any loose inventory item whose

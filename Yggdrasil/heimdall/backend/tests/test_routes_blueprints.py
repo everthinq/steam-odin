@@ -73,9 +73,10 @@ def test_huginn_blueprint_registers_all_routes():
     rules = _rules_for(bp)
     for want in ['/api/huginn/scan', '/api/huginn/cases',
                  '/api/huginn/csfloat/buy-orders', '/api/huginn/tradeon/steam',
-                 '/api/huginn/lootfarm/arbitrage']:
+                 '/api/huginn/lootfarm/arbitrage', '/api/huginn/markets',
+                 '/api/huginn/markets/fees', '/api/huginn/tradeon/pair']:
         assert want in rules, f'missing huginn route: {want}'
-    assert _rule_count(bp, '/api/huginn') == 35
+    assert _rule_count(bp, '/api/huginn') == 38  # +3: markets, markets/fees, tradeon/pair
 
 
 def test_register_blueprints_wires_onto_app():

@@ -78,6 +78,9 @@ const HuginnArbitrage = () => {
     const [profileId, setProfileId] = useState(PROFILES[0].id);
     const tradeonData = dataByProfile[profileId] ?? null;
 
+    // Market registry (from the backend) drives the generated buy→sell pairs below.
+    const [markets, setMarkets] = useState([]);
+
     const [itemSearch, setItemSearch] = useState('');
     const [inventoryOnly, setInventoryOnly] = useState(false);
     const [hideUnstable, setHideUnstable] = useState(false);   // LOOT.Farm: drop max=0 (Unstable) rows
@@ -131,6 +134,13 @@ const HuginnArbitrage = () => {
             .catch(() => {});
     }, []);
 
+    useEffect(() => {
+        fetch('/api/huginn/markets')
+            .then(r => r.ok ? r.json() : null)
+            .then(data => { if (Array.isArray(data)) setMarkets(data); })
+            .catch(() => {});
+    }, []);
+
     // No preload. Just reflect whether this profile already has session data:
     // collapse the fetch panel if it does, open it (prompt to fetch) if it doesn't.
     useEffect(() => {
@@ -177,7 +187,38 @@ const HuginnArbitrage = () => {
         e.target.value = '';
     };
 
-    const activeProfile = PROFILES.find(p => p.id === profileId) ?? PROFILES[0];
+    // Generated pairs: every registry market as a buy source × every sell target
+    // (both autobuy and min where the target has buy orders), minus pairs already
+    // covered by the curated PROFILES above. Each is synthesised server-side via
+    // /api/huginn/tradeon/pair. Tradeon is skipped as a sell target (it's the pull's
+    // own market) and LootFarm too (its selling is handled by the feed-based profiles).
+    const allProfiles = useMemo(() => {
+        if (!markets.length) return PROFILES;
+        const covered = new Set(PROFILES.map(p => `${p.buyMarket}:${p.sellMarket}:${p.toSub}`));
+        const generated = [];
+        for (const buy of markets) {
+            for (const sell of markets) {
+                if (sell.id === buy.id || sell.id === 'TradeOnMarket' || sell.id === 'LootFarm') continue;
+                const modes = sell.hasAutobuy ? ['autobuy', 'min'] : ['min'];
+                for (const mode of modes) {
+                    if (covered.has(`${buy.id}:${sell.id}:${mode}`)) continue;
+                    // CSFloat autobuy sells into swept buy orders → show the sweep panel.
+                    const csfloatAutobuy = sell.id === 'CsFloat' && mode === 'autobuy';
+                    generated.push({
+                        id: `gen:${buy.id}:${sell.id}:${mode}`,
+                        from: buy.display, fromSub: 'min',
+                        to: sell.display, toSub: mode,
+                        buyMarket: buy.id, sellMarket: sell.id,
+                        fetchEndpoint: `/api/huginn/tradeon/pair?buy=${buy.id}&sell=${sell.id}&mode=${mode}`,
+                        ...(csfloatAutobuy ? { autobuy: true } : {}),
+                    });
+                }
+            }
+        }
+        return [...PROFILES, ...generated];
+    }, [markets]);
+
+    const activeProfile = allProfiles.find(p => p.id === profileId) ?? PROFILES[0];
 
     const handleApiFetch = async () => {
         if (tradeonFetching) return;
@@ -185,7 +226,10 @@ const HuginnArbitrage = () => {
         setTradeonFetching(true);
         setTradeonError(null);
         try {
-            const url = profile.sellMarket === 'LootFarm'
+            // The LootFarm ?fee= (percent) belongs only to the dedicated feed-based
+            // profiles (endpoints with no query string); generated pairs already carry
+            // their own query and net the sell market's registry fee server-side.
+            const url = (profile.sellMarket === 'LootFarm' && !profile.fetchEndpoint.includes('?'))
                 ? `${profile.fetchEndpoint}?fee=${lootfarmFee || 0}`
                 : profile.fetchEndpoint;
             const res = await fetch(url);
@@ -349,7 +393,7 @@ const HuginnArbitrage = () => {
                 <div className="shrink-0 flex items-center gap-3">
                     <span className="text-[10px] font-bold tracking-widest text-slate-600 uppercase">Profile</span>
                     <ProfilePicker
-                        profiles={PROFILES}
+                        profiles={allProfiles}
                         value={profileId}
                         onChange={id => setProfileId(id)}
                     />

@@ -317,6 +317,61 @@ _TRADEON_DMARKET_BUY_BODY["secondMarketOptions"]["secondMarketPriceType"] = "Sel
 _TRADEON_CSFLOAT_BODY = copy.deepcopy(_TRADEON_STEAM_BODY)
 _TRADEON_CSFLOAT_BODY["secondMarketOptions"]["secondMarketPriceType"] = "Sell"
 
+# --- Generated arbitrage pairs (data-driven market registry) -----------------
+# Every market is reached the free way: as the secondMarket under TradeOnMarket
+# (TradeOnMarket/{id}). Direct {A}/{B} pulse tables are paywalled to items under
+# ~$2, so we never use them — a pair A->B is synthesised by joining TradeOnMarket/A
+# (A's min listing = what you'd pay) with TradeOnMarket/B (B's autobuy or min = what
+# you'd get), exactly like the hand-written cross-pairs above. Each market carries:
+#   id        pulse enum identifier (URL path segment)
+#   display   name shown in the UI
+#   buy_type  secondMarketPriceType for its MIN listing (the buy leg)
+#   autobuy   secondMarketPriceType for its buy-order (instant-sell leg), or None
+#   fee       default sell-side fee netted from proceeds; editable in settings, and
+#             0.0 where unconfirmed (profit is then an upper bound — see feeKnown)
+#   premium   pulse gates this market as a *direct* first-market (info only; we always
+#             go through TradeOnMarket, so it never blocks a pair)
+# Confirmed live against pulse on 2026-09-05. 'Youpine' is Youpin898's real id;
+# C5Game's identifier could not be resolved and is intentionally left out.
+_MARKET_REGISTRY = [
+    {'id': 'TradeOnMarket',  'display': 'Tradeon',           'buy_type': 'Sell',            'autobuy': None,  'fee': 0.0,   'premium': False},
+    {'id': 'LisSkins',       'display': 'LisSkins',          'buy_type': 'SellWithoutHold', 'autobuy': None,  'fee': 0.0,   'premium': False},
+    {'id': 'Buff',           'display': 'Buff163',           'buy_type': 'Sell',            'autobuy': 'Buy', 'fee': 0.015, 'premium': True},
+    {'id': 'CsFloat',        'display': 'CSFloat',           'buy_type': 'Sell',            'autobuy': None,  'fee': 0.02,  'premium': True},
+    {'id': 'Dmarket',        'display': 'DMarket',           'buy_type': 'Sell',            'autobuy': 'Buy', 'fee': 0.0,   'premium': False},
+    {'id': 'Steam',          'display': 'Steam',             'buy_type': 'Sell',            'autobuy': 'Buy', 'fee': 0.13,  'premium': False},
+    {'id': 'LootFarm',       'display': 'LOOT.Farm',         'buy_type': 'Sell',            'autobuy': 'Buy', 'fee': 0.05,  'premium': False},
+    {'id': 'CsMoneyTrade',   'display': 'CSMoney (Trade)',   'buy_type': 'Sell',            'autobuy': 'Buy', 'fee': 0.0,   'premium': False},
+    {'id': 'CsMoneyMarket',  'display': 'CSMoney (Market)',  'buy_type': 'Sell',            'autobuy': 'Buy', 'fee': 0.0,   'premium': False},
+    {'id': 'TradeItStore',   'display': 'TradeIt (Store)',   'buy_type': 'Sell',            'autobuy': None,  'fee': 0.0,   'premium': False},
+    {'id': 'TradeItTrade',   'display': 'TradeIt (Trade)',   'buy_type': 'Sell',            'autobuy': 'Buy', 'fee': 0.0,   'premium': False},
+    {'id': 'Tm',             'display': 'Market.CSGO',       'buy_type': 'Sell',            'autobuy': 'Buy', 'fee': 0.0,   'premium': False},
+    {'id': 'WhiteMarket',    'display': 'WhiteMarket',       'buy_type': 'Sell',            'autobuy': 'Buy', 'fee': 0.0,   'premium': True},
+    {'id': 'Skinport',       'display': 'Skinport',          'buy_type': 'Sell',            'autobuy': None,  'fee': 0.0,   'premium': False},
+    {'id': 'SkinVault',      'display': 'SkinVault',         'buy_type': 'Sell',            'autobuy': None,  'fee': 0.0,   'premium': False},
+    {'id': 'AimMarket',      'display': 'AimMarket',         'buy_type': 'Sell',            'autobuy': None,  'fee': 0.0,   'premium': True},
+    {'id': 'Haloskins',      'display': 'Haloskins',         'buy_type': 'Sell',            'autobuy': None,  'fee': 0.0,   'premium': True},
+    {'id': 'AvanMarket',     'display': 'AvanMarket',        'buy_type': 'Sell',            'autobuy': None,  'fee': 0.0,   'premium': True},
+    {'id': 'DupeFi',         'display': 'Dupe.fi',           'buy_type': 'Sell',            'autobuy': None,  'fee': 0.0,   'premium': False},
+    {'id': 'SkinPlace',      'display': 'SkinPlace',         'buy_type': 'Sell',            'autobuy': None,  'fee': 0.0,   'premium': False},
+    {'id': 'SkinsMonkey',    'display': 'SkinsMonkey',       'buy_type': 'Sell',            'autobuy': None,  'fee': 0.0,   'premium': False},
+    {'id': 'CsTradeTrade',   'display': 'CS.Trade (Trade)',  'buy_type': 'Sell',            'autobuy': None,  'fee': 0.0,   'premium': False},
+    {'id': 'CsTradeMarket',  'display': 'CS.Trade (Market)', 'buy_type': 'Sell',            'autobuy': None,  'fee': 0.0,   'premium': False},
+    {'id': 'CsDeals',        'display': 'CS.Deals',          'buy_type': 'Sell',            'autobuy': None,  'fee': 0.0,   'premium': False},
+    {'id': 'Skinout',        'display': 'Skinout',           'buy_type': 'Sell',            'autobuy': None,  'fee': 0.0,   'premium': True},
+    {'id': 'SkinSwapMarket', 'display': 'SkinSwap',          'buy_type': 'Sell',            'autobuy': None,  'fee': 0.0,   'premium': False},
+    {'id': 'Youpine',        'display': 'Youpin898',         'buy_type': 'Sell',            'autobuy': None,  'fee': 0.0,   'premium': False},
+]
+_MARKET_BY_ID = {m['id']: m for m in _MARKET_REGISTRY}
+# Markets whose sell-side fee is confirmed; the rest default to 0 (flagged in the UI).
+_MARKET_FEE_CONFIRMED = {'Steam', 'Buff', 'CsFloat', 'Dmarket', 'LootFarm'}
+# CSFloat has no pulse buy orders, but it DOES have an autobuy — its highest buy
+# order, gathered by the CSFloat API sweep (see the buy-orders panel). So every buy
+# market can also sell into CSFloat autobuy, sourced from that swept cache, not pulse.
+_AUTOBUY_VIA_CSFLOAT_SWEEP = {'CsFloat'}
+_TRADEON_TABLE_URL = 'https://api-pulse.tradeon.space/api/table/counter-strike/TradeOnMarket/{}/all'
+_MARKET_PULL_TTL = 30   # seconds; reuse a raw TradeOnMarket/{id} pull across generated pairs
+
 
 class HuginnService:
     def __init__(self, steam_service, ratatoskr_service):
@@ -327,6 +382,7 @@ class HuginnService:
         self._price_cache = {}   # market -> (fetched_at_epoch, {name: price}) for portfolio valuation
         self._price_state = {}   # market -> 'refreshing' | 'ok' | 'error'
         self._price_lock = threading.Lock()
+        self._market_pull_cache = {}   # (market_id, price_type) -> (fetched_at, items) for generated pairs
         # Bumped on every _price_cache write so known_item_names() (hit per typeahead
         # keystroke) can memoize its unioned name set instead of rebuilding it each call.
         self._price_cache_gen = 0
@@ -928,7 +984,14 @@ class HuginnService:
         """
         buy_items = self._post_tradeon(buy_url, token, buy_body)
         sell_items = self._post_tradeon(sell_url, token, sell_body or _TRADEON_STEAM_BODY)
+        return self._join_arbitrage(buy_items, sell_items, sell_fee)
 
+    def _join_arbitrage(self, buy_items, sell_items, sell_fee):
+        """Join a buy-side pull (its secondMarket = the min you'd pay) with a
+        sell-side pull (its secondMarket = what you'd get), on market_hash_name,
+        netting the sell fee. Only items present on both sides are returned, shaped
+        like the pulse rows (firstMarket = buy, secondMarket = sell) so the UI
+        renders it unchanged."""
         # market_hash_name -> sell-side second-market
         sell_by_name = {}
         for it in sell_items:
@@ -958,6 +1021,115 @@ class HuginnService:
 
         combined.sort(key=lambda x: x['profitPercent'], reverse=True)
         return combined
+
+    # ---- Generated pairs (any registry market -> any registry market) -------
+
+    def _body_for_type(self, price_type):
+        """A standard Tradeon table body with the second market priced as `price_type`."""
+        body = copy.deepcopy(_TRADEON_STEAM_BODY)
+        body["secondMarketOptions"]["secondMarketPriceType"] = price_type
+        return body
+
+    def _pull_market(self, token, market_id, price_type):
+        """Pull TradeOnMarket/{market_id} priced as `price_type`, cached briefly so
+        generating several pairs that share a market doesn't re-hit pulse each time."""
+        key = (market_id, price_type)
+        now = time.time()
+        hit = self._market_pull_cache.get(key)
+        if hit and now - hit[0] < _MARKET_PULL_TTL:
+            return hit[1]
+        items = self._post_tradeon(_TRADEON_TABLE_URL.format(market_id), token,
+                                   self._body_for_type(price_type))
+        self._market_pull_cache[key] = (now, items)
+        return items
+
+    def _join_direct(self, items, sell_fee):
+        """Build rows from a single TradeOnMarket/{sell} pull, where the buy side IS
+        TradeOnMarket (the pull's firstMarket) — used when Tradeon is the buy source."""
+        out = []
+        for it in items:
+            buy_market = it.get('firstMarket') or {}
+            sell_market = it.get('secondMarket') or {}
+            buy = buy_market.get('price')
+            sell = sell_market.get('price')
+            if buy is None or not buy or sell is None:
+                continue
+            net_sell = sell * (1 - sell_fee)
+            profit = net_sell - buy
+            out.append({
+                'itemName': it.get('itemName'),
+                'imageUrl': it.get('imageUrl'),
+                'firstMarket': buy_market,
+                'secondMarket': sell_market,
+                'profit': round(profit, 3),
+                'profitPercent': round(profit / buy * 100, 2),
+            })
+        out.sort(key=lambda x: x['profitPercent'], reverse=True)
+        return out
+
+    def fetch_generated_pair(self, token, buy_id, sell_id, mode='autobuy', fee=None):
+        """Synthesise the arbitrage table for any registry pair buy_id -> sell_id.
+
+        `mode` 'autobuy' sells into the target's buy orders (falls back to its min
+        listing when it has none); 'min' always uses the target's lowest listing.
+        `fee` defaults to the sell market's registry fee when not provided. Both legs
+        come from TradeOnMarket/{id} pulls (never the paywalled direct pair)."""
+        buy = _MARKET_BY_ID[buy_id]      # KeyError -> route returns 400
+        sell = _MARKET_BY_ID[sell_id]
+        if sell_id in _AUTOBUY_VIA_CSFLOAT_SWEEP and mode == 'autobuy':
+            # Sell into CSFloat buy orders (swept cache), not a pulse price type.
+            return self.fetch_generated_csfloat_autobuy(token, buy_id)
+        if fee is None:
+            fee = sell['fee']
+        sell_type = sell['autobuy'] if (mode == 'autobuy' and sell['autobuy']) else 'Sell'
+        if buy_id == 'TradeOnMarket':
+            # Tradeon is the pull's own first market — one pull, buy = firstMarket.
+            items = self._pull_market(token, sell_id, sell_type)
+            return self._join_direct(items, fee)
+        buy_items = self._pull_market(token, buy_id, buy['buy_type'])
+        sell_items = self._pull_market(token, sell_id, sell_type)
+        return self._join_arbitrage(buy_items, sell_items, fee)
+
+    def fetch_generated_csfloat_autobuy(self, token, buy_id):
+        """Sell into CSFloat's buy orders (from the swept cache) from any buy market.
+        Generalises the four hand-written *_csfloat_autobuy profiles: the buy price is
+        the buy market's min listing — TradeOnMarket's own price when it's the buy side
+        (buy_side='first'), otherwise the target market's second-market price."""
+        buy = _MARKET_BY_ID[buy_id]      # KeyError -> route returns 400
+        if buy_id == 'TradeOnMarket':
+            # firstMarket of any TradeOnMarket table is TradeOnMarket's min; use the
+            # CsFloat table so only CSFloat-listed items are considered (as the curated one does).
+            return self._combine_autobuy(token, _TRADEON_TABLE_URL.format('CsFloat'),
+                                         self._body_for_type('Sell'), buy_side='first')
+        return self._combine_autobuy(token, _TRADEON_TABLE_URL.format(buy_id),
+                                     self._body_for_type(buy['buy_type']), buy_side='second')
+
+    def market_ids(self):
+        """Set of valid market identifiers (for request validation)."""
+        return set(_MARKET_BY_ID)
+
+    def market_fee(self, sell_id, settings=None):
+        """Effective sell-side fee for a market: settings override, else registry default."""
+        overrides = (settings or {}).get('huginn_market_fees') or {}
+        m = _MARKET_BY_ID.get(sell_id)
+        return overrides.get(sell_id, m['fee'] if m else 0.0)
+
+    def market_registry(self, settings=None):
+        """Public registry for the UI: each market with its effective fee (settings
+        override applied), whether that fee is confirmed, and whether it has autobuy."""
+        overrides = (settings or {}).get('huginn_market_fees') or {}
+        out = []
+        for m in _MARKET_REGISTRY:
+            out.append({
+                'id': m['id'],
+                'display': m['display'],
+                'hasAutobuy': bool(m['autobuy']) or m['id'] in _AUTOBUY_VIA_CSFLOAT_SWEEP,
+                'premium': m['premium'],
+                'fee': overrides.get(m['id'], m['fee']),
+                'feeDefault': m['fee'],
+                'feeKnown': m['id'] in _MARKET_FEE_CONFIRMED,
+            })
+        return out
 
     def fetch_lisskins_steam(self, token):
         return self._combine_arbitrage(token, _TRADEON_LISSKINS_URL, _TRADEON_LISSKINS_BODY,
