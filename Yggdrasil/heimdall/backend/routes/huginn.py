@@ -12,6 +12,7 @@ from flask import Blueprint, jsonify, request
 
 from context import ctx
 from huginn_service import load_csfloat_keys, load_csfloat_proxy
+from notifications import notification_channel, send_notification
 
 bp = Blueprint('huginn', __name__)
 

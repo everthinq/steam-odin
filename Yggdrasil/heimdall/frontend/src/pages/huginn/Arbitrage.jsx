@@ -14,6 +14,7 @@ import PriceCell from '../../components/arbitrage/PriceCell';
 import OverstockCell from '../../components/arbitrage/OverstockCell';
 import LootfarmSellCell from '../../components/arbitrage/LootfarmSellCell';
 import ProfilePicker from '../../components/arbitrage/ProfilePicker';
+import FeeEditor from '../../components/arbitrage/FeeEditor';
 
 // Render results in capped pages — the datasets are ~17k rows and painting them all
 // at once freezes the page. Rows are sorted best-profit-first, so the first page is
@@ -134,12 +135,11 @@ const HuginnArbitrage = () => {
             .catch(() => {});
     }, []);
 
-    useEffect(() => {
-        fetch('/api/huginn/markets')
-            .then(r => r.ok ? r.json() : null)
-            .then(data => { if (Array.isArray(data)) setMarkets(data); })
-            .catch(() => {});
-    }, []);
+    const refreshMarkets = () => fetch('/api/huginn/markets')
+        .then(r => r.ok ? r.json() : null)
+        .then(data => { if (Array.isArray(data)) setMarkets(data); })
+        .catch(() => {});
+    useEffect(() => { refreshMarkets(); }, []);
 
     // No preload. Just reflect whether this profile already has session data:
     // collapse the fetch panel if it does, open it (prompt to fetch) if it doesn't.
@@ -397,6 +397,7 @@ const HuginnArbitrage = () => {
                         value={profileId}
                         onChange={id => setProfileId(id)}
                     />
+                    {markets.length > 0 && <FeeEditor markets={markets} onSaved={refreshMarkets} />}
                 </div>
 
                 {/* CSFloat buy-order sweep — only for "=> CSFloat (autobuy)" profiles */}
