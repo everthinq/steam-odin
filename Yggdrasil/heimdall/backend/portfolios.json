@@ -4,7 +4,7 @@
       "id": "fbf692611b3c",
       "name": "everthinklol",
       "created_at": "2026-07-21T13:40:18.177768+00:00",
-      "updated_at": "2026-09-04T13:04:50.172910+00:00",
+      "updated_at": "2026-09-05T07:53:18.569526+00:00",
       "transactions": [
         {
           "id": "3ea474874554",
@@ -8582,6 +8582,19 @@
           "fee_percent": 0.0,
           "is_arbitrage": true,
           "created_at": "2026-09-04T12:14:43.200393+00:00"
+        },
+        {
+          "id": "95560d860a54",
+          "item_name": "Recoil Case",
+          "type": "buy",
+          "qty": 28,
+          "price": 0.26,
+          "platform": "lisskins",
+          "date": "2026-09-05",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": false,
+          "created_at": "2026-09-05T07:53:18.569509+00:00"
         }
       ]
     },
@@ -13850,7 +13863,7 @@
       "id": "9929cee577f7",
       "name": "harold_cavill",
       "created_at": "2026-07-21T14:49:46.466613+00:00",
-      "updated_at": "2026-09-04T22:45:14.105735+00:00",
+      "updated_at": "2026-09-05T07:27:31.806421+00:00",
       "transactions": [
         {
           "id": "da78df72fae8",
@@ -14597,6 +14610,32 @@
           "fee_percent": 0.0,
           "is_arbitrage": false,
           "created_at": "2026-09-04T22:42:03.528075+00:00"
+        },
+        {
+          "id": "53a5bb4c16ed",
+          "item_name": "Recoil Case",
+          "type": "buy",
+          "qty": 67,
+          "price": 0.27,
+          "platform": "lisskins",
+          "date": "2026-09-05",
+          "note": "09/05/2026, 02:48 AM",
+          "fee_percent": 0.0,
+          "is_arbitrage": false,
+          "created_at": "2026-09-05T07:21:18.232180+00:00"
+        },
+        {
+          "id": "1039d3850722",
+          "item_name": "Recoil Case",
+          "type": "buy",
+          "qty": 114,
+          "price": 0.28,
+          "platform": "lisskins",
+          "date": "2026-09-05",
+          "note": "09/05/2026, 02:48 AM",
+          "fee_percent": 0.0,
+          "is_arbitrage": false,
+          "created_at": "2026-09-05T07:27:31.806251+00:00"
         }
       ]
     },
