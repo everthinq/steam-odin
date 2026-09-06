@@ -7,6 +7,7 @@ import HelpModal from '../../components/gjallarhorn/HelpModal';
 import MarketHoldEditor from '../../components/gjallarhorn/MarketHoldEditor';
 import TargetBasket from '../../components/gjallarhorn/TargetBasket';
 import ReadinessPanel from '../../components/gjallarhorn/ReadinessPanel';
+import NewsWatcher from '../../components/gjallarhorn/NewsWatcher';
 
 // Reference markets the "current price" can be read on (mirrors the backend
 // _PRICE_MARKETS plus the virtual 'lowest').
@@ -47,7 +48,9 @@ const Gjallarhorn = () => {
         setRinging(true);
         setRingMsg('Ringing your Telegram…');
         fetch('/api/huginn/gjallarhorn/ring', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ seconds: 8 }),
+            // Short test (one ~12s call). A real limiting alert rings much longer
+            // (repeated calls) and carries the event details as a message.
+            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ring_seconds: 12, repeats: 1 }),
         })
             .then((r) => r.json())
             .then((d) => setRingMsg(d.ok ? '📞 Ringing — check your phone.' : `Ring failed: ${d.error || 'error'}`))
@@ -124,7 +127,7 @@ const Gjallarhorn = () => {
                 >
                     <HelpCircle size={13} /> How to use
                 </button>
-                <InfoTip tip="Rings your Telegram from the burner caller account, to test the event alarm. Needs telegram_caller.json set up first (run telegram_caller_login.py).">
+                <InfoTip tip="Sends one short (~12s) test call from the burner caller account. A REAL limiting alert rings much longer (several calls back to back to wake you) and sends a message with the event details into the same chat. Needs telegram_caller.json set up first.">
                     <button
                         type="button"
                         onClick={ringTest}
@@ -184,6 +187,11 @@ const Gjallarhorn = () => {
                     <div className="flex-1 min-w-[10rem]">
                         <ReadinessPanel steamid={steamid} accountName={selectedAccount?.account_name} />
                     </div>
+                </div>
+
+                {/* News watcher (bullet 4): rings when Valve limits a case/collection */}
+                <div className="shrink-0">
+                    <NewsWatcher />
                 </div>
 
                 {/* Controls row */}

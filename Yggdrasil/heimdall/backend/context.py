@@ -19,6 +19,7 @@ class _Context:
     mimir_service = None
     steam_market_service = None
     gjallarhorn_service = None
+    gjallarhorn_news_service = None
     telegram_caller = None
 
 

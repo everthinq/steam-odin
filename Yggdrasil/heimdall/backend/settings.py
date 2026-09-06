@@ -60,10 +60,25 @@ DEFAULT_SETTINGS = {
     # Target basket: the freshly-limited case(s)/item(s) to rotate INTO. Each entry
     # {name}; the page prices them and shows how many your capital buys.
     "gjallarhorn_targets": [],
+    # --- Gjallarhorn news watcher (bullet 4) ---
+    # Polls the official CS2 update feed (Steam news for appid 730) and RINGS +
+    # texts when Valve ADDS or REMOVES a case / collection / capsule / souvenir
+    # (a supply-shock "limiting" event). Map-pool changes are ignored on purpose.
+    "gjallarhorn_news_armed": True,        # False = watch but never ring/alert
+    "gjallarhorn_news_poll_minutes": 10,   # how often to poll the feed (floor 2 min)
+    # Dedicated Telegram chat for Gjallarhorn alerts, so they land in their OWN
+    # conversation instead of mixing with the Case Arbitrage board. Uses the same
+    # telegram_bot_token; if empty, falls back to the shared telegram_chat_id.
+    "gjallarhorn_chat_id": "",
+    "gjallarhorn_news_last_seen_date": 0,  # unix date of newest processed post
+    "gjallarhorn_news_last_gid": "",       # id of the newest post seen (cheap "unchanged?" check)
+    "gjallarhorn_news_history": [],        # append-only log of detected events (capped)
 }
 
 # How many auto-store move records to keep in the history log.
 AUTO_STORE_HISTORY_CAP = 200
+# How many Gjallarhorn news-event records to keep in the history log.
+GJALLARHORN_NEWS_HISTORY_CAP = 50
 
 class SettingsManager:
     def __init__(self):
@@ -114,6 +129,20 @@ class SettingsManager:
             history = list(self.settings.get("auto_store_history") or [])
             history.append(record)
             self.settings["auto_store_history"] = history[-AUTO_STORE_HISTORY_CAP:]
+            self._persist()
+
+    def record_gjallarhorn_news(self, last_seen_date, event_record=None, last_gid=None):
+        """Advance the news watcher's high-water mark (date + newest post id) and
+        optionally log one detected limiting event (keeps newest
+        GJALLARHORN_NEWS_HISTORY_CAP)."""
+        with self.lock:
+            self.settings["gjallarhorn_news_last_seen_date"] = int(last_seen_date)
+            if last_gid is not None:
+                self.settings["gjallarhorn_news_last_gid"] = str(last_gid)
+            if event_record is not None:
+                history = list(self.settings.get("gjallarhorn_news_history") or [])
+                history.append(event_record)
+                self.settings["gjallarhorn_news_history"] = history[-GJALLARHORN_NEWS_HISTORY_CAP:]
             self._persist()
 
     def get_settings(self):

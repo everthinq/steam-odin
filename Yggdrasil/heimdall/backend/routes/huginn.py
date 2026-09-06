@@ -267,6 +267,10 @@ def gjallarhorn_rotation():
     portfolio = request.args.get('portfolio', 'combined')
     market = request.args.get('market', 'steam')
     steamid = request.args.get('steamid') or None
+    # Mark the page as actively in use so the liquidity warmer defers the heavy
+    # authenticated history fetches to idle (keeps Steam from 429-ing the session).
+    if ctx.steam_market_service is not None:
+        ctx.steam_market_service.note_activity()
     try:
         return jsonify(ctx.gjallarhorn_service.rotation(token, portfolio, market, steamid))
     except Exception as e:
@@ -352,15 +356,47 @@ def gjallarhorn_ring_status():
 
 @bp.route('/api/huginn/gjallarhorn/ring', methods=['POST'])
 def gjallarhorn_ring():
-    """Ring the target on Telegram (event alarm). Optional {"seconds": 8}. A bot
-    can't call, so this rings from the configured burner user account via MTProto."""
+    """Wake-call the target on Telegram (event alarm): send an explanatory message,
+    then ring repeatedly. A bot can't call, so this rings from the configured burner
+    user account via MTProto. Body (all optional): {message, ring_seconds, repeats,
+    gap_seconds}. Defaults to a short test unless overridden."""
     body = request.get_json(silent=True) or {}
-    try:
-        seconds = int(body.get('seconds', 8))
-    except (TypeError, ValueError):
-        seconds = 8
-    result = ctx.telegram_caller.ring(seconds)
+    message = body.get('message') or '🔔 Gjallarhorn test ring — this is what a real limiting alert will sound like.'
+    kwargs = {}
+    for key in ('ring_seconds', 'repeats', 'gap_seconds'):
+        if body.get(key) is not None:
+            try:
+                kwargs[key] = int(body[key])
+            except (TypeError, ValueError):
+                pass
+    result = ctx.telegram_caller.ring(message=message, **kwargs)
     return jsonify(result), (200 if result.get('ok') else 400)
+
+
+@bp.route('/api/huginn/gjallarhorn/news/status', methods=['GET'])
+def gjallarhorn_news_status():
+    """Whether the CS2 news watcher is armed/running, plus recent detected events."""
+    return jsonify(ctx.gjallarhorn_news_service.status())
+
+
+@bp.route('/api/huginn/gjallarhorn/news/check', methods=['POST'])
+def gjallarhorn_news_check():
+    """Poll the CS2 update feed right now. Re-evaluates the newest post ({"force": true})
+    without re-alerting the older backlog. Rings only if a new limiting event is found
+    and the watcher is armed."""
+    body = request.get_json(silent=True) or {}
+    force = bool(body.get('force'))
+    return jsonify(ctx.gjallarhorn_news_service.check_once(force=force))
+
+
+@bp.route('/api/huginn/gjallarhorn/news/test', methods=['POST'])
+def gjallarhorn_news_test():
+    """Run the limiting-event detector on pasted post text (no alert, no ring). Lets
+    Ivan verify detection against real/example update posts. Body: {"text": "..."}."""
+    from gjallarhorn_news_service import detect
+    body = request.get_json(silent=True) or {}
+    text = body.get('text') or ''
+    return jsonify({'hits': detect(text)})
 
 
 @bp.route('/api/huginn/lootfarm/arbitrage', methods=['GET'])

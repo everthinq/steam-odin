@@ -12,6 +12,7 @@ from draupnir_backup_service import BackupService
 from mimir_service import MimirService
 from steam_market_service import SteamMarketService
 from gjallarhorn_service import GjallarhornService
+from gjallarhorn_news_service import GjallarhornNewsService
 from telegram_caller import TelegramCaller
 from logging_setup import setup_logging
 from context import ctx
@@ -48,6 +49,9 @@ gjallarhorn_service = GjallarhornService(
 # Telegram caller: rings a target from a burner user account (a bot can't call)
 # for Gjallarhorn event alerts. No-op until telegram_caller.json is set up.
 telegram_caller = TelegramCaller()
+# Gjallarhorn news watcher (bullet 4): polls the official CS2 update feed and
+# rings + texts when Valve adds/removes a case/collection/capsule/souvenir.
+gjallarhorn_news_service = GjallarhornNewsService(settings_manager, telegram_caller)
 
 # Expose the singletons to the route blueprints (read from context.ctx at
 # request time — see context.py and the routes/ package).
@@ -61,6 +65,7 @@ ctx.scheduler = scheduler
 ctx.mimir_service = mimir_service
 ctx.steam_market_service = steam_market_service
 ctx.gjallarhorn_service = gjallarhorn_service
+ctx.gjallarhorn_news_service = gjallarhorn_news_service
 ctx.telegram_caller = telegram_caller
 register_blueprints(app)
 
@@ -87,6 +92,8 @@ if _should_start_background_scheduler():
     # LOOT.Farm auctions: snapshot the feed every 15 min to build the per-lot history
     # the backtest reads (bids, clear prices, snipe references).
     huginn_service.start_auction_tracker(lambda: settings_manager.get_settings())
+    # Gjallarhorn: watch the CS2 update feed for case/collection limiting events.
+    gjallarhorn_news_service.start()
 
 # Ensure all errors return JSON, not HTML
 @app.errorhandler(404)

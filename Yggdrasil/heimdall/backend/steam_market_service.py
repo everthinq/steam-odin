@@ -16,8 +16,10 @@ single background warm thread. This mirrors HuginnService.prices_for_valuation's
 non-blocking "serve cache now, warm in the background" pattern — the request
 returns instantly with whatever is cached and a status of 'warming' | 'fresh'.
 """
+import gzip
 import json
 import logging
+import os
 import threading
 import time
 import urllib.parse
@@ -30,6 +32,10 @@ _APPID = 730  # CS2 / CS:GO
 _OVERVIEW_URL = 'https://steamcommunity.com/market/priceoverview/'
 _HISTORY_URL = 'https://steamcommunity.com/market/pricehistory/'
 _USER_AGENT = 'Mozilla/5.0 (Heimdall Gjallarhorn liquidity)'
+# 7-day/30-day history barely moves and is the expensive authenticated call, so
+# we persist it (gzip JSON) and reload it on boot — that is what stops the page
+# re-fetching every item's history (the Steam 429 source) after a restart.
+_CACHE_FILE = os.path.join(os.path.dirname(__file__), 'cache', 'gjallarhorn_liquidity.json.gz')
 
 
 def _money(value):
@@ -54,10 +60,18 @@ def _int(value):
 class SteamMarketService:
     # How long a cached datum is served before the warmer refreshes it. The 24h
     # overview is cheap and fresh-sensitive; the daily history barely moves, so it
-    # is refreshed far less often to stay well under Steam's rate limits.
+    # is refreshed far less often (once a day) to stay well under Steam's rate limits.
     _OVERVIEW_TTL = 15 * 60          # 15 minutes
-    _HISTORY_TTL = 6 * 60 * 60       # 6 hours
-    _THROTTLE_SEC = 1.5              # minimum gap between Steam HTTP calls (429 guard)
+    _HISTORY_TTL = 24 * 60 * 60      # 24 hours (persisted to disk between runs)
+    _THROTTLE_SEC = 3.0              # minimum gap between Steam HTTP calls (429 guard)
+    _HISTORY_EXTRA_SLEEP = 2.0       # extra pause after each authenticated history call
+    # While the user is actively on the Gjallarhorn page we only refresh the cheap
+    # overview; the heavy authenticated history is deferred to idle so it never
+    # competes with (and 429s) the live page. Activity is a short sliding window.
+    _ACTIVE_WINDOW = 120             # seconds a page hit counts as "active"
+    _IDLE_RECHECK_SEC = 20           # how often the warmer re-checks for idle to drain deferred history
+    _WARM_MAX_LIFETIME = 30 * 60     # cap the warm thread so deferred work can't spin forever
+    _SAVE_MIN_INTERVAL = 30          # don't rewrite the gzip cache more often than this
 
     def __init__(self, steam_service):
         self.steam = steam_service
@@ -66,6 +80,11 @@ class SteamMarketService:
         self._last_call = 0.0
         self._warming = False
         self._queue = []             # names pending a warm fetch (FIFO)
+        self._deferred = []          # names owed a history fetch, held until the page is idle
+        self._active_until = 0.0     # wall-clock until which the page counts as active
+        self._dirty = False          # cache changed since last disk save
+        self._last_save = 0.0
+        self._load_cache()
 
     # ---- public API --------------------------------------------------------
 
@@ -93,6 +112,16 @@ class SteamMarketService:
                     threading.Thread(target=self._warm, daemon=True).start()
         return out, ('warming' if stale else 'fresh')
 
+    def note_activity(self):
+        """Mark the Gjallarhorn page as actively in use right now. While active,
+        the warmer refreshes only the cheap overview and defers the heavy
+        authenticated history to idle, so it never 429s the live page."""
+        with self._lock:
+            self._active_until = time.time() + self._ACTIVE_WINDOW
+
+    def _is_active(self):
+        return time.time() < self._active_until
+
     # ---- warm loop ---------------------------------------------------------
 
     def _needs_refresh(self, entry, now):
@@ -101,20 +130,41 @@ class SteamMarketService:
         overview = entry.get('overview')
         return not overview or (now - overview[0]) >= self._OVERVIEW_TTL
 
+    def _history_stale(self, entry, now):
+        history = (entry or {}).get('history')
+        return not history or (now - history[0]) >= self._HISTORY_TTL
+
     def _warm(self):
+        deadline = time.time() + self._WARM_MAX_LIFETIME
         try:
-            while True:
+            while time.time() < deadline:
                 with self._lock:
-                    if not self._queue:
+                    if not self._queue and not self._deferred:
                         self._warming = False
-                        return
-                    name = self._queue.pop(0)
+                        break
+                    # Nothing queued but history is owed: wait for the page to go
+                    # idle, then drain the deferred history fetches.
+                    if not self._queue and self._deferred:
+                        if self._is_active():
+                            name = None
+                        else:
+                            self._queue = self._deferred
+                            self._deferred = []
+                            name = self._queue.pop(0)
+                    else:
+                        name = self._queue.pop(0)
+                if name is None:
+                    self._save_cache()          # persist what we have while we wait
+                    time.sleep(self._IDLE_RECHECK_SEC)
+                    continue
                 try:
                     self._fetch_one(name)
                 except Exception as e:
                     logger.warning('[GJALLARHORN] liquidity fetch failed for %s: %s', name, e)
+            self._save_cache()
         except Exception as e:  # never leave _warming stuck on
             logger.error('[GJALLARHORN] liquidity warm loop crashed: %s', e)
+        finally:
             with self._lock:
                 self._warming = False
 
@@ -125,7 +175,7 @@ class SteamMarketService:
         # limit, so use it for both calls when a session is available.
         cookies = self._cookies()
 
-        # 24h overview — lowest/median/24h volume.
+        # 24h overview — lowest/median/24h volume. Cheap; always refreshed.
         try:
             data = self._http_get(_OVERVIEW_URL, {
                 'appid': _APPID, 'currency': 1, 'market_hash_name': name}, cookies=cookies)
@@ -134,18 +184,74 @@ class SteamMarketService:
             logger.warning('[GJALLARHORN] priceoverview %s: %s', name, e)
             entry.setdefault('overview', (now, None))
 
-        # 7-day history — authenticated; only when stale and a session exists.
-        history = entry.get('history')
-        if cookies and (not history or (now - history[0]) >= self._HISTORY_TTL):
+        # 7-day history — authenticated and heavy. Only when stale and a session
+        # exists; DEFERRED while the page is active so it warms during idle only.
+        if cookies and self._history_stale(entry, now):
+            if self._is_active():
+                with self._lock:
+                    self._cache[name] = entry
+                    if name not in self._deferred:
+                        self._deferred.append(name)
+                self._dirty = True
+                return
             try:
                 data = self._http_get(_HISTORY_URL, {
                     'appid': _APPID, 'market_hash_name': name}, cookies=cookies)
                 entry['history'] = (now, self._parse_history(data))
+                # Extra breathing room after the harsh authenticated endpoint.
+                time.sleep(self._HISTORY_EXTRA_SLEEP)
             except Exception as e:
                 logger.warning('[GJALLARHORN] pricehistory %s: %s', name, e)
 
         with self._lock:
             self._cache[name] = entry
+            self._dirty = True
+
+    # ---- disk cache (gzip JSON) --------------------------------------------
+
+    def _load_cache(self):
+        try:
+            if not os.path.exists(_CACHE_FILE):
+                return
+            with gzip.open(_CACHE_FILE, 'rt', encoding='utf-8') as f:
+                raw = json.load(f)
+            # JSON turns the (ts, data) tuples into [ts, data] lists — restore them.
+            cache = {}
+            for name, entry in (raw or {}).items():
+                restored = {}
+                for kind in ('overview', 'history'):
+                    pair = entry.get(kind)
+                    if isinstance(pair, list) and len(pair) == 2:
+                        restored[kind] = (float(pair[0]), pair[1])
+                if restored:
+                    cache[name] = restored
+            self._cache = cache
+            logger.info('[GJALLARHORN] loaded %d cached liquidity entries', len(cache))
+        except Exception as e:
+            logger.warning('[GJALLARHORN] could not load liquidity cache: %s', e)
+
+    def _save_cache(self):
+        with self._lock:
+            if not self._dirty:
+                return
+            if (time.time() - self._last_save) < self._SAVE_MIN_INTERVAL:
+                return
+            snapshot = {
+                name: {kind: [pair[0], pair[1]] for kind, pair in entry.items()}
+                for name, entry in self._cache.items()
+            }
+            self._last_save = time.time()
+            self._dirty = False
+        try:
+            os.makedirs(os.path.dirname(_CACHE_FILE), exist_ok=True)
+            tmp = f'{_CACHE_FILE}.tmp'
+            with gzip.open(tmp, 'wt', encoding='utf-8') as f:
+                json.dump(snapshot, f)
+            os.replace(tmp, _CACHE_FILE)
+        except Exception as e:
+            logger.warning('[GJALLARHORN] could not save liquidity cache: %s', e)
+            with self._lock:
+                self._dirty = True
 
     # ---- HTTP + auth -------------------------------------------------------
 

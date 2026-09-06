@@ -33,7 +33,6 @@ import hashlib
 import logging
 import os
 import re
-import shutil
 import threading
 import time
 from datetime import datetime, timezone, timedelta
