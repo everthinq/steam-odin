@@ -3,19 +3,32 @@ import { CalendarDays, ChevronLeft, ChevronRight } from 'lucide-react';
 
 const pad = (n) => String(n).padStart(2, '0');
 const fmt = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-const parse = (s) => {
-    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s || '');
-    if (!m) return null;
-    const d = new Date(+m[1], +m[2] - 1, +m[3]);
-    return isNaN(d.getTime()) ? null : d;
+// The field value may carry a time (e.g. "2026-08-11 15:23:24" or
+// "08/31/2026, 12:12 AM"). Split off the leading date token — ISO YYYY-MM-DD or
+// US MM/DD/YYYY — and keep whatever trailing time text the user typed, so the
+// calendar only changes the day and never discards the time.
+const split = (s) => {
+    const str = (s || '').trim();
+    let m = /^(\d{4})-(\d{2})-(\d{2})/.exec(str);
+    let date = null, len = 0;
+    if (m) { date = new Date(+m[1], +m[2] - 1, +m[3]); len = m[0].length; }
+    else {
+        m = /^(\d{1,2})\/(\d{1,2})\/(\d{4})/.exec(str);
+        if (m) { date = new Date(+m[3], +m[1] - 1, +m[2]); len = m[0].length; }
+    }
+    if (date && isNaN(date.getTime())) date = null;
+    const time = date ? str.slice(len).replace(/^[\s,T]+/, '').trim() : '';
+    return { date, time };
 };
+const parse = (s) => split(s).date;
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 const DOW = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
 const sameDay = (a, b) => a && b && a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
 
-// Date text field (YYYY-MM-DD) with a compact, opaque, theme-matched calendar
-// popover. Month + year dropdowns let you jump to any year directly.
-export const DateField = ({ value, onChange, className = '', placeholder = 'YYYY-MM-DD' }) => {
+// Date / date-time text field with a compact, opaque, theme-matched calendar
+// popover. You can type a plain date or a date with a time (the calendar only
+// changes the day, keeping the time); month + year dropdowns jump to any year.
+export const DateField = ({ value, onChange, className = '', placeholder = 'YYYY-MM-DD', title }) => {
     const [open, setOpen] = useState(false);
     const [view, setView] = useState(() => parse(value) || new Date());
     const wrapRef = useRef(null);
@@ -38,7 +51,8 @@ export const DateField = ({ value, onChange, className = '', placeholder = 'YYYY
     }, [open]);
 
     const toggle = () => { setView(parse(value) || new Date()); setOpen(o => !o); };
-    const pick = (d) => { onChange(fmt(d)); setOpen(false); };
+    // Picking a day keeps any time the user already typed.
+    const pick = (d) => { const { time } = split(value); onChange(time ? `${fmt(d)} ${time}` : fmt(d)); setOpen(false); };
     const shiftMonth = (n) => setView(v => new Date(v.getFullYear(), v.getMonth() + n, 1));
 
     const cells = useMemo(() => {
@@ -54,7 +68,7 @@ export const DateField = ({ value, onChange, className = '', placeholder = 'YYYY
 
     return (
         <div ref={wrapRef} className="relative">
-            <input className={className} placeholder={placeholder} pattern="\d{4}-\d{2}-\d{2}"
+            <input className={className} placeholder={placeholder} title={title}
                 value={value} onChange={(e) => onChange(e.target.value)} />
             <button type="button" onClick={toggle} title="Pick a date"
                 className="absolute right-1.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-yellow-300 transition-colors">

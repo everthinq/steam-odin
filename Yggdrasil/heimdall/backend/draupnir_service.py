@@ -15,6 +15,7 @@ import uuid
 from datetime import datetime, timezone
 
 from jsonio import atomic_write_json
+from validation import normalize_datetime
 
 log = logging.getLogger(__name__)
 
@@ -27,6 +28,14 @@ def _now():
 
 def _today():
     return datetime.now(timezone.utc).strftime('%Y-%m-%d')
+
+
+def _norm_date(raw):
+    """Canonicalize an entered date/datetime; blank → today; keep an
+    unparseable non-empty value as-is so hand-entered data is never dropped."""
+    if not raw:
+        return _today()
+    return normalize_datetime(raw) or raw
 
 
 def _new_id():
@@ -194,9 +203,12 @@ class DraupnirService:
             'qty': qty,
             'price': price,
             'platform': (raw.get('platform') or '').strip(),
-            # Blank date (manual quick-add) defaults to today so the row sorts
+            # Normalize whatever date/datetime shape was entered into the canonical
+            # stored form (YYYY-MM-DD, or YYYY-MM-DDThh:mm:ss when a time is given).
+            # An unparseable non-empty value is kept as-is rather than dropped;
+            # a blank date (manual quick-add) defaults to today so the row sorts
             # to the top with the other recent entries instead of the bottom.
-            'date': (raw.get('date') or '').strip() or _today(),
+            'date': _norm_date((raw.get('date') or '').strip()),
             'note': (raw.get('note') or '').strip(),
             'fee_percent': fee_percent,
             # Marks a leg of an arbitrage deal: buy cheap on one market, sell dear

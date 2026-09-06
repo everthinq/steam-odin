@@ -34,6 +34,27 @@ const plClass = (v) => v == null ? 'text-slate-400' : v > 0 ? 'text-emerald-400'
 const plStr = (v) => v == null ? '—' : `${v > 0 ? '+' : ''}${money(v)}`;
 
 const todayStr = () => new Date().toISOString().slice(0, 10);   // YYYY-MM-DD
+// One field holds the whole buying date/time. The user may type a plain date or
+// a date-time in several human shapes (e.g. "2026-08-11 15:23:24",
+// "08/31/2026, 12:12 AM"); the backend is the authority that normalizes it to a
+// canonical stored form (YYYY-MM-DD, or YYYY-MM-DDThh:mm:ss with a time).
+// Accept anything that at least *starts* with a plausible date token here, and
+// let the backend reject a truly malformed value with a clear 400.
+const looksLikeDate = (s) => /^\s*(\d{4}-\d{2}-\d{2}|\d{1,2}\/\d{1,2}\/\d{4})/.test(s || '');
+// Table display of a canonical stored value: "2026-08-11T15:23:24" → "2026-08-11 15:23".
+// Anything not in canonical shape is shown verbatim (never truncated).
+const prettyDate = (s) => {
+    if (!s) return '—';
+    const m = /^(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2})/.exec(s.trim());
+    return m ? `${m[1]} ${m[2]}` : s;
+};
+// Fill the edit field from a canonical stored value in a friendly, re-parseable
+// shape: "2026-08-11T15:23:24" → "2026-08-11 15:23:24"; a plain date stays as-is.
+const toEditable = (s) => {
+    const str = (s || '').trim();
+    const m = /^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2}(?::\d{2})?)/.exec(str);
+    return m ? `${m[1]} ${m[2]}` : str;
+};
 const blankForm = () => ({ item_name: '', type: 'buy', qty: 1, price: '', platform: '', date: todayStr(), note: '', is_arbitrage: false });
 
 const Tile = ({ label, value, cls = 'text-slate-100' }) => (
@@ -192,7 +213,7 @@ const DraupnirPortfolio = () => {
         setEditingId(null); setFormError(null); setShowSuggest(false);
         setForm({
             item_name: last.item_name, type: last.type, qty: last.qty,
-            price: String(last.price), platform: last.platform, date: last.date, note: last.note,
+            price: String(last.price), platform: last.platform, date: toEditable(last.date), note: last.note,
         });
         setTimeout(() => itemInputRef.current?.focus(), 0);
     };
@@ -202,7 +223,7 @@ const DraupnirPortfolio = () => {
         if (!String(form.qty).trim() || parseInt(form.qty, 10) < 1) return 'Quantity is required (min 1).';
         if (form.price === '' || isNaN(parseFloat(form.price)) || parseFloat(form.price) < 0) return 'Unit price is required.';
         if (!form.platform.trim()) return 'Platform is required.';
-        if (!/^\d{4}-\d{2}-\d{2}$/.test(form.date.trim())) return 'Date is required (format YYYY-MM-DD).';
+        if (!looksLikeDate(form.date)) return 'Date is required (e.g. 2026-08-31, 2026-08-11 15:23:24, or 08/31/2026, 12:12 AM).';
         return null;
     };
 
@@ -282,7 +303,7 @@ const DraupnirPortfolio = () => {
 
     const startEdit = (t) => {
         setEditingId(t.id);
-        setForm({ item_name: t.item_name, type: t.type, qty: t.qty, price: t.price, platform: t.platform, date: t.date, note: t.note, is_arbitrage: !!t.is_arbitrage });
+        setForm({ item_name: t.item_name, type: t.type, qty: t.qty, price: t.price, platform: t.platform, date: toEditable(t.date), note: t.note, is_arbitrage: !!t.is_arbitrage });
     };
 
     const deleteTxn = (t) => setDialog({
@@ -440,7 +461,8 @@ const DraupnirPortfolio = () => {
                                     {platformOptions.map(p => <option key={p} value={p} />)}
                                 </datalist>
                                 <DateField
-                                    className={`${inputCls} w-36 pr-8`} placeholder="YYYY-MM-DD *"
+                                    className={`${inputCls} w-52 pr-8`} placeholder="Date or date-time *"
+                                    title='Date, optionally with a time — e.g. "2026-08-31", "2026-08-11 15:23:24", or "08/31/2026, 12:12 AM"'
                                     value={form.date} onChange={v => setForm(f => ({ ...f, date: v }))}
                                 />
                                 <input className={`${inputCls} flex-1 min-w-[120px]`} placeholder="Note" value={form.note} onChange={e => setForm({ ...form, note: e.target.value })} />
@@ -582,7 +604,7 @@ const DraupnirPortfolio = () => {
                                                         <td className="px-3 py-2 text-right tabular-nums text-slate-300">{money(t.price)}</td>
                                                         <td className="px-3 py-2 text-right tabular-nums text-slate-400">{money(t.qty * t.price)}</td>
                                                         <td className="px-3 py-2 text-slate-400"><div className="max-w-[160px] truncate" title={t.platform}>{t.platform || '—'}</div></td>
-                                                        <td className="px-3 py-2 text-slate-500 tabular-nums whitespace-nowrap">{t.date || '—'}</td>
+                                                        <td className="px-3 py-2 text-slate-500 tabular-nums whitespace-nowrap">{prettyDate(t.date)}</td>
                                                         <td className="px-3 py-2">
                                                             <div className="flex items-center justify-end gap-1">
                                                                 <button onClick={() => startEdit(t)} className="p-1 rounded text-slate-500 hover:text-white hover:bg-white/10 transition-colors"><Pencil size={13} /></button>

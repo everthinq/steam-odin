@@ -1,6 +1,9 @@
 """Write-endpoint validation (fix #5) — reject bad input instead of silently
 coercing it into a wrong ledger."""
-from validation import validate_portfolio_name, validate_transaction
+import pytest
+
+from validation import (normalize_datetime, validate_portfolio_name,
+                        validate_transaction)
 
 
 def test_valid_transaction_passes():
@@ -41,9 +44,33 @@ def test_bad_date_rejected():
 
 
 def test_good_dates_accepted():
-    assert validate_transaction({'item_name': 'X', 'date': '2026-09-01'}) == []
-    assert validate_transaction(
-        {'item_name': 'X', 'date': '2026-09-01T12:30:00Z'}) == []
+    for good in ('2026-09-01', '2026-09-01T12:30:00Z', '2026-09-01T12:30:00',
+                 '2026-08-11 15:23:24', '08/31/2026', '08/31/2026, 12:12 AM'):
+        assert validate_transaction({'item_name': 'X', 'date': good}) == [], good
+
+
+@pytest.mark.parametrize('raw, expected', [
+    # date-only shapes normalize to YYYY-MM-DD
+    ('2026-08-11', '2026-08-11'),
+    ('08/31/2026', '2026-08-31'),
+    ('  2026-08-11  ', '2026-08-11'),          # surrounding whitespace tolerated
+    # date-time shapes normalize to YYYY-MM-DDThh:mm:ss
+    ('2026-08-11 15:23:24', '2026-08-11T15:23:24'),
+    ('2026-08-11T15:23', '2026-08-11T15:23:00'),
+    ('08/31/2026, 12:12 AM', '2026-08-31T00:12:00'),   # 12 AM → 00:xx
+    ('08/31/2026, 12:12 PM', '2026-08-31T12:12:00'),   # 12 PM → 12:xx
+    ('08/31/2026 1:05 PM', '2026-08-31T13:05:00'),     # 1 PM → 13:xx, no comma
+    ('08/31/2026, 09:30:45 AM', '2026-08-31T09:30:45'),
+    ('2026-09-01T12:30:00Z', '2026-09-01T12:30:00'),   # trailing Z dropped
+])
+def test_normalize_datetime_canonicalizes(raw, expected):
+    assert normalize_datetime(raw) == expected
+
+
+@pytest.mark.parametrize('bad', ['last tuesday', '', '   ', 'not a date',
+                                 '2026-13-40', None, 12345])
+def test_normalize_datetime_rejects_garbage(bad):
+    assert normalize_datetime(bad) is None
 
 
 def test_partial_update_allows_missing_item_name():

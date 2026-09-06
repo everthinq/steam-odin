@@ -85,8 +85,10 @@ def validate_transaction(body, *, partial=False):
 
     # date — optional; must parse if present.
     date = body.get('date')
-    if date not in (None, '') and not _is_date(date):
-        errors.append('date must be YYYY-MM-DD or an ISO datetime')
+    if date not in (None, '') and normalize_datetime(date) is None:
+        errors.append('date must be a date (YYYY-MM-DD or MM/DD/YYYY) '
+                      'optionally with a time (e.g. "2026-08-11 15:23:24" '
+                      'or "08/31/2026, 12:12 AM")')
 
     return errors
 
@@ -105,18 +107,46 @@ def _as_float(v):
         return None
 
 
-def _is_date(v):
+# Accepted hand-entry date/datetime shapes. Date-only formats have no %H/%I and
+# normalize to "YYYY-MM-DD"; the rest carry a time and normalize to
+# "YYYY-MM-DDThh:mm:ss". Order matters only in that the first match wins.
+_DATE_ONLY_FORMATS = ('%Y-%m-%d', '%m/%d/%Y')
+_DATETIME_FORMATS = (
+    '%Y-%m-%dT%H:%M:%S.%f', '%Y-%m-%dT%H:%M:%S', '%Y-%m-%dT%H:%M',
+    '%Y-%m-%d %H:%M:%S.%f', '%Y-%m-%d %H:%M:%S', '%Y-%m-%d %H:%M',
+    '%m/%d/%Y, %I:%M:%S %p', '%m/%d/%Y, %I:%M %p',
+    '%m/%d/%Y %I:%M:%S %p', '%m/%d/%Y %I:%M %p',
+    '%m/%d/%Y, %H:%M:%S', '%m/%d/%Y, %H:%M',
+    '%m/%d/%Y %H:%M:%S', '%m/%d/%Y %H:%M',
+)
+
+
+def normalize_datetime(v):
+    """Parse a flexible, hand-entered date/datetime string into a canonical
+    stored form: ``YYYY-MM-DD`` when only a date is given, or
+    ``YYYY-MM-DDThh:mm:ss`` when a time is present. Returns ``None`` if the value
+    cannot be parsed.
+
+    Accepts, among others: ``2026-08-11``, ``2026-08-11 15:23:24``,
+    ``2026-08-11T15:23``, ``08/31/2026``, ``08/31/2026, 12:12 AM``,
+    ``08/31/2026 12:12:00 PM`` — and ISO strings with a trailing ``Z``/offset.
+    """
     if not isinstance(v, str):
-        return False
+        return None
     s = v.strip()
-    for fmt in ('%Y-%m-%d', '%Y-%m-%dT%H:%M:%S', '%Y-%m-%dT%H:%M:%S.%f'):
+    if not s:
+        return None
+    for fmt in _DATE_ONLY_FORMATS:
         try:
-            datetime.strptime(s, fmt)
-            return True
+            return datetime.strptime(s, fmt).strftime('%Y-%m-%d')
         except ValueError:
             continue
-    try:  # tolerate trailing Z / offsets
-        datetime.fromisoformat(s.replace('Z', '+00:00'))
-        return True
+    for fmt in _DATETIME_FORMATS:
+        try:
+            return datetime.strptime(s, fmt).strftime('%Y-%m-%dT%H:%M:%S')
+        except ValueError:
+            continue
+    try:  # tolerate ISO strings with a trailing Z / timezone offset
+        return datetime.fromisoformat(s.replace('Z', '+00:00')).strftime('%Y-%m-%dT%H:%M:%S')
     except ValueError:
-        return False
+        return None
