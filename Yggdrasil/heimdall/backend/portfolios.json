@@ -13967,7 +13967,7 @@
       "id": "9929cee577f7",
       "name": "harold_cavill",
       "created_at": "2026-07-21T14:49:46.466613+00:00",
-      "updated_at": "2026-09-05T17:14:17.365703+00:00",
+      "updated_at": "2026-09-06T00:20:14.797961+00:00",
       "transactions": [
         {
           "id": "da78df72fae8",
@@ -14766,6 +14766,32 @@
           "fee_percent": 0.0,
           "is_arbitrage": false,
           "created_at": "2026-09-05T17:14:17.365692+00:00"
+        },
+        {
+          "id": "2dc26389c0da",
+          "item_name": "Recoil Case",
+          "type": "buy",
+          "qty": 7,
+          "price": 0.25,
+          "platform": "lisskins",
+          "date": "2026-09-05",
+          "note": "09/06/2026, 03:15 AM",
+          "fee_percent": 0.0,
+          "is_arbitrage": false,
+          "created_at": "2026-09-06T00:16:17.461850+00:00"
+        },
+        {
+          "id": "2d3d9c2a8950",
+          "item_name": "Recoil Case",
+          "type": "buy",
+          "qty": 13,
+          "price": 0.26,
+          "platform": "lisskins",
+          "date": "2026-09-05",
+          "note": "09/06/2026, 03:15 AM",
+          "fee_percent": 0.0,
+          "is_arbitrage": false,
+          "created_at": "2026-09-06T00:20:14.797950+00:00"
         }
       ]
     },
