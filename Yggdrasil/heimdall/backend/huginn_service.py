@@ -1131,6 +1131,51 @@ class HuginnService:
             })
         return out
 
+    @staticmethod
+    def _index_from_pull(items, side='second'):
+        """{market_hash_name: {price, count, image}} from a pulse pull, reading the
+        chosen market side ('second' = the priced target market, 'first' = TradeOnMarket)."""
+        key = 'firstMarket' if side == 'first' else 'secondMarket'
+        out = {}
+        for it in items:
+            name = (it.get('itemName') or {}).get('marketHashName')
+            mk = it.get(key) or {}
+            price = mk.get('price')
+            if name and price:
+                out[name] = {'price': price,
+                             'count': mk.get('totalOffersCount') or mk.get('count'),
+                             'image': it.get('imageUrl')}
+        return out
+
+    def market_buy_index(self, token, market_id):
+        """{name: {price,count,image}} of a market's MIN listing (what you'd pay to
+        buy). Empty for an unknown market id. Cached briefly via _pull_market."""
+        m = _MARKET_BY_ID.get(market_id)
+        if not m:
+            return {}
+        return self._index_from_pull(self._pull_market(token, market_id, m['buy_type']))
+
+    def market_autobuy_index(self, token, market_id):
+        """{name: {price,count,image}} of a market's autobuy / buy-order (what you'd
+        get selling instantly). Empty if the market has no autobuy. CSFloat comes from
+        the swept buy-orders cache (no pulse buy price); every other autobuy market
+        comes from pulse's 'Buy' price type."""
+        m = _MARKET_BY_ID.get(market_id)
+        if not m:
+            return {}
+        if market_id in _AUTOBUY_VIA_CSFLOAT_SWEEP:
+            cache = self.get_csfloat_buy_orders_cache() or {}
+            return {n: {'price': o['price'], 'count': o.get('qty'), 'image': None}
+                    for n, o in (cache.get('by_name') or {}).items() if o.get('price')}
+        if not m['autobuy']:
+            return {}
+        return self._index_from_pull(self._pull_market(token, market_id, m['autobuy']))
+
+    def market_display(self, market_id):
+        """Human name for a market id (falls back to the id itself)."""
+        m = _MARKET_BY_ID.get(market_id)
+        return m['display'] if m else market_id
+
     def fetch_lisskins_steam(self, token):
         return self._combine_arbitrage(token, _TRADEON_LISSKINS_URL, _TRADEON_LISSKINS_BODY,
                                        _TRADEON_STEAM_URL, STEAM_SALES_FEE)

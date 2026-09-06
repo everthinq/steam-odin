@@ -13,6 +13,7 @@ from mimir_service import MimirService
 from steam_market_service import SteamMarketService
 from gjallarhorn_service import GjallarhornService
 from gjallarhorn_news_service import GjallarhornNewsService
+from cross_arbitrage_service import CrossArbitrageService
 from telegram_caller import TelegramCaller
 from logging_setup import setup_logging
 from context import ctx
@@ -52,6 +53,9 @@ telegram_caller = TelegramCaller()
 # Gjallarhorn news watcher (bullet 4): polls the official CS2 update feed and
 # rings + texts when Valve adds/removes a case/collection/capsule/souvenir.
 gjallarhorn_news_service = GjallarhornNewsService(settings_manager, telegram_caller)
+# Cross-profile arbitrage: best buy-min -> autobuy-sell route per held item,
+# pooled across all Draupnir accounts (Huginn pulse prices + Draupnir holdings).
+cross_arbitrage_service = CrossArbitrageService(huginn_service, draupnir_service)
 
 # Expose the singletons to the route blueprints (read from context.ctx at
 # request time — see context.py and the routes/ package).
@@ -66,6 +70,7 @@ ctx.mimir_service = mimir_service
 ctx.steam_market_service = steam_market_service
 ctx.gjallarhorn_service = gjallarhorn_service
 ctx.gjallarhorn_news_service = gjallarhorn_news_service
+ctx.cross_arbitrage_service = cross_arbitrage_service
 ctx.telegram_caller = telegram_caller
 register_blueprints(app)
 

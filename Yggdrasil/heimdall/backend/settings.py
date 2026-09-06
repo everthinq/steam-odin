@@ -73,6 +73,23 @@ DEFAULT_SETTINGS = {
     "gjallarhorn_news_last_seen_date": 0,  # unix date of newest processed post
     "gjallarhorn_news_last_gid": "",       # id of the newest post seen (cheap "unchanged?" check)
     "gjallarhorn_news_history": [],        # append-only log of detected events (capped)
+    # --- Cross-Profile Arbitrage (bullet 4) ---
+    # Which markets take part in the cross-profile board, as HuginnService registry
+    # ids (e.g. "LisSkins", "CsFloat"). Fully editable from the UI. Buy markets are
+    # priced by their MIN listing (what you'd pay); sell markets by their AUTOBUY /
+    # instant-sell buy order (what you'd get). Only autobuy-capable markets are kept
+    # as sell targets. Adding markets outside the default five adds fresh pulse pulls.
+    "cross_arb_buy_markets": ["LisSkins", "Buff", "CsFloat", "Dmarket", "Steam"],
+    "cross_arb_sell_markets": ["Buff", "CsMoneyTrade", "CsMoneyMarket", "CsFloat"],
+    # User-defined multi-hop chains. Each chain is an ORDERED list of markets, and
+    # every adjacent pair is one buy(min) -> autobuy(instant-sell) leg, shown together
+    # with a chain total. E.g. LisSkins -> CSMoney -> CSFloat = two joined legs
+    # (LisSkins->CSMoney, then CSMoney->CSFloat). Each entry: {id, name, markets:[...]}.
+    "cross_arb_chains": [
+        {"id": "lisskins-csmoney-csfloat",
+         "name": "LisSkins → CSMoney → CSFloat",
+         "markets": ["LisSkins", "CsMoneyTrade", "CsFloat"]},
+    ],
 }
 
 # How many auto-store move records to keep in the history log.

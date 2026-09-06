@@ -81,12 +81,15 @@ def test_huginn_blueprint_registers_all_routes():
                  '/api/huginn/gjallarhorn/ring/status',
                  '/api/huginn/gjallarhorn/news/status',
                  '/api/huginn/gjallarhorn/news/check',
-                 '/api/huginn/gjallarhorn/news/test']:
+                 '/api/huginn/gjallarhorn/news/test',
+                 '/api/huginn/arbitrage/cross-profile',
+                 '/api/huginn/arbitrage/cross-profile/config']:
         assert want in rules, f'missing huginn route: {want}'
     # +9 gjallarhorn rules: rotation, accounts, readiness, holds (GET+POST),
     # targets (GET+POST), ring, ring/status; +3 news rules: news/status,
-    # news/check, news/test.
-    assert _rule_count(bp, '/api/huginn') == 50
+    # news/check, news/test; +1 cross-profile arbitrage; +2 cross-profile config
+    # (GET+POST).
+    assert _rule_count(bp, '/api/huginn') == 53
 
 
 def test_register_blueprints_wires_onto_app():

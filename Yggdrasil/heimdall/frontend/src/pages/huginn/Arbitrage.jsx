@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useDeferredValue } from 'react';
 import { Link } from 'react-router-dom';
-import { LayoutDashboard, RefreshCw, AlertTriangle, Search, ChevronDown, Coins, Boxes, Repeat, Gavel } from 'lucide-react';
+import { LayoutDashboard, RefreshCw, AlertTriangle, Search, ChevronDown, Coins, Boxes, Repeat, Gavel, Users } from 'lucide-react';
 import { matchesSearchQuery } from '../../utils/transferItems';
 import SteamMarketLink from '../../components/SteamMarketLink';
 import BuffMarketLink from '../../components/BuffMarketLink';
@@ -8,6 +8,7 @@ import LisSkinsMarketLink from '../../components/LisSkinsMarketLink';
 import CSFloatMarketLink from '../../components/CSFloatMarketLink';
 import CollectionFilter from '../../components/CollectionFilter';
 import CaseArbitrage from '../../components/CaseArbitrage';
+import CrossProfileArbitrage from '../../components/CrossProfileArbitrage';
 import AuctionBoard from '../../components/AuctionBoard';
 import LootfarmArbitrage from '../../components/LootfarmArbitrage';
 import PriceCell from '../../components/arbitrage/PriceCell';
@@ -343,6 +344,13 @@ const HuginnArbitrage = () => {
                     </button>
                     <button
                         type="button"
+                        onClick={() => setView('crossprofile')}
+                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${view === 'crossprofile' ? 'bg-amber-600 text-white' : 'text-slate-400 hover:text-white'}`}
+                    >
+                        <Users size={13} /> Cross-Profile
+                    </button>
+                    <button
+                        type="button"
                         onClick={() => setView('auctions')}
                         className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${view === 'auctions' ? 'bg-amber-600 text-white' : 'text-slate-400 hover:text-white'}`}
                     >
@@ -377,7 +385,7 @@ const HuginnArbitrage = () => {
             </div>
 
             <div className="flex-1 flex flex-col gap-3 p-6 overflow-hidden max-w-7xl w-full mx-auto">
-                {view === 'lfarb' ? <LootfarmArbitrage byHash={byHash} /> : view === 'auctions' ? <AuctionBoard /> : view === 'cases' ? <CaseArbitrage /> : (<>
+                {view === 'lfarb' ? <LootfarmArbitrage byHash={byHash} /> : view === 'auctions' ? <AuctionBoard /> : view === 'crossprofile' ? <CrossProfileArbitrage /> : view === 'cases' ? <CaseArbitrage /> : (<>
                 {scanError && (
                     <div className="shrink-0 bg-red-500/20 border border-red-500/30 text-red-300 px-4 py-3 rounded-lg text-sm">
                         {scanError}

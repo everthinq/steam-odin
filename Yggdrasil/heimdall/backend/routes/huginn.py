@@ -255,6 +255,40 @@ def huginn_tradeon_pair():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+
+@bp.route('/api/huginn/arbitrage/cross-profile', methods=['GET'])
+def huginn_cross_profile_arbitrage():
+    """Best buy-min -> autobuy-sell route per item, pooled across ALL profiles.
+    ?owned=1 (default: only items you hold) | ?owned=0 (whole priced universe, capped).
+    ?min_pct=<float> filters out rows below that net profit %. Each row is annotated
+    with which accounts hold the item and the profit across your owned units."""
+    settings = ctx.settings_manager.get_settings()
+    token = settings.get('tradeon_token', '')
+    owned_only = request.args.get('owned', '1') not in ('0', 'false', 'False')
+    min_pct = request.args.get('min_pct', type=float)
+    try:
+        return jsonify(ctx.cross_arbitrage_service.scan(
+            token, owned_only=owned_only, min_profit_pct=min_pct, settings=settings))
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@bp.route('/api/huginn/arbitrage/cross-profile/config', methods=['GET'])
+def huginn_cross_profile_config_get():
+    """Current cross-profile market/chain config + the full market list to toggle from:
+    {buy_markets, sell_markets, chains:[{id,name,markets}], available:[{id,display,hasAutobuy}]}."""
+    settings = ctx.settings_manager.get_settings()
+    return jsonify(ctx.cross_arbitrage_service.config(settings))
+
+
+@bp.route('/api/huginn/arbitrage/cross-profile/config', methods=['POST'])
+def huginn_cross_profile_config_set():
+    """Replace the cross-profile config: {buy_markets:[id], sell_markets:[id],
+    chains:[{id?,name?,markets:[id,...]}]}. Unknown ids and sell markets without
+    autobuy are dropped; chains need >= 2 markets. Persisted to settings.json."""
+    body = request.get_json(silent=True) or {}
+    return jsonify(ctx.cross_arbitrage_service.save_config(body, ctx.settings_manager))
+
 # --- Gjallarhorn (event-rotation cockpit) ------------------------------------
 
 @bp.route('/api/huginn/gjallarhorn/rotation', methods=['GET'])
