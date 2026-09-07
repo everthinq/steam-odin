@@ -86,9 +86,10 @@ def validate_transaction(body, *, partial=False):
     # date — optional; must parse if present.
     date = body.get('date')
     if date not in (None, '') and normalize_datetime(date) is None:
-        errors.append('date must be a date (YYYY-MM-DD or MM/DD/YYYY) '
-                      'optionally with a time (e.g. "2026-08-11 15:23:24" '
-                      'or "08/31/2026, 12:12 AM")')
+        errors.append('date must be a date (YYYY-MM-DD, MM/DD/YYYY or '
+                      'DD/MM/YYYY) optionally with a time (e.g. '
+                      '"2026-08-11 15:23:24", "08/31/2026, 12:12 AM" or '
+                      '"16/12/2025, 01:32:16")')
 
     return errors
 
@@ -107,17 +108,41 @@ def _as_float(v):
         return None
 
 
-# Accepted hand-entry date/datetime shapes. Date-only formats have no %H/%I and
-# normalize to "YYYY-MM-DD"; the rest carry a time and normalize to
-# "YYYY-MM-DDThh:mm:ss". Order matters only in that the first match wins.
-_DATE_ONLY_FORMATS = ('%Y-%m-%d', '%m/%d/%Y')
-_DATETIME_FORMATS = (
-    '%Y-%m-%dT%H:%M:%S.%f', '%Y-%m-%dT%H:%M:%S', '%Y-%m-%dT%H:%M',
-    '%Y-%m-%d %H:%M:%S.%f', '%Y-%m-%d %H:%M:%S', '%Y-%m-%d %H:%M',
-    '%m/%d/%Y, %I:%M:%S %p', '%m/%d/%Y, %I:%M %p',
-    '%m/%d/%Y %I:%M:%S %p', '%m/%d/%Y %I:%M %p',
-    '%m/%d/%Y, %H:%M:%S', '%m/%d/%Y, %H:%M',
-    '%m/%d/%Y %H:%M:%S', '%m/%d/%Y %H:%M',
+# Accepted hand-entry date shapes, most-preferred first. ISO (year-first) and US
+# month-first slash dates keep priority, so a genuinely *ambiguous* value like
+# "08/11/2026" (both fields <= 12) keeps its historical month-first (US) reading;
+# an unambiguous day-first value like "16/12/2025" (there is no 16th month) fails
+# every earlier format and falls through to the day-first / European spellings.
+_DATE_PARTS = (
+    '%Y-%m-%d',   # 2026-08-11   ISO, dashed
+    '%Y/%m/%d',   # 2026/08/11   ISO, slashed
+    '%m/%d/%Y',   # 08/11/2026   US, month-first
+    '%d/%m/%Y',   # 16/12/2025   day-first
+    '%d.%m.%Y',   # 16.12.2025   European, dotted
+    '%d-%m-%Y',   # 16-12-2025   day-first, dashed
+)
+
+# Time shapes that can follow a date. Seconds and fractional seconds are
+# optional; both the 24-hour clock and the 12-hour AM/PM clock are accepted.
+_TIME_PARTS = (
+    '%H:%M:%S.%f', '%H:%M:%S', '%H:%M',
+    '%I:%M:%S %p', '%I:%M %p',
+)
+
+# Date-only formats have no time and normalize to "YYYY-MM-DD"; the date-time
+# formats carry a time and normalize to "YYYY-MM-DDThh:mm:ss". A date is joined
+# to a time by a space or a comma-space in every spelling, plus an ISO "T" for
+# the two ISO date spellings. The first matching format wins.
+_DATE_ONLY_FORMATS = _DATE_PARTS
+_DATETIME_FORMATS = tuple(
+    f'{date}{separator}{time}'
+    for date in _DATE_PARTS
+    for separator in (' ', ', ')
+    for time in _TIME_PARTS
+) + tuple(
+    f'{date}T{time}'
+    for date in ('%Y-%m-%d', '%Y/%m/%d')
+    for time in _TIME_PARTS
 )
 
 
@@ -128,8 +153,12 @@ def normalize_datetime(v):
     cannot be parsed.
 
     Accepts, among others: ``2026-08-11``, ``2026-08-11 15:23:24``,
-    ``2026-08-11T15:23``, ``08/31/2026``, ``08/31/2026, 12:12 AM``,
-    ``08/31/2026 12:12:00 PM`` — and ISO strings with a trailing ``Z``/offset.
+    ``2026-08-11T15:23``, ``2026/08/11``, ``08/31/2026``,
+    ``08/31/2026, 12:12 AM``, ``08/31/2026 12:12:00 PM``, ``16/12/2025``,
+    ``16/12/2025, 01:32:16``, ``16.12.2025`` and ``16-12-2025`` — plus ISO
+    strings with a trailing ``Z`` / timezone offset. Ambiguous slash dates
+    (both fields <= 12) are read month-first (US); a first field > 12 forces the
+    day-first reading.
     """
     if not isinstance(v, str):
         return None

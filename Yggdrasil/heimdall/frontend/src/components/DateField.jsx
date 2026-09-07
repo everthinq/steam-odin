@@ -3,18 +3,25 @@ import { CalendarDays, ChevronLeft, ChevronRight } from 'lucide-react';
 
 const pad = (n) => String(n).padStart(2, '0');
 const fmt = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-// The field value may carry a time (e.g. "2026-08-11 15:23:24" or
-// "08/31/2026, 12:12 AM"). Split off the leading date token — ISO YYYY-MM-DD or
-// US MM/DD/YYYY — and keep whatever trailing time text the user typed, so the
-// calendar only changes the day and never discards the time.
+// The field value may carry a time (e.g. "2026-08-11 15:23:24",
+// "08/31/2026, 12:12 AM" or "16/12/2025, 01:32:16"). Split off the leading date
+// token and keep whatever trailing time text the user typed, so the calendar
+// only changes the day and never discards the time. Mirrors the backend
+// normalizer: ISO year-first (dash or slash), then day/month slash-dot-dash. An
+// ambiguous slash date (both fields <= 12) is read month-first (US); a first
+// field > 12 can only be a day, so it forces the day-first reading.
 const split = (s) => {
     const str = (s || '').trim();
-    let m = /^(\d{4})-(\d{2})-(\d{2})/.exec(str);
     let date = null, len = 0;
+    let m = /^(\d{4})[-/](\d{1,2})[-/](\d{1,2})/.exec(str);   // ISO year-first
     if (m) { date = new Date(+m[1], +m[2] - 1, +m[3]); len = m[0].length; }
     else {
-        m = /^(\d{1,2})\/(\d{1,2})\/(\d{4})/.exec(str);
-        if (m) { date = new Date(+m[3], +m[1] - 1, +m[2]); len = m[0].length; }
+        m = /^(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})/.exec(str);  // day/month-first
+        if (m) {
+            const first = +m[1], second = +m[2];
+            const [month, day] = first > 12 ? [second, first] : [first, second];
+            date = new Date(+m[3], month - 1, day); len = m[0].length;
+        }
     }
     if (date && isNaN(date.getTime())) date = null;
     const time = date ? str.slice(len).replace(/^[\s,T]+/, '').trim() : '';

@@ -45,7 +45,9 @@ def test_bad_date_rejected():
 
 def test_good_dates_accepted():
     for good in ('2026-09-01', '2026-09-01T12:30:00Z', '2026-09-01T12:30:00',
-                 '2026-08-11 15:23:24', '08/31/2026', '08/31/2026, 12:12 AM'):
+                 '2026-08-11 15:23:24', '08/31/2026', '08/31/2026, 12:12 AM',
+                 '16/12/2025, 01:32:16', '16/12/2025', '16.12.2025',
+                 '16-12-2025', '2026/08/11'):
         assert validate_transaction({'item_name': 'X', 'date': good}) == [], good
 
 
@@ -62,6 +64,18 @@ def test_good_dates_accepted():
     ('08/31/2026 1:05 PM', '2026-08-31T13:05:00'),     # 1 PM → 13:xx, no comma
     ('08/31/2026, 09:30:45 AM', '2026-08-31T09:30:45'),
     ('2026-09-01T12:30:00Z', '2026-09-01T12:30:00'),   # trailing Z dropped
+    # day-first (DD/MM/YYYY) and European dotted/dashed spellings
+    ('16/12/2025, 01:32:16', '2025-12-16T01:32:16'),   # the reported case
+    ('16/12/2025', '2025-12-16'),                       # day-first, date only
+    ('16/12/2025 01:32', '2025-12-16T01:32:00'),       # day-first, space + HH:MM
+    ('16.12.2025', '2025-12-16'),                       # European dotted
+    ('16.12.2025 01:32:16', '2025-12-16T01:32:16'),
+    ('16-12-2025', '2025-12-16'),                       # day-first dashed
+    ('31/08/2026', '2026-08-31'),                       # 31 forces day-first
+    ('2026/08/11', '2026-08-11'),                       # ISO with slashes
+    ('2026/08/11 15:23:24', '2026-08-11T15:23:24'),
+    # ambiguous slash date (both <= 12) stays month-first (US), unchanged
+    ('08/11/2026', '2026-08-11'),                       # August 11, not 8 Nov
 ])
 def test_normalize_datetime_canonicalizes(raw, expected):
     assert normalize_datetime(raw) == expected
