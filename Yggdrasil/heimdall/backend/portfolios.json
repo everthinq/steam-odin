@@ -10709,7 +10709,7 @@
       "id": "99c18756f9ee",
       "name": "everthinklol1",
       "created_at": "2026-07-21T14:49:46.392883+00:00",
-      "updated_at": "2026-09-07T10:59:12.780006+00:00",
+      "updated_at": "2026-09-07T12:00:04.620049+00:00",
       "transactions": [
         {
           "id": "ed83a19ba6bc",
@@ -10830,18 +10830,6 @@
           "note": "",
           "fee_percent": 0.0,
           "created_at": "2026-07-21T14:49:46.390610+00:00"
-        },
-        {
-          "id": "9f628ed988b4",
-          "item_name": "Negev | Dazzle (Field-Tested)",
-          "type": "buy",
-          "qty": 1,
-          "price": 0.22,
-          "platform": "whitemarket",
-          "date": "2025-12-22",
-          "note": "",
-          "fee_percent": 0.0,
-          "created_at": "2026-07-21T14:49:46.390625+00:00"
         },
         {
           "id": "05f14aeb6902",
@@ -14590,6 +14578,71 @@
           "fee_percent": 0.0,
           "is_arbitrage": false,
           "created_at": "2026-09-07T10:59:12.779977+00:00"
+        },
+        {
+          "id": "c4a95d56e5d3",
+          "item_name": "USP-S | Desert Tactical (Minimal Wear)",
+          "type": "buy",
+          "qty": 1,
+          "price": 0.33,
+          "platform": "whitemarket",
+          "date": "2025-12-16T01:32:16",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": false,
+          "created_at": "2026-09-07T11:49:37.984051+00:00"
+        },
+        {
+          "id": "d2d2aa56097c",
+          "item_name": "MP7 | Mischief (Field-Tested)",
+          "type": "buy",
+          "qty": 3,
+          "price": 0.26,
+          "platform": "avanmarket",
+          "date": "2025-12-16T01:32:16",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": false,
+          "created_at": "2026-09-07T11:56:23.137917+00:00"
+        },
+        {
+          "id": "07b23f8751a8",
+          "item_name": "MAC-10 | Echoing Sands (Minimal Wear)",
+          "type": "buy",
+          "qty": 3,
+          "price": 0.6,
+          "platform": "whitemarket",
+          "date": "2025-12-16T01:32:16",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": false,
+          "created_at": "2026-09-07T11:57:09.255118+00:00"
+        },
+        {
+          "id": "11bfacc92dfe",
+          "item_name": "Negev | Dazzle (Field-Tested)",
+          "type": "buy",
+          "qty": 1,
+          "price": 0.22,
+          "platform": "whitemarket",
+          "date": "2025-12-16T01:32:16",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": false,
+          "created_at": "2026-09-07T11:57:32.767354+00:00"
+        },
+        {
+          "id": "7dc47944c9af",
+          "item_name": "FAMAS | Half Sleeve (Factory New)",
+          "type": "buy",
+          "qty": 46,
+          "price": 0.56,
+          "platform": "haloskins",
+          "date": "2025-12-26T14:52:21",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": false,
+          "created_at": "2026-09-07T12:00:04.620019+00:00"
         }
       ]
     },
