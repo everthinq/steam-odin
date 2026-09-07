@@ -1,6 +1,30 @@
 import React, { useMemo, useState } from 'react';
-import { RefreshCw, Search, TrendingUp, TrendingDown, ChevronDown, ArrowLeftRight } from 'lucide-react';
+import { RefreshCw, TrendingUp, TrendingDown, ArrowLeftRight } from 'lucide-react';
 import { matchesSearchQuery } from '../utils/transferItems';
+import SectionHead from './draupnir/SectionHead';
+import SortTh from './draupnir/SortTh';
+import { useColumnSort, sortRows } from './draupnir/columnSort';
+
+// How each sortable column reads its value from a row (see columnSort.js).
+const HOLDINGS_ACCESSORS = {
+    item_name: h => h.item_name,
+    net_qty: h => h.net_qty,
+    avg_cost: h => h.avg_cost,
+    current_price: h => h.current_price,
+    market_value: h => h.market_value,
+    unrealized_pl: h => h.unrealized_pl,
+};
+const TXN_ACCESSORS = {
+    item_name: t => t.item_name,
+    account: t => t.account,
+    type: t => t.type,
+    qty: t => t.qty,
+    price: t => t.price,
+    total: t => t.qty * t.price,
+    platform: t => t.platform,
+    date: t => t.date,
+};
+const COLLECTION_HINT = 'Scan your inventory in Huginn (Get all items) to filter by collection';
 
 // Read-only ledger across ALL accounts (arbitrage excluded from P/L — tracked on
 // its own tab). The point is the headline: overall, is the trading profitable? Then
@@ -21,25 +45,6 @@ const plStr = (v) => v == null ? '—' : `${v > 0 ? '+' : ''}${money(v)}`;
 
 const PAGE_SIZE = 100;
 
-const SectionHead = ({ title, open, onToggle, count, total, search, setSearch, placeholder }) => (
-    <div className="flex items-center gap-3 flex-wrap mb-2">
-        <button onClick={onToggle} className="flex items-center gap-1.5 text-sm font-semibold text-slate-200 hover:text-white transition-colors">
-            <ChevronDown size={16} className={`transition-transform ${open ? '' : '-rotate-90'}`} />
-            {title}
-            <span className="text-xs font-normal text-slate-500">({count === total ? count : `${count} of ${total}`})</span>
-        </button>
-        {open && (
-            <div className="relative ml-auto min-w-[200px] max-w-xs flex-1">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={14} />
-                <input
-                    value={search} onChange={e => setSearch(e.target.value)} placeholder={placeholder}
-                    className="w-full pl-9 pr-3 py-1.5 text-sm bg-odin-blue/60 border border-white/10 rounded-lg text-slate-100 placeholder:text-slate-600 focus:outline-none focus:ring-1 focus:ring-yellow-500/50"
-                />
-            </div>
-        )}
-    </div>
-);
-
 const LoadMore = ({ visible, total, onMore }) => visible < total && (
     <button onClick={onMore} className="mt-2 w-full py-2 text-xs text-slate-400 hover:text-white bg-white/5 hover:bg-white/10 rounded-lg transition-colors">
         Show more ({total - visible} more)
@@ -53,6 +58,10 @@ const CombinedLedger = ({ data, loading, pricing }) => {
     const [txnsSearch, setTxnsSearch] = useState('');
     const [holdingsVisible, setHoldingsVisible] = useState(PAGE_SIZE);
     const [txnsVisible, setTxnsVisible] = useState(PAGE_SIZE);
+    const [holdingsCols, setHoldingsCols] = useState([]);   // selected collection filter (holdings)
+    const [txnsCols, setTxnsCols] = useState([]);           // selected collection filter (transactions)
+    const holdingsSort = useColumnSort();
+    const txnsSort = useColumnSort();
     const [copiedName, setCopiedName] = useState('');
 
     const copyItemName = (name) => {
@@ -61,17 +70,34 @@ const CombinedLedger = ({ data, loading, pricing }) => {
         setTimeout(() => setCopiedName(c => (c === name ? '' : c)), 1200);
     };
 
-    const holdings = data?.holdings || [];
-    const txns = data?.transactions || [];
+    const holdings = useMemo(() => data?.holdings || [], [data]);
+    const txns = useMemo(() => data?.transactions || [], [data]);
 
-    const filteredHoldings = useMemo(
-        () => holdings.filter(h => matchesSearchQuery([h.item_name], holdingsSearch)),
-        [holdings, holdingsSearch]
-    );
-    const filteredTxns = useMemo(
-        () => txns.filter(t => matchesSearchQuery([t.item_name, t.account, t.platform, t.note, t.type], txnsSearch)),
-        [txns, txnsSearch]
-    );
+    // Collections available to filter on — from each row's backend collection
+    // (looked up against Huginn's inventory scan). Empty until a scan exists.
+    const availableCollections = useMemo(() => {
+        const set = new Set();
+        for (const h of holdings) if (h.collection) set.add(h.collection);
+        for (const t of txns) if (t.collection) set.add(t.collection);
+        return [...set].sort((a, b) => a.localeCompare(b));
+    }, [holdings, txns]);
+
+    const filteredHoldings = useMemo(() => {
+        const cols = holdingsCols.length ? new Set(holdingsCols) : null;
+        const rows = holdings.filter(h =>
+            matchesSearchQuery([h.item_name], holdingsSearch) &&
+            (!cols || cols.has(h.collection))
+        );
+        return sortRows(rows, holdingsSort.sortKey, holdingsSort.sortDir, HOLDINGS_ACCESSORS);
+    }, [holdings, holdingsSearch, holdingsCols, holdingsSort.sortKey, holdingsSort.sortDir]);
+    const filteredTxns = useMemo(() => {
+        const cols = txnsCols.length ? new Set(txnsCols) : null;
+        const rows = txns.filter(t =>
+            matchesSearchQuery([t.item_name, t.account, t.platform, t.note, t.type], txnsSearch) &&
+            (!cols || cols.has(t.collection))
+        );
+        return sortRows(rows, txnsSort.sortKey, txnsSort.sortDir, TXN_ACCESSORS);
+    }, [txns, txnsSearch, txnsCols, txnsSort.sortKey, txnsSort.sortDir]);
 
     if (loading && !data) {
         return <div className="flex justify-center items-center h-64"><RefreshCw className="animate-spin text-yellow-500" size={36} /></div>;
@@ -123,6 +149,9 @@ const CombinedLedger = ({ data, loading, pricing }) => {
                     title="Holdings" open={holdingsOpen} onToggle={() => setHoldingsOpen(o => !o)}
                     count={filteredHoldings.length} total={holdings.length}
                     search={holdingsSearch} setSearch={setHoldingsSearch} placeholder="Search holdings…"
+                    collections={availableCollections}
+                    selectedCollections={holdingsCols} onCollectionsChange={setHoldingsCols}
+                    collectionHint={COLLECTION_HINT}
                 />
                 {holdingsOpen && (
                     <>
@@ -130,12 +159,12 @@ const CombinedLedger = ({ data, loading, pricing }) => {
                             <table className="w-full text-sm min-w-[720px]">
                                 <thead className="bg-odin-blue/50 text-slate-500 text-[11px] uppercase tracking-wider">
                                     <tr>
-                                        <th className="text-left font-semibold px-3 py-2">Item</th>
-                                        <th className="text-right font-semibold px-3 py-2">Net qty</th>
-                                        <th className="text-right font-semibold px-3 py-2">Avg cost</th>
-                                        <th className="text-right font-semibold px-3 py-2">Price</th>
-                                        <th className="text-right font-semibold px-3 py-2">Value</th>
-                                        <th className="text-right font-semibold px-3 py-2">Unrealized</th>
+                                        <SortTh col="item_name" label="Item" sortKey={holdingsSort.sortKey} sortDir={holdingsSort.sortDir} onSort={holdingsSort.toggle} />
+                                        <SortTh col="net_qty" label="Net qty" align="right" sortKey={holdingsSort.sortKey} sortDir={holdingsSort.sortDir} onSort={holdingsSort.toggle} />
+                                        <SortTh col="avg_cost" label="Avg cost" align="right" sortKey={holdingsSort.sortKey} sortDir={holdingsSort.sortDir} onSort={holdingsSort.toggle} />
+                                        <SortTh col="current_price" label="Price" align="right" sortKey={holdingsSort.sortKey} sortDir={holdingsSort.sortDir} onSort={holdingsSort.toggle} />
+                                        <SortTh col="market_value" label="Value" align="right" sortKey={holdingsSort.sortKey} sortDir={holdingsSort.sortDir} onSort={holdingsSort.toggle} />
+                                        <SortTh col="unrealized_pl" label="Unrealized" align="right" sortKey={holdingsSort.sortKey} sortDir={holdingsSort.sortDir} onSort={holdingsSort.toggle} />
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-white/5">
@@ -172,6 +201,9 @@ const CombinedLedger = ({ data, loading, pricing }) => {
                     title="Transactions" open={txnsOpen} onToggle={() => setTxnsOpen(o => !o)}
                     count={filteredTxns.length} total={txns.length}
                     search={txnsSearch} setSearch={setTxnsSearch} placeholder="Search item / account / platform…"
+                    collections={availableCollections}
+                    selectedCollections={txnsCols} onCollectionsChange={setTxnsCols}
+                    collectionHint={COLLECTION_HINT}
                 />
                 {txnsOpen && (
                     <>
@@ -179,14 +211,14 @@ const CombinedLedger = ({ data, loading, pricing }) => {
                             <table className="w-full text-sm min-w-[820px]">
                                 <thead className="bg-odin-blue/50 text-slate-500 text-[11px] uppercase tracking-wider">
                                     <tr>
-                                        <th className="text-left font-semibold px-3 py-2">Item</th>
-                                        <th className="text-left font-semibold px-3 py-2">Account</th>
-                                        <th className="text-left font-semibold px-3 py-2">Type</th>
-                                        <th className="text-right font-semibold px-3 py-2">Qty</th>
-                                        <th className="text-right font-semibold px-3 py-2">Unit $</th>
-                                        <th className="text-right font-semibold px-3 py-2">Total</th>
-                                        <th className="text-left font-semibold px-3 py-2">Platform</th>
-                                        <th className="text-left font-semibold px-3 py-2">Date</th>
+                                        <SortTh col="item_name" label="Item" sortKey={txnsSort.sortKey} sortDir={txnsSort.sortDir} onSort={txnsSort.toggle} />
+                                        <SortTh col="account" label="Account" sortKey={txnsSort.sortKey} sortDir={txnsSort.sortDir} onSort={txnsSort.toggle} />
+                                        <SortTh col="type" label="Type" sortKey={txnsSort.sortKey} sortDir={txnsSort.sortDir} onSort={txnsSort.toggle} />
+                                        <SortTh col="qty" label="Qty" align="right" sortKey={txnsSort.sortKey} sortDir={txnsSort.sortDir} onSort={txnsSort.toggle} />
+                                        <SortTh col="price" label="Unit $" align="right" sortKey={txnsSort.sortKey} sortDir={txnsSort.sortDir} onSort={txnsSort.toggle} />
+                                        <SortTh col="total" label="Total" align="right" sortKey={txnsSort.sortKey} sortDir={txnsSort.sortDir} onSort={txnsSort.toggle} />
+                                        <SortTh col="platform" label="Platform" sortKey={txnsSort.sortKey} sortDir={txnsSort.sortDir} onSort={txnsSort.toggle} />
+                                        <SortTh col="date" label="Date" sortKey={txnsSort.sortKey} sortDir={txnsSort.sortDir} onSort={txnsSort.toggle} />
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-white/5">

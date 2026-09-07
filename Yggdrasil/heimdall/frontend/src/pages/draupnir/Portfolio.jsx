@@ -1,9 +1,33 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo, useDeferredValue } from 'react';
 import { Link, useParams, useNavigate } from 'react-router-dom';
-import { LayoutDashboard, Coins, RefreshCw, Pencil, Trash2, Plus, X, Check, Search, ChevronDown, Copy, ArrowLeftRight } from 'lucide-react';
+import { LayoutDashboard, Coins, RefreshCw, Pencil, Trash2, Plus, X, Check, Copy, ArrowLeftRight } from 'lucide-react';
 import { matchesSearchQuery } from '../../utils/transferItems';
 import { ConfirmDialog, PromptDialog } from '../../components/DraupnirDialog';
 import { DateField } from '../../components/DateField';
+import SectionHead from '../../components/draupnir/SectionHead';
+import SortTh from '../../components/draupnir/SortTh';
+import { useColumnSort, sortRows } from '../../components/draupnir/columnSort';
+
+// How each sortable column reads its value from a row (see columnSort.js).
+const HOLDINGS_ACCESSORS = {
+    item_name: h => h.item_name,
+    net_qty: h => h.net_qty,
+    avg_cost: h => h.avg_cost,
+    current_price: h => h.current_price,
+    market_value: h => h.market_value,
+    unrealized_pl: h => h.unrealized_pl,
+    realized_pl: h => h.realized_pl,
+};
+const TXN_ACCESSORS = {
+    item_name: t => t.item_name,
+    type: t => t.type,
+    qty: t => t.qty,
+    price: t => t.price,
+    total: t => t.qty * t.price,
+    platform: t => t.platform,
+    date: t => t.date,
+};
+const COLLECTION_HINT = 'Scan your inventory in Huginn (Get all items) to filter by collection';
 
 const MARKETS = [
     { id: 'steam', label: 'Steam' },
@@ -61,29 +85,6 @@ const Tile = ({ label, value, cls = 'text-slate-100' }) => (
     <div className="bg-odin-blue/70 border border-white/10 rounded-xl px-4 py-3 shadow-sm">
         <p className="text-[10px] font-bold tracking-widest text-slate-500 uppercase mb-1">{label}</p>
         <p className={`text-lg font-semibold tabular-nums ${cls}`}>{value}</p>
-    </div>
-);
-
-// Collapsible section header with a filter box (the "best of" Huginn + Ratatoskr:
-// token search + a count). Clicking the title toggles the body.
-const SectionHead = ({ title, open, onToggle, count, total, search, setSearch, placeholder }) => (
-    <div className="flex items-center gap-3 mb-2 flex-wrap">
-        <button onClick={onToggle} className="flex items-center gap-1.5 text-[11px] font-bold tracking-widest text-slate-400 uppercase hover:text-slate-200 transition-colors">
-            <ChevronDown size={14} className={`transition-transform ${open ? '' : '-rotate-90'}`} />
-            {title}
-            <span className="text-slate-600 font-normal normal-case tracking-normal">
-                {count === total ? total : `${count} of ${total}`}
-            </span>
-        </button>
-        {open && (
-            <div className="relative w-full sm:w-64">
-                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500" size={14} />
-                <input
-                    value={search} onChange={e => setSearch(e.target.value)} placeholder={placeholder}
-                    className="w-full bg-odin-dark/60 border border-white/10 rounded-lg pl-8 pr-3 py-1.5 text-sm text-slate-100 focus:outline-none focus:ring-1 focus:ring-yellow-500/50 placeholder:text-slate-600"
-                />
-            </div>
-        )}
     </div>
 );
 
@@ -147,24 +148,46 @@ const DraupnirPortfolio = () => {
     const [txnsSearch, setTxnsSearch] = useState('');
     const [holdingsVisible, setHoldingsVisible] = useState(PAGE_SIZE);
     const [txnsVisible, setTxnsVisible] = useState(PAGE_SIZE);
+    const [holdingsCols, setHoldingsCols] = useState([]);   // selected collection filter (holdings)
+    const [txnsCols, setTxnsCols] = useState([]);           // selected collection filter (transactions)
+    const holdingsSort = useColumnSort();
+    const txnsSort = useColumnSort();
     const dHoldingsSearch = useDeferredValue(holdingsSearch);
     const dTxnsSearch = useDeferredValue(txnsSearch);
+
+    // Collections available to filter on — from the backend's per-item collection
+    // (looked up against Huginn's inventory scan). Empty until a scan exists, which
+    // leaves the filter disabled with a hint, exactly like Huginn Arbitrage.
+    const availableCollections = useMemo(() => {
+        const set = new Set();
+        for (const h of (data?.holdings || [])) if (h.collection) set.add(h.collection);
+        for (const t of (data?.transactions || [])) if (t.collection) set.add(t.collection);
+        return [...set].sort((a, b) => a.localeCompare(b));
+    }, [data]);
 
     const baseHoldings = useMemo(
         () => (data?.holdings || []).filter(h => h.net_qty > 0 || h.realized_pl),
         [data]
     );
-    const filteredHoldings = useMemo(
-        () => baseHoldings.filter(h => matchesSearchQuery([h.item_name], dHoldingsSearch)),
-        [baseHoldings, dHoldingsSearch]
-    );
-    const filteredTxns = useMemo(
-        () => (data?.transactions || []).filter(t => matchesSearchQuery([t.item_name, t.platform, t.note, t.type], dTxnsSearch)),
-        [data, dTxnsSearch]
-    );
-    // Reset the paint window when the filter changes.
-    useEffect(() => { setHoldingsVisible(PAGE_SIZE); }, [dHoldingsSearch]);
-    useEffect(() => { setTxnsVisible(PAGE_SIZE); }, [dTxnsSearch]);
+    const filteredHoldings = useMemo(() => {
+        const cols = holdingsCols.length ? new Set(holdingsCols) : null;
+        const rows = baseHoldings.filter(h =>
+            matchesSearchQuery([h.item_name], dHoldingsSearch) &&
+            (!cols || cols.has(h.collection))
+        );
+        return sortRows(rows, holdingsSort.sortKey, holdingsSort.sortDir, HOLDINGS_ACCESSORS);
+    }, [baseHoldings, dHoldingsSearch, holdingsCols, holdingsSort.sortKey, holdingsSort.sortDir]);
+    const filteredTxns = useMemo(() => {
+        const cols = txnsCols.length ? new Set(txnsCols) : null;
+        const rows = (data?.transactions || []).filter(t =>
+            matchesSearchQuery([t.item_name, t.platform, t.note, t.type], dTxnsSearch) &&
+            (!cols || cols.has(t.collection))
+        );
+        return sortRows(rows, txnsSort.sortKey, txnsSort.sortDir, TXN_ACCESSORS);
+    }, [data, dTxnsSearch, txnsCols, txnsSort.sortKey, txnsSort.sortDir]);
+    // Reset the paint window when a filter changes.
+    useEffect(() => { setHoldingsVisible(PAGE_SIZE); }, [dHoldingsSearch, holdingsCols]);
+    useEffect(() => { setTxnsVisible(PAGE_SIZE); }, [dTxnsSearch, txnsCols]);
 
     // Platforms already used (for the Platform combobox) — includes distinct values
     // like buff163 vs buff163_buy, which are meaningfully different and kept as-is.
@@ -493,6 +516,9 @@ const DraupnirPortfolio = () => {
                                 count={filteredHoldings.length} total={baseHoldings.length}
                                 search={holdingsSearch} setSearch={setHoldingsSearch}
                                 placeholder="Search holdings…"
+                                collections={availableCollections}
+                                selectedCollections={holdingsCols} onCollectionsChange={setHoldingsCols}
+                                collectionHint={COLLECTION_HINT}
                             />
                             {holdingsOpen && (
                                 <>
@@ -500,13 +526,13 @@ const DraupnirPortfolio = () => {
                                         <table className="w-full text-sm min-w-[720px]">
                                             <thead className="bg-odin-blue/50 text-slate-500 text-[11px] uppercase tracking-wider">
                                                 <tr>
-                                                    <th className="text-left font-semibold px-3 py-2">Item</th>
-                                                    <th className="text-right font-semibold px-3 py-2">Qty</th>
-                                                    <th className="text-right font-semibold px-3 py-2">Avg cost</th>
-                                                    <th className="text-right font-semibold px-3 py-2">Price</th>
-                                                    <th className="text-right font-semibold px-3 py-2">Value</th>
-                                                    <th className="text-right font-semibold px-3 py-2">Unreal. P/L</th>
-                                                    <th className="text-right font-semibold px-3 py-2">Real. P/L</th>
+                                                    <SortTh col="item_name" label="Item" sortKey={holdingsSort.sortKey} sortDir={holdingsSort.sortDir} onSort={holdingsSort.toggle} />
+                                                    <SortTh col="net_qty" label="Qty" align="right" sortKey={holdingsSort.sortKey} sortDir={holdingsSort.sortDir} onSort={holdingsSort.toggle} />
+                                                    <SortTh col="avg_cost" label="Avg cost" align="right" sortKey={holdingsSort.sortKey} sortDir={holdingsSort.sortDir} onSort={holdingsSort.toggle} />
+                                                    <SortTh col="current_price" label="Price" align="right" sortKey={holdingsSort.sortKey} sortDir={holdingsSort.sortDir} onSort={holdingsSort.toggle} />
+                                                    <SortTh col="market_value" label="Value" align="right" sortKey={holdingsSort.sortKey} sortDir={holdingsSort.sortDir} onSort={holdingsSort.toggle} />
+                                                    <SortTh col="unrealized_pl" label="Unreal. P/L" align="right" sortKey={holdingsSort.sortKey} sortDir={holdingsSort.sortDir} onSort={holdingsSort.toggle} />
+                                                    <SortTh col="realized_pl" label="Real. P/L" align="right" sortKey={holdingsSort.sortKey} sortDir={holdingsSort.sortDir} onSort={holdingsSort.toggle} />
                                                 </tr>
                                             </thead>
                                             <tbody className="divide-y divide-white/5">
@@ -553,6 +579,9 @@ const DraupnirPortfolio = () => {
                                 count={filteredTxns.length} total={data.transactions.length}
                                 search={txnsSearch} setSearch={setTxnsSearch}
                                 placeholder="Search item / platform / note…"
+                                collections={availableCollections}
+                                selectedCollections={txnsCols} onCollectionsChange={setTxnsCols}
+                                collectionHint={COLLECTION_HINT}
                             />
 
                             {txnsOpen && (
@@ -561,13 +590,13 @@ const DraupnirPortfolio = () => {
                                         <table className="w-full text-sm min-w-[720px]">
                                             <thead className="bg-odin-blue/50 text-slate-500 text-[11px] uppercase tracking-wider">
                                                 <tr>
-                                                    <th className="text-left font-semibold px-3 py-2">Item</th>
-                                                    <th className="text-left font-semibold px-3 py-2">Type</th>
-                                                    <th className="text-right font-semibold px-3 py-2">Qty</th>
-                                                    <th className="text-right font-semibold px-3 py-2">Unit $</th>
-                                                    <th className="text-right font-semibold px-3 py-2">Total</th>
-                                                    <th className="text-left font-semibold px-3 py-2">Platform</th>
-                                                    <th className="text-left font-semibold px-3 py-2">Date</th>
+                                                    <SortTh col="item_name" label="Item" sortKey={txnsSort.sortKey} sortDir={txnsSort.sortDir} onSort={txnsSort.toggle} />
+                                                    <SortTh col="type" label="Type" sortKey={txnsSort.sortKey} sortDir={txnsSort.sortDir} onSort={txnsSort.toggle} />
+                                                    <SortTh col="qty" label="Qty" align="right" sortKey={txnsSort.sortKey} sortDir={txnsSort.sortDir} onSort={txnsSort.toggle} />
+                                                    <SortTh col="price" label="Unit $" align="right" sortKey={txnsSort.sortKey} sortDir={txnsSort.sortDir} onSort={txnsSort.toggle} />
+                                                    <SortTh col="total" label="Total" align="right" sortKey={txnsSort.sortKey} sortDir={txnsSort.sortDir} onSort={txnsSort.toggle} />
+                                                    <SortTh col="platform" label="Platform" sortKey={txnsSort.sortKey} sortDir={txnsSort.sortDir} onSort={txnsSort.toggle} />
+                                                    <SortTh col="date" label="Date" sortKey={txnsSort.sortKey} sortDir={txnsSort.sortDir} onSort={txnsSort.toggle} />
                                                     <th className="px-3 py-2"></th>
                                                 </tr>
                                             </thead>

@@ -491,6 +491,39 @@ class DraupnirService:
         inventory and trading, not flips that merely passed through it)."""
         return [t for t in txns if not t.get('is_arbitrage')]
 
+    def _collection_map(self):
+        """Best-effort ``{item_name: collection}`` built from Huginn's cached
+        inventory scan. That scan is the *only* place collections exist — a
+        hand-entered Draupnir transaction carries just a name — so an item not
+        currently sitting in any account's inventory (e.g. already sold) simply
+        gets no collection. Returns ``{}`` when Huginn is unwired or no scan has
+        been run yet, which leaves every item's collection blank and the UI's
+        collection filter empty/disabled (same behaviour as Huginn Arbitrage)."""
+        if not self.huginn:
+            return {}
+        try:
+            cache = self.huginn.get_cache()
+        except Exception:
+            return {}
+        by_hash = (cache or {}).get('by_hash') or {}
+        cmap = {}
+        for name, entry in by_hash.items():
+            for inst in (entry.get('instances') or []):
+                collection = (inst.get('collection') or '').strip()
+                if collection:
+                    cmap[name] = collection
+                    break
+        return cmap
+
+    @staticmethod
+    def _attach_collections(items, cmap):
+        """Decorate each holding/transaction dict with a ``collection`` string
+        (empty when unknown), looked up by ``item_name``. Purely additive — it
+        never reads or changes cost basis, quantities or P/L."""
+        for item in items:
+            item['collection'] = cmap.get(item.get('item_name', ''), '')
+        return items
+
     def list_portfolios(self, prices=None):
         with self._lock:
             ps = list(self._data['portfolios'].values())
@@ -512,14 +545,18 @@ class DraupnirService:
         # P/L and holdings exclude arbitrage legs, but the transaction list below
         # still shows every leg (tagged ones carry the "arb" badge).
         holdings = self._holdings(self._non_arb(p['transactions']), prices)
+        # Newest first, with created_at as a tiebreaker so a just-added
+        # transaction always appears at the top of its date.
+        txns = sorted(p['transactions'],
+                      key=lambda t: (t.get('date') or '', t.get('created_at') or ''),
+                      reverse=True)
+        cmap = self._collection_map()
+        self._attach_collections(holdings, cmap)
+        self._attach_collections(txns, cmap)
         return {
             **self._summarize(p, holdings),
             'arbitrage_count': sum(1 for t in p['transactions'] if t.get('is_arbitrage')),
-            # Newest first, with created_at as a tiebreaker so a just-added
-            # transaction always appears at the top of its date.
-            'transactions': sorted(p['transactions'],
-                                   key=lambda t: (t.get('date') or '', t.get('created_at') or ''),
-                                   reverse=True),
+            'transactions': txns,
             'holdings': holdings,
         }
 
@@ -595,6 +632,12 @@ class DraupnirService:
         priced = any(h['current_price'] is not None for h in holdings)
         held = [h for h in holdings if h['net_qty'] > 0]
         arb = sum(1 for t in txns if t.get('is_arbitrage'))
+        sorted_txns = sorted(txns,
+                             key=lambda t: (t.get('date') or '', t.get('created_at') or ''),
+                             reverse=True)
+        cmap = self._collection_map()
+        self._attach_collections(holdings, cmap)
+        self._attach_collections(sorted_txns, cmap)
         return {
             'id': 'combined', 'name': 'All accounts', 'created_at': '', 'updated_at': '',
             'txn_count': len(txns),
@@ -607,9 +650,7 @@ class DraupnirService:
             'unrealized_pl': round(unrealized, 2) if priced else None,
             'total_pl': round(realized + unrealized, 2) if priced else round(realized, 2),
             'priced': priced,
-            'transactions': sorted(txns,
-                                   key=lambda t: (t.get('date') or '', t.get('created_at') or ''),
-                                   reverse=True),
+            'transactions': sorted_txns,
             'holdings': holdings,
             'account_count': len(ps),
             'arbitrage_count': arb,
