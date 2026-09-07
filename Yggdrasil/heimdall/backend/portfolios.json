@@ -4,7 +4,7 @@
       "id": "fbf692611b3c",
       "name": "everthinklol",
       "created_at": "2026-07-21T13:40:18.177768+00:00",
-      "updated_at": "2026-09-07T18:51:44.907865+00:00",
+      "updated_at": "2026-09-07T19:28:51.509598+00:00",
       "transactions": [
         {
           "id": "3ea474874554",
@@ -8777,6 +8777,19 @@
           "fee_percent": 0.0,
           "is_arbitrage": false,
           "created_at": "2026-09-07T07:51:18.854841+00:00"
+        },
+        {
+          "id": "7774b017f6b3",
+          "item_name": "Sticker | Renegades (Holo) | Stockholm 2021",
+          "type": "buy",
+          "qty": 1,
+          "price": 3.42,
+          "platform": "lisskins",
+          "date": "2026-09-07T22:50:00",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": true,
+          "created_at": "2026-09-07T19:28:22.574046+00:00"
         }
       ]
     },
@@ -10696,7 +10709,7 @@
       "id": "99c18756f9ee",
       "name": "everthinklol1",
       "created_at": "2026-07-21T14:49:46.392883+00:00",
-      "updated_at": "2026-09-07T12:28:29.712037+00:00",
+      "updated_at": "2026-09-07T19:27:42.493723+00:00",
       "transactions": [
         {
           "id": "ed83a19ba6bc",
@@ -14812,6 +14825,19 @@
           "fee_percent": 0.0,
           "is_arbitrage": false,
           "created_at": "2026-09-07T12:28:29.712014+00:00"
+        },
+        {
+          "id": "a0b067ac1849",
+          "item_name": "Sticker | Renegades (Holo) | Stockholm 2021",
+          "type": "sell",
+          "qty": 1,
+          "price": 3.72,
+          "platform": "csfloat",
+          "date": "2026-09-07",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": true,
+          "created_at": "2026-09-07T19:27:42.493693+00:00"
         }
       ]
     },
