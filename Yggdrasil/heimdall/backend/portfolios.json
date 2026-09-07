@@ -4,7 +4,7 @@
       "id": "fbf692611b3c",
       "name": "everthinklol",
       "created_at": "2026-07-21T13:40:18.177768+00:00",
-      "updated_at": "2026-09-07T07:59:00.327781+00:00",
+      "updated_at": "2026-09-07T15:36:21.821852+00:00",
       "transactions": [
         {
           "id": "3ea474874554",
@@ -8712,19 +8712,6 @@
           "fee_percent": 0.0,
           "is_arbitrage": false,
           "created_at": "2026-09-06T20:44:08.506299+00:00"
-        },
-        {
-          "id": "e10987bbde52",
-          "item_name": "Sticker | High Heat",
-          "type": "sell",
-          "qty": 50,
-          "price": 0.39,
-          "platform": "csfloat",
-          "date": "2026-09-06T23:38:00",
-          "note": "",
-          "fee_percent": 0.0,
-          "is_arbitrage": false,
-          "created_at": "2026-09-06T20:45:44.547808+00:00"
         },
         {
           "id": "585fb8e803a9",
