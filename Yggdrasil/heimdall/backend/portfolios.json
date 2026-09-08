@@ -4,7 +4,7 @@
       "id": "fbf692611b3c",
       "name": "everthinklol",
       "created_at": "2026-07-21T13:40:18.177768+00:00",
-      "updated_at": "2026-09-08T00:59:18.741819+00:00",
+      "updated_at": "2026-09-08T20:59:23.480171+00:00",
       "transactions": [
         {
           "id": "3ea474874554",
@@ -8829,6 +8829,45 @@
           "fee_percent": 0.0,
           "is_arbitrage": false,
           "created_at": "2026-09-08T00:59:18.741783+00:00"
+        },
+        {
+          "id": "3059c1d31a6a",
+          "item_name": "Fracture Case",
+          "type": "buy",
+          "qty": 91,
+          "price": 0.41,
+          "platform": "lisskins",
+          "date": "2026-09-08T23:50:00",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": false,
+          "created_at": "2026-09-08T20:56:13.387274+00:00"
+        },
+        {
+          "id": "49fd67ba9297",
+          "item_name": "CS20 Case",
+          "type": "buy",
+          "qty": 67,
+          "price": 0.85,
+          "platform": "lisskins",
+          "date": "2026-09-08T23:30:00",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": false,
+          "created_at": "2026-09-08T20:56:54.932579+00:00"
+        },
+        {
+          "id": "39376810c065",
+          "item_name": "Fracture Case",
+          "type": "buy",
+          "qty": 101,
+          "price": 0.41,
+          "platform": "lisskins",
+          "date": "2026-09-08T06:16:00",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": false,
+          "created_at": "2026-09-08T20:59:23.480136+00:00"
         }
       ]
     },
