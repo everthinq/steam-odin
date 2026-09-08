@@ -4,7 +4,7 @@
       "id": "fbf692611b3c",
       "name": "everthinklol",
       "created_at": "2026-07-21T13:40:18.177768+00:00",
-      "updated_at": "2026-09-07T19:28:51.509598+00:00",
+      "updated_at": "2026-09-07T23:58:18.292821+00:00",
       "transactions": [
         {
           "id": "3ea474874554",
@@ -8756,7 +8756,7 @@
           "id": "94534e9e0b82",
           "item_name": "Sticker | Flex",
           "type": "buy",
-          "qty": 9,
+          "qty": 17,
           "price": 0.76,
           "platform": "lisskins",
           "date": "2026-09-07T10:18:00",
@@ -8790,6 +8790,32 @@
           "fee_percent": 0.0,
           "is_arbitrage": true,
           "created_at": "2026-09-07T19:28:22.574046+00:00"
+        },
+        {
+          "id": "5d807291eb93",
+          "item_name": "Sticker | OG (Gold) | 2020 RMR",
+          "type": "sell",
+          "qty": 1,
+          "price": 1.42,
+          "platform": "csfloat",
+          "date": "2026-09-08",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": true,
+          "created_at": "2026-09-07T23:55:35.321303+00:00"
+        },
+        {
+          "id": "e90bf15bafeb",
+          "item_name": "Sticker | OG (Gold) | 2020 RMR",
+          "type": "buy",
+          "qty": 1,
+          "price": 1.2,
+          "platform": "lisskins",
+          "date": "2026-09-08",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": true,
+          "created_at": "2026-09-07T23:56:11.347840+00:00"
         }
       ]
     },
