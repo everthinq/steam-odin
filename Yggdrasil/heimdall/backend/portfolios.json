@@ -4,7 +4,7 @@
       "id": "fbf692611b3c",
       "name": "everthinklol",
       "created_at": "2026-07-21T13:40:18.177768+00:00",
-      "updated_at": "2026-09-08T23:58:51.533437+00:00",
+      "updated_at": "2026-09-12T11:08:17.584603+00:00",
       "transactions": [
         {
           "id": "3ea474874554",
@@ -8881,6 +8881,19 @@
           "fee_percent": 0.0,
           "is_arbitrage": false,
           "created_at": "2026-09-08T23:58:51.533407+00:00"
+        },
+        {
+          "id": "68697d4beec9",
+          "item_name": "Kilowatt Case",
+          "type": "buy",
+          "qty": 3,
+          "price": 0.12,
+          "platform": "lisskins",
+          "date": "2026-09-12",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": false,
+          "created_at": "2026-09-12T11:08:17.584532+00:00"
         }
       ]
     },
