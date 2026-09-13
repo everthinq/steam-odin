@@ -4,7 +4,7 @@
       "id": "fbf692611b3c",
       "name": "everthinklol",
       "created_at": "2026-07-21T13:40:18.177768+00:00",
-      "updated_at": "2026-09-13T15:32:05.896295+00:00",
+      "updated_at": "2026-09-13T19:30:32.257038+00:00",
       "transactions": [
         {
           "id": "3ea474874554",
@@ -8946,6 +8946,123 @@
           "fee_percent": 0.0,
           "is_arbitrage": true,
           "created_at": "2026-09-13T15:29:26.735691+00:00"
+        },
+        {
+          "id": "9422309b0925",
+          "item_name": "AUG | Surveillance (Factory New)",
+          "type": "buy",
+          "qty": 1,
+          "price": 1.26,
+          "platform": "lisskins",
+          "date": "2026-09-13",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": true,
+          "created_at": "2026-09-13T19:05:58.103648+00:00"
+        },
+        {
+          "id": "2af51a4a6591",
+          "item_name": "FAMAS | Half Sleeve (Factory New)",
+          "type": "buy",
+          "qty": 2,
+          "price": 0.64,
+          "platform": "lisskins",
+          "date": "2026-09-13",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": true,
+          "created_at": "2026-09-13T19:10:58.328883+00:00"
+        },
+        {
+          "id": "0b05a5301278",
+          "item_name": "FAMAS | Half Sleeve (Factory New)",
+          "type": "sell",
+          "qty": 2,
+          "price": 0.67,
+          "platform": "csfloat",
+          "date": "2026-09-13",
+          "note": "sold 2/6",
+          "fee_percent": 0.0,
+          "is_arbitrage": true,
+          "created_at": "2026-09-13T19:12:07.723193+00:00"
+        },
+        {
+          "id": "85c1fdfa153f",
+          "item_name": "FAMAS | Half Sleeve (Factory New)",
+          "type": "buy",
+          "qty": 3,
+          "price": 0.67,
+          "platform": "lisskins",
+          "date": "2026-09-13",
+          "note": "0.01... float",
+          "fee_percent": 0.0,
+          "is_arbitrage": false,
+          "created_at": "2026-09-13T19:14:58.633652+00:00"
+        },
+        {
+          "id": "176662fe8376",
+          "item_name": "FAMAS | Half Sleeve (Factory New)",
+          "type": "buy",
+          "qty": 4,
+          "price": 0.64,
+          "platform": "lisskins",
+          "date": "2026-09-13",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": false,
+          "created_at": "2026-09-13T19:15:44.377143+00:00"
+        },
+        {
+          "id": "037a10eb35a1",
+          "item_name": "Sticker | SAW (Holo) | Copenhagen 2024",
+          "type": "buy",
+          "qty": 3,
+          "price": 2.63,
+          "platform": "lisskins",
+          "date": "2026-09-13",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": true,
+          "created_at": "2026-09-13T19:24:39.075222+00:00"
+        },
+        {
+          "id": "e4e7fb06de26",
+          "item_name": "Sticker | SAW (Holo) | Copenhagen 2024",
+          "type": "sell",
+          "qty": 3,
+          "price": 2.79,
+          "platform": "cs.money.trade",
+          "date": "2026-09-13",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": true,
+          "created_at": "2026-09-13T19:25:25.544900+00:00"
+        },
+        {
+          "id": "90d8ffc345b6",
+          "item_name": "Sticker | FlyQuest (Holo) | Budapest 2025",
+          "type": "buy",
+          "qty": 3,
+          "price": 1.69,
+          "platform": "cs.money.trade",
+          "date": "2026-09-13",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": true,
+          "created_at": "2026-09-13T19:27:58.703633+00:00"
+        },
+        {
+          "id": "74402252da8c",
+          "item_name": "Sticker | FlyQuest (Holo) | Budapest 2025",
+          "type": "sell",
+          "qty": 3,
+          "price": 1.76,
+          "platform": "csfloat",
+          "date": "2026-09-13",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": true,
+          "created_at": "2026-09-13T19:30:32.256993+00:00"
         }
       ]
     },
@@ -10865,7 +10982,7 @@
       "id": "99c18756f9ee",
       "name": "everthinklol1",
       "created_at": "2026-07-21T14:49:46.392883+00:00",
-      "updated_at": "2026-09-07T19:27:42.493723+00:00",
+      "updated_at": "2026-09-13T19:07:25.027612+00:00",
       "transactions": [
         {
           "id": "ed83a19ba6bc",
@@ -14994,6 +15111,19 @@
           "fee_percent": 0.0,
           "is_arbitrage": true,
           "created_at": "2026-09-07T19:27:42.493693+00:00"
+        },
+        {
+          "id": "ec6e72473d61",
+          "item_name": "AUG | Surveillance (Factory New)",
+          "type": "sell",
+          "qty": 1,
+          "price": 1.4,
+          "platform": "csfloat",
+          "date": "2026-09-13",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": true,
+          "created_at": "2026-09-13T19:07:25.027594+00:00"
         }
       ]
     },
