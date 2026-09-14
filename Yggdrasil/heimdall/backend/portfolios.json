@@ -4,7 +4,7 @@
       "id": "fbf692611b3c",
       "name": "everthinklol",
       "created_at": "2026-07-21T13:40:18.177768+00:00",
-      "updated_at": "2026-09-14T13:07:38.450540+00:00",
+      "updated_at": "2026-09-14T18:23:34.542543+00:00",
       "transactions": [
         {
           "id": "3ea474874554",
@@ -9167,6 +9167,19 @@
           "fee_percent": 0.0,
           "is_arbitrage": true,
           "created_at": "2026-09-14T13:07:38.450530+00:00"
+        },
+        {
+          "id": "adc7e78e3177",
+          "item_name": "CS20 Case",
+          "type": "buy",
+          "qty": 161,
+          "price": 0.82,
+          "platform": "csfloat",
+          "date": "2026-09-14T21:23:00",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": false,
+          "created_at": "2026-09-14T18:23:34.542512+00:00"
         }
       ]
     },
