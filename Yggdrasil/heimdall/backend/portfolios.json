@@ -4,7 +4,7 @@
       "id": "fbf692611b3c",
       "name": "everthinklol",
       "created_at": "2026-07-21T13:40:18.177768+00:00",
-      "updated_at": "2026-09-14T12:39:27.739433+00:00",
+      "updated_at": "2026-09-14T13:07:38.450540+00:00",
       "transactions": [
         {
           "id": "3ea474874554",
@@ -8961,32 +8961,6 @@
           "created_at": "2026-09-13T19:05:58.103648+00:00"
         },
         {
-          "id": "2af51a4a6591",
-          "item_name": "FAMAS | Half Sleeve (Factory New)",
-          "type": "buy",
-          "qty": 2,
-          "price": 0.64,
-          "platform": "lisskins",
-          "date": "2026-09-13",
-          "note": "",
-          "fee_percent": 0.0,
-          "is_arbitrage": true,
-          "created_at": "2026-09-13T19:10:58.328883+00:00"
-        },
-        {
-          "id": "0b05a5301278",
-          "item_name": "FAMAS | Half Sleeve (Factory New)",
-          "type": "sell",
-          "qty": 2,
-          "price": 0.67,
-          "platform": "csfloat",
-          "date": "2026-09-13",
-          "note": "sold 2/6",
-          "fee_percent": 0.0,
-          "is_arbitrage": true,
-          "created_at": "2026-09-13T19:12:07.723193+00:00"
-        },
-        {
           "id": "85c1fdfa153f",
           "item_name": "FAMAS | Half Sleeve (Factory New)",
           "type": "buy",
@@ -9003,7 +8977,7 @@
           "id": "176662fe8376",
           "item_name": "FAMAS | Half Sleeve (Factory New)",
           "type": "buy",
-          "qty": 4,
+          "qty": 6,
           "price": 0.64,
           "platform": "lisskins",
           "date": "2026-09-13",
@@ -9167,6 +9141,32 @@
           "fee_percent": 0.0,
           "is_arbitrage": false,
           "created_at": "2026-09-14T12:39:27.739405+00:00"
+        },
+        {
+          "id": "a37c57b8dd5c",
+          "item_name": "Sticker | M80 (Holo) | Budapest 2025",
+          "type": "sell",
+          "qty": 1,
+          "price": 1.56,
+          "platform": "csfloat",
+          "date": "2026-09-14T16:06:00",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": true,
+          "created_at": "2026-09-14T13:07:26.574110+00:00"
+        },
+        {
+          "id": "47e43baed987",
+          "item_name": "Sticker | M80 (Holo) | Budapest 2025",
+          "type": "buy",
+          "qty": 1,
+          "price": 1.55,
+          "platform": "cs.money.trade",
+          "date": "2026-09-14T16:06:00",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": true,
+          "created_at": "2026-09-14T13:07:38.450530+00:00"
         }
       ]
     },
