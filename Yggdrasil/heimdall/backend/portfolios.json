@@ -9864,7 +9864,7 @@
       "id": "0bf8723a4389",
       "name": "bobby_bickbobby",
       "created_at": "2026-07-21T14:49:46.208831+00:00",
-      "updated_at": "2026-08-31T08:25:33.445774+00:00",
+      "updated_at": "2026-09-14T22:55:50.512892+00:00",
       "transactions": [
         {
           "id": "c9de1e4c033d",
@@ -10729,6 +10729,19 @@
           "fee_percent": 0.0,
           "is_arbitrage": false,
           "created_at": "2026-08-21T20:26:17.899883+00:00"
+        },
+        {
+          "id": "2597e324f46f",
+          "item_name": "Kilowatt Case",
+          "type": "buy",
+          "qty": 396,
+          "price": 0.12,
+          "platform": "lisskins",
+          "date": "2026-09-15T01:41:00",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": false,
+          "created_at": "2026-09-14T22:42:07.405056+00:00"
         }
       ]
     },
@@ -11112,7 +11125,7 @@
       "id": "99c18756f9ee",
       "name": "everthinklol1",
       "created_at": "2026-07-21T14:49:46.392883+00:00",
-      "updated_at": "2026-09-14T21:29:24.080106+00:00",
+      "updated_at": "2026-09-14T22:30:17.280971+00:00",
       "transactions": [
         {
           "id": "ed83a19ba6bc",
@@ -15256,23 +15269,10 @@
           "created_at": "2026-09-13T19:07:25.027594+00:00"
         },
         {
-          "id": "c998074b8b39",
-          "item_name": "Kilowatt Case",
-          "type": "buy",
-          "qty": 569,
-          "price": 0.12,
-          "platform": "lisskins",
-          "date": "2026-09-14T11:22:00",
-          "note": "",
-          "fee_percent": 0.0,
-          "is_arbitrage": false,
-          "created_at": "2026-09-13T21:49:30.937431+00:00"
-        },
-        {
           "id": "3df49ba36732",
           "item_name": "Kilowatt Case",
           "type": "buy",
-          "qty": 264,
+          "qty": 833,
           "price": 0.12,
           "platform": "lisskins",
           "date": "2026-09-15T00:27:00",
@@ -15997,7 +15997,7 @@
       "id": "589eb04fc956",
       "name": "hidey_spidey",
       "created_at": "2026-07-21T14:49:46.495709+00:00",
-      "updated_at": "2026-09-14T21:59:07.399860+00:00",
+      "updated_at": "2026-09-14T22:15:19.491576+00:00",
       "transactions": [
         {
           "id": "7567c6dad2c1",
@@ -17463,7 +17463,7 @@
           "id": "7bb4026bc09d",
           "item_name": "Kilowatt Case",
           "type": "buy",
-          "qty": 652,
+          "qty": 833,
           "price": 0.12,
           "platform": "lisskins",
           "date": "2026-09-15T00:47:00",
@@ -18162,7 +18162,7 @@
       "id": "ff52cedd2fdb",
       "name": "kit_bonillaqqq",
       "created_at": "2026-07-21T14:49:46.675531+00:00",
-      "updated_at": "2026-08-21T21:16:34.469981+00:00",
+      "updated_at": "2026-09-14T22:27:44.992406+00:00",
       "transactions": [
         {
           "id": "4fea706d173c",
@@ -18559,6 +18559,32 @@
           "fee_percent": 0.0,
           "is_arbitrage": false,
           "created_at": "2026-08-21T21:15:06.907921+00:00"
+        },
+        {
+          "id": "8ebb9f9c327f",
+          "item_name": "Kilowatt Case",
+          "type": "buy",
+          "qty": 811,
+          "price": 0.12,
+          "platform": "lisskins",
+          "date": "2026-09-15T01:26:00",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": false,
+          "created_at": "2026-09-14T22:12:45.660023+00:00"
+        },
+        {
+          "id": "93a9d0af2dcd",
+          "item_name": "Gamma 2 Case",
+          "type": "buy",
+          "qty": 1,
+          "price": 2.73,
+          "platform": "lisskins",
+          "date": "2026-09-15T01:17:00",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": false,
+          "created_at": "2026-09-14T22:17:50.001237+00:00"
         }
       ]
     },
