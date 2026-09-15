@@ -4,7 +4,7 @@
       "id": "fbf692611b3c",
       "name": "everthinklol",
       "created_at": "2026-07-21T13:40:18.177768+00:00",
-      "updated_at": "2026-09-15T07:23:35.888452+00:00",
+      "updated_at": "2026-09-15T17:45:54.561670+00:00",
       "transactions": [
         {
           "id": "3ea474874554",
@@ -9139,7 +9139,7 @@
           "date": "2026-09-14T15:38:00",
           "note": "",
           "fee_percent": 0.0,
-          "is_arbitrage": false,
+          "is_arbitrage": true,
           "created_at": "2026-09-14T12:39:27.739405+00:00"
         },
         {
@@ -9219,6 +9219,19 @@
           "fee_percent": 0.0,
           "is_arbitrage": true,
           "created_at": "2026-09-15T07:23:35.888438+00:00"
+        },
+        {
+          "id": "a9c0a9c68ab3",
+          "item_name": "3rd Commando Company | KSK",
+          "type": "sell",
+          "qty": 1,
+          "price": 10.77,
+          "platform": "csfloat",
+          "date": "2026-09-15T19:20:00",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": true,
+          "created_at": "2026-09-15T17:45:32.507004+00:00"
         }
       ]
     },
