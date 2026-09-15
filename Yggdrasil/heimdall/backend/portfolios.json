@@ -4,7 +4,7 @@
       "id": "fbf692611b3c",
       "name": "everthinklol",
       "created_at": "2026-07-21T13:40:18.177768+00:00",
-      "updated_at": "2026-09-15T00:24:29.809579+00:00",
+      "updated_at": "2026-09-15T07:23:35.888452+00:00",
       "transactions": [
         {
           "id": "3ea474874554",
@@ -9193,6 +9193,32 @@
           "fee_percent": 0.0,
           "is_arbitrage": false,
           "created_at": "2026-09-14T21:40:10.206815+00:00"
+        },
+        {
+          "id": "6e860a9128e6",
+          "item_name": "Sticker | SAW (Glitter) | Copenhagen 2024",
+          "type": "sell",
+          "qty": 4,
+          "price": 0.75,
+          "platform": "steam",
+          "date": "2026-09-15T10:23:00",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": true,
+          "created_at": "2026-09-15T07:23:23.038695+00:00"
+        },
+        {
+          "id": "4b76c7cb19fe",
+          "item_name": "Sticker | SAW (Glitter) | Copenhagen 2024",
+          "type": "buy",
+          "qty": 4,
+          "price": 0.49,
+          "platform": "lisskins",
+          "date": "2026-09-15T10:23:00",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": true,
+          "created_at": "2026-09-15T07:23:35.888438+00:00"
         }
       ]
     },
@@ -15451,7 +15477,7 @@
       "id": "9929cee577f7",
       "name": "harold_cavill",
       "created_at": "2026-07-21T14:49:46.466613+00:00",
-      "updated_at": "2026-09-15T00:20:25.465882+00:00",
+      "updated_at": "2026-09-15T07:46:34.287264+00:00",
       "transactions": [
         {
           "id": "da78df72fae8",
@@ -15995,7 +16021,7 @@
           "id": "a2c7e78c25f9",
           "item_name": "Kilowatt Case",
           "type": "buy",
-          "qty": 44,
+          "qty": 499,
           "price": 0.12,
           "platform": "lisskins",
           "date": "2026-09-15T03:19:00",
