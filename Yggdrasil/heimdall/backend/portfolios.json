@@ -4,7 +4,7 @@
       "id": "fbf692611b3c",
       "name": "everthinklol",
       "created_at": "2026-07-21T13:40:18.177768+00:00",
-      "updated_at": "2026-09-15T17:45:54.561670+00:00",
+      "updated_at": "2026-09-15T21:43:21.614213+00:00",
       "transactions": [
         {
           "id": "3ea474874554",
@@ -9232,6 +9232,32 @@
           "fee_percent": 0.0,
           "is_arbitrage": true,
           "created_at": "2026-09-15T17:45:32.507004+00:00"
+        },
+        {
+          "id": "57b45bd9b51c",
+          "item_name": "Recoil Case",
+          "type": "buy",
+          "qty": 1,
+          "price": 0.24,
+          "platform": "lisskins",
+          "date": "2026-09-16",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": false,
+          "created_at": "2026-09-15T21:29:58.958115+00:00"
+        },
+        {
+          "id": "4c6395b99fdd",
+          "item_name": "Kilowatt Case",
+          "type": "buy",
+          "qty": 82,
+          "price": 0.12,
+          "platform": "lisskins",
+          "date": "2026-09-16T00:42:00",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": false,
+          "created_at": "2026-09-15T21:43:21.614110+00:00"
         }
       ]
     },
@@ -15490,7 +15516,7 @@
       "id": "9929cee577f7",
       "name": "harold_cavill",
       "created_at": "2026-07-21T14:49:46.466613+00:00",
-      "updated_at": "2026-09-15T07:46:34.287264+00:00",
+      "updated_at": "2026-09-15T21:40:12.520747+00:00",
       "transactions": [
         {
           "id": "da78df72fae8",
@@ -16042,6 +16068,19 @@
           "fee_percent": 0.0,
           "is_arbitrage": false,
           "created_at": "2026-09-15T00:20:25.465865+00:00"
+        },
+        {
+          "id": "ed3923096344",
+          "item_name": "Kilowatt Case",
+          "type": "buy",
+          "qty": 378,
+          "price": 0.12,
+          "platform": "lisskins",
+          "date": "2026-09-16T00:28:00",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": false,
+          "created_at": "2026-09-15T21:40:12.520722+00:00"
         }
       ]
     },
