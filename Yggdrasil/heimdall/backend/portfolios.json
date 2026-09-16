@@ -4,7 +4,7 @@
       "id": "fbf692611b3c",
       "name": "everthinklol",
       "created_at": "2026-07-21T13:40:18.177768+00:00",
-      "updated_at": "2026-09-16T15:13:14.145061+00:00",
+      "updated_at": "2026-09-16T22:40:14.278941+00:00",
       "transactions": [
         {
           "id": "3ea474874554",
@@ -9271,6 +9271,71 @@
           "fee_percent": 0.0,
           "is_arbitrage": false,
           "created_at": "2026-09-16T15:13:04.489869+00:00"
+        },
+        {
+          "id": "2be8fbbda47a",
+          "item_name": "Revolution Case",
+          "type": "buy",
+          "qty": 209,
+          "price": 0.28,
+          "platform": "steam",
+          "date": "2026-09-16T20:00:00",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": false,
+          "created_at": "2026-09-16T22:17:27.879021+00:00"
+        },
+        {
+          "id": "cb277e2a9291",
+          "item_name": "Sticker | North (Gold) | 2020 RMR",
+          "type": "sell",
+          "qty": 2,
+          "price": 1.67,
+          "platform": "steam",
+          "date": "2026-09-17",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": true,
+          "created_at": "2026-09-16T22:30:33.271169+00:00"
+        },
+        {
+          "id": "6a3b3ff475f3",
+          "item_name": "Sticker | North (Gold) | 2020 RMR",
+          "type": "buy",
+          "qty": 2,
+          "price": 1.11,
+          "platform": "cs.money.trade",
+          "date": "2026-09-17",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": true,
+          "created_at": "2026-09-16T22:30:45.487567+00:00"
+        },
+        {
+          "id": "5928c212b742",
+          "item_name": "Glock-18 | Green Line (Minimal Wear)",
+          "type": "buy",
+          "qty": 23,
+          "price": 1.01,
+          "platform": "lisskins",
+          "date": "2026-09-17",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": true,
+          "created_at": "2026-09-16T22:36:01.546051+00:00"
+        },
+        {
+          "id": "d40ea0b464d0",
+          "item_name": "Glock-18 | Green Line (Minimal Wear)",
+          "type": "sell",
+          "qty": 23,
+          "price": 1.07,
+          "platform": "cs.money.trade",
+          "date": "2026-09-17",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": true,
+          "created_at": "2026-09-16T22:36:49.030882+00:00"
         }
       ]
     },
