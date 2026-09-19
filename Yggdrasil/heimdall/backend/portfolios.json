@@ -4,7 +4,7 @@
       "id": "fbf692611b3c",
       "name": "everthinklol",
       "created_at": "2026-07-21T13:40:18.177768+00:00",
-      "updated_at": "2026-09-18T07:39:09.321237+00:00",
+      "updated_at": "2026-09-19T22:16:02.479886+00:00",
       "transactions": [
         {
           "id": "3ea474874554",
@@ -9362,6 +9362,45 @@
           "fee_percent": 0.0,
           "is_arbitrage": true,
           "created_at": "2026-09-18T07:39:09.321191+00:00"
+        },
+        {
+          "id": "c7c01593d53d",
+          "item_name": "Sticker | NEO | Berlin 2019",
+          "type": "buy",
+          "qty": 3,
+          "price": 0.2,
+          "platform": "dmarket",
+          "date": "2026-09-20",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": false,
+          "created_at": "2026-09-19T22:12:53.612856+00:00"
+        },
+        {
+          "id": "ac0e499e19ac",
+          "item_name": "Sticker | gla1ve | Berlin 2019",
+          "type": "buy",
+          "qty": 1,
+          "price": 0.05,
+          "platform": "dmarket",
+          "date": "2026-09-20",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": false,
+          "created_at": "2026-09-19T22:13:45.835980+00:00"
+        },
+        {
+          "id": "f20637f37d27",
+          "item_name": "MAC-10 | Echoing Sands (Field-Tested)",
+          "type": "buy",
+          "qty": 14,
+          "price": 0.17,
+          "platform": "dmarket",
+          "date": "2026-09-20",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": false,
+          "created_at": "2026-09-19T22:16:02.479842+00:00"
         }
       ]
     },
