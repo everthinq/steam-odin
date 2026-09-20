@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useDeferredValue } from 'react';
 import { Link } from 'react-router-dom';
-import { LayoutDashboard, RefreshCw, AlertTriangle, Search, ChevronDown, Coins, Boxes, Repeat, Gavel, Users, Radio } from 'lucide-react';
+import { LayoutDashboard, RefreshCw, AlertTriangle, Search, ChevronDown, Coins, Boxes, Repeat, Gavel, Users, Radio, Copy } from 'lucide-react';
 import { matchesSearchQuery } from '../../utils/transferItems';
 import SteamMarketLink from '../../components/SteamMarketLink';
 import BuffMarketLink from '../../components/BuffMarketLink';
@@ -51,6 +51,35 @@ const PROFILES = [
     { id: 'dmarket-csfloat',         from: 'DMarket',  fromSub: 'min', to: 'CSFloat', toSub: 'min',     buyMarket: 'Dmarket',       sellMarket: 'CsFloat', fetchEndpoint: '/api/huginn/tradeon/dmarket-csfloat' },
     { id: 'dmarket-csfloat-autobuy', from: 'DMarket',  fromSub: 'min', to: 'CSFloat', toSub: 'autobuy', buyMarket: 'Dmarket',       sellMarket: 'CsFloat', fetchEndpoint: '/api/huginn/tradeon/dmarket-csfloat-autobuy', autobuy: true },
 ];
+
+// Shows the exact public IP the user must add to the Bright Data zone allowlist,
+// as a click-to-copy chip. Reuses the page's copy state (copyItemName/copiedName).
+const WhitelistIp = ({ ip, onCopy, copied }) => {
+    if (!ip) {
+        return (
+            <span className="block mt-1 text-red-300/80">
+                (Could not auto-detect this server&apos;s public IP — find it with{' '}
+                <span className="font-mono">curl api.ipify.org</span>.)
+            </span>
+        );
+    }
+    return (
+        <span className="mt-1 flex items-center gap-1.5 flex-wrap">
+            <span className="text-red-200/90">This server&apos;s IP to whitelist:</span>
+            <button
+                type="button"
+                onClick={() => onCopy(ip)}
+                title="Click to copy"
+                className="inline-flex items-center gap-1 rounded bg-black/40 border border-red-500/40 px-1.5 py-0.5 font-mono text-red-100 hover:border-red-400 transition-colors"
+            >
+                {ip}
+                {copied === ip
+                    ? <span className="text-emerald-400">copied</span>
+                    : <Copy size={10} className="opacity-70" />}
+            </button>
+        </span>
+    );
+};
 
 const formatTs = (ts) => {
     if (!ts) return null;
@@ -504,6 +533,7 @@ const HuginnArbitrage = () => {
                                                 : 'Proxy authentication failed.'}
                                         </span>{' '}
                                         {csfloatStatus.proxy_hint.hint}
+                                        <WhitelistIp ip={csfloatStatus.public_ip} onCopy={copyItemName} copied={copiedName} />
                                     </div>
                                 </div>
                             )}
@@ -581,6 +611,7 @@ const HuginnArbitrage = () => {
                                                         {prx.code === 'ip_forbidden' ? 'ip_forbidden — ' : ''}
                                                     </span>
                                                     {prx.hint}
+                                                    <WhitelistIp ip={connCheck.public_ip} onCopy={copyItemName} copied={copiedName} />
                                                 </span>
                                             </div>
                                         )}

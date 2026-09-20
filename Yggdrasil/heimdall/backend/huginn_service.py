@@ -103,6 +103,38 @@ def classify_proxy_error(text):
     return {}
 
 
+_PUBLIC_IP_CACHE = {'ip': None, 'at': 0.0}
+_PUBLIC_IP_TTL_SEC = 300
+
+
+def _looks_like_ip(s):
+    if not s or len(s) > 45:
+        return False
+    if ':' in s:                      # crude IPv6 acceptance
+        return all(c in '0123456789abcdefABCDEF:' for c in s)
+    parts = s.split('.')              # IPv4
+    return len(parts) == 4 and all(p.isdigit() and 0 <= int(p) <= 255 for p in parts)
+
+
+def detect_public_ip(timeout=6, force=False):
+    """Best-effort public egress IP of this server — the address Bright Data (and any
+    remote) actually sees connecting, which is what must be whitelisted in the proxy
+    zone. Cached for a few minutes so it is safe to call from status polls. Returns the
+    IP string, or None if every echo service is unreachable."""
+    now = time.time()
+    if not force and _PUBLIC_IP_CACHE['ip'] and now - _PUBLIC_IP_CACHE['at'] < _PUBLIC_IP_TTL_SEC:
+        return _PUBLIC_IP_CACHE['ip']
+    for url in ('https://api.ipify.org', 'https://checkip.amazonaws.com', 'https://ifconfig.me/ip'):
+        try:
+            ip = urllib.request.urlopen(url, timeout=timeout).read().decode('utf-8', 'replace').strip()
+            if _looks_like_ip(ip):
+                _PUBLIC_IP_CACHE.update({'ip': ip, 'at': now})
+                return ip
+        except Exception:
+            continue
+    return None
+
+
 def _proxy_with_session(proxy, sid):
     """Inject a Bright Data '-session-<sid>' into the proxy username so this request
     gets its own exit IP (rotating sessions = new IP per session id)."""
@@ -1596,6 +1628,10 @@ class HuginnService:
         result['direct'] = _probe(via_proxy=False)
         result['proxy'] = _probe(via_proxy=True) if proxy else {'ok': None, 'detail': 'no proxy configured'}
         result['usable'] = bool(result['direct'].get('ok') or result['proxy'].get('ok'))
+        # The IP the user must whitelist in the Bright Data zone. Detect it whenever the
+        # proxy is not working, so the UI can name it explicitly.
+        if proxy and not result['proxy'].get('ok'):
+            result['public_ip'] = detect_public_ip()
         return result
 
     def _combine_autobuy(self, token, pulse_url, pulse_body, buy_side='second'):

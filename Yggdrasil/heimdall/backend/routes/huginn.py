@@ -11,7 +11,7 @@ import time
 from flask import Blueprint, jsonify, request
 
 from context import ctx
-from huginn_service import load_csfloat_keys, load_csfloat_proxy, classify_proxy_error
+from huginn_service import load_csfloat_keys, load_csfloat_proxy, classify_proxy_error, detect_public_ip
 from notifications import notification_channel, send_notification
 
 bp = Blueprint('huginn', __name__)
@@ -96,11 +96,15 @@ def huginn_csfloat_buy_orders_status():
     # call it out plainly instead of showing a raw connection string.
     proxy_hint = (classify_proxy_error(job.get('error') or '')
                   or classify_proxy_error((cache or {}).get('reason') or ''))
+    # When there is a proxy problem, name the exact IP to whitelist (cached, so this
+    # is cheap on the frequent status polls).
+    public_ip = detect_public_ip() if proxy_hint else None
     return jsonify({
         'job': job,
         'keys': ctx.huginn_service.csfloat_keys.status(key_pairs),
         'proxy_enabled': bool(load_csfloat_proxy()),
         'proxy_hint': proxy_hint or None,
+        'public_ip': public_ip,
         'cache': None if not cache else {
             'fetched_at': cache.get('fetched_at'),
             'updated_at': cache.get('updated_at'),

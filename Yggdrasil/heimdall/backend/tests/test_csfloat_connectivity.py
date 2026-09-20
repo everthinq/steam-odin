@@ -9,10 +9,14 @@ of a silent, misleading "no buy orders exist":
 - fetch_csfloat_buy_orders() aborts fast, raises loudly, and writes an incomplete
   cache carrying the explicit reason (never complete=True/count=0 on a total failure).
 """
+import io
+
 import huginn_service
 from huginn_service import (
     HuginnService,
     classify_proxy_error,
+    detect_public_ip,
+    _looks_like_ip,
     _CSFloatUnavailable,
     _CSFloatRateLimited,
 )
@@ -37,6 +41,44 @@ def test_classify_unknown_returns_empty():
     assert classify_proxy_error('TLS/SSL connection has been closed (EOF)') == {}
     assert classify_proxy_error('') == {}
     assert classify_proxy_error(None) == {}
+
+
+# --- public IP detection ---------------------------------------------------
+
+def test_looks_like_ip():
+    assert _looks_like_ip('195.155.171.46')
+    assert _looks_like_ip('8.8.8.8')
+    assert _looks_like_ip('2001:db8::1')
+    assert not _looks_like_ip('999.1.1.1')      # octet out of range
+    assert not _looks_like_ip('not-an-ip')
+    assert not _looks_like_ip('1.2.3')          # too few octets
+    assert not _looks_like_ip('')
+    assert not _looks_like_ip(None)
+
+
+def test_detect_public_ip_parses_and_caches(monkeypatch):
+    huginn_service._PUBLIC_IP_CACHE.update({'ip': None, 'at': 0.0})
+    calls = {'n': 0}
+
+    def fake_urlopen(url, timeout=0):
+        calls['n'] += 1
+        return io.BytesIO(b'195.155.171.46\n')      # echo services return bare text
+
+    monkeypatch.setattr(huginn_service.urllib.request, 'urlopen', fake_urlopen)
+    assert detect_public_ip() == '195.155.171.46'
+    # Cached: a second call does not hit the network again.
+    assert detect_public_ip() == '195.155.171.46'
+    assert calls['n'] == 1
+
+
+def test_detect_public_ip_all_fail_returns_none(monkeypatch):
+    huginn_service._PUBLIC_IP_CACHE.update({'ip': None, 'at': 0.0})
+
+    def boom(url, timeout=0):
+        raise OSError('no network')
+
+    monkeypatch.setattr(huginn_service.urllib.request, 'urlopen', boom)
+    assert detect_public_ip() is None
 
 
 # --- check_csfloat_connectivity -------------------------------------------
@@ -66,12 +108,15 @@ def test_connectivity_direct_blocked_proxy_ip_forbidden(monkeypatch):
         raise _CSFloatUnavailable('connection failed: TLS/SSL connection has been closed (EOF)')
 
     monkeypatch.setattr(HuginnService, '_csfloat_fetch_once', fake_fetch)
+    monkeypatch.setattr(huginn_service, 'detect_public_ip', lambda: '195.155.171.46')
     res = _svc().check_csfloat_connectivity()
     assert res['direct']['ok'] is False
     assert res['proxy']['ok'] is False
     assert res['proxy']['code'] == 'ip_forbidden'
     assert 'allowlist' in res['proxy']['hint'].lower()
     assert res['usable'] is False
+    # The exact IP to whitelist is surfaced for the UI.
+    assert res['public_ip'] == '195.155.171.46'
 
 
 def test_connectivity_proxy_reachable(monkeypatch):
