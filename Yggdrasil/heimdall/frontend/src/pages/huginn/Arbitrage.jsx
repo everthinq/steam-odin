@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useDeferredValue } from 'react';
 import { Link } from 'react-router-dom';
-import { LayoutDashboard, RefreshCw, AlertTriangle, Search, ChevronDown, Coins, Boxes, Repeat, Gavel, Users } from 'lucide-react';
+import { LayoutDashboard, RefreshCw, AlertTriangle, Search, ChevronDown, Coins, Boxes, Repeat, Gavel, Users, Radio } from 'lucide-react';
 import { matchesSearchQuery } from '../../utils/transferItems';
 import SteamMarketLink from '../../components/SteamMarketLink';
 import BuffMarketLink from '../../components/BuffMarketLink';
@@ -103,11 +103,32 @@ const HuginnArbitrage = () => {
     const [csfloatStatus, setCsfloatStatus] = useState(null);
     const csfloatJobRunning = csfloatStatus?.job?.running ?? false;
 
+    // On-demand connectivity probe (direct + proxy) so the proxy / IP whitelist can be
+    // verified without running a full sweep. {proxy_enabled, direct, proxy, usable}.
+    const [connCheck, setConnCheck] = useState(null);
+    const [connChecking, setConnChecking] = useState(false);
+
     const fetchCsfloatStatus = async () => {
         try {
             const r = await fetch('/api/huginn/csfloat/buy-orders');
             if (r.ok) setCsfloatStatus(await r.json());
         } catch { /* ignore */ }
+    };
+
+    const handleTestConnection = async () => {
+        if (connChecking) return;
+        setConnChecking(true);
+        setConnCheck(null);
+        try {
+            const r = await fetch('/api/huginn/csfloat/connectivity');
+            const d = await r.json().catch(() => ({}));
+            if (!r.ok) { setConnCheck({ error: d.error || 'Connectivity check failed' }); return; }
+            setConnCheck(d);
+        } catch (err) {
+            setConnCheck({ error: err.message });
+        } finally {
+            setConnChecking(false);
+        }
     };
     useEffect(() => { fetchCsfloatStatus(); }, []);
     // Poll while a sweep is running so the progress bar advances.
@@ -450,15 +471,42 @@ const HuginnArbitrage = () => {
                                 )}
                                 <button
                                     type="button"
+                                    onClick={handleTestConnection}
+                                    disabled={connChecking || csfloatJobRunning}
+                                    title="Ping CSFloat direct + proxy to check the proxy / IP whitelist without running a full sweep"
+                                    className="ml-auto flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-black/30 border border-white/10 hover:border-white/25 text-slate-300 hover:text-white text-xs font-medium disabled:opacity-40 disabled:cursor-not-allowed transition-colors shrink-0"
+                                >
+                                    <Radio size={12} className={connChecking ? 'animate-pulse' : ''} />
+                                    {connChecking ? 'Testing…' : 'Test connection'}
+                                </button>
+                                <button
+                                    type="button"
                                     onClick={handleFetchBuyOrders}
                                     disabled={csfloatJobRunning || !scanData}
                                     title={!scanData ? 'Run "Get all items" first to know which items you own' : 'Fetch CSFloat buy orders for your owned items'}
-                                    className="ml-auto flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-purple-600/70 hover:bg-purple-500 text-white text-xs font-medium disabled:opacity-40 disabled:cursor-not-allowed transition-colors shrink-0"
+                                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-purple-600/70 hover:bg-purple-500 text-white text-xs font-medium disabled:opacity-40 disabled:cursor-not-allowed transition-colors shrink-0"
                                 >
                                     <RefreshCw size={12} className={csfloatJobRunning ? 'animate-spin' : ''} />
                                     {btnLabel}
                                 </button>
                             </div>
+
+                            {/* Explicit proxy-failure banner — Bright Data ip_forbidden and the
+                                like are config problems the user must fix, so call them out
+                                plainly rather than burying them in a raw connection string. */}
+                            {csfloatStatus?.proxy_hint?.hint && (
+                                <div className="mt-2 flex items-start gap-2 rounded-lg bg-red-500/10 border border-red-500/30 px-3 py-2">
+                                    <AlertTriangle size={14} className="text-red-400 shrink-0 mt-0.5" />
+                                    <div className="text-[11px] text-red-300">
+                                        <span className="font-bold">
+                                            {csfloatStatus.proxy_hint.code === 'ip_forbidden'
+                                                ? 'Proxy rejected this IP (ip_forbidden).'
+                                                : 'Proxy authentication failed.'}
+                                        </span>{' '}
+                                        {csfloatStatus.proxy_hint.hint}
+                                    </div>
+                                </div>
+                            )}
                             {csfloatJobRunning && (
                                 <div className="mt-2 h-1 w-full bg-black/30 rounded-full overflow-hidden">
                                     <div className="h-full bg-purple-500 transition-all" style={{ width: `${pct}%` }} />
@@ -499,6 +547,49 @@ const HuginnArbitrage = () => {
                                     <AlertTriangle size={11} /> {job.error}
                                 </p>
                             )}
+
+                            {/* On-demand connectivity probe result */}
+                            {connCheck && (() => {
+                                if (connCheck.error) {
+                                    return (
+                                        <p className="mt-2 text-[11px] text-red-400 flex items-center gap-1">
+                                            <AlertTriangle size={11} /> {connCheck.error}
+                                        </p>
+                                    );
+                                }
+                                const dir = connCheck.direct || {};
+                                const prx = connCheck.proxy || {};
+                                const dot = (ok) => ok === true ? 'bg-emerald-400' : ok === null ? 'bg-slate-500' : 'bg-red-400';
+                                const word = (ok) => ok === true ? 'reachable' : ok === null ? 'not configured' : 'blocked';
+                                return (
+                                    <div className="mt-2 rounded-lg bg-black/20 border border-white/10 px-3 py-2 space-y-1">
+                                        <div className="flex items-center gap-2 text-[11px] text-slate-300">
+                                            <span className={`w-1.5 h-1.5 rounded-full ${dot(dir.ok)}`} />
+                                            <span className="font-medium w-14">Direct</span>
+                                            <span className="text-slate-400">{word(dir.ok)}{dir.rate_limited ? ' (throttled, but reachable)' : ''}</span>
+                                        </div>
+                                        <div className="flex items-center gap-2 text-[11px] text-slate-300">
+                                            <span className={`w-1.5 h-1.5 rounded-full ${dot(prx.ok)}`} />
+                                            <span className="font-medium w-14">Proxy</span>
+                                            <span className="text-slate-400">{word(prx.ok)}{prx.rate_limited ? ' (throttled, but reachable)' : ''}</span>
+                                        </div>
+                                        {prx.hint && (
+                                            <div className="flex items-start gap-1.5 text-[11px] text-red-300 pt-0.5">
+                                                <AlertTriangle size={11} className="shrink-0 mt-0.5" />
+                                                <span>
+                                                    <span className="font-bold">
+                                                        {prx.code === 'ip_forbidden' ? 'ip_forbidden — ' : ''}
+                                                    </span>
+                                                    {prx.hint}
+                                                </span>
+                                            </div>
+                                        )}
+                                        {connCheck.usable
+                                            ? <p className="text-[10px] text-emerald-400/80">CSFloat is reachable — the sweep can run.</p>
+                                            : <p className="text-[10px] text-red-400/80">Neither path works — the sweep cannot fetch buy orders until this is fixed.</p>}
+                                    </div>
+                                );
+                            })()}
                         </div>
                     );
                 })()}

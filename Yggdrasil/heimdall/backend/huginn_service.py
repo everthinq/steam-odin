@@ -2,6 +2,8 @@ import copy
 import json
 import logging
 import os
+import socket
+import ssl
 import threading
 import time
 import urllib.request
@@ -59,6 +61,10 @@ _CSFLOAT_RESUME_WINDOW_SEC = 2 * 60 * 60
 # Checkpoint the partial cache to disk every N processed items so progress survives
 # a crash / restart and can always be resumed.
 _CSFLOAT_CHECKPOINT_EVERY = 25
+# If the first N items in a row all fail to CONNECT (direct IP-blocked + proxy down)
+# and nothing has priced yet, abort the sweep with a clear error instead of grinding
+# through hundreds of unreachable items. A resume retries once the route is healthy.
+_CSFLOAT_ABORT_AFTER_UNREACHABLE = 8
 
 
 class _CSFloatRateLimited(Exception):
@@ -70,6 +76,31 @@ class _CSFloatUnavailable(Exception):
     """Raised when a request can't get through for a non-key reason (a proxy exit IP
     kept getting bot-challenged / 403 across retries). The sweep just skips this item
     and keeps going — it does NOT bench the key."""
+
+
+def classify_proxy_error(text):
+    """Turn a raw connection-error string into an explicit, actionable hint for the UI.
+
+    Bright Data's most common failure is `407 Auth Failed (code: ip_forbidden)` — the
+    machine's public IP is not on the zone's allowlist. That is a config problem the
+    user must fix, so we surface it plainly rather than as a generic "connection
+    failed". Returns {} when nothing specific is recognised.
+    """
+    t = (text or '').lower()
+    if 'ip_forbidden' in t:
+        return {
+            'code': 'ip_forbidden',
+            'hint': ("Bright Data rejected this server's IP (ip_forbidden). Add your current "
+                     "public IP to the proxy zone's allowlist in the Bright Data dashboard, "
+                     "or update the proxy in csfloat_keys.json."),
+        }
+    if '407' in t or 'auth failed' in t or 'proxy auth' in t:
+        return {
+            'code': 'proxy_auth_failed',
+            'hint': ("Bright Data proxy authentication failed (HTTP 407). Check the proxy "
+                     "username / password / zone in csfloat_keys.json."),
+        }
+    return {}
 
 
 def _proxy_with_session(proxy, sid):
@@ -1276,6 +1307,14 @@ class HuginnService:
             if e.code == 403:
                 raise _CSFloatUnavailable('CSFloat forbidden (HTTP 403)')
             raise
+        except (urllib.error.URLError, ssl.SSLError, socket.timeout, ConnectionError) as e:
+            # Transport-level failure: TLS reset/EOF (CSFloat blocking the datacenter IP),
+            # DNS/connection refused, proxy tunnel 407, or timeout. Surface it as
+            # "unavailable" so _csfloat_get falls back to the proxy (direct is blocked),
+            # and so the sweep counts it as "couldn't reach CSFloat" rather than
+            # silently recording "this item has no buy order".
+            detail = getattr(e, 'reason', None) or e
+            raise _CSFloatUnavailable(f'connection failed: {detail}')
 
     def _csfloat_get(self, path, api_key, proxy=None):
         """GET a CSFloat API path, DIRECT first (reliable), falling back to the proxy
@@ -1416,9 +1455,12 @@ class HuginnService:
         reason = None
         since_checkpoint = 0
         consecutive_waits = 0
+        consecutive_unreachable = 0    # items in a row we couldn't even connect for
+        last_unreachable = None
         for name in todo:
             order = None
             paused = False
+            unreachable = False
             # Try this item across keys; a rate-limited key is benched and we try another.
             while True:
                 key = self.csfloat_keys.next_key(keys)
@@ -1453,14 +1495,38 @@ class HuginnService:
                     continue                      # key throttled → bench it, try next key
                 except _CSFloatUnavailable as e:
                     self.csfloat_keys.mark_ok(key) # not the key's fault (proxy IP) — don't bench
-                    logger.info(f'[HUGINN] CSFloat item skipped ({name!r}): {e}')
-                    break                         # skip this item, keep the sweep going
+                    unreachable = True             # couldn't reach CSFloat for this item
+                    last_unreachable = str(e)
+                    logger.info(f'[HUGINN] CSFloat item unreachable ({name!r}): {e}')
+                    break
                 except Exception as e:
                     logger.error(f'[HUGINN] CSFloat buy-order fetch failed for {name!r}: {e}')
-                    break                         # skip this item, keep the sweep going
+                    break                         # unexpected → skip this item permanently
 
             if paused:
                 break
+
+            if unreachable:
+                # A transport failure, not a genuine "no buy order". Do NOT mark the item
+                # processed, so a Resume retries it once the route is healthy. If we can't
+                # reach CSFloat at all (direct IP-blocked AND proxy down), abort early with
+                # a clear reason instead of grinding through every remaining item.
+                consecutive_unreachable += 1
+                if progress:
+                    progress(len(processed), total, name, len(by_name))
+                if consecutive_unreachable >= _CSFLOAT_ABORT_AFTER_UNREACHABLE and not by_name:
+                    hint = classify_proxy_error(last_unreachable or '').get('hint')
+                    reason = (f'CSFloat unreachable — {consecutive_unreachable} items in a row failed to '
+                              f'connect. '
+                              + (hint or (f'Direct requests are IP-blocked and the proxy is not working '
+                                          f'({last_unreachable}); check the proxy / IP whitelist in '
+                                          f'csfloat_keys.json.')))
+                    logger.error(f'[HUGINN] CSFloat sweep aborted: {reason}')
+                    break
+                time.sleep(_CSFLOAT_REQUEST_DELAY)
+                continue
+
+            consecutive_unreachable = 0    # connected → reset the abort counter
             if order:
                 by_name[name] = order
             processed.add(name)
@@ -1474,13 +1540,63 @@ class HuginnService:
             time.sleep(_CSFLOAT_REQUEST_DELAY)
 
         complete = reason is None and all(n in processed for n in names)
-        return self._write_buyorders_cache(by_name, processed, total, started_at, complete, reason)
+        result = self._write_buyorders_cache(by_name, processed, total, started_at, complete, reason)
+        if reason and not by_name:
+            # Total failure (nothing priced). Raise so the UI shows a loud error instead
+            # of a silent, misleading "swept fine, no buy orders exist" / "No deals".
+            raise RuntimeError(reason)
+        return result
 
     def get_csfloat_buy_orders_cache(self):
         if not os.path.exists(CSFLOAT_BUYORDERS_CACHE):
             return None
         with open(CSFLOAT_BUYORDERS_CACHE) as f:
             return json.load(f)
+
+    def check_csfloat_connectivity(self):
+        """Probe CSFloat reachability WITHOUT running a full sweep: at most one direct
+        and one proxied request. Reports which path works and, when the proxy rejects
+        this server's IP (Bright Data ip_forbidden), an explicit hint for the UI.
+
+        Shape: {proxy_enabled, direct:{ok,detail,...}, proxy:{ok,detail,code?,hint?},
+        usable, checked_at}. `ok` is True/False, or None for the proxy when none is set.
+        """
+        keys = [kp['key'] for kp in load_csfloat_keys()]
+        proxy = load_csfloat_proxy()
+        result = {
+            'proxy_enabled': bool(proxy),
+            'checked_at': datetime.now(timezone.utc).isoformat(),
+        }
+        if not keys:
+            no_keys = {'ok': False, 'detail': 'no CSFloat API keys configured (edit csfloat_keys.json)'}
+            result['direct'] = dict(no_keys)
+            result['proxy'] = dict(no_keys)
+            result['usable'] = False
+            return result
+
+        key = keys[0]
+        q = urllib.parse.urlencode({
+            'limit': 1, 'sort_by': 'lowest_price',
+            'market_hash_name': 'AK-47 | Redline (Field-Tested)',
+        })
+        url = f'{_CSFLOAT_API_BASE}/listings?{q}'
+
+        def _probe(via_proxy):
+            try:
+                self._csfloat_fetch_once(url, key, proxy if via_proxy else None)
+                return {'ok': True, 'detail': 'reachable'}
+            except _CSFloatRateLimited as e:
+                # Reached CSFloat, just throttled — the path itself works.
+                return {'ok': True, 'detail': str(e), 'rate_limited': True}
+            except _CSFloatUnavailable as e:
+                return {'ok': False, 'detail': str(e), **classify_proxy_error(str(e))}
+            except Exception as e:
+                return {'ok': False, 'detail': str(e), **classify_proxy_error(str(e))}
+
+        result['direct'] = _probe(via_proxy=False)
+        result['proxy'] = _probe(via_proxy=True) if proxy else {'ok': None, 'detail': 'no proxy configured'}
+        result['usable'] = bool(result['direct'].get('ok') or result['proxy'].get('ok'))
+        return result
 
     def _combine_autobuy(self, token, pulse_url, pulse_body, buy_side='second'):
         """Combine a buy-side market's min price (from pulse) with CSFloat's highest

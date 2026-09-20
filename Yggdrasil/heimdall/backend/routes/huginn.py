@@ -11,7 +11,7 @@ import time
 from flask import Blueprint, jsonify, request
 
 from context import ctx
-from huginn_service import load_csfloat_keys, load_csfloat_proxy
+from huginn_service import load_csfloat_keys, load_csfloat_proxy, classify_proxy_error
 from notifications import notification_channel, send_notification
 
 bp = Blueprint('huginn', __name__)
@@ -91,10 +91,16 @@ def huginn_csfloat_buy_orders_status():
         job = dict(_csfloat_job)
     cache = ctx.huginn_service.get_csfloat_buy_orders_cache()
     key_pairs = load_csfloat_keys()
+    # Surface an explicit proxy hint (e.g. Bright Data ip_forbidden) when either the
+    # last sweep's failure reason or the running job's error names it, so the UI can
+    # call it out plainly instead of showing a raw connection string.
+    proxy_hint = (classify_proxy_error(job.get('error') or '')
+                  or classify_proxy_error((cache or {}).get('reason') or ''))
     return jsonify({
         'job': job,
         'keys': ctx.huginn_service.csfloat_keys.status(key_pairs),
         'proxy_enabled': bool(load_csfloat_proxy()),
+        'proxy_hint': proxy_hint or None,
         'cache': None if not cache else {
             'fetched_at': cache.get('fetched_at'),
             'updated_at': cache.get('updated_at'),
@@ -106,6 +112,17 @@ def huginn_csfloat_buy_orders_status():
             'reason': cache.get('reason'),
         },
     })
+
+@bp.route('/api/huginn/csfloat/connectivity', methods=['GET'])
+def huginn_csfloat_connectivity():
+    """Probe CSFloat reachability (direct + proxy) without running a full sweep, so the
+    proxy / IP whitelist can be verified on demand. Returns an explicit ip_forbidden
+    hint when Bright Data rejects this server's IP."""
+    try:
+        result = ctx.huginn_service.check_csfloat_connectivity()
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+    return jsonify(result)
 
 @bp.route('/api/huginn/csfloat/buy-orders', methods=['POST'])
 def huginn_csfloat_buy_orders_fetch():
