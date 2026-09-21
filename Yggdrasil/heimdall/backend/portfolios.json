@@ -4,7 +4,7 @@
       "id": "fbf692611b3c",
       "name": "everthinklol",
       "created_at": "2026-07-21T13:40:18.177768+00:00",
-      "updated_at": "2026-09-21T19:55:58.807073+00:00",
+      "updated_at": "2026-09-21T20:24:01.966316+00:00",
       "transactions": [
         {
           "id": "3ea474874554",
@@ -9557,6 +9557,45 @@
           "fee_percent": 0.0,
           "is_arbitrage": false,
           "created_at": "2026-09-21T19:55:58.807034+00:00"
+        },
+        {
+          "id": "b9c7961feaeb",
+          "item_name": "Sticker | High Heat",
+          "type": "buy",
+          "qty": 51,
+          "price": 0.34,
+          "platform": "lisskins",
+          "date": "2026-09-21",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": false,
+          "created_at": "2026-09-21T20:09:52.382599+00:00"
+        },
+        {
+          "id": "d2f477da935d",
+          "item_name": "Sticker | Gold Web (Foil)",
+          "type": "buy",
+          "qty": 36,
+          "price": 3.84,
+          "platform": "cs.money.market",
+          "date": "2026-09-21",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": false,
+          "created_at": "2026-09-21T20:15:10.505537+00:00"
+        },
+        {
+          "id": "2611e8c04e56",
+          "item_name": "SCAR-20 | Poultrygeist (Factory New)",
+          "type": "buy",
+          "qty": 9,
+          "price": 0.18,
+          "platform": "cs.money.trade",
+          "date": "2026-09-21",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": false,
+          "created_at": "2026-09-21T20:24:01.966291+00:00"
         }
       ]
     },
