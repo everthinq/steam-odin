@@ -4,7 +4,7 @@
       "id": "fbf692611b3c",
       "name": "everthinklol",
       "created_at": "2026-07-21T13:40:18.177768+00:00",
-      "updated_at": "2026-09-20T09:28:11.900223+00:00",
+      "updated_at": "2026-09-21T12:52:26.026826+00:00",
       "transactions": [
         {
           "id": "3ea474874554",
@@ -9406,14 +9406,53 @@
           "id": "50388935629b",
           "item_name": "Sticker | FlyQuest (Holo) | Budapest 2025",
           "type": "buy",
-          "qty": 1,
-          "price": 1.28,
+          "qty": 3,
+          "price": 1.35,
           "platform": "lisskins",
-          "date": "2026-09-20",
+          "date": "2026-09-21",
           "note": "",
           "fee_percent": 0.0,
-          "is_arbitrage": false,
+          "is_arbitrage": true,
           "created_at": "2026-09-20T09:28:11.900176+00:00"
+        },
+        {
+          "id": "4b5434d50715",
+          "item_name": "Sticker | FlyQuest (Holo) | Budapest 2025",
+          "type": "sell",
+          "qty": 3,
+          "price": 1.56,
+          "platform": "csfloat",
+          "date": "2026-09-21",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": true,
+          "created_at": "2026-09-21T12:10:38.051646+00:00"
+        },
+        {
+          "id": "5815f846dc6d",
+          "item_name": "Sticker | SAW (Holo) | Copenhagen 2024",
+          "type": "sell",
+          "qty": 2,
+          "price": 2.69,
+          "platform": "csfloat",
+          "date": "2026-09-21",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": true,
+          "created_at": "2026-09-21T12:52:01.904212+00:00"
+        },
+        {
+          "id": "754ec51e63ea",
+          "item_name": "Sticker | SAW (Holo) | Copenhagen 2024",
+          "type": "buy",
+          "qty": 2,
+          "price": 2.6,
+          "platform": "cs.money.trade",
+          "date": "2026-09-21",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": true,
+          "created_at": "2026-09-21T12:52:26.026802+00:00"
         }
       ]
     },
