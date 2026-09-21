@@ -4,7 +4,7 @@
       "id": "fbf692611b3c",
       "name": "everthinklol",
       "created_at": "2026-07-21T13:40:18.177768+00:00",
-      "updated_at": "2026-09-21T12:52:26.026826+00:00",
+      "updated_at": "2026-09-21T14:15:10.132415+00:00",
       "transactions": [
         {
           "id": "3ea474874554",
@@ -9453,6 +9453,19 @@
           "fee_percent": 0.0,
           "is_arbitrage": true,
           "created_at": "2026-09-21T12:52:26.026802+00:00"
+        },
+        {
+          "id": "f6ca138aefa4",
+          "item_name": "Revolution Case",
+          "type": "buy",
+          "qty": 24,
+          "price": 0.18,
+          "platform": "lisskins",
+          "date": "2026-09-21",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": false,
+          "created_at": "2026-09-21T14:15:10.132367+00:00"
         }
       ]
     },
