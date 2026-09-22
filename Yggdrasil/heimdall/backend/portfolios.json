@@ -4,7 +4,7 @@
       "id": "fbf692611b3c",
       "name": "everthinklol",
       "created_at": "2026-07-21T13:40:18.177768+00:00",
-      "updated_at": "2026-09-22T17:40:22.625250+00:00",
+      "updated_at": "2026-09-22T19:39:56.342584+00:00",
       "transactions": [
         {
           "id": "3ea474874554",
@@ -9627,14 +9627,40 @@
           "id": "3dc6e7fc3f0f",
           "item_name": "Glock-18 | Green Line (Minimal Wear)",
           "type": "buy",
-          "qty": 13,
+          "qty": 25,
           "price": 1.0,
           "platform": "lisskins",
-          "date": "2026-09-22",
+          "date": "2026-09-22T22:30:00",
           "note": "",
           "fee_percent": 0.0,
           "is_arbitrage": true,
           "created_at": "2026-09-22T17:40:22.625205+00:00"
+        },
+        {
+          "id": "0a6a030e7710",
+          "item_name": "Kilowatt Case",
+          "type": "buy",
+          "qty": 370,
+          "price": 0.11,
+          "platform": "lisskins",
+          "date": "2026-09-22",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": false,
+          "created_at": "2026-09-22T19:28:56.513924+00:00"
+        },
+        {
+          "id": "ca54e661db10",
+          "item_name": "Glock-18 | Green Line (Minimal Wear)",
+          "type": "sell",
+          "qty": 25,
+          "price": 1.03,
+          "platform": "cs.money.trade",
+          "date": "2026-09-22T22:30:00",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": true,
+          "created_at": "2026-09-22T19:33:04.265210+00:00"
         }
       ]
     },
@@ -11567,7 +11593,7 @@
       "id": "99c18756f9ee",
       "name": "everthinklol1",
       "created_at": "2026-07-21T14:49:46.392883+00:00",
-      "updated_at": "2026-09-14T22:30:17.280971+00:00",
+      "updated_at": "2026-09-22T19:07:29.812036+00:00",
       "transactions": [
         {
           "id": "ed83a19ba6bc",
@@ -15722,6 +15748,19 @@
           "fee_percent": 0.0,
           "is_arbitrage": false,
           "created_at": "2026-09-14T21:29:24.080086+00:00"
+        },
+        {
+          "id": "a3ff6d7b0ecb",
+          "item_name": "Kilowatt Case",
+          "type": "buy",
+          "qty": 950,
+          "price": 0.11,
+          "platform": "lisskins",
+          "date": "2026-09-22",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": false,
+          "created_at": "2026-09-22T19:07:29.812000+00:00"
         }
       ]
     },
