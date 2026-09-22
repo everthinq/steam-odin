@@ -4,7 +4,7 @@
       "id": "fbf692611b3c",
       "name": "everthinklol",
       "created_at": "2026-07-21T13:40:18.177768+00:00",
-      "updated_at": "2026-09-21T22:07:59.975617+00:00",
+      "updated_at": "2026-09-22T09:20:37.741858+00:00",
       "transactions": [
         {
           "id": "3ea474874554",
@@ -9429,19 +9429,6 @@
           "created_at": "2026-09-21T12:10:38.051646+00:00"
         },
         {
-          "id": "5815f846dc6d",
-          "item_name": "Sticker | SAW (Holo) | Copenhagen 2024",
-          "type": "sell",
-          "qty": 2,
-          "price": 2.69,
-          "platform": "csfloat",
-          "date": "2026-09-21",
-          "note": "",
-          "fee_percent": 0.0,
-          "is_arbitrage": true,
-          "created_at": "2026-09-21T12:52:01.904212+00:00"
-        },
-        {
           "id": "754ec51e63ea",
           "item_name": "Sticker | SAW (Holo) | Copenhagen 2024",
           "type": "buy",
@@ -9451,7 +9438,7 @@
           "date": "2026-09-21",
           "note": "",
           "fee_percent": 0.0,
-          "is_arbitrage": true,
+          "is_arbitrage": false,
           "created_at": "2026-09-21T12:52:26.026802+00:00"
         },
         {
@@ -9605,10 +9592,23 @@
           "price": 1.05,
           "platform": "cs.money.trade",
           "date": "2026-09-22",
-          "note": "0.0111",
+          "note": "float: 0.0111",
           "fee_percent": 0.0,
           "is_arbitrage": false,
           "created_at": "2026-09-21T22:07:18.054734+00:00"
+        },
+        {
+          "id": "7b2ecad56144",
+          "item_name": "Sticker | Flex",
+          "type": "buy",
+          "qty": 8,
+          "price": 0.62,
+          "platform": "lisskins",
+          "date": "2026-09-22",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": false,
+          "created_at": "2026-09-22T09:20:20.290707+00:00"
         }
       ]
     },
