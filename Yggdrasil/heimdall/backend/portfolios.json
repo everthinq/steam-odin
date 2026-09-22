@@ -4,7 +4,7 @@
       "id": "fbf692611b3c",
       "name": "everthinklol",
       "created_at": "2026-07-21T13:40:18.177768+00:00",
-      "updated_at": "2026-09-22T10:31:49.355009+00:00",
+      "updated_at": "2026-09-22T17:40:22.625250+00:00",
       "transactions": [
         {
           "id": "3ea474874554",
@@ -9622,6 +9622,19 @@
           "fee_percent": 0.0,
           "is_arbitrage": false,
           "created_at": "2026-09-22T10:00:19.298088+00:00"
+        },
+        {
+          "id": "3dc6e7fc3f0f",
+          "item_name": "Glock-18 | Green Line (Minimal Wear)",
+          "type": "buy",
+          "qty": 13,
+          "price": 1.0,
+          "platform": "lisskins",
+          "date": "2026-09-22",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": true,
+          "created_at": "2026-09-22T17:40:22.625205+00:00"
         }
       ]
     },
