@@ -4,7 +4,7 @@
       "id": "fbf692611b3c",
       "name": "everthinklol",
       "created_at": "2026-07-21T13:40:18.177768+00:00",
-      "updated_at": "2026-09-22T20:07:51.900453+00:00",
+      "updated_at": "2026-09-23T06:08:04.537115+00:00",
       "transactions": [
         {
           "id": "3ea474874554",
@@ -9661,6 +9661,45 @@
           "fee_percent": 0.0,
           "is_arbitrage": true,
           "created_at": "2026-09-22T19:33:04.265210+00:00"
+        },
+        {
+          "id": "6adcbe36759b",
+          "item_name": "Fever Case",
+          "type": "buy",
+          "qty": 33,
+          "price": 0.53,
+          "platform": "csfloat",
+          "date": "2026-09-23",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": false,
+          "created_at": "2026-09-23T06:01:38.773665+00:00"
+        },
+        {
+          "id": "0b1c337bb3a1",
+          "item_name": "MAC-10 | Classic Crate (Well-Worn)",
+          "type": "buy",
+          "qty": 1,
+          "price": 0.31,
+          "platform": "cs.money.trade",
+          "date": "2026-09-23",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": true,
+          "created_at": "2026-09-23T06:07:36.348990+00:00"
+        },
+        {
+          "id": "642ffbf7daac",
+          "item_name": "MAC-10 | Classic Crate (Well-Worn)",
+          "type": "sell",
+          "qty": 1,
+          "price": 0.5,
+          "platform": "steam",
+          "date": "2026-09-23",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": true,
+          "created_at": "2026-09-23T06:08:04.537099+00:00"
         }
       ]
     },
