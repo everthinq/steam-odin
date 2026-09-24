@@ -4,7 +4,7 @@
       "id": "fbf692611b3c",
       "name": "everthinklol",
       "created_at": "2026-07-21T13:40:18.177768+00:00",
-      "updated_at": "2026-09-23T06:08:04.537115+00:00",
+      "updated_at": "2026-09-24T10:52:48.470982+00:00",
       "transactions": [
         {
           "id": "3ea474874554",
@@ -9700,6 +9700,45 @@
           "fee_percent": 0.0,
           "is_arbitrage": true,
           "created_at": "2026-09-23T06:08:04.537099+00:00"
+        },
+        {
+          "id": "a0a380910715",
+          "item_name": "M249 | Hypnosis (Battle-Scarred)",
+          "type": "buy",
+          "qty": 13,
+          "price": 0.22,
+          "platform": "cs.money.trade",
+          "date": "2026-09-24",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": false,
+          "created_at": "2026-09-24T10:47:44.792829+00:00"
+        },
+        {
+          "id": "4f926255eade",
+          "item_name": "Nova | Wood Fired (Minimal Wear)",
+          "type": "buy",
+          "qty": 2,
+          "price": 0.77,
+          "platform": "cs.money.trade",
+          "date": "2026-09-24",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": false,
+          "created_at": "2026-09-24T10:49:21.480934+00:00"
+        },
+        {
+          "id": "84eb3da3ad41",
+          "item_name": "Sticker | coldzera (Foil) | Boston 2018",
+          "type": "buy",
+          "qty": 1,
+          "price": 11.95,
+          "platform": "cs.money.trade",
+          "date": "2026-09-24",
+          "note": "for steam $30.49 buy order",
+          "fee_percent": 0.0,
+          "is_arbitrage": false,
+          "created_at": "2026-09-24T10:52:15.846642+00:00"
         }
       ]
     },
