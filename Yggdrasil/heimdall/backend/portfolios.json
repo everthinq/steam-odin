@@ -4,7 +4,7 @@
       "id": "fbf692611b3c",
       "name": "everthinklol",
       "created_at": "2026-07-21T13:40:18.177768+00:00",
-      "updated_at": "2026-09-24T11:09:12.746772+00:00",
+      "updated_at": "2026-09-24T12:42:25.149057+00:00",
       "transactions": [
         {
           "id": "3ea474874554",
@@ -9765,6 +9765,19 @@
           "fee_percent": 0.0,
           "is_arbitrage": true,
           "created_at": "2026-09-24T11:09:12.746758+00:00"
+        },
+        {
+          "id": "a5be10b724b8",
+          "item_name": "P250 | Constructivist (Factory New)",
+          "type": "buy",
+          "qty": 4,
+          "price": 0.12,
+          "platform": "lisskins",
+          "date": "2026-09-24",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": false,
+          "created_at": "2026-09-24T12:42:25.149009+00:00"
         }
       ]
     },
