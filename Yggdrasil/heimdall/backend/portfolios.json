@@ -4,7 +4,7 @@
       "id": "fbf692611b3c",
       "name": "everthinklol",
       "created_at": "2026-07-21T13:40:18.177768+00:00",
-      "updated_at": "2026-09-24T12:42:25.149057+00:00",
+      "updated_at": "2026-09-24T18:47:17.507688+00:00",
       "transactions": [
         {
           "id": "3ea474874554",
@@ -9778,6 +9778,19 @@
           "fee_percent": 0.0,
           "is_arbitrage": false,
           "created_at": "2026-09-24T12:42:25.149009+00:00"
+        },
+        {
+          "id": "a67b58fb81f0",
+          "item_name": "Sticker | GO",
+          "type": "buy",
+          "qty": 1,
+          "price": 0.48,
+          "platform": "cs.money.trade",
+          "date": "2026-09-24",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": true,
+          "created_at": "2026-09-24T18:47:17.507661+00:00"
         }
       ]
     },
@@ -11710,7 +11723,7 @@
       "id": "99c18756f9ee",
       "name": "everthinklol1",
       "created_at": "2026-07-21T14:49:46.392883+00:00",
-      "updated_at": "2026-09-22T19:07:29.812036+00:00",
+      "updated_at": "2026-09-24T18:48:26.527887+00:00",
       "transactions": [
         {
           "id": "ed83a19ba6bc",
@@ -15878,6 +15891,19 @@
           "fee_percent": 0.0,
           "is_arbitrage": false,
           "created_at": "2026-09-22T19:07:29.812000+00:00"
+        },
+        {
+          "id": "c0c8f373ec60",
+          "item_name": "Sticker | GO",
+          "type": "sell",
+          "qty": 1,
+          "price": 0.82,
+          "platform": "steam",
+          "date": "2026-09-24",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": true,
+          "created_at": "2026-09-24T18:48:26.527862+00:00"
         }
       ]
     },
