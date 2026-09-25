@@ -84,13 +84,17 @@ def test_huginn_blueprint_registers_all_routes():
                  '/api/huginn/gjallarhorn/news/test',
                  '/api/huginn/arbitrage/cross-profile',
                  '/api/huginn/arbitrage/cross-profile/config',
-                 '/api/huginn/csfloat/connectivity']:
+                 '/api/huginn/csfloat/connectivity',
+                 '/api/huginn/card-deals', '/api/huginn/card-deals/scan',
+                 '/api/huginn/card-deals/status', '/api/huginn/card-deals/config',
+                 '/api/huginn/card-deals/alerts/test']:
         assert want in rules, f'missing huginn route: {want}'
     # +9 gjallarhorn rules: rotation, accounts, readiness, holds (GET+POST),
     # targets (GET+POST), ring, ring/status; +3 news rules: news/status,
     # news/check, news/test; +1 cross-profile arbitrage; +2 cross-profile config
     # (GET+POST); +1 csfloat/connectivity.
-    assert _rule_count(bp, '/api/huginn') == 54
+    # +6 Andvari card-deals rules: deals, scan, status, config (GET+POST), alerts/test.
+    assert _rule_count(bp, '/api/huginn') == 60
 
 
 def test_register_blueprints_wires_onto_app():

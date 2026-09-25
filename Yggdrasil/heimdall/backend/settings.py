@@ -90,6 +90,29 @@ DEFAULT_SETTINGS = {
          "name": "LisSkins → CSMoney → CSFloat",
          "markets": ["LisSkins", "CsMoneyTrade", "CsFloat"]},
     ],
+    # --- Andvari card deals (Huginn -> Card deals) ---
+    # Games whose Steam trading-card drops resell for more than the game costs.
+    # The on-sale scope is always scanned first; the full-price scope (every other
+    # game with cards, slower, refreshed less often) only when include_full_price.
+    "card_deals_auto_scan_enabled": True,
+    "card_deals_scan_interval_hours": 12,
+    "card_deals_include_full_price": True,
+    "card_deals_max_price": 20.0,          # dollars; games above this are not scanned
+    "card_deals_min_discount": 0,          # percent; on-sale scope only (0 = any discount)
+    # How dropped cards are valued: "both" (default) = every game shows the buy-order
+    # value (sell now) AND the sell-price value (list and wait), and is a deal when
+    # either is profitable; "instant" = buy orders only (walking the order book for
+    # every account's copies); "listing" = one cent under the lowest ask only.
+    "card_deals_valuation": "both",
+    # Telegram alert after each scan for NEW deals (same game at the same price is
+    # not re-sent for 14 days). Uses telegram_bot_token; card_deals_chat_id routes
+    # them to their own chat, falling back to the shared telegram_chat_id.
+    "card_deals_alerts_enabled": True,
+    "card_deals_alert_min_return_percent": 50,
+    "card_deals_alert_min_profit": 0.25,   # dollars per copy
+    "card_deals_chat_id": "",
+    # Store country priced when no account's country is known yet.
+    "card_deals_fallback_country": "TR",
 }
 
 # How many auto-store move records to keep in the history log.

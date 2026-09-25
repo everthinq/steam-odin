@@ -22,6 +22,7 @@ class _Context:
     gjallarhorn_news_service = None
     cross_arbitrage_service = None
     telegram_caller = None
+    card_deals_service = None
 
 
 ctx = _Context()

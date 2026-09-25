@@ -14,6 +14,7 @@ from steam_market_service import SteamMarketService
 from gjallarhorn_service import GjallarhornService
 from gjallarhorn_news_service import GjallarhornNewsService
 from cross_arbitrage_service import CrossArbitrageService
+from card_deals_service import CardDealsService
 from telegram_caller import TelegramCaller
 from logging_setup import setup_logging
 from context import ctx
@@ -56,6 +57,9 @@ gjallarhorn_news_service = GjallarhornNewsService(settings_manager, telegram_cal
 # Cross-profile arbitrage: best buy-min -> autobuy-sell route per held item,
 # pooled across all Draupnir accounts (Huginn pulse prices + Draupnir holdings).
 cross_arbitrage_service = CrossArbitrageService(huginn_service, draupnir_service)
+# Andvari card deals: games whose trading-card drops resell for more than the
+# game costs, per account (owned games, regional price, remaining drops).
+card_deals_service = CardDealsService(steam_service, settings_manager)
 
 # Expose the singletons to the route blueprints (read from context.ctx at
 # request time — see context.py and the routes/ package).
@@ -72,6 +76,7 @@ ctx.gjallarhorn_service = gjallarhorn_service
 ctx.gjallarhorn_news_service = gjallarhorn_news_service
 ctx.cross_arbitrage_service = cross_arbitrage_service
 ctx.telegram_caller = telegram_caller
+ctx.card_deals_service = card_deals_service
 register_blueprints(app)
 
 
@@ -99,6 +104,8 @@ if _should_start_background_scheduler():
     huginn_service.start_auction_tracker(lambda: settings_manager.get_settings())
     # Gjallarhorn: watch the CS2 update feed for case/collection limiting events.
     gjallarhorn_news_service.start()
+    # Andvari: rescan card deals on the configured interval (sale scope first).
+    card_deals_service.start_background()
 
 # Ensure all errors return JSON, not HTML
 @app.errorhandler(404)

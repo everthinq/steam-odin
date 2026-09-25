@@ -740,3 +740,63 @@ def huginn_tradeon_dmarket_csfloat_autobuy():
         return jsonify({'error': str(e)}), 500
 
 
+
+
+# --- Andvari card deals (trading-card drops worth more than the game) ---------
+
+@bp.route('/api/huginn/card-deals', methods=['GET'])
+def card_deals():
+    """Ranked card deals from the last scan. ?scope=sale|full|all (default sale),
+    ?include_unprofitable=1 to also list losing games (capped)."""
+    settings = ctx.settings_manager.get_settings()
+    scope = request.args.get('scope', 'sale')
+    include_unprofitable = request.args.get('include_unprofitable') in ('1', 'true')
+    try:
+        return jsonify(ctx.card_deals_service.deals(settings, scope, include_unprofitable))
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@bp.route('/api/huginn/card-deals/scan', methods=['POST'])
+def card_deals_scan():
+    """Start a background scan now: {"include_full_price": bool (default: setting),
+    "force": bool (default true: ignore store/account cache ages)}."""
+    body = request.get_json(silent=True) or {}
+    include_full_price = body.get('include_full_price')
+    if include_full_price is not None:
+        include_full_price = bool(include_full_price)
+    return jsonify(ctx.card_deals_service.start_scan(
+        force=bool(body.get('force', True)), include_full_price=include_full_price))
+
+
+@bp.route('/api/huginn/card-deals/status', methods=['GET'])
+def card_deals_status():
+    """Progress of the running (or last) scan."""
+    return jsonify(ctx.card_deals_service.status())
+
+
+@bp.route('/api/huginn/card-deals/config', methods=['GET'])
+def card_deals_config_get():
+    from card_deals_service import CONFIG_KEYS
+    settings = ctx.settings_manager.get_settings()
+    return jsonify({key: settings.get(key) for key in CONFIG_KEYS})
+
+
+@bp.route('/api/huginn/card-deals/config', methods=['POST'])
+def card_deals_config_set():
+    """Update filters / schedule / alert thresholds (only the keys supplied)."""
+    from card_deals_service import CONFIG_KEYS, clean_config
+    try:
+        clean = clean_config(request.get_json(silent=True) or {})
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+    if clean:
+        ctx.settings_manager.save_settings(clean)
+    settings = ctx.settings_manager.get_settings()
+    return jsonify({key: settings.get(key) for key in CONFIG_KEYS})
+
+
+@bp.route('/api/huginn/card-deals/alerts/test', methods=['POST'])
+def card_deals_alert_test():
+    """Send a test message to the card-deals Telegram chat."""
+    return jsonify(ctx.card_deals_service.send_test_alert(ctx.settings_manager.get_settings()))

@@ -359,14 +359,23 @@ class SteamService:
         The token is minted by a live Ratatoskr session and kept fresh by the
         scheduler keep-alive; it expires ~24h after the last login."""
         for steamid in self.storage.list_accounts():
-            data = self.storage.load_account(steamid)
-            if not data:
-                continue
-            session_data = data.get('Session') or {}
-            token = self._pick_session_token(session_data)
-            if token and self._token_ttl_seconds(token) >= min_ttl_seconds:
-                return steamid, self._get_cookies(
-                    steamid, token, session_data.get('WebSessionId'))
+            cookies = self.web_session_cookie_for(steamid, min_ttl_seconds)
+            if cookies:
+                return steamid, cookies
+        return None
+
+    def web_session_cookie_for(self, steamid, min_ttl_seconds=300):
+        """Web cookies for ONE account's still-fresh session, or None.
+
+        Same token rules as web_session_cookie, but for a specific account — used
+        for per-account reads (owned games, badge card drops, store country)."""
+        data = self.storage.load_account(steamid)
+        if not data:
+            return None
+        session_data = data.get('Session') or {}
+        token = self._pick_session_token(session_data)
+        if token and self._token_ttl_seconds(token) >= min_ttl_seconds:
+            return self._get_cookies(steamid, token, session_data.get('WebSessionId'))
         return None
 
     def _to_account_id(self, steamid):

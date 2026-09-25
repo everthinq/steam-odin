@@ -79,10 +79,18 @@ Container names (compose project = directory name):
 
 ## Gotchas that will bite you (read before editing)
 
-1. **The backend does not auto-reload.** After editing any backend `.py`, you
-   must `docker restart steam-odin-heimdall-backend-1` for the change to take
-   effect. The frontend *does* hot-reload (Vite); Ratatoskr does **not**
-   (`docker restart steam-odin-ratatoskr-1` after editing its `.js`).
+1. **The backend auto-reloads on every `.py` save — including half-finished
+   edits and test files.** `docker-compose.yml` runs it with
+   `FLASK_ENV=development`, so werkzeug's file watcher restarts `app.py` (and
+   every background loop: auto-confirm, Case Arbitrage refresh, Gjallarhorn
+   news, Andvari card deals) the moment a file under `backend/` changes; watch
+   `logs/heimdall.log` for `Detected change … reloading`. So an edit is live
+   before you run anything: when a background loop has outward effects (Steam
+   calls, Telegram alerts), test long runs in a separate sandbox script (own
+   cache file, stubbed notifier) rather than in the app. A clean
+   `docker restart steam-odin-heimdall-backend-1` is still the way to reload a
+   changed cache file. The frontend hot-reloads too (Vite); Ratatoskr does
+   **not** (`docker restart steam-odin-ratatoskr-1` after editing its `.js`).
 
 2. **`context.ctx` is empty outside the running app.** The singletons are wired
    only by `app.py` at boot. A bare `python -c` / `docker exec … python` shell

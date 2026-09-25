@@ -40,6 +40,7 @@ Dependency shape (who is passed what):
 | `draupnir_service.py` | Portfolio store, average-cost profit/loss, CSV import |
 | `draupnir_backup_service.py` | Point-in-time snapshots of `portfolios.json`, gzip-compressed, GFS retention |
 | `mimir_service.py` | Encrypted credential vault (shares the maFile key) |
+| `card_deals_service.py` | Andvari (Huginn → Card deals): games whose trading-card drops resell for more than the game costs, per account; background scan with its own Steam throttles, cache in `cache/card_deals.json.gz` |
 | `storage.py` | maFile load/save, encryption/migration |
 | `jsonio.py` | Crash-safe atomic JSON read/write |
 | `validation.py` | Request-body validation for writes |
@@ -60,8 +61,13 @@ Dependency shape (who is passed what):
 
 ## Running & testing
 
-Backend does **not** auto-reload — `docker restart steam-odin-heimdall-backend-1`
-after any edit.
+Backend **auto-reloads on every `.py` save** (`FLASK_ENV=development` in
+`docker-compose.yml` enables werkzeug's watcher; see `Detected change … reloading`
+in `logs/heimdall.log`), and every background loop restarts with it — so an edit
+is live immediately, half-finished or not. Test long runs with outward effects
+(Steam calls, Telegram alerts) in a sandbox script with its own cache file and a
+stubbed notifier. Use `docker restart steam-odin-heimdall-backend-1` to reload a
+changed cache or data file (those are not watched).
 
 ```bash
 # tests inside the running container (pytest installed ephemerally)
