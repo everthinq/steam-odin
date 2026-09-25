@@ -14,6 +14,10 @@ def client(monkeypatch):
     @app.route('/api/mimir/export')
     def export():
         return jsonify({'text': 'secret'})
+
+    @app.route('/api/confirmations/check-all', methods=['POST'])
+    def check_all():
+        return jsonify({'status': 'success'})
     return app.test_client()
 
 
@@ -41,3 +45,18 @@ def test_cors_only_for_the_frontend(client):
                                                ('HEIMDALL-BACKEND:5000', 'heimdall-backend'), ('::1', '::1')])
 def test_host_name(header, expected):
     assert request_guard.host_name(header) == expected
+
+
+@pytest.mark.parametrize('origin, expected', [(None, 200), ('http://localhost:3000', 200),
+                                              ('http://127.0.0.1:3000', 200), ('https://evil.example', 403),
+                                              ('null', 403), ('http://localhost:3000.evil.example', 403)])
+def test_writes_only_from_the_frontend_origin(client, origin, expected):
+    headers = {'Host': 'localhost:5001', **({'Origin': origin} if origin else {})}
+    assert client.post('/api/confirmations/check-all', headers=headers, data='x',
+                       content_type='text/plain').status_code == expected
+
+
+def test_reads_are_not_origin_checked(client):
+    # A foreign origin may send a GET, but CORS keeps the answer from it.
+    response = client.get('/api/mimir/export', headers={'Host': 'localhost:5001', 'Origin': 'https://evil.example'})
+    assert response.status_code == 200 and 'Access-Control-Allow-Origin' not in response.headers

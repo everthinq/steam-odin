@@ -13,6 +13,11 @@ could otherwise reach it from any page open on this Mac:
   domain, so requests are refused unless ``Host`` is one Heimdall itself uses:
   localhost, the Docker service name (Vite proxy, Ratatoskr), or extra names
   from ``HEIMDALL_ALLOWED_HOSTS`` (comma-separated).
+* **Blind cross-site writes** — CORS stops a website *reading* answers, but the
+  browser still *sends* a plain cross-site POST (no preflight). Browsers always
+  add an ``Origin`` header to those, so a write whose ``Origin`` is not the
+  Heimdall frontend is refused. Server-side callers (Vite proxy, Ratatoskr,
+  curl) send the frontend origin or none at all.
 """
 import os
 
@@ -21,6 +26,7 @@ from flask_cors import CORS
 
 FRONTEND_ORIGINS = ['http://localhost:3000', 'http://127.0.0.1:3000']
 ALLOWED_HOSTS = {'localhost', '127.0.0.1', '::1', 'heimdall-backend'}
+READ_METHODS = {'GET', 'HEAD', 'OPTIONS'}
 
 
 def host_name(host_header):
@@ -44,4 +50,7 @@ def install(app):
     def refuse_foreign_hosts():
         if host_name(request.host) not in hosts:
             return jsonify({'error': 'host not allowed'}), 403
+        origin = request.headers.get('Origin')
+        if request.method not in READ_METHODS and origin and origin not in FRONTEND_ORIGINS:
+            return jsonify({'error': 'cross-site request refused'}), 403
         return None

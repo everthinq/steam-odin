@@ -165,6 +165,7 @@ def test_provision_skips_matching_and_rewrites_drifted(world):
 def test_accounts_skip_invalid_bot_names(tmp_path):
     steam = FakeSteam({'1': {'account_name': 'ASF'}, '2': {'account_name': '.hidden'},
                        '3': {'account_name': 'has space'}, '4': {'account_name': ''},
+                       '6': {'account_name': 'a/../Stop'}, '7': {'account_name': 'x?y'},
                        '5': {'account_name': 'fine_name'}}, {})
     service = AsfService(steam, FakeRatatoskr(), ipc_password='ipc', state_path=str(tmp_path / 's.json'))
     assert list(service._accounts()) == ['fine_name']
@@ -294,6 +295,19 @@ def test_resume_waits_for_ratatoskr_session_to_end(world):
     service.tick()
     assert fake.posts('/Resume') == [('/Api/Bot/alpha/Resume', {})]
     assert service._paused_for_ratatoskr == {}
+
+
+def test_resume_waits_out_the_ratatoskr_login_grace(world, monkeypatch):
+    service, fake, *_ = world
+    fake.bots = {'alpha': make_bot(farming=True, to_farm=(1,)), 'bravo': make_bot()}
+    clock = [50_000.0]
+    monkeypatch.setattr(asf_service.time, 'time', lambda: clock[0])
+    service.pause_for_ratatoskr('alpha')             # Ratatoskr not "connected" yet: still logging in
+    service.tick()
+    assert fake.posts('/Resume') == []
+    clock[0] += asf_service.RATATOSKR_LOGIN_GRACE_SECONDS + 1
+    service.tick()                                   # login never happened (or ended): resume
+    assert fake.posts('/Resume') == [('/Api/Bot/alpha/Resume', {})]
 
 
 def test_manual_pause_is_never_auto_resumed(world):

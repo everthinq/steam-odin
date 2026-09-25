@@ -813,7 +813,7 @@ def card_farming_status():
 @bp.route('/api/huginn/card-deals/farming/<steamid>/<action>', methods=['POST'])
 def card_farming_action(steamid, action):
     """pause | resume | retry-login for one account's ASF bot."""
-    from asf_service import AsfError
+    from asf_service import AsfError, UnknownAccount
     handlers = {'pause': ctx.asf_service.pause, 'resume': ctx.asf_service.resume,
                 'retry-login': ctx.asf_service.retry_login}
     if action not in handlers:
@@ -822,5 +822,7 @@ def card_farming_action(steamid, action):
         return jsonify({'error': 'ASF is not set up'}), 409
     try:
         return jsonify(handlers[action](steamid))
+    except UnknownAccount as e:
+        return jsonify({'error': str(e)}), 404
     except AsfError as e:
         return jsonify({'error': str(e)}), 502

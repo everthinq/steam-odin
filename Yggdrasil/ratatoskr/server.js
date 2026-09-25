@@ -10,6 +10,14 @@ const port = process.env.PORT || 3030;
 
 // No CORS: only the Heimdall backend calls Ratatoskr (server to server). Open CORS
 // let any website open in the browser read inventories and trigger moves.
+// Browsers add an Origin header to cross-site requests (even ones CORS cannot
+// stop, like a plain POST); server-to-server calls never send one — so refuse it.
+app.use((req, res, next) => {
+    if (req.headers.origin) {
+        return res.status(403).json({ error: 'browser requests are not accepted' });
+    }
+    return next();
+});
 app.use(bodyParser.json());
 
 // Initialize Item Processor

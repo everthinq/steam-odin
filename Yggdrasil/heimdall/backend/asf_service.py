@@ -57,6 +57,8 @@ MAX_LOGIN_ATTEMPTS = 3           # then wait for a manual retry
 LOGIN_RETRY_SECONDS = 15 * 60
 CODE_MIN_SECONDS_LEFT = 12       # never hand over a Steam Guard code about to expire
 PAUSE_SETTLE_SECONDS = 3         # let Steam register "stopped playing" before Ratatoskr plays
+RATATOSKR_LOGIN_GRACE_SECONDS = 120  # Ratatoskr reports "disconnected" while it is still logging in
+STEAM_LOGIN = re.compile(r'^[A-Za-z0-9_]{1,64}$')   # Steam logins: letters, digits, underscore
 REQUEST_TIMEOUT_SECONDS = 15
 
 # The bot config Heimdall writes. Everything not listed stays at ASF's default
@@ -77,6 +79,10 @@ HARDENED_BOT_CONFIG = {
 
 
 class AsfError(Exception):
+    pass
+
+
+class UnknownAccount(AsfError):
     pass
 
 
@@ -191,8 +197,8 @@ class AsfService:
         for steamid in self.steam.storage.list_accounts():
             data = self.steam.storage.load_account(steamid) or {}
             login = (data.get('account_name') or '').strip()
-            if login and not login.startswith('.') and login.upper() != 'ASF' \
-                    and not re.search(r'[\s,]', login):
+            # The bot name goes into ASF API paths: only plain Steam logins qualify.
+            if STEAM_LOGIN.match(login) and login.upper() != 'ASF':
                 accounts[login] = {'steamid': str(steamid), 'account_name': login}
         return accounts
 
@@ -336,6 +342,8 @@ class AsfService:
         with self._lock:
             paused = dict(self._paused_for_ratatoskr)
         for name, info in paused.items():
+            if time.time() - (info.get('since') or 0) < RATATOSKR_LOGIN_GRACE_SECONDS:
+                continue                 # Ratatoskr may still be logging in
             status = (self.ratatoskr.get_status(info['steamid']) or {}).get('status')
             if status in ('connected', 'gc_lost'):
                 continue                 # Ratatoskr still holds the session
@@ -352,7 +360,7 @@ class AsfService:
         for name, account in self._accounts().items():
             if account['steamid'] == str(steamid):
                 return name
-        raise AsfError('unknown account')
+        raise UnknownAccount('unknown account')
 
     def pause(self, steamid):
         name = self._name_for_steamid(steamid)
