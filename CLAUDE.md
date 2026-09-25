@@ -26,7 +26,7 @@ Yggdrasil/                      The World Tree — holds the deployable realms
 │   └── frontend/               React + Vite single-page app
 ├── ratatoskr/                  The Courier — Node service. See ratatoskr/CLAUDE.md.
 └── asf/                        ArchiSteamFarm (pinned upstream image) — card farming. See asf/README.md.
-docs/steam-trading/             Trading knowledge base + glossary + baselines
+docs/steam-trading/             Trading knowledge base + glossary + baselines (local only, gitignored)
 scripts/                        Host-side helpers (portfolio backup launchd job)
 ```
 
@@ -194,4 +194,5 @@ ruff + `pip-audit`, and frontend lint + build, on every push and pull request.
 - Setup, environment variables, `tradeon_token`: [Yggdrasil/heimdall/README.md](Yggdrasil/heimdall/README.md)
 - Backend internals, service wiring, per-file map: [Yggdrasil/heimdall/backend/CLAUDE.md](Yggdrasil/heimdall/backend/CLAUDE.md)
 - Ratatoskr rate-limit rules: [Yggdrasil/ratatoskr/CLAUDE.md](Yggdrasil/ratatoskr/CLAUDE.md)
-- Trading domain knowledge: [docs/steam-trading/](docs/steam-trading/)
+- Trading domain knowledge: [docs/steam-trading/](docs/steam-trading/) — local only: the
+  repository is public and it holds paid-course notes, picks and holdings

@@ -229,3 +229,11 @@ Yggdrasil/heimdall/backend/backups/
 docs/telegram_export*/
 **/telegram_export*/
 **/ChatExport_*/
+
+# Kept local on purpose (the repository is public):
+# - the knowledge base distilled from a paid course, investment picks, holdings snapshots
+# - the raw copy of the paid course pages (copyright)
+# - personal research spreadsheets
+docs/steam-trading/
+docs/truedad_course/
+MikeWater9_case_tierlist.xlsx
