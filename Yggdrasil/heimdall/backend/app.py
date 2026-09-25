@@ -1,5 +1,4 @@
 from flask import Flask, jsonify
-from flask_cors import CORS
 import logging
 import os
 from steam_service import SteamService
@@ -15,8 +14,10 @@ from gjallarhorn_service import GjallarhornService
 from gjallarhorn_news_service import GjallarhornNewsService
 from cross_arbitrage_service import CrossArbitrageService
 from card_deals_service import CardDealsService
+from asf_service import AsfService
 from telegram_caller import TelegramCaller
 from logging_setup import setup_logging
+import request_guard
 from context import ctx
 from routes import register_blueprints
 
@@ -26,7 +27,9 @@ setup_logging()
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
-CORS(app)
+# CORS only for the Heimdall frontend + refuse foreign Host headers (DNS
+# rebinding): no website open in the browser can read this login-less API.
+request_guard.install(app)
 
 settings_manager = SettingsManager()
 steam_service = SteamService()
@@ -60,6 +63,11 @@ cross_arbitrage_service = CrossArbitrageService(huginn_service, draupnir_service
 # Andvari card deals: games whose trading-card drops resell for more than the
 # game costs, per account (owned games, regional price, remaining drops).
 card_deals_service = CardDealsService(steam_service, settings_manager)
+# ASF card farming: drives the ArchiSteamFarm container (hardened bot configs,
+# password + Steam Guard code only when ASF asks, pause while Ratatoskr plays).
+# Off until ASF_IPC_PASSWORD is set (make asf-setup).
+asf_service = AsfService(steam_service, ratatoskr_service)
+ratatoskr_service.before_login = asf_service.pause_for_ratatoskr
 
 # Expose the singletons to the route blueprints (read from context.ctx at
 # request time — see context.py and the routes/ package).
@@ -77,6 +85,7 @@ ctx.gjallarhorn_news_service = gjallarhorn_news_service
 ctx.cross_arbitrage_service = cross_arbitrage_service
 ctx.telegram_caller = telegram_caller
 ctx.card_deals_service = card_deals_service
+ctx.asf_service = asf_service
 register_blueprints(app)
 
 
@@ -106,6 +115,8 @@ if _should_start_background_scheduler():
     gjallarhorn_news_service.start()
     # Andvari: rescan card deals on the configured interval (sale scope first).
     card_deals_service.start_background()
+    # ASF: provision bots, assist logins, resume bots after Ratatoskr sessions.
+    asf_service.start_background()
 
 # Ensure all errors return JSON, not HTML
 @app.errorhandler(404)

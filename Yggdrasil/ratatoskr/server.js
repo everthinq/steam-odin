@@ -3,13 +3,13 @@ const SteamUser = require('steam-user');
 const SteamTotp = require('steam-totp');
 const GlobalOffensive = require('globaloffensive');
 const bodyParser = require('body-parser');
-const cors = require('cors');
 const Items = require('./items');
 
 const app = express();
 const port = process.env.PORT || 3030;
 
-app.use(cors());
+// No CORS: only the Heimdall backend calls Ratatoskr (server to server). Open CORS
+// let any website open in the browser read inventories and trigger moves.
 app.use(bodyParser.json());
 
 // Initialize Item Processor

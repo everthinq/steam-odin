@@ -800,3 +800,27 @@ def card_deals_config_set():
 def card_deals_alert_test():
     """Send a test message to the card-deals Telegram chat."""
     return jsonify(ctx.card_deals_service.send_test_alert(ctx.settings_manager.get_settings()))
+
+
+# --- ASF card farming (ArchiSteamFarm drives the card drops) --------------------
+
+@bp.route('/api/huginn/card-deals/farming', methods=['GET'])
+def card_farming_status():
+    """Per-account ASF farming state (no secrets: no config, password or code)."""
+    return jsonify(ctx.asf_service.status())
+
+
+@bp.route('/api/huginn/card-deals/farming/<steamid>/<action>', methods=['POST'])
+def card_farming_action(steamid, action):
+    """pause | resume | retry-login for one account's ASF bot."""
+    from asf_service import AsfError
+    handlers = {'pause': ctx.asf_service.pause, 'resume': ctx.asf_service.resume,
+                'retry-login': ctx.asf_service.retry_login}
+    if action not in handlers:
+        return jsonify({'error': 'unknown action'}), 404
+    if not ctx.asf_service.enabled:
+        return jsonify({'error': 'ASF is not set up'}), 409
+    try:
+        return jsonify(handlers[action](steamid))
+    except AsfError as e:
+        return jsonify({'error': str(e)}), 502

@@ -204,6 +204,10 @@ token.txt
 credentials.vault
 **/credentials.vault
 
+# ArchiSteamFarm runtime (bot configs + login-token databases + logs) — SECRET, keep local
+Yggdrasil/asf/config/
+Yggdrasil/asf/logs/
+
 # Heimdall runtime data (maFiles/ folder itself may contain README + .gitkeep)
 Yggdrasil/heimdall/backend/logs/
 Yggdrasil/heimdall/backend/cache/

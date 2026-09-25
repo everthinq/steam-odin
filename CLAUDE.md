@@ -24,7 +24,8 @@ Yggdrasil/                      The World Tree — holds the deployable realms
 ├── heimdall/                   The Watchman — the main suite
 │   ├── backend/                Flask API (Python). See backend/CLAUDE.md.
 │   └── frontend/               React + Vite single-page app
-└── ratatoskr/                  The Courier — Node service. See ratatoskr/CLAUDE.md.
+├── ratatoskr/                  The Courier — Node service. See ratatoskr/CLAUDE.md.
+└── asf/                        ArchiSteamFarm (pinned upstream image) — card farming. See asf/README.md.
 docs/steam-trading/             Trading knowledge base + glossary + baselines
 scripts/                        Host-side helpers (portfolio backup launchd job)
 ```
@@ -39,6 +40,7 @@ not a separate deployable):
 | **Huginn** | Cross-market price scout / arbitrage (Tradeon pulse feed, case arbitrage) | `huginn_service.py` | `pages/huginn/` |
 | **Mímir** | Encrypted credential vault (login / password / email), shares the maFile key | `mimir_service.py` | `pages/mimir/` |
 | **Ratatoskr** | Moves items between Storage Units and inventory | `ratatoskr_service.py` → Node service | `pages/ratatoskr/` |
+| **Andvari** (in Huginn) | Games whose card drops pay for them + ASF card farming status | `card_deals_service.py`, `asf_service.py` → ASF container | `pages/huginn/CardDeals.jsx` |
 
 ## Architecture in one breath
 
@@ -49,6 +51,9 @@ not a separate deployable):
   code-split with `React.lazy`/`Suspense`; the Dashboard is eager.
 - **Ratatoskr** is a separate Node service the backend calls over HTTP; the
   frontend never talks to it directly.
+- **ASF** (ArchiSteamFarm) is an unmodified upstream image the backend drives
+  over its API (no published port). It never receives 2FA seeds — Heimdall types
+  the password and a Steam Guard code in only when ASF asks.
 - **Everything runs in Docker** via the root `docker-compose.yml`.
 
 ---
@@ -69,11 +74,17 @@ not a separate deployable):
 
 Ports: **frontend** http://localhost:3000, **backend** http://localhost:5001
 (container 5000). Ratatoskr http://localhost:3001.
+All three are published on **127.0.0.1 only**, and the backend refuses foreign
+`Host` headers and cross-origin reads (`request_guard.py`). Neither the API nor
+the UI has a login and they serve Steam Guard codes, the Mímir password export
+and trade confirmations — never publish them on all interfaces, never re-open
+CORS. ASF publishes no port at all.
 
 Container names (compose project = directory name):
 - `steam-odin-heimdall-backend-1`
 - `steam-odin-heimdall-frontend-1`
 - `steam-odin-ratatoskr-1`
+- `steam-odin-asf-1` (first run: `make asf-setup`, then `make asf`)
 
 ---
 
@@ -121,7 +132,14 @@ Container names (compose project = directory name):
 7. **maFiles do not contain the account password.** Read passwords from the
    Mímir vault (`get_password` → vault by login), never by probing the maFile.
 
-8. **Steam rate limits (HTTP 429) are the enemy.** Ratatoskr moves items
+8. **One "playing" session per Steam account.** ASF farming and Ratatoskr's
+   Counter-Strike 2 Game Coordinator session collide. `RatatoskrService.login`
+   calls `before_login` (→ `AsfService.pause_for_ratatoskr`) and the ASF loop
+   resumes the bot once Ratatoskr's session is gone. Keep that hook on any new
+   Ratatoskr login path, and never hand ASF a 2FA seed or write a password into
+   an ASF bot config.
+
+9. **Steam rate limits (HTTP 429) are the enemy.** Ratatoskr moves items
    serially with a delay; the scheduler sleeps between accounts. Do not
    parallelise Steam calls or shorten these delays without a very good reason —
    see `ratatoskr/CLAUDE.md` and the notes in `scheduler.py`.
@@ -157,7 +175,8 @@ ruff + `pip-audit`, and frontend lint + build, on every push and pull request.
 - **Do not abbreviate.** Spell things out in names, comments, and prose —
   explicit beats implicit. (Ivan's standing rule.)
 - **Secrets stay untracked.** `*.maFile`, `.heimdall_key`, `.heimdall_salt`,
-  `credentials.vault`, `settings.json`, `csfloat_keys.json` are gitignored and
+  `credentials.vault`, `settings.json`, `csfloat_keys.json`, `.env`,
+  `Yggdrasil/asf/config/` are gitignored and
   must never be committed or sent to any external service. See
   [SECURITY.md](SECURITY.md).
 - **`portfolios.json` is committed on purpose** (personal holdings, no secrets)

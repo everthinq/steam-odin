@@ -4,7 +4,7 @@
 # Use 'make help' (or just 'make') to hear the songs of the commands.
 
 .PHONY: help odin forge raid bifrost sleep ragnarok helheim saga
-.PHONY: all build up dev down clean prune logs
+.PHONY: all build up dev down clean prune logs asf-setup asf
 
 # Default: Speak the wisdom
 help:
@@ -19,6 +19,8 @@ help:
 	@echo "  \033[0;32msaga\033[0m      (logs)   Read the tales of the execution"
 	@echo "  \033[0;32mragnarok\033[0m  (clean)  Destruction and renewal (Stop + remove orphans)"
 	@echo "  \033[0;32mhelheim\033[0m   (prune)  Send unused spirits to the underworld"
+	@echo "  \033[0;32masf-setup\033[0m          One-time ArchiSteamFarm setup (password + hardened config)"
+	@echo "  \033[0;32masf\033[0m                Start ArchiSteamFarm and reconnect Heimdall to it"
 	@echo ""
 
 # ------------------------------------------------------------------------------
@@ -83,3 +85,11 @@ ratatoskr:
 huginn:
 	# Assuming future service name 'huginn'
 	@echo "Huginn is flying over Midgard..."
+
+# ASF: ArchiSteamFarm, the card farmer Andvari drives (see Yggdrasil/asf/README.md)
+asf-setup:
+	python3 scripts/asf_setup.py
+
+asf:
+	docker compose up -d asf
+	docker compose up -d heimdall-backend

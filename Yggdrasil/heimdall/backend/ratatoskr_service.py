@@ -9,11 +9,20 @@ RATATOSKR_URL = os.environ.get('RATATOSKR_URL', 'http://localhost:3030')
 class RatatoskrService:
     def __init__(self):
         self.base_url = RATATOSKR_URL
+        # Called with the Steam login before every Ratatoskr login. app.py points it
+        # at AsfService.pause_for_ratatoskr: Steam allows one "playing" session per
+        # account, and ASF card farming would block Ratatoskr's Counter-Strike 2 session.
+        self.before_login = None
 
     def login(self, account_name, password, shared_secret=None, two_factor_code=None):
         """
         Initiates a Steam session via Ratatoskr.
         """
+        if self.before_login:
+            try:
+                self.before_login(account_name)
+            except Exception as e:
+                logger.warning(f"Ratatoskr before-login hook failed: {e}")
         payload = {
             "accountName": account_name,
             "password": password,

@@ -94,7 +94,7 @@ def test_huginn_blueprint_registers_all_routes():
     # news/check, news/test; +1 cross-profile arbitrage; +2 cross-profile config
     # (GET+POST); +1 csfloat/connectivity.
     # +6 Andvari card-deals rules: deals, scan, status, config (GET+POST), alerts/test.
-    assert _rule_count(bp, '/api/huginn') == 60
+    assert _rule_count(bp, "/api/huginn") == 62
 
 
 def test_register_blueprints_wires_onto_app():

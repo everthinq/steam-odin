@@ -8,7 +8,7 @@ services:
     # Note: With network_mode: "host", ports mapping is ignored.
     # The app will be accessible directly on host:5000 (or PORT env var)
     ports:
-      - "5001:5000"
+      - "127.0.0.1:5001:5000"   # this Mac only: the API has no login
     volumes:
       - ./Yggdrasil/heimdall/backend:/app
       - /etc/localtime:/etc/localtime:ro
@@ -16,6 +16,10 @@ services:
       - FLASK_ENV=development
       - PORT=5000
       - RATATOSKR_URL=http://ratatoskr:3000
+      # ArchiSteamFarm API (card farming). Empty password = ASF integration off;
+      # `make asf-setup` puts it in the root .env (gitignored).
+      - ASF_URL=http://asf:1242
+      - ASF_IPC_PASSWORD=${ASF_IPC_PASSWORD:-}
       - HEIMDALL_SECRET_KEY=${HEIMDALL_SECRET_KEY:-change_this_to_a_secure_random_string_in_production}
       # Proxy settings to change outbound IP and avoid Steam rate limits (HTTP 429)
       # Uncomment and set these environment variables to use a proxy/VPN:
@@ -36,7 +40,7 @@ services:
   heimdall-frontend:
     build: ./Yggdrasil/heimdall/frontend
     ports:
-      - "3000:5173"
+      - "127.0.0.1:3000:5173"   # this Mac only: the UI has no login
     volumes:
       - ./Yggdrasil/heimdall/frontend:/app
       - /app/node_modules
@@ -49,7 +53,7 @@ services:
   ratatoskr:
     build: ./Yggdrasil/ratatoskr
     ports:
-      - "3001:3000"
+      - "127.0.0.1:3001:3000"   # this Mac only (the backend uses the Docker network)
     environment:
       - PORT=3000
       - HEIMDALL_API_URL=http://heimdall-backend:5000
@@ -59,3 +63,26 @@ services:
     volumes:
       - ./Yggdrasil/ratatoskr:/app
       - /app/node_modules
+
+  # ASF: ArchiSteamFarm — idles games so their trading cards drop (Andvari's farmer).
+  # Hardened: pinned image digest, non-root, no Linux capabilities, read-only
+  # filesystem, and NO published port — only heimdall-backend can reach its API.
+  # config/ holds ASF's login tokens (no passwords, no 2FA seeds): gitignored, owner-only.
+  # First run: `make asf-setup`. See Yggdrasil/asf/README.md.
+  asf:
+    image: justarchi/archisteamfarm:6.3.9.6@sha256:5c4bce8626aafa82c8d6074a57c7ed84f28d1c875e4fe5697917c7b5f069b4df
+    restart: unless-stopped
+    user: "1000:1000"
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 768m
+    volumes:
+      - ./Yggdrasil/asf/config:/app/config
+      - ./Yggdrasil/asf/logs:/app/logs
+    environment:
+      - DOTNET_CLI_TELEMETRY_OPTOUT=true

@@ -7,7 +7,8 @@
 | Path / pattern | Why |
 |----------------|-----|
 | `Yggdrasil/heimdall/backend/maFiles/*.maFile` | Steam Guard secrets and session tokens |
-| `.env`, `.env.*` | API keys, `HEIMDALL_SECRET_KEY`, proxy credentials |
+| `.env`, `.env.*` | API keys, `HEIMDALL_SECRET_KEY`, `ASF_IPC_PASSWORD`, proxy credentials |
+| `Yggdrasil/asf/config/` | ArchiSteamFarm API password and per-account login tokens (`*.db`) |
 | `Yggdrasil/heimdall/backend/logs/` | May contain Steam auth responses, SteamIDs, IPs |
 
 ## Before open-sourcing or sharing the repo

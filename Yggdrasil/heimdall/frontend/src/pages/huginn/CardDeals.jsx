@@ -1,8 +1,9 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Link } from 'react-router-dom';
-import { LayoutDashboard, RefreshCw, Layers, Settings, Search, Users, AlertTriangle } from 'lucide-react';
+import { LayoutDashboard, RefreshCw, Layers, Settings, Search, Users, AlertTriangle, Pickaxe } from 'lucide-react';
 import DealsTable from '../../components/carddeals/DealsTable';
 import SettingsPanel from '../../components/carddeals/SettingsPanel';
+import FarmingPanel from '../../components/carddeals/FarmingPanel';
 import InfoTip from '../../components/gjallarhorn/InfoTip';
 
 // Andvari — games whose Steam trading-card drops resell for more than the game
@@ -50,7 +51,30 @@ const CardDeals = () => {
     const [error, setError] = useState(null);
     const [showSettings, setShowSettings] = useState(false);
     const [showAccounts, setShowAccounts] = useState(false);
+    const [showFarming, setShowFarming] = useState(false);
+    const [farming, setFarming] = useState(null);
+    const [farmingBusy, setFarmingBusy] = useState(false);
     const pollRef = useRef(null);
+
+    // ASF card farming status: refreshed every 30 seconds (cheap: Heimdall answers
+    // from its last ASF poll).
+    const fetchFarming = useCallback(() => fetch('/api/huginn/card-deals/farming')
+        .then((r) => r.json())
+        .then(setFarming)
+        .catch(() => setFarming({ enabled: true, reachable: false, error: 'backend unreachable', accounts: [] })), []);
+    useEffect(() => {
+        fetchFarming();
+        const timer = setInterval(fetchFarming, 30000);
+        return () => clearInterval(timer);
+    }, [fetchFarming]);
+    const farmingAction = (steamid, action) => {
+        setFarmingBusy(true);
+        fetch(`/api/huginn/card-deals/farming/${steamid}/${action}`, { method: 'POST' })
+            .then((r) => r.json())
+            .then((d) => { if (d.error) setError(`Card farming: ${d.error}`); })
+            .finally(() => { setFarmingBusy(false); fetchFarming(); });
+    };
+    const farmingTotals = farming?.totals;
 
     const fetchDeals = useCallback(() => {
         const params = new URLSearchParams({ scope });
@@ -195,7 +219,25 @@ const CardDeals = () => {
                             {(data?.accounts || []).length}{accountProblems.length ? ` (${accountProblems.length} issue${accountProblems.length > 1 ? 's' : ''})` : ''}
                         </p>
                     </button>
+                    <button type="button" onClick={() => setShowFarming((v) => !v)}
+                        title="ArchiSteamFarm idles the games so their cards drop (see Yggdrasil/asf/README.md)."
+                        className="px-4 py-2.5 rounded-xl bg-odin-blue/40 border border-white/10 text-left hover:border-white/20">
+                        <p className="text-[10px] uppercase tracking-wider text-slate-500 flex items-center gap-1"><Pickaxe size={10} /> Card farming</p>
+                        <p className={`text-lg font-bold tabular-nums ${!farming?.enabled || !farming?.reachable || farmingTotals?.needs_attention ? 'text-amber-400' : 'text-slate-200'}`}>
+                            {!farming ? '—'
+                                : !farming.enabled ? 'off'
+                                    : !farming.reachable ? 'ASF down'
+                                        : `${farmingTotals.farming} farming · ${farmingTotals.cards_remaining} cards`}
+                            {farmingTotals?.needs_attention ? ` (${farmingTotals.needs_attention} need you)` : ''}
+                        </p>
+                    </button>
                 </div>
+
+                {showFarming && (
+                    <div className="shrink-0">
+                        <FarmingPanel farming={farming} onAction={farmingAction} busy={farmingBusy} />
+                    </div>
+                )}
 
                 {showAccounts && (
                     <div className="shrink-0 max-h-48 overflow-auto custom-scrollbar rounded-xl border border-white/10 bg-black/20 p-3 grid gap-1.5 sm:grid-cols-2 lg:grid-cols-3 text-xs">

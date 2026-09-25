@@ -23,6 +23,7 @@ class _Context:
     cross_arbitrage_service = None
     telegram_caller = None
     card_deals_service = None
+    asf_service = None
 
 
 ctx = _Context()
