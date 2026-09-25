@@ -4,7 +4,7 @@
 # Use 'make help' (or just 'make') to hear the songs of the commands.
 
 .PHONY: help odin forge raid bifrost sleep ragnarok helheim saga
-.PHONY: all build up dev down clean prune logs asf-setup asf
+.PHONY: all build up dev down clean prune logs asf-setup asf asf-password
 
 # Default: Speak the wisdom
 help:
@@ -21,6 +21,7 @@ help:
 	@echo "  \033[0;32mhelheim\033[0m   (prune)  Send unused spirits to the underworld"
 	@echo "  \033[0;32masf-setup\033[0m          One-time ArchiSteamFarm setup (password + hardened config)"
 	@echo "  \033[0;32masf\033[0m                Start ArchiSteamFarm and reconnect Heimdall to it"
+	@echo "  \033[0;32masf-password\033[0m       Copy the ASF UI password to the clipboard (never printed)"
 	@echo ""
 
 # ------------------------------------------------------------------------------
@@ -93,3 +94,6 @@ asf-setup:
 asf:
 	docker compose up -d asf
 	docker compose up -d heimdall-backend
+
+asf-password:
+	@grep '^ASF_IPC_PASSWORD=' .env | cut -d= -f2- | tr -d '\n' | pbcopy && echo "ASF UI password copied to the clipboard (open http://localhost:1242)"

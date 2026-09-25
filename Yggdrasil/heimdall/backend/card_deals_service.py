@@ -739,6 +739,14 @@ class CardDealsService:
                 'owned': owned, 'drops': {app: n for app, n in drops.items() if n > 0},
                 'error': None}
 
+    def account_drops(self):
+        """{steamid: (card drops left, fetched_at)} from the last account refresh
+        (the ASF service switches farming bots on from it)."""
+        with self._lock:
+            accounts = dict(self._state.get('accounts') or {})
+        return {steamid: (sum((entry.get('drops') or {}).values()), entry.get('fetched_at') or 0)
+                for steamid, entry in accounts.items()}
+
     @staticmethod
     def _account_countries_from(accounts):
         return sorted({(a.get('country') or '').upper() for a in accounts.values() if a.get('country')})

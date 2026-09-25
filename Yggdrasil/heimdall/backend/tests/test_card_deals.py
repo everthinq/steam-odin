@@ -1165,3 +1165,11 @@ class _Response:
 
     def __exit__(self, *exc):
         return False
+
+
+def test_account_drops_sums_each_accounts_remaining_drops(tmp_path):
+    service, _ = make_service(tmp_path)
+    service._state['accounts'] = {'1': {'drops': {'10': 2, '20': 3}, 'fetched_at': 100.0},
+                                  '2': {'drops': {}, 'fetched_at': 200.0},
+                                  '3': {'error': 'no fresh web session'}}
+    assert service.account_drops() == {'1': (5, 100.0), '2': (0, 200.0), '3': (0, 0)}

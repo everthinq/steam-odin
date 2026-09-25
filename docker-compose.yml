@@ -66,7 +66,9 @@ services:
 
   # ASF: ArchiSteamFarm — idles games so their trading cards drop (Andvari's farmer).
   # Hardened: pinned image digest, non-root, no Linux capabilities, read-only
-  # filesystem, and NO published port — only heimdall-backend can reach its API.
+  # filesystem. Its web UI + API are published on this Mac only (127.0.0.1) and
+  # need the API password (`make asf-password` copies it); heimdall-backend uses
+  # the Docker network.
   # config/ holds ASF's login tokens (no passwords, no 2FA seeds): gitignored, owner-only.
   # First run: `make asf-setup`. See Yggdrasil/asf/README.md.
   asf:
@@ -81,6 +83,8 @@ services:
     security_opt:
       - no-new-privileges:true
     mem_limit: 768m
+    ports:
+      - "127.0.0.1:1242:1242"   # ASF UI: http://localhost:1242 — this Mac only
     volumes:
       - ./Yggdrasil/asf/config:/app/config
       - ./Yggdrasil/asf/logs:/app/logs

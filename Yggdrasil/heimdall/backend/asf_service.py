@@ -23,6 +23,12 @@ HTTP API:
   a Ratatoskr login, the account's bot is paused; once Ratatoskr's session is
   gone the bot resumes. The paused set is persisted, because the backend reloads
   on every save and must never strand a bot paused.
+* **Only accounts with work run** — ASF's FAQ recommends at most 10 bots (after
+  Valve's internal guidelines), and an idle logged-in bot is pure risk. So a bot
+  is switched on only while its account has cards to farm (ASF's own queue,
+  Andvari's badges scan, or a "farm now" request after buying a game), at most
+  ``MAX_RUNNING_BOTS`` at once, and switched off once ASF has looked and found
+  nothing. Its login token is kept, so switching back on needs no password.
 * **Status** — per account: farming what, cards left, time left, or what it
   needs. No secrets ever appear in it.
 
@@ -60,11 +66,13 @@ PAUSE_SETTLE_SECONDS = 3         # let Steam register "stopped playing" before R
 RATATOSKR_LOGIN_GRACE_SECONDS = 120  # Ratatoskr reports "disconnected" while it is still logging in
 STEAM_LOGIN = re.compile(r'^[A-Za-z0-9_]{1,64}$')   # Steam logins: letters, digits, underscore
 REQUEST_TIMEOUT_SECONDS = 15
+MAX_RUNNING_BOTS = 10            # ASF's recommended ceiling ("based on internal Valve guidelines")
+EMPTY_CHECK_SECONDS = 5 * 60     # connected this long with nothing queued = ASF checked the badges
+FARM_NOW_SECONDS = 60 * 60       # a "farm now" request keeps a bot on at most this long
 
 # The bot config Heimdall writes. Everything not listed stays at ASF's default
 # (card farming on, HoursUntilCardDrops 3, login tokens kept).
 HARDENED_BOT_CONFIG = {
-    'Enabled': True,
     'OnlineStatus': 0,               # Offline: cards still drop; friends do not see 21 accounts "in game"
     'RemoteCommunication': 0,        # no ASF Steam group, no public bot listing (it would link the accounts)
     'TradingPreferences': 0,         # no trade matching or donations
@@ -107,6 +115,7 @@ def bot_view(bot):
 
     to_farm = games('GamesToFarm')
     return {
+        'enabled': (bot.get('BotConfig') or {}).get('Enabled', True) is not False,
         'connected': bool(bot.get('IsConnectedAndLoggedOn')),
         'running': bool(bot.get('KeepRunning')),
         'required_input': bot.get('RequiredInput') or INPUT_NONE,
@@ -120,10 +129,12 @@ def bot_view(bot):
     }
 
 
-def farming_state(view, paused_for_ratatoskr, attempts):
+def farming_state(view, paused_for_ratatoskr, attempts, queued=False):
     """One word for the account's farming state (the UI colours by it)."""
     if view is None:
-        return 'not_added'
+        return 'queued' if queued else 'not_added'
+    if not view['enabled']:
+        return 'queued' if queued else 'off'
     if view['connected']:
         if paused_for_ratatoskr:
             return 'paused_for_ratatoskr'
@@ -156,7 +167,16 @@ class AsfService:
         self._paused_for_ratatoskr = dict(saved.get('paused_for_ratatoskr') or {})
         # {bot_name: {count, last_at, last_error}} — login assists since the last success
         self._attempts = dict(saved.get('attempts') or {})
+        # {bot_name: epoch} — "farm now" requests (switch on even without known drops)
+        self._farm_requests = dict(saved.get('farm_requests') or {})
+        # {bot_name: epoch} — when ASF last looked and found nothing to farm; Andvari's
+        # drop counts older than this are stale for that account
+        self._checked_empty = dict(saved.get('checked_empty') or {})
+        self._connected_since = {}       # {bot_name: epoch}, in memory only
+        self._queued = set()             # wanted on, but over MAX_RUNNING_BOTS
+        self.card_deals = None           # set by app.py: Andvari's per-account drop counts
         self._last_bots = None
+        self._accounts_cache = {}
         self._last_error = None
         self._last_tick_at = None
 
@@ -211,7 +231,8 @@ class AsfService:
 
     def _persist(self):
         with self._lock:
-            state = {'paused_for_ratatoskr': self._paused_for_ratatoskr, 'attempts': self._attempts}
+            state = {'paused_for_ratatoskr': self._paused_for_ratatoskr, 'attempts': self._attempts,
+                     'farm_requests': self._farm_requests, 'checked_empty': self._checked_empty}
         try:
             atomic_write_json(self.state_path, state)
         except Exception as e:
@@ -219,17 +240,24 @@ class AsfService:
 
     # ---- provisioning ------------------------------------------------------------
 
-    def provision(self, bots=None):
+    def provision(self, bots=None, wanted=()):
         """Create a hardened bot for every account ASF does not have yet, and
-        rewrite any bot whose safety settings drifted. Returns the bot names written."""
+        re-apply the safety settings to any bot where they drifted (for example
+        edited in the ASF UI). Other settings edited there are kept. ASF never
+        returns the login or password in a config, so neither can be copied here.
+        Returns the bot names written."""
         bots = self._bots() if bots is None else bots
         written = []
         for name, account in self._accounts().items():
             existing = (bots.get(name) or {}).get('BotConfig')
-            desired = {**HARDENED_BOT_CONFIG, 'SteamLogin': account['account_name']}
             if existing is not None and all(existing.get(key) == value
-                                            for key, value in desired.items() if key != 'SteamLogin'):
+                                            for key, value in HARDENED_BOT_CONFIG.items()):
                 continue
+            kept = {key: value for key, value in (existing or {}).items()
+                    if not key.startswith('s_')}   # 's_' keys are ASF's string copies of numbers
+            if existing is None:
+                kept = {'Enabled': name in wanted}
+            desired = {**kept, **HARDENED_BOT_CONFIG, 'SteamLogin': account['account_name']}
             self._call('POST', f'/Api/Bot/{name}', {'BotConfig': desired})
             written.append(name)
             logger.info('[ASF] %s bot config for %s', 'rewrote' if existing is not None else 'created', name)
@@ -279,6 +307,8 @@ class AsfService:
                         self._attempts.pop(name, None)
                     self._persist()
                 continue
+            if (bot.get('BotConfig') or {}).get('Enabled') is False:
+                continue                 # switched off: nothing to log in for
             required = bot.get('RequiredInput') or INPUT_NONE
             if required not in ASSISTABLE_INPUTS or bot.get('KeepRunning'):
                 continue
@@ -354,6 +384,87 @@ class AsfService:
                 self._paused_for_ratatoskr.pop(name, None)
             self._persist()
 
+    # ---- which bots run ------------------------------------------------------------
+
+    def _andvari_drops(self):
+        """{steamid: (drops left, fetched_at)} from Andvari's last account refresh."""
+        try:
+            return self.card_deals.account_drops() if self.card_deals else {}
+        except Exception as e:
+            logger.warning('[ASF] could not read Andvari drop counts: %s', e)
+            return {}
+
+    def _note_checks(self, bots, now):
+        """Record which bots ASF has checked and found empty (and close their
+        "farm now" requests)."""
+        changed = False
+        for name, bot in bots.items():
+            if not bot.get('IsConnectedAndLoggedOn'):
+                self._connected_since.pop(name, None)
+                continue
+            since = self._connected_since.setdefault(name, now)
+            view = bot_view(bot)
+            if view['now_farming'] or view['games_to_farm'] or view['paused']:
+                continue
+            if now - since >= EMPTY_CHECK_SECONDS:
+                with self._lock:
+                    self._checked_empty[name] = now
+                    changed |= self._farm_requests.pop(name, None) is not None
+                changed = True
+        if changed:
+            self._persist()
+
+    def _wanted(self, bots, accounts, now):
+        """Bots that should run: ASF's own queue first, then "farm now" requests,
+        then accounts Andvari saw with drops left — at most MAX_RUNNING_BOTS."""
+        drops = self._andvari_drops()
+        with self._lock:
+            requests_, checked = dict(self._farm_requests), dict(self._checked_empty)
+            paused = set(self._paused_for_ratatoskr)
+        ranked = []
+        for name, account in accounts.items():
+            bot = bots.get(name)
+            view = bot_view(bot) if bot else None
+            if view and view['enabled'] and (view['now_farming'] or view['games_to_farm']
+                                             or view['paused'] or name in paused):
+                ranked.append((0, -view['cards_remaining'], name))
+            elif now - (requests_.get(name) or 0) < FARM_NOW_SECONDS:
+                ranked.append((1, 0, name))
+            else:
+                left, fetched_at = drops.get(account['steamid'], (0, 0))
+                if left > 0 and (fetched_at or 0) > (checked.get(name) or 0):
+                    ranked.append((2, -left, name))
+        ranked.sort()
+        return {name for _, _, name in ranked[:MAX_RUNNING_BOTS]}, {name for _, _, name in ranked[MAX_RUNNING_BOTS:]}
+
+    def _apply_enabled(self, bots, wanted):
+        """Switch bots on/off to match *wanted*; returns the names changed."""
+        changed = []
+        for name, bot in bots.items():
+            config = bot.get('BotConfig')
+            if config is None or name not in self._accounts_cache:
+                continue
+            enabled = config.get('Enabled', True) is not False
+            if enabled == (name in wanted):
+                continue
+            kept = {key: value for key, value in config.items() if not key.startswith('s_')}
+            desired = {**kept, **HARDENED_BOT_CONFIG, 'Enabled': name in wanted,
+                       'SteamLogin': self._accounts_cache[name]['account_name']}
+            self._call('POST', f'/Api/Bot/{name}', {'BotConfig': desired})
+            changed.append(name)
+            logger.info('[ASF] switched %s %s', name, 'on (cards to farm)' if name in wanted else 'off (nothing to farm)')
+        return changed
+
+    def farm_now(self, steamid):
+        """Switch this account's bot on so ASF checks it right away (after buying
+        a game); it switches off again if ASF finds nothing."""
+        name = self._name_for_steamid(steamid)
+        with self._lock:
+            self._farm_requests[name] = time.time()
+            self._checked_empty.pop(name, None)
+        self._persist()
+        return {'success': True}
+
     # ---- manual controls -----------------------------------------------------------
 
     def _name_for_steamid(self, steamid):
@@ -385,11 +496,14 @@ class AsfService:
             return
         now = time.time()
         try:
+            accounts = self._accounts_cache = self._accounts()
             bots = self._bots()
-            if self.provision(bots):
+            self._note_checks(bots, now)
+            wanted, self._queued = self._wanted(bots, accounts, now)
+            if self.provision(bots, wanted) + self._apply_enabled(bots, wanted):
                 bots = self._bots()
             self._resume_after_ratatoskr(bots)
-            self._assist_one(bots, self._accounts(), now)
+            self._assist_one(bots, accounts, now)
             self._last_bots, self._last_error = self._bots(), None
         except AsfError as e:
             self._last_error = str(e)
@@ -422,12 +536,13 @@ class AsfService:
             bots, error = self._last_bots or {}, str(e)
         with self._lock:
             paused, attempts = dict(self._paused_for_ratatoskr), dict(self._attempts)
+            queued = set(self._queued)
         rows = []
         for name, account in sorted(self._accounts().items(), key=lambda item: item[0].lower()):
             view = bot_view(bots[name]) if name in bots else None
             tries = attempts.get(name) or {}
             row = {'steamid': account['steamid'], 'account_name': name,
-                   'state': farming_state(view, name in paused, tries),
+                   'state': farming_state(view, name in paused, tries, name in queued),
                    'login_attempts': tries.get('count', 0), 'last_error': tries.get('last_error')}
             if view:
                 row.update(view)
@@ -439,6 +554,8 @@ class AsfService:
             'totals': {
                 'farming': sum(1 for row in rows if row['state'] == 'farming'),
                 'needs_attention': sum(1 for row in rows if row['state'] == 'needs_attention'),
+                'running': sum(1 for row in rows if row.get('enabled')),
+                'max_running': MAX_RUNNING_BOTS,
                 'cards_remaining': sum(row.get('cards_remaining') or 0 for row in rows),
                 'games_to_farm': sum(row.get('games_to_farm') or 0 for row in rows),
             },

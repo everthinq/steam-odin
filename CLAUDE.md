@@ -52,7 +52,8 @@ not a separate deployable):
 - **Ratatoskr** is a separate Node service the backend calls over HTTP; the
   frontend never talks to it directly.
 - **ASF** (ArchiSteamFarm) is an unmodified upstream image the backend drives
-  over its API (no published port). It never receives 2FA seeds — Heimdall types
+  over its API (port 1242, this Mac only, password-guarded; its own UI is behind
+  Andvari's "ASF UI" button). It never receives 2FA seeds — Heimdall types
   the password and a Steam Guard code in only when ASF asks.
 - **Everything runs in Docker** via the root `docker-compose.yml`.
 
@@ -78,7 +79,9 @@ All three are published on **127.0.0.1 only**, and the backend refuses foreign
 `Host` headers and cross-origin reads (`request_guard.py`). Neither the API nor
 the UI has a login and they serve Steam Guard codes, the Mímir password export
 and trade confirmations — never publish them on all interfaces, never re-open
-CORS. ASF publishes no port at all.
+CORS. ASF's UI/API is on 127.0.0.1:1242 too, guarded by its API password
+(`make asf-password` copies it); ASF ignores host filtering, so the password is
+what stops a DNS-rebinding website.
 
 Container names (compose project = directory name):
 - `steam-odin-heimdall-backend-1`

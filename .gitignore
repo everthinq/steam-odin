@@ -223,3 +223,9 @@ telegram_caller.session
 # it holds no secrets, just item names / prices / dates.
 # ...but the local point-in-time snapshot history stays on-disk only (can be large).
 Yggdrasil/heimdall/backend/backups/
+
+# Telegram exports (course chat history etc.) — large raw dumps, kept local only.
+# Distilled knowledge lives in docs/steam-trading/; the raw export is never committed.
+docs/telegram_export*/
+**/telegram_export*/
+**/ChatExport_*/

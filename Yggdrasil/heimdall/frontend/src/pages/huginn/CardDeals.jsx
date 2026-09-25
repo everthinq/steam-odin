@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Link } from 'react-router-dom';
-import { LayoutDashboard, RefreshCw, Layers, Settings, Search, Users, AlertTriangle, Pickaxe } from 'lucide-react';
+import { LayoutDashboard, RefreshCw, Layers, Settings, Search, Users, AlertTriangle, Pickaxe, ExternalLink } from 'lucide-react';
 import DealsTable from '../../components/carddeals/DealsTable';
 import SettingsPanel from '../../components/carddeals/SettingsPanel';
 import FarmingPanel from '../../components/carddeals/FarmingPanel';
@@ -35,6 +35,10 @@ const Stat = ({ label, value, tone, hint }) => (
         </div>
     </InfoTip>
 );
+
+// ASF's own web UI, published on this Mac only (docker-compose.yml). It asks for
+// the ASF API password once: `make asf-password` copies it to the clipboard.
+const ASF_UI_URL = `${window.location.protocol}//${window.location.hostname}:1242/`;
 
 const HOW_IT_WORKS = 'Buying a game with trading cards gives half its card set (rounded up) as drops '
     + 'while you play it. If those cards sell for more than the game costs (after Steam’s ~15% market fee), '
@@ -152,6 +156,14 @@ const CardDeals = () => {
                             <RefreshCw size={14} className={running ? 'animate-spin' : ''} /> Scan sale + full price
                         </button>
                     </InfoTip>
+                    {farming?.enabled && (
+                        <InfoTip tip="Open ArchiSteamFarm’s own UI (this Mac only). First time it asks for the ASF password: run “make asf-password” in the repository to copy it. Heimdall re-applies the safety settings (no trading, no chat commands, no public listing) within a minute if they are changed there.">
+                            <a href={ASF_UI_URL} target="_blank" rel="noopener noreferrer"
+                                className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm border border-white/10 text-slate-300 hover:bg-white/5">
+                                <ExternalLink size={14} /> ASF UI
+                            </a>
+                        </InfoTip>
+                    )}
                     <button type="button" onClick={() => setShowSettings((v) => !v)}
                         className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm border transition-colors ${showSettings ? 'border-amber-500/40 text-amber-200 bg-amber-500/10' : 'border-white/10 text-slate-300 hover:bg-white/5'}`}>
                         <Settings size={14} /> Settings

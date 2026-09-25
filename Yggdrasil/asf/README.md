@@ -16,8 +16,21 @@ make asf-setup     # random API password into .env + hardened config/ASF.json an
 make asf           # start ASF, then restart the backend so it picks the password up
 ```
 
-Heimdall then creates one bot per account and logs them in one by one (about
-45 seconds apart). Nothing else to configure.
+Heimdall then creates one bot per account. Nothing else to configure.
+
+## Only accounts with cards to farm run
+
+ASF's FAQ recommends at most **10 bots** ("based on internal Valve guidelines";
+ASF logs a warning above that), and a logged-in bot with nothing to farm is risk
+without reward. So Heimdall switches a bot **on** only while its account has
+work — ASF is farming it, Andvari's badges scan shows drops left, or you pressed
+**Farm now** — at most 10 at once (the rest show "Queued"), and switches it
+**off** once ASF has been logged in for 5 minutes and found nothing. The login
+token is kept, so switching back on needs no password.
+
+**Bought a game?** Andvari → Card farming → press ⚡ (Farm now) on that account:
+ASF logs in within a minute, finds the new drops and farms them. (Otherwise the
+next Andvari scan, up to 12 hours later, notices the drops.)
 
 ## Safety model
 
@@ -34,7 +47,7 @@ treat `config/` like a password file.)
 
 | Setting | Why |
 |---------|-----|
-| No published port | Only `heimdall-backend` can reach the ASF API (Docker network), with a 43-character password |
+| Port on 127.0.0.1 only | The ASF UI/API is reachable from this Mac only (plus `heimdall-backend` over Docker), and every call needs the 43-character API password; ASF blocks a source after 5 wrong passwords |
 | `RemoteCommunication: 0` per bot | No ASF Steam group, no public bot listing — nothing publicly links the 21 accounts |
 | `FilterBadBots: false` | No download of ASF's bad-bot list (trading is off anyway) |
 | `UpdateChannel: 0` | No self-update; the image is pinned by digest and updated on purpose |
@@ -62,6 +75,25 @@ treat `config/` like a password file.)
 plays Counter-Strike 2 to reach its Game Coordinator. Heimdall pauses the
 account's bot before every Ratatoskr login and resumes it once Ratatoskr's
 session is gone (checked every 45 seconds; survives backend reloads).
+
+## ASF UI
+
+Andvari's header has an **ASF UI** button (or open http://localhost:1242). The
+first time, ASF-ui asks for the API password: run `make asf-password` in the
+repository — it copies it to the clipboard without printing it — and paste it.
+The browser remembers it for that page only.
+
+The UI is powerful: it can edit bot configs and run commands. Heimdall re-applies
+the safety settings (no trading, no chat commands, no public listing, offline,
+no hour boosting) within 45 seconds if they are changed there; your other edits
+(farming order, hours until drops, ...) are kept. Switching a bot on or off
+is Heimdall's job (see above) — use Pause in Andvari to hold one. **Never set a "master"
+account or Steam user permissions, and never run `loot`**: Heimdall
+auto-confirms trades (`auto_confirm_trades`), so a trade ASF creates would go
+through. `transfer` moves items between your own accounts (safe, but it links
+them with trades); `redeem` of your own keys is safe (keep redeeming
+forwarding/distributing off). ASF's own Steam Guard page shows nothing useful here —
+by design ASF has no 2FA secrets.
 
 ## What is stored where (all gitignored)
 

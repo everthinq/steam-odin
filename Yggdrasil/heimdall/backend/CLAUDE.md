@@ -41,7 +41,7 @@ Dependency shape (who is passed what):
 | `draupnir_backup_service.py` | Point-in-time snapshots of `portfolios.json`, gzip-compressed, GFS retention |
 | `mimir_service.py` | Encrypted credential vault (shares the maFile key) |
 | `card_deals_service.py` | Andvari (Huginn → Card deals): games whose trading-card drops resell for more than the game costs, per account; background scan with its own Steam throttles, cache in `cache/card_deals.json.gz` |
-| `asf_service.py` | ArchiSteamFarm driver: hardened bot per account, password + Steam Guard code only when ASF asks (paced, three tries), pause while Ratatoskr plays, farming status; off until `ASF_IPC_PASSWORD` is set |
+| `asf_service.py` | ArchiSteamFarm driver: hardened bot per account, switched on only while it has cards to farm (max 10), password + Steam Guard code only when ASF asks (paced, three tries), pause while Ratatoskr plays, farming status; off until `ASF_IPC_PASSWORD` is set |
 | `storage.py` | maFile load/save, encryption/migration |
 | `jsonio.py` | Crash-safe atomic JSON read/write |
 | `validation.py` | Request-body validation for writes |

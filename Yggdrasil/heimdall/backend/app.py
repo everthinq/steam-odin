@@ -68,6 +68,7 @@ card_deals_service = CardDealsService(steam_service, settings_manager)
 # Off until ASF_IPC_PASSWORD is set (make asf-setup).
 asf_service = AsfService(steam_service, ratatoskr_service)
 ratatoskr_service.before_login = asf_service.pause_for_ratatoskr
+asf_service.card_deals = card_deals_service   # drop counts decide which bots run
 
 # Expose the singletons to the route blueprints (read from context.ctx at
 # request time — see context.py and the routes/ package).

@@ -7,7 +7,7 @@ import pytest
 import asf_service
 from asf_service import (AsfService, AsfError, HARDENED_BOT_CONFIG, INPUT_NONE, INPUT_PASSWORD,
                          INPUT_TWO_FACTOR, INPUT_STEAM_GUARD, MAX_LOGIN_ATTEMPTS, LOGIN_RETRY_SECONDS,
-                         bot_view, farming_state, parse_time_span)
+                         EMPTY_CHECK_SECONDS, MAX_RUNNING_BOTS, bot_view, farming_state, parse_time_span)
 
 PASSWORD = 'hunter2-secret'
 SHARED_SECRET = 'c2hhcmVkLXNlY3JldA=='
@@ -43,6 +43,19 @@ class FakeSteam:
         return CODE if shared_secret else 'N/A'
 
 
+class FakeCardDeals:
+    """Andvari's per-account drop counts: {steamid: (drops left, fetched_at)}."""
+
+    def __init__(self, drops=None):
+        self.drops = drops or {}
+
+    def account_drops(self):
+        return dict(self.drops)
+
+
+FRESH = 1e12                                         # an Andvari refresh newer than any check
+
+
 class FakeRatatoskr:
     def __init__(self):
         self.sessions = {}
@@ -55,7 +68,7 @@ def make_bot(connected=True, running=True, required=INPUT_NONE, farming=False, p
              to_farm=(), config=None):
     return {'IsConnectedAndLoggedOn': connected, 'KeepRunning': running, 'RequiredInput': required,
             'IsPlayingPossible': True,
-            'BotConfig': config if config is not None else {**HARDENED_BOT_CONFIG},
+            'BotConfig': config if config is not None else {'Enabled': True, **HARDENED_BOT_CONFIG},
             'CardsFarmer': {'NowFarming': farming, 'Paused': paused, 'TimeRemaining': '01:30:00',
                             'CurrentGamesFarming': [{'AppID': 10, 'GameName': 'Ten', 'CardsRemaining': 2,
                                                      'HoursPlayed': 1.25}] if farming else [],
@@ -103,6 +116,8 @@ def world(tmp_path):
                          state_path=str(tmp_path / 'asf_state.json'), sleep=sleeps.append)
     fake = FakeAsf()
     service._call = fake
+    # Both accounts have drops left (so they are wanted on) unless a test says otherwise.
+    service.card_deals = FakeCardDeals({sid: (3, FRESH) for sid in ACCOUNTS})
     return service, fake, steam, ratatoskr, sleeps
 
 
@@ -154,12 +169,119 @@ def test_provision_creates_hardened_bots_without_password(world):
         assert config['RemoteCommunication'] == 0 and config['OnlineStatus'] == 0
         assert config['TradingPreferences'] == 0 and config['GamesPlayedWhileIdle'] == []
         assert config['SteamUserPermissions'] == {} and config['AcceptGifts'] is False
+        assert config['Enabled'] is False          # provision() alone: nothing wanted yet
 
 
 def test_provision_skips_matching_and_rewrites_drifted(world):
     service, fake, *_ = world
-    fake.bots = {'alpha': make_bot(), 'bravo': make_bot(config={**HARDENED_BOT_CONFIG, 'RemoteCommunication': 3})}
+    fake.bots = {'alpha': make_bot(),
+                 'bravo': make_bot(config={'Enabled': True, **HARDENED_BOT_CONFIG, 'RemoteCommunication': 3})}
     assert service.provision() == ['bravo']
+
+
+def test_provision_keeps_ui_edits_but_resets_safety(world):
+    service, fake, *_ = world
+    edited = {'Enabled': True, **HARDENED_BOT_CONFIG, 'FarmingOrders': [3], 'HoursUntilCardDrops': 0,
+              'SteamUserPermissions': {'76561190000000000': 3}, 's_SteamMasterClanID': '0'}
+    fake.bots = {'alpha': make_bot(config=edited), 'bravo': make_bot()}
+    assert service.provision() == ['alpha']
+    config = fake.posts()[0][1]['BotConfig']
+    assert config['FarmingOrders'] == [3] and config['HoursUntilCardDrops'] == 0     # kept
+    assert config['SteamUserPermissions'] == {} and config['SteamLogin'] == 'alpha'  # reset
+    assert 's_SteamMasterClanID' not in config
+
+
+def test_provision_creates_bots_switched_on_only_when_wanted(world):
+    service, fake, *_ = world
+    service.provision(wanted={'alpha'})
+    enabled = {path.rsplit('/', 1)[1]: body['BotConfig']['Enabled'] for path, body in fake.posts()}
+    assert enabled == {'alpha': True, 'bravo': False}
+
+
+# ---- which bots run -------------------------------------------------------------------
+
+def enabled_changes(fake):
+    return [(path.rsplit('/', 1)[1], body['BotConfig']['Enabled']) for path, body in fake.posts()
+            if path.count('/') == 3]
+
+
+def test_idle_bot_switches_off_after_asf_checked(world, monkeypatch):
+    service, fake, *_ = world
+    service.card_deals = FakeCardDeals({'76561198000000001': (3, 5_000.0)})   # alpha: stale-ish drops
+    fake.bots = {'alpha': make_bot(), 'bravo': make_bot(farming=True, to_farm=(10,))}
+    clock = [10_000.0]
+    monkeypatch.setattr(asf_service.time, 'time', lambda: clock[0])
+    service.tick()                                   # alpha: Andvari says drops left, ASF not done looking
+    assert enabled_changes(fake) == []
+    clock[0] += EMPTY_CHECK_SECONDS + 1
+    service.tick()                                   # ASF looked for 5 minutes: nothing -> off
+    assert enabled_changes(fake) == [('alpha', False)]
+    config = fake.posts()[-1][1]['BotConfig']
+    assert config['SteamUserPermissions'] == {} and config['SteamLogin'] == 'alpha'
+    assert service.status()['accounts'][0]['state'] == 'off'
+    assert service.status()['accounts'][1]['state'] == 'farming'     # bravo keeps farming
+
+
+def test_fresh_andvari_drops_switch_a_bot_on_but_stale_ones_do_not(world, monkeypatch):
+    service, fake, *_ = world
+    off = {'Enabled': False, **HARDENED_BOT_CONFIG}
+    fake.bots = {'alpha': make_bot(connected=False, running=False, config=dict(off)),
+                 'bravo': make_bot(connected=False, running=False, config=dict(off))}
+    service._checked_empty = {'alpha': 20_000.0, 'bravo': 20_000.0}
+    service.card_deals = FakeCardDeals({'76561198000000001': (4, 30_000.0),     # refreshed after the check
+                                        '76561198000000002': (4, 10_000.0)})    # older than the check
+    monkeypatch.setattr(asf_service.time, 'time', lambda: 40_000.0)
+    service.tick()
+    assert enabled_changes(fake) == [('alpha', True)]
+
+
+def test_farm_now_switches_on_then_off_when_empty(world, monkeypatch):
+    service, fake, *_ = world
+    service.card_deals = FakeCardDeals()
+    off = {'Enabled': False, **HARDENED_BOT_CONFIG}
+    fake.bots = {'alpha': make_bot(connected=False, running=False, config=dict(off)),
+                 'bravo': make_bot(connected=False, running=False, config=dict(off))}
+    clock = [10_000.0]
+    monkeypatch.setattr(asf_service.time, 'time', lambda: clock[0])
+    service.farm_now('76561198000000001')
+    service.tick()
+    assert enabled_changes(fake) == [('alpha', True)]
+    fake.bots['alpha'] = make_bot()                  # logged in, nothing to farm
+    clock[0] += 60
+    service.tick()
+    clock[0] += EMPTY_CHECK_SECONDS + 1
+    service.tick()
+    assert enabled_changes(fake)[-1] == ('alpha', False)
+    assert 'alpha' not in service._farm_requests
+
+
+def test_at_most_ten_bots_run(tmp_path):
+    accounts = {f'7656119800000{i:04d}': {'account_name': f'bot{i:02d}', 'shared_secret': SHARED_SECRET}
+                for i in range(MAX_RUNNING_BOTS + 2)}
+    service = AsfService(FakeSteam(accounts, {}), FakeRatatoskr(), ipc_password='ipc',
+                         state_path=str(tmp_path / 's.json'), sleep=lambda _: None)
+    service.card_deals = FakeCardDeals({sid: (i + 1, FRESH) for i, sid in enumerate(accounts)})
+    fake = FakeAsf({account['account_name']: make_bot(connected=False, running=False,
+                                                      config={'Enabled': False, **HARDENED_BOT_CONFIG})
+                    for account in accounts.values()})
+    service._call = fake
+    service.tick()
+    switched_on = {name for name, enabled in enabled_changes(fake) if enabled}
+    assert len(switched_on) == MAX_RUNNING_BOTS
+    assert switched_on == {f'bot{i:02d}' for i in range(2, MAX_RUNNING_BOTS + 2)}   # most drops first
+    states = {row['account_name']: row['state'] for row in service.status()['accounts']}
+    assert states['bot00'] == states['bot01'] == 'queued'
+    assert service.status()['totals']['max_running'] == MAX_RUNNING_BOTS
+
+
+def test_switched_off_bots_are_never_logged_in(world):
+    service, fake, *_ = world
+    service.card_deals = FakeCardDeals()
+    fake.bots = {'alpha': make_bot(connected=False, running=False, required=INPUT_PASSWORD,
+                                   config={'Enabled': False, **HARDENED_BOT_CONFIG}),
+                 'bravo': make_bot(connected=False, running=False, config={'Enabled': False, **HARDENED_BOT_CONFIG})}
+    service.tick()
+    assert fake.posts() == []
 
 
 def test_accounts_skip_invalid_bot_names(tmp_path):

@@ -8,8 +8,8 @@ What it writes (all gitignored, owner-only permissions):
 - `Yggdrasil/asf/config/ASF.json`: ASF's global config, hardened for safety
   (no public listing / Steam group, no self-update, no bad-bot list download,
   slow login and web pacing, headless).
-- `Yggdrasil/asf/config/IPC.config`: the ASF API listens inside the Docker
-  network only (the compose file publishes no port for it).
+- `Yggdrasil/asf/config/IPC.config`: the ASF UI/API listens on port 1242 (the
+  compose file publishes it on 127.0.0.1 only; the API password guards it).
 
 Bot configs (one per Steam account) are not written here: Heimdall creates them
 through the ASF API, with no password inside — Heimdall types the password and
@@ -52,6 +52,10 @@ def global_config(ipc_password):
     }
 
 
+# Listen on every container interface; Docker publishes the port to this Mac only.
+# (ASF's web server ignores ASP.NET's AllowedHosts filter — tested 2026-09-25 — so
+# the random API password is what stops a DNS-rebinding website; ASF also blocks
+# a source after five wrong passwords.)
 IPC_CONFIG = {'Kestrel': {'Endpoints': {'HTTP': {'Url': 'http://*:1242'}}}}
 
 
