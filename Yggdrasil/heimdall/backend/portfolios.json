@@ -4,7 +4,7 @@
       "id": "fbf692611b3c",
       "name": "everthinklol",
       "created_at": "2026-07-21T13:40:18.177768+00:00",
-      "updated_at": "2026-09-29T15:34:35.289677+00:00",
+      "updated_at": "2026-09-29T22:24:52.101901+00:00",
       "transactions": [
         {
           "id": "3ea474874554",
@@ -10233,6 +10233,32 @@
           "fee_percent": 0.0,
           "is_arbitrage": false,
           "created_at": "2026-09-29T15:34:35.289640+00:00"
+        },
+        {
+          "id": "1b2bc793ede0",
+          "item_name": "P250 | Constructivist (Factory New)",
+          "type": "buy",
+          "qty": 2,
+          "price": 0.15,
+          "platform": "cs.money.trade",
+          "date": "2026-09-30",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": true,
+          "created_at": "2026-09-29T22:12:52.768414+00:00"
+        },
+        {
+          "id": "0d3733ee5f02",
+          "item_name": "P250 | Constructivist (Factory New)",
+          "type": "sell",
+          "qty": 2,
+          "price": 0.21,
+          "platform": "cs.money.trade",
+          "date": "2026-09-30",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": true,
+          "created_at": "2026-09-29T22:24:46.986938+00:00"
         }
       ]
     },
