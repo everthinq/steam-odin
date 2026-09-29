@@ -4,7 +4,7 @@
       "id": "fbf692611b3c",
       "name": "everthinklol",
       "created_at": "2026-07-21T13:40:18.177768+00:00",
-      "updated_at": "2026-09-28T23:59:56.589413+00:00",
+      "updated_at": "2026-09-29T00:54:22.972662+00:00",
       "transactions": [
         {
           "id": "3ea474874554",
@@ -9991,7 +9991,7 @@
           "id": "2fc173462842",
           "item_name": "Dreams & Nightmares Case",
           "type": "buy",
-          "qty": 10,
+          "qty": 14,
           "price": 0.83,
           "platform": "cs.money.trade",
           "date": "2026-09-29",
@@ -10017,7 +10017,7 @@
           "id": "69faf4f716bb",
           "item_name": "Dreams & Nightmares Case",
           "type": "buy",
-          "qty": 8,
+          "qty": 21,
           "price": 0.81,
           "platform": "cs.money.trade",
           "date": "2026-09-29",
@@ -10056,7 +10056,7 @@
           "id": "f27809f616fc",
           "item_name": "Sticker Capsule 2",
           "type": "sell",
-          "qty": 1,
+          "qty": 14,
           "price": 9.7,
           "platform": "cs.money.trade",
           "date": "2026-09-29",
@@ -10077,6 +10077,45 @@
           "fee_percent": 0.0,
           "is_arbitrage": false,
           "created_at": "2026-09-28T23:59:31.234403+00:00"
+        },
+        {
+          "id": "43d8665c137c",
+          "item_name": "Dreams & Nightmares Case",
+          "type": "buy",
+          "qty": 150,
+          "price": 0.86,
+          "platform": "cs.money.trade",
+          "date": "2026-09-29",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": false,
+          "created_at": "2026-09-29T00:06:30.055442+00:00"
+        },
+        {
+          "id": "1f2f351de0f1",
+          "item_name": "Sticker | aNdu (Gold) | Shanghai 2024",
+          "type": "sell",
+          "qty": 6,
+          "price": 1.78,
+          "platform": "cs.money.trade",
+          "date": "2026-09-29",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": false,
+          "created_at": "2026-09-29T00:52:11.414166+00:00"
+        },
+        {
+          "id": "1580ccc425d4",
+          "item_name": "Dreams & Nightmares Case",
+          "type": "buy",
+          "qty": 13,
+          "price": 0.86,
+          "platform": "cs.money.trade",
+          "date": "2026-09-29",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": false,
+          "created_at": "2026-09-29T00:52:38.956788+00:00"
         }
       ]
     },
