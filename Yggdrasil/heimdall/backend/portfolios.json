@@ -4,7 +4,7 @@
       "id": "fbf692611b3c",
       "name": "everthinklol",
       "created_at": "2026-07-21T13:40:18.177768+00:00",
-      "updated_at": "2026-09-29T09:54:17.262617+00:00",
+      "updated_at": "2026-09-29T15:34:35.289677+00:00",
       "transactions": [
         {
           "id": "3ea474874554",
@@ -10207,6 +10207,32 @@
           "fee_percent": 0.0,
           "is_arbitrage": false,
           "created_at": "2026-09-29T09:54:17.262587+00:00"
+        },
+        {
+          "id": "cea0e8c050ed",
+          "item_name": "Sticker | Gold Web (Foil)",
+          "type": "sell",
+          "qty": 1,
+          "price": 4.46,
+          "platform": "cs.money.trade",
+          "date": "2026-09-29",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": false,
+          "created_at": "2026-09-29T15:34:26.707415+00:00"
+        },
+        {
+          "id": "2324428e0e90",
+          "item_name": "Dreams & Nightmares Case",
+          "type": "buy",
+          "qty": 2,
+          "price": 0.86,
+          "platform": "cs.money.trade",
+          "date": "2026-09-29",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": false,
+          "created_at": "2026-09-29T15:34:35.289640+00:00"
         }
       ]
     },
