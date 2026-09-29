@@ -4,7 +4,7 @@
       "id": "fbf692611b3c",
       "name": "everthinklol",
       "created_at": "2026-07-21T13:40:18.177768+00:00",
-      "updated_at": "2026-09-29T08:53:07.533321+00:00",
+      "updated_at": "2026-09-29T09:54:17.262617+00:00",
       "transactions": [
         {
           "id": "3ea474874554",
@@ -10194,6 +10194,19 @@
           "fee_percent": 0.0,
           "is_arbitrage": false,
           "created_at": "2026-09-29T01:30:04.944486+00:00"
+        },
+        {
+          "id": "7dcdc9c11e34",
+          "item_name": "Gallery Case",
+          "type": "buy",
+          "qty": 18,
+          "price": 0.58,
+          "platform": "csfloat",
+          "date": "2026-09-29",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": false,
+          "created_at": "2026-09-29T09:54:17.262587+00:00"
         }
       ]
     },
