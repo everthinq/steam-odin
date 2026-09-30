@@ -37,6 +37,8 @@ settings_manager = SettingsManager()
 steam_service = SteamService()
 ratatoskr_service = RatatoskrService()
 huginn_service = HuginnService(steam_service, ratatoskr_service)
+# Every fee comes from the one Fees editor (settings huginn_market_fees).
+huginn_service.settings_provider = settings_manager.get_settings
 draupnir_service = DraupnirService(huginn_service)
 # Draupnir point-in-time backups: snapshot portfolios.json on every change +
 # once daily, with GFS retention and safe restore.

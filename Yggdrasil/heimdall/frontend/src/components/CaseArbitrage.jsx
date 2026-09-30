@@ -21,8 +21,13 @@ const MARKETS = [
     { key: 'csfloat', label: 'CSFloat', short: 'CF', slug: 'CsFloat', sellable: true },
     { key: 'lisskins', label: 'LisSkins', short: 'LIS', slug: 'LisSkins', sellable: false },
     { key: 'dmarket', label: 'DMarket', short: 'DM', slug: 'Dmarket', sellable: false },
+    { key: 'csmoney_market', label: 'CS.MONEY Market', short: 'CMM', slug: 'CsMoneyMarket', sellable: false },
+    // Trade sites: prices are in their own trade balance, not cash.
+    { key: 'csmoney_trade', label: 'CS.MONEY Trade', short: 'CMT', slug: 'CsMoneyTrade', sellable: false, balance: true },
+    { key: 'skinswap', label: 'SkinSwap', short: 'SS', slug: 'SkinSwapMarket', sellable: false, balance: true },
 ];
 const MARKET_BY_KEY = Object.fromEntries(MARKETS.map(m => [m.key, m]));
+const marketLabel = (key) => MARKET_BY_KEY[key]?.label || key || '';
 
 const CATEGORIES = [
     { slug: 'case', label: 'Cases' },
@@ -83,9 +88,9 @@ const Flip = ({ flip }) => {
     return (
         <div className="flex items-center gap-2 min-w-0">
             <span className="flex items-center gap-1 text-[11px] text-slate-400 shrink-0">
-                <span className="capitalize">{flip.buy_market}</span>
+                <span>{marketLabel(flip.buy_market)}</span>
                 <ArrowRight size={10} className="text-slate-600" />
-                <span className="capitalize">{flip.sell_market}</span>
+                <span>{marketLabel(flip.sell_market)}</span>
             </span>
             <span className={`text-xs font-semibold tabular-nums shrink-0 ${good ? 'text-emerald-400' : 'text-red-400'}`}>
                 {flip.profit >= 0 ? '+' : ''}{money(flip.profit)}
@@ -249,7 +254,7 @@ const CaseArbitrage = () => {
                     return (
                         <a key={m.key} href={href} target="_blank" rel="noopener noreferrer"
                             onClick={(e) => e.stopPropagation()}
-                            title={`${r.name} on ${m.label}${cnt != null ? ` · ${cnt} listed` : ''}${m.sellable ? '' : ' · not a sell venue'}`}
+                            title={`${r.name} on ${m.label}${cnt != null ? ` · ${cnt} listed` : ''}${m.sellable ? '' : ' · not a sell venue'}${m.balance ? ' · price in trade balance' : ''}`}
                             className={`inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs tabular-nums border transition-colors ${
                                 isCheap
                                     ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300 font-semibold'
@@ -287,7 +292,7 @@ const CaseArbitrage = () => {
                     {/* Buy@ */}
                     <div className="text-right">
                         <div className="text-base tabular-nums text-emerald-400 font-semibold">{money(r.cheapest)}</div>
-                        <div className="text-[10px] text-slate-500 capitalize">{r.cheapest_market || ''}</div>
+                        <div className="text-[10px] text-slate-500">{marketLabel(r.cheapest_market)}</div>
                     </div>
                     {/* Flip (net of fee) */}
                     <div className="text-right">
@@ -296,7 +301,7 @@ const CaseArbitrage = () => {
                                 <div className={`text-sm tabular-nums font-semibold ${flip.profit > 0 ? 'text-emerald-400' : 'text-red-400'}`}>
                                     {flip.profit >= 0 ? '+' : ''}{money(flip.profit)} ({flip.profit_pct?.toFixed(1)}%)
                                 </div>
-                                <div className="text-[10px] text-slate-500 capitalize">{money(flip.net_sell)} on {flip.sell_market}</div>
+                                <div className="text-[10px] text-slate-500">{money(flip.net_sell)} on {marketLabel(flip.sell_market)}</div>
                             </>
                         ) : <span className="text-slate-600 text-sm">—</span>}
                     </div>
@@ -312,7 +317,7 @@ const CaseArbitrage = () => {
                             const href = p != null ? getTradeonShortLink(m.slug, r.name) : null;
                             const inner = (
                                 <>
-                                    <span className={`text-[11px] ${isCheap ? 'text-emerald-400' : 'text-slate-500'}`}>{m.label}{!m.sellable && <span className="text-slate-600"> (buy only)</span>}</span>
+                                    <span className={`text-[11px] ${isCheap ? 'text-emerald-400' : 'text-slate-500'}`}>{m.label}{!m.sellable && <span className="text-slate-600"> ({m.balance ? 'trade balance' : 'buy only'})</span>}</span>
                                     <span className={`tabular-nums ${p == null ? 'text-slate-600' : isCheap ? 'text-emerald-400 font-semibold' : 'text-slate-300'}`}>{money(p)}</span>
                                     {cnt != null && <span className="text-[10px] text-slate-600">×{cnt}</span>}
                                 </>
@@ -396,7 +401,7 @@ const CaseArbitrage = () => {
             <div className="shrink-0 flex items-center gap-3 px-4 py-1.5 text-xs text-slate-500 border-b border-white/5 bg-black/5">
                 <span>showing {Math.min(visibleCount, filtered.length)} of {filtered.length}{data ? ` · ${data.priced} priced` : ''}</span>
                 {data?.hot_threshold_pct != null && <span className="text-slate-600">· hot ≥ {data.hot_threshold_pct}% profit</span>}
-                <span className="text-slate-600">· profit is net of seller fee; flips sell on Steam/Buff/CSFloat (DMarket excluded)</span>
+                <span className="text-slate-600">· profit is net of seller fee; flips buy with cash and sell on Steam/Buff/CSFloat (fees from the Fees editor); DMarket, CS.MONEY Trade and SkinSwap are shown only (unfillable / trade balance)</span>
             </div>
 
             {(warming || noToken || error) && (

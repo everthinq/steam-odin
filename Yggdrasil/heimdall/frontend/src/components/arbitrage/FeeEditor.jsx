@@ -2,9 +2,9 @@ import { useState, useEffect, useRef } from 'react';
 import { Percent, ChevronDown } from 'lucide-react';
 
 // Sell-side fee editor. Fees are entered as percent and stored as fractions via
-// POST /api/huginn/markets/fees (persisted in settings.json). Only sell-capable
-// markets are shown — Tradeon is never a sell target, and LootFarm selling is
-// handled by its own feed-based profiles (with the separate LF fee control).
+// POST /api/huginn/markets/fees (persisted in settings.json). This is the ONE place
+// fees are set: every tab (Arbitrage profiles, Case Arbitrage, Cross-Profile,
+// Harvest, LOOT.Farm, auctions) reads them. Tradeon is never a sell target.
 const feeToPct = (frac) => (frac == null ? '' : String(+(frac * 100).toFixed(2)));
 
 const FeeEditor = ({ markets, onSaved }) => {
@@ -14,7 +14,7 @@ const FeeEditor = ({ markets, onSaved }) => {
     const [error, setError] = useState(null);
     const ref = useRef(null);
 
-    const editable = markets.filter(m => m.id !== 'TradeOnMarket' && m.id !== 'LootFarm');
+    const editable = markets.filter(m => m.id !== 'TradeOnMarket');
 
     // Seed the draft from the current fees each time the panel opens.
     useEffect(() => {

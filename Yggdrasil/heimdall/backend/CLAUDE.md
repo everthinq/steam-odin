@@ -85,6 +85,13 @@ Dev dependencies: `requirements-dev.txt` (pytest, ruff, pip-audit).
 
 ## Backend-specific traps
 
+- **Sell fees live in ONE place.** The market registry in `huginn_service.py` holds
+  the defaults, and the Fees editor on the Arbitrage page (settings
+  `huginn_market_fees`) overrides them. Every profit calculation reads them through
+  `HuginnService.market_fee(market_id)`. That covers the Arbitrage profiles, Case
+  Arbitrage, Cross-Profile, Harvest, LOOT.Farm and the auctions. Never add a
+  per-feature fee constant.
+
 - **Confirmations `a` param = SteamID64**, not the 32-bit account id (see
   `steam_service.py`). Wrong form returns a fake-looking rate-limit message.
 - **Web token for confirmations expires ~24h.** Only a full login mints a fresh

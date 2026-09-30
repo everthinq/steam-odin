@@ -77,6 +77,9 @@ _CSFLOAT_LIMIT_WAIT_MAXIMUM_SECONDS = 3 * 60 * 60
 # CSFloat price is older than _CSFLOAT_CHEAP_REFRESH_SECONDS: a buy order on a few-cent
 # item is not worth an API request every sweep.
 _CSFLOAT_CHEAP_ITEM_USD = 0.25
+# After this many items in a row whose direct by-name lookup was blocked, the sweep
+# stops trying it (direct access is blocked; listings can still go through the proxy).
+_CSFLOAT_NAME_LOOKUP_BLOCKED_LIMIT = 3
 _CSFLOAT_CHEAP_REFRESH_SECONDS = 7 * 24 * 60 * 60
 # When EVERY key is cooling, the sweep waits out the soonest cooldown and auto-resumes.
 # This caps how many such waits it will sit through before pausing for a manual resume.
@@ -130,6 +133,11 @@ def _retry_after_seconds(headers):
         # A large number is an epoch timestamp, a small one a number of seconds.
         return max(0.0, number - time.time()) if number > 1e9 else max(0.0, number)
     return None
+
+
+class _CSFloatNameLookupUnsupported(Exception):
+    """CSFloat's buy-orders-by-name endpoint answered in a way we do not understand
+    (moved, changed, or refused): the sweep switches to the listing method."""
 
 
 class _CSFloatUnavailable(Exception):
@@ -346,11 +354,9 @@ _LOOTFARM_TTL = 60   # seconds; feed changes at most once a minute
 _LOOTFARM_AUCTION_URL = 'https://loot.farm/botsInventory_Auctions.json'
 _LOOTFARM_AUCTION_TTL = 45   # seconds
 
-# Sales fee taken by the sell-side market: net proceeds = price * (1 - fee).
-STEAM_SALES_FEE = 0.13
-BUFF_SALES_FEE = 0.015
-CSFLOAT_SALES_FEE = 0.02
-DMARKET_SALES_FEE = 0.0   # DMarket takes no seller fee
+# Sell fees (net proceeds = price * (1 - fee)) live in ONE place: the market registry
+# below (defaults) overridden by the Fees editor (settings huginn_market_fees), read
+# through HuginnService.market_fee. Do not add per-feature fee constants.
 _TRADEON_STEAM_BODY = {
     "templateId": None,
     "firstMarketOptions": {
@@ -512,6 +518,9 @@ class HuginnService:
         self._price_failed_at = {}   # market -> epoch of the last failed background refresh
         self._price_lock = threading.Lock()
         self._csfloat_links_lock = threading.Lock()   # guards csfloat_item_links.json writes
+        # Returns the current settings; app.py points it at SettingsManager.get_settings,
+        # so every fee below comes from the one Fees editor (huginn_market_fees).
+        self.settings_provider = None
         self._market_pull_cache = {}   # (market_id, price_type) -> (fetched_at, items) for generated pairs
         self._market_pull_lock = threading.Lock()
         # Parsed-file caches keyed by (modification time, size): the 16 MB inventory
@@ -748,15 +757,17 @@ class HuginnService:
         self._lootfarm_cache[game] = (now, out)
         return out
 
-    def fetch_tradeon_lootfarm(self, token, fee_pct=5.0):
+    def fetch_tradeon_lootfarm(self, token, fee_pct=None):
         """Tradeon (min) buy -> LOOT.Farm sell, using LOOT.Farm's OWN feed for the
         sell side (price + overstock), first-party and fresh, rather than pulse.
 
         Buy side: TradeOnMarket lowest listing (the firstMarket of any pulse row).
         Sell side: LOOT.Farm feed price (cents -> USD) net of your acceptance fee
-        (`fee_pct`, default 5%). Overstock (have/max) comes straight from the feed,
+        (`fee_pct`; by default the LOOT.Farm fee set in the Fees editor). Overstock (have/max) comes straight from the feed,
         so the "Unstable"/Full column reflects LOOT.Farm's real limits. Items are
         joined on market_hash_name; only items present on both sides are returned."""
+        if fee_pct is None:     # your LOOT.Farm fee from the Fees editor (percent)
+            fee_pct = self.market_fee('LootFarm') * 100
         try:
             fee = float(fee_pct)
         except (TypeError, ValueError):
@@ -799,12 +810,14 @@ class HuginnService:
         combined.sort(key=lambda x: (x['profitPercent'] is not None, x['profitPercent'] or 0), reverse=True)
         return combined
 
-    def fetch_lisskins_lootfarm(self, token, fee_pct=5.0):
+    def fetch_lisskins_lootfarm(self, token, fee_pct=None):
         """LisSkins (min) buy → LOOT.Farm sell (autobuy), same shape as
         fetch_tradeon_lootfarm but sourcing the buy side from LisSkins' own listing
         (pulse secondMarket, un-paywalled) instead of TradeOnMarket. Sell side is the
         LOOT.Farm feed price net of your acceptance fee; overstock + tier come from the
         feed. Joined on market_hash_name."""
+        if fee_pct is None:     # your LOOT.Farm fee from the Fees editor (percent)
+            fee_pct = self.market_fee('LootFarm') * 100
         try:
             fee = float(fee_pct)
         except (TypeError, ValueError):
@@ -918,11 +931,12 @@ class HuginnService:
 
         steam, tradeon = self._pulse_steam_tradeon(token)
         rows = []
+        steam_fee = self.market_fee('Steam')
         for d in by_name.values():
             cur = d['min_current'] / 100.0
             steam_sell = steam.get(d['name'])
             tradeon_buy = tradeon.get(d['name'])
-            steam_net = round(steam_sell * (1 - STEAM_SALES_FEE), 4) if steam_sell is not None else None
+            steam_net = round(steam_sell * (1 - steam_fee), 4) if steam_sell is not None else None
             profit = round(steam_net - cur, 3) if steam_net is not None else None
             rows.append({
                 'itemName': {'marketHashName': d['name']},
@@ -1046,11 +1060,12 @@ class HuginnService:
         avg_markup = round(sum(markups) / len(markups), 2) if markups else None
 
         snipes = []
+        steam_fee = self.market_fee('Steam')
         for r in nobid:
             ref, base = r.get('steam_ref'), r.get('base')
             if ref is None or not base:
                 continue
-            snipes.append(_pct(ref * (1 - STEAM_SALES_FEE), base))
+            snipes.append(_pct(ref * (1 - steam_fee), base))
         snipes = [s for s in snipes if s is not None]
         good = sum(1 for s in snipes if s >= min_profit_pct)
 
@@ -1275,7 +1290,7 @@ class HuginnService:
         buy = _MARKET_BY_ID[buy_id]      # KeyError -> route returns 400
         sell = _MARKET_BY_ID[sell_id]
         if fee is None:
-            fee = sell['fee']
+            fee = self.market_fee(sell_id)
         if sell_id in _AUTOBUY_VIA_CSFLOAT_SWEEP and mode == 'autobuy':
             # Sell into CSFloat buy orders (swept cache), not a pulse price type —
             # netting the same (possibly edited) fee as every other pair.
@@ -1309,7 +1324,14 @@ class HuginnService:
         return set(_MARKET_BY_ID)
 
     def market_fee(self, sell_id, settings=None):
-        """Effective sell-side fee for a market: settings override, else registry default."""
+        """Effective sell-side fee for a market: your edited fee from the Fees editor
+        (settings, or the current settings when none are passed), else the registry
+        default. The ONE place every profit calculation takes a fee from."""
+        if settings is None and callable(self.settings_provider):
+            try:
+                settings = self.settings_provider()
+            except Exception:
+                settings = None
         overrides = (settings or {}).get('huginn_market_fees') or {}
         m = _MARKET_BY_ID.get(sell_id)
         return overrides.get(sell_id, m['fee'] if m else 0.0)
@@ -1444,7 +1466,7 @@ class HuginnService:
 
     _CSFLOAT_PROXY_ATTEMPTS = 8   # datacenter IPs are ~75% Cloudflare-blocked; rotate through several
 
-    def _csfloat_fetch_once(self, url, api_key, proxy=None):
+    def _csfloat_fetch_once(self, url, api_key, proxy=None, request_body=None):
         """One CSFloat GET. Returns parsed JSON, or raises _CSFloatRateLimited (429 —
         the key/us is throttled) or _CSFloatUnavailable (403 / non-JSON challenge — a
         blocked exit IP or edge block). Through a proxy, each call uses a fresh Bright
@@ -1458,11 +1480,17 @@ class HuginnService:
         else:
             do_open = lambda req: urllib.request.urlopen(req, timeout=30)
 
-        req = urllib.request.Request(url, headers={
+        headers = {
             'Authorization': api_key,
             'Accept': 'application/json',
             'User-Agent': _CSFLOAT_UA,
-        })
+        }
+        data = None
+        if request_body is not None:   # a JSON POST (the buy-orders-by-name query)
+            data = json.dumps(request_body).encode('utf-8')
+            headers['Content-Type'] = 'application/json'
+        req = urllib.request.Request(url, data=data, headers=headers,
+                                     method='POST' if data is not None else 'GET')
         try:
             with do_open(req) as resp:
                 body = resp.read().decode('utf-8', 'replace')
@@ -1599,12 +1627,81 @@ class HuginnService:
                         f'({added} new, {removed} no longer held)')
         return sorted(names), added, removed
 
-    def _csfloat_item_order(self, api_key, name, remembered_listing_id, proxy=None):
-        """(highest buy order or None, listing id) for one item.
+    def _csfloat_name_orders(self, api_key, name, retry_rate_limit=True):
+        """An item's buy orders by name — one request, no listing needed:
+        {price (USD), qty, depth: [[price, qty], ... highest first, up to 10]} or None.
 
-        One request while the remembered listing is still up and has buy orders: its
-        buy-order book is read directly. Otherwise (sold, gone, or no orders on it) the
-        cheapest listing is looked up again and read, as before (two requests)."""
+        POST /buy-orders/similar-orders {market_hash_name} answers every buy order for
+        that item, highest first (checked live 2026-09-30 against the listing method:
+        same top prices). Orders with conditions (`hybrid_properties`: a float range,
+        pattern or sticker) are left out: they would not take just any copy. DIRECT
+        only: through the datacenter proxy CSFloat answers 429 "disable your VPN",
+        which is about the proxy's address, not the key."""
+        url = f'{_CSFLOAT_API_BASE}/buy-orders/similar-orders'
+        for attempt in range(3):
+            try:
+                data = self._csfloat_fetch_once(url, api_key, None, request_body={'market_hash_name': name})
+                break
+            except _CSFloatRateLimited:
+                if attempt == 2 or not retry_rate_limit:
+                    raise
+                time.sleep(5 * (attempt + 1))       # a brief 429: back off like _csfloat_get
+            except urllib.error.HTTPError as e:
+                if e.code in (405, 410):            # the endpoint itself is gone / changed
+                    raise _CSFloatNameLookupUnsupported(f'HTTP {e.code}')
+                # 5xx, or a 400/401 for this one name or key: this item only
+                raise _CSFloatUnavailable(f'by-name lookup HTTP {e.code}')
+        rows = data.get('data') if isinstance(data, dict) else data
+        if not isinstance(rows, list):
+            raise _CSFloatNameLookupUnsupported(f'unexpected answer ({type(data).__name__})')
+        plain = []
+        for row in rows:
+            # Only plain orders for exactly this item: conditional ones (hybrid_properties,
+            # or an advanced 'expression' order, which carries no item name) are skipped.
+            if not isinstance(row, dict) or row.get('hybrid_properties') or row.get('expression'):
+                continue
+            if row.get('market_hash_name') != name:
+                continue
+            price, qty = row.get('price'), row.get('qty')
+            if isinstance(price, (int, float)) and price > 0:
+                plain.append((price / 100.0, qty))      # CSFloat prices are cents
+        if not plain:
+            return None
+        plain.sort(key=lambda order: order[0], reverse=True)
+        return {'price': plain[0][0], 'qty': plain[0][1],
+                'depth': [[price, qty] for price, qty in plain[:10]]}
+
+    def _csfloat_item_order(self, api_key, name, remembered_listing_id, proxy=None, by_name=True):
+        """(highest buy order or None, listing id, method) for one item.
+
+        With `by_name`: one request to the buy-orders-by-name endpoint (method
+        'name'); the remembered listing id is kept as it is. If that endpoint is
+        unsupported, _CSFloatNameLookupUnsupported goes up so the sweep stops trying it;
+        if this one request could not get through (blocked / challenge), this item
+        falls back to the listing method below.
+
+        Listing method (method 'listing'): one request while the remembered listing is
+        still up and has buy orders; otherwise the cheapest listing is looked up again
+        and read (two requests)."""
+        if by_name:
+            try:
+                # With a proxy, a direct 429 is handed to the listing method (which can
+                # go through the proxy) instead of benching the key for an hour.
+                return (self._csfloat_name_orders(api_key, name, retry_rate_limit=not proxy),
+                        remembered_listing_id, 'name')
+            except _CSFloatUnavailable as e:
+                logger.info(f'[HUGINN] CSFloat by-name lookup blocked for {name!r} ({e}); using its listing')
+            except _CSFloatRateLimited as e:
+                if not proxy:
+                    raise                           # no other route: bench the key
+                logger.info(f'[HUGINN] CSFloat by-name lookup rate-limited for {name!r} ({e}); '
+                            f'using its listing through the proxy')
+            time.sleep(_CSFLOAT_REQUEST_DELAY)
+        order, listing_id = self._csfloat_listing_order(api_key, name, remembered_listing_id, proxy)
+        return order, listing_id, 'listing'
+
+    def _csfloat_listing_order(self, api_key, name, remembered_listing_id, proxy=None):
+        """(highest buy order or None, listing id) through a listing's buy-order book."""
         if remembered_listing_id:
             try:
                 order = self._csfloat_top_buy_order(api_key, remembered_listing_id, proxy)
@@ -1769,6 +1866,9 @@ class HuginnService:
             progress(len(processed), total, None, priced_now)
 
         reason = None
+        use_name_lookup = True     # buy orders by name (1 request); listings if unsupported
+        name_lookup_blocked_in_a_row = 0
+        methods = {}               # 'name' / 'listing' -> items priced that way
         since_checkpoint = 0
         consecutive_waits = 0
         consecutive_unreachable = 0    # items in a row we couldn't even connect for
@@ -1802,7 +1902,24 @@ class HuginnService:
                         wait_cb(None)
                     continue        # keys should be free now → retry this item
                 try:
-                    order, listing_id = self._csfloat_item_order(key, name, listing_ids.get(name), proxy)
+                    try:
+                        order, listing_id, method = self._csfloat_item_order(
+                            key, name, listing_ids.get(name), proxy, by_name=use_name_lookup)
+                    except _CSFloatNameLookupUnsupported as e:
+                        use_name_lookup = False
+                        logger.warning(f'[HUGINN] CSFloat buy-orders-by-name unavailable ({e}); '
+                                       f'this sweep uses listings instead')
+                        order, listing_id, method = self._csfloat_item_order(
+                            key, name, listing_ids.get(name), proxy, by_name=False)
+                    methods[method] = methods.get(method, 0) + 1
+                    if use_name_lookup:
+                        # A 'listing' result here means the direct by-name request was
+                        # blocked; several in a row = direct is blocked, stop trying it.
+                        name_lookup_blocked_in_a_row = name_lookup_blocked_in_a_row + 1 if method == 'listing' else 0
+                        if name_lookup_blocked_in_a_row >= _CSFLOAT_NAME_LOOKUP_BLOCKED_LIMIT:
+                            use_name_lookup = False
+                            logger.warning(f'[HUGINN] CSFloat by-name lookup blocked {name_lookup_blocked_in_a_row} '
+                                           f'times in a row (direct access?); this sweep uses listings instead')
                     if listing_id:
                         listing_ids[name] = listing_id
                     else:
@@ -1815,6 +1932,11 @@ class HuginnService:
                     continue                      # key throttled → bench it, try next key
                 except _CSFloatUnavailable as e:
                     self.csfloat_keys.mark_ok(key) # not the key's fault (proxy IP) — don't bench
+                    if use_name_lookup:
+                        # the by-name request (and its listing fallback) was blocked too
+                        name_lookup_blocked_in_a_row += 1
+                        if name_lookup_blocked_in_a_row >= _CSFLOAT_NAME_LOOKUP_BLOCKED_LIMIT:
+                            use_name_lookup = False
                     unreachable = True             # couldn't reach CSFloat for this item
                     last_unreachable = str(e)
                     logger.info(f'[HUGINN] CSFloat item unreachable ({name!r}): {e}')
@@ -1865,6 +1987,9 @@ class HuginnService:
 
         complete = reason is None and all(n in processed for n in names)
         result = save(complete, reason)
+        if methods:
+            logger.info(f'[HUGINN] CSFloat sweep read {methods.get("name", 0)} items by name, '
+                        f'{methods.get("listing", 0)} through listings')
         if reason and not priced_now:
             # Total failure (nothing priced). Raise so the UI shows a loud error instead
             # of a silent, misleading "swept fine, no buy orders exist" / "No deals".
@@ -2129,17 +2254,47 @@ class HuginnService:
     # Markets a container is compared across (all shown as prices). 'tradeon' is the
     # TradeOnMarket lowest listing (the firstMarket side of every pulse row) — a
     # buy-only source here.
-    _CONTAINER_MARKETS = ('steam', 'buff', 'csfloat', 'lisskins', 'dmarket', 'tradeon')
+    _CONTAINER_MARKETS = ('steam', 'buff', 'csfloat', 'lisskins', 'dmarket', 'tradeon',
+                          'csmoney_market', 'csmoney_trade', 'skinswap')
+    # Buy-only price sources read from the generic pulse market table (their cheapest
+    # listing). CS.MONEY Trade and SkinSwap price in their own trade balance.
+    _CONTAINER_REGISTRY_MARKETS = {'csmoney_market': 'CsMoneyMarket', 'csmoney_trade': 'CsMoneyTrade',
+                                   'skinswap': 'SkinSwapMarket'}
     # Markets you can realistically CASH OUT on (drives the "best flip" + profit
     # filters). DMarket is excluded on purpose: its pulse "Sell" price is often
     # unfillable ("unavailable"), so a flip that targets it is noise. LisSkins is a
     # buy-only source here (no seller fee modelled). Revisit if that changes.
-    _CONTAINER_SELL_FEES = {
-        'steam': STEAM_SALES_FEE, 'buff': BUFF_SALES_FEE, 'csfloat': CSFLOAT_SALES_FEE,
-    }
+    _CONTAINER_SELL_MARKETS = {'steam': 'Steam', 'buff': 'Buff', 'csfloat': 'CsFloat'}
+
+    def _container_sell_fees(self):
+        """{sell market: fee} for the markets flips cash out on, from the Fees editor."""
+        return {key: self.market_fee(market_id) for key, market_id in self._CONTAINER_SELL_MARKETS.items()}
     # Markets whose pulse price is shown but excluded from the cheapest/dearest/spread
     # math because it's not actionable (DMarket "Sell" prices are often unfillable).
-    _CONTAINER_NOISE_MARKETS = frozenset({'dmarket'})
+    # CS.MONEY Trade and SkinSwap price in their own trade balance, not cash: shown,
+    # but kept out of the cheapest / flip / hot / history maths like DMarket.
+    _CONTAINER_BALANCE_MARKETS = frozenset({'csmoney_trade', 'skinswap'})
+    _CONTAINER_NOISE_MARKETS = frozenset({'dmarket'}) | _CONTAINER_BALANCE_MARKETS
+    # The long-horizon price history (lo/hi/f, trend, the "hot" baseline, the
+    # bottom-call check) keeps the markets it was built from, so a newly added,
+    # cheaper source (CS.MONEY Market, 2026-09-30) never shows up as a price drop.
+    _CONTAINER_HISTORY_MARKETS = frozenset({'steam', 'buff', 'csfloat', 'lisskins', 'tradeon'})
+
+    @staticmethod
+    def _best_container_flip(buy_market, buy_price, prices, sell_fees):
+        """Best buy-at-`buy_price` -> sell-net-of-fee flip over the sell markets, or None."""
+        best = None
+        for sell_market, fee in sell_fees.items():
+            sell_price = prices.get(sell_market)
+            if sell_price is None:
+                continue
+            net = sell_price * (1 - fee)
+            profit = net - buy_price
+            if best is None or profit > best['profit']:
+                best = {'buy_market': buy_market, 'sell_market': sell_market,
+                        'net_sell': round(net, 2), 'profit': round(profit, 2),
+                        'profit_pct': round(profit / buy_price * 100, 2) if buy_price else None}
+        return best
     # Price history is a long-horizon research asset (multi-year rotation
     # patterns, the 6-month bottom-call verification), so we keep it effectively
     # forever. To stay light, entries older than _CASE_HISTORY_FULL_DAYS are
@@ -2178,6 +2333,19 @@ class HuginnService:
         """{name: {price, count}} for container names only, on one market. For
         'tradeon' we read the firstMarket side (TradeOnMarket's own lowest listing),
         which every pulse row already carries; for the rest we read secondMarket."""
+        names = self._container_names()
+        registry_id = self._CONTAINER_REGISTRY_MARKETS.get(market)
+        if registry_id:
+            # The market's cheapest listing (the registry's buy price type), read only
+            # for tracked containers instead of indexing the whole ~17k-item table.
+            out = {}
+            for it in self._pull_market(token, registry_id, _MARKET_BY_ID[registry_id]['buy_type']):
+                name = (it.get('itemName') or {}).get('marketHashName')
+                market_prices = it.get('secondMarket') or {}
+                if name in names and market_prices.get('price'):
+                    out[name] = {'price': market_prices['price'],
+                                 'count': market_prices.get('totalOffersCount') or market_prices.get('count')}
+            return out
         body = copy.deepcopy(_TRADEON_STEAM_BODY)
         if market == 'tradeon':
             url = _TRADEON_STEAM_URL
@@ -2186,7 +2354,6 @@ class HuginnService:
             url, sell_type = self._PRICE_MARKETS[market]
             body['secondMarketOptions']['secondMarketPriceType'] = sell_type
             side = 'secondMarket'
-        names = self._container_names()
         out = {}
         for it in self._post_tradeon(url, token, body):
             name = (it.get('itemName') or {}).get('marketHashName')
@@ -2364,6 +2531,7 @@ class HuginnService:
         """Per-container rows for cases_prices, recording today's lo/hi into the
         price history as a side effect. Callers hold _case_history_lock."""
         history = self._load_case_history()
+        sell_fees = self._container_sell_fees()
         dirty = False
         rows = []
         for c in containers:
@@ -2387,19 +2555,25 @@ class HuginnService:
                 row['liquidity'] = counts.get(cheapest_market)
                 row['total_listings'] = sum(counts[m] for m in tradeable if counts.get(m)) or None
                 # best flip over markets you can actually cash out on (net of fee)
-                best = None
-                for sm, fee in self._CONTAINER_SELL_FEES.items():
-                    sp = prices.get(sm)
-                    if sp is None:
-                        continue
-                    net = sp * (1 - fee)
-                    profit = net - cheapest
-                    if best is None or profit > best['profit']:
-                        best = {'buy_market': cheapest_market, 'sell_market': sm,
-                                'net_sell': round(net, 2), 'profit': round(profit, 2),
-                                'profit_pct': round(profit / cheapest * 100, 2) if cheapest else None}
+                best = self._best_container_flip(cheapest_market, cheapest, prices, sell_fees)
                 row['flip'] = best
-                profit_pct = best['profit_pct'] if best else None
+                # The history (and trend / hot, which compare against it) is recorded
+                # over its original markets only; see _CONTAINER_HISTORY_MARKETS.
+                history_prices = {m: p for m, p in tradeable.items() if m in self._CONTAINER_HISTORY_MARKETS}
+                if not history_prices:
+                    # Priced only by a newly added source: record nothing today, so the
+                    # history never mixes in a market it was not built from.
+                    series = history.get(name) or {}
+                    row['trend_pct'] = None
+                    row['sparkline'] = self._history_sparkline(series) if series else []
+                    row['profit_vs_norm'] = None
+                    row['_hot_temporal'] = False
+                    rows.append(row)
+                    continue
+                history_market = min(history_prices, key=history_prices.get)
+                history_cheapest = history_prices[history_market]
+                history_flip = self._best_container_flip(history_market, history_cheapest, prices, sell_fees)
+                profit_pct = history_flip['profit_pct'] if history_flip else None
                 # history: per-day min/max of the cheapest price + per-market min/max.
                 # Updated every run (loop every ~10min, page views) so lo/hi capture the
                 # true daily range, not just the first reading. Entry:
@@ -2409,13 +2583,13 @@ class HuginnService:
                     series = history[name] = {}
                 e = series.get(today)
                 if not isinstance(e, dict) or 'lo' not in e:
-                    e = {'lo': cheapest, 'hi': cheapest, 'f': profit_pct, 'mk': {}}
+                    e = {'lo': history_cheapest, 'hi': history_cheapest, 'f': profit_pct, 'mk': {}}
                     series[today] = e
                     dirty = True
-                if cheapest < e['lo']:
-                    e['lo'] = cheapest; dirty = True
-                if cheapest > e['hi']:
-                    e['hi'] = cheapest; dirty = True
+                if history_cheapest < e['lo']:
+                    e['lo'] = history_cheapest; dirty = True
+                if history_cheapest > e['hi']:
+                    e['hi'] = history_cheapest; dirty = True
                 if profit_pct is not None and (e.get('f') is None or profit_pct > e['f']):
                     e['f'] = profit_pct; dirty = True
                 mk = e.setdefault('mk', {})
@@ -2429,7 +2603,7 @@ class HuginnService:
                         if _p > cur[1]:
                             cur[1] = _p; dirty = True
                 days = sorted(series.keys())  # sort once, reuse for all three reads
-                row['trend_pct'] = self._history_trend(series, cheapest, dates=days)
+                row['trend_pct'] = self._history_trend(series, history_cheapest, dates=days)
                 row['sparkline'] = self._history_sparkline(series, dates=days)
                 # temporal "hot": today's net profit % vs this item's own median
                 priors = [self._hist_profit(series[d]) for d in days[:-1]]
@@ -2476,8 +2650,8 @@ class HuginnService:
             'containers': rows,
             'status': status,
             'markets': list(self._CONTAINER_MARKETS),
-            'sell_markets': list(self._CONTAINER_SELL_FEES.keys()),
-            'sell_fees': self._CONTAINER_SELL_FEES,
+            'sell_markets': list(self._CONTAINER_SELL_MARKETS),
+            'sell_fees': self._container_sell_fees(),
             'hot_threshold_pct': round(thresh, 2) if thresh is not None else None,
             'count': len(rows),
             'priced': sum(1 for r in rows if r.get('prices')),
@@ -2646,7 +2820,9 @@ class HuginnService:
     # out and back in (the board still edits silently). New deals still ping instantly.
     _ALERT_NOTIFY_COOLDOWN_SEC = 3600
     _MARKET_SLUG = {'steam': 'Steam', 'buff': 'Buff', 'csfloat': 'CsFloat',
-                    'lisskins': 'LisSkins', 'dmarket': 'Dmarket', 'tradeon': 'TradeOnMarket'}
+                    'lisskins': 'LisSkins', 'dmarket': 'Dmarket', 'tradeon': 'TradeOnMarket',
+                    'csmoney_market': 'CsMoneyMarket', 'csmoney_trade': 'CsMoneyTrade',
+                    'skinswap': 'SkinSwapMarket'}
 
     def _pulse_link(self, market_key, name):
         """pulse short-link that 302-redirects to the item's page on a given market."""

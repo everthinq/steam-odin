@@ -326,3 +326,236 @@ def test_scan_leaves_a_session_that_is_moving_items(monkeypatch, tmp_path):
     monkeypatch.setattr(HuginnService, '_record_login', staticmethod(lambda *args, **kwargs: None))
     service.scan()
     assert Ratatoskr.disconnected == []
+
+
+# ---- buy orders by name: one request per item -------------------------------
+
+def _real_name_orders():
+    """The real method, not the conftest guard (tests below fake the HTTP layer)."""
+    from conftest import REAL_CSFLOAT_NAME_ORDERS
+    return REAL_CSFLOAT_NAME_ORDERS
+
+
+def test_name_lookup_is_one_request_and_keeps_the_listing(monkeypatch, tmp_path):
+    service = _service(monkeypatch, tmp_path, scan={'A': {'count': 1}})
+    service.sync_csfloat_item_links()
+    calls = Calls(listings={'A': 'L-A'}, orders={'L-A': {'price': 9.0, 'qty': 1}})
+    _patch_calls(monkeypatch, calls)
+    monkeypatch.setattr(HuginnService, '_csfloat_name_orders',
+                        lambda self, key, name, **options: {'price': 4.71, 'qty': 10, 'depth': [[4.71, 10], [4.1, 10]]})
+    result = service.fetch_csfloat_buy_orders(token=None, names=['A'])
+    assert calls.log == []                                  # no listing requests at all
+    assert result['by_name']['A'] == {'price': 4.71, 'qty': 10, 'depth': [[4.71, 10], [4.1, 10]]}
+
+
+def test_unsupported_name_lookup_switches_the_sweep_to_listings(monkeypatch, tmp_path):
+    service = _service(monkeypatch, tmp_path, scan={'A': {'count': 1}, 'B': {'count': 1}})
+    service.sync_csfloat_item_links()
+    calls = Calls(listings={'A': 'L-A', 'B': 'L-B'},
+                  orders={'L-A': {'price': 1.0, 'qty': 1}, 'L-B': {'price': 2.0, 'qty': 1}})
+    _patch_calls(monkeypatch, calls)
+    tries = []
+
+    def unsupported(self, key, name, **options):
+        tries.append(name)
+        raise huginn_service._CSFloatNameLookupUnsupported('HTTP 405')
+
+    monkeypatch.setattr(HuginnService, '_csfloat_name_orders', unsupported)
+    result = service.fetch_csfloat_buy_orders(token=None, names=['A', 'B'])
+    assert len(tries) == 1                                  # tried once, then listings only
+    assert result['by_name']['A']['price'] == 1.0 and result['by_name']['B']['price'] == 2.0
+
+
+def test_a_blocked_name_lookup_falls_back_for_that_item_only(monkeypatch, tmp_path):
+    service = _service(monkeypatch, tmp_path, scan={'A': {'count': 1}, 'B': {'count': 1}})
+    service.sync_csfloat_item_links()
+    calls = Calls(listings={'A': 'L-A'}, orders={'L-A': {'price': 1.0, 'qty': 1}})
+    _patch_calls(monkeypatch, calls)
+
+    def by_name(self, key, name, **options):
+        if name == 'A':
+            raise huginn_service._CSFloatUnavailable('bot challenge')
+        return {'price': 3.0, 'qty': 2, 'depth': [[3.0, 2]]}
+
+    monkeypatch.setattr(HuginnService, '_csfloat_name_orders', by_name)
+    result = service.fetch_csfloat_buy_orders(token=None, names=['A', 'B'])
+    assert [kind for kind, _ in calls.log] == ['find', 'orders']   # only A used a listing
+    assert result['by_name']['A']['price'] == 1.0 and result['by_name']['B']['price'] == 3.0
+
+
+def test_a_rate_limit_on_the_name_lookup_benches_the_key(monkeypatch, tmp_path):
+    service = _service(monkeypatch, tmp_path, scan={'A': {'count': 1}})
+    service.sync_csfloat_item_links()
+    monkeypatch.setattr(huginn_service, '_CSFLOAT_MAX_AUTO_WAITS', 0)   # pause instead of waiting an hour
+
+    def limited(self, key, name, **options):
+        raise _CSFloatRateLimited('HTTP 429')
+
+    monkeypatch.setattr(HuginnService, '_csfloat_name_orders', limited)
+    try:
+        service.fetch_csfloat_buy_orders(token=None, names=['A'])
+    except RuntimeError as error:                       # nothing priced: the sweep says so loudly
+        assert 'cooling' in str(error)
+    else:
+        raise AssertionError('expected the paused sweep to report it')
+    assert service.csfloat_keys._remaining('K') > 3000   # benched for the hour
+    saved = json.loads((tmp_path / 'buy_orders.json').read_text())
+    assert saved['complete'] is False                  # resumable
+
+
+def test_name_answer_is_parsed_highest_first_without_conditional_orders(monkeypatch):
+    service = HuginnService(steam_service=None, ratatoskr_service=None)
+    answer = {'data': [
+        {'market_hash_name': 'Sticker | Gold Web (Foil)', 'price': 402, 'qty': 113, 'hybrid_properties': {}},
+        {'market_hash_name': 'Sticker | Gold Web (Foil)', 'price': 900, 'qty': 1,
+         'hybrid_properties': {'float': {'max': 0.01}}},                   # a float-specific order
+        {'market_hash_name': 'Sticker | Gold Web (Foil)', 'price': 471, 'qty': 10, 'hybrid_properties': {}},
+        {'market_hash_name': 'Sticker | Gold Web (Foil)', 'price': 0, 'qty': 5, 'hybrid_properties': {}},
+        {'price': 90000, 'qty': 1, 'expression': 'float < 0.01'},             # advanced order, no name
+        {'market_hash_name': 'Sticker | Gold Web (Foil) (other)', 'price': 800, 'qty': 1},
+    ]}
+    sent = {}
+
+    def fetch(url, api_key, proxy=None, request_body=None):
+        sent.update(url=url, proxy=proxy, body=request_body)
+        return answer
+
+    monkeypatch.setattr(service, '_csfloat_fetch_once', fetch)
+    real = _real_name_orders()
+    result = real(service, 'K', 'Sticker | Gold Web (Foil)')
+    assert result == {'price': 4.71, 'qty': 10, 'depth': [[4.71, 10], [4.02, 113]]}
+    assert sent['url'].endswith('/buy-orders/similar-orders') and sent['proxy'] is None
+    assert sent['body'] == {'market_hash_name': 'Sticker | Gold Web (Foil)'}
+
+
+def test_name_answer_that_is_not_a_list_is_unsupported(monkeypatch):
+    service = HuginnService(steam_service=None, ratatoskr_service=None)
+    monkeypatch.setattr(service, '_csfloat_fetch_once', lambda url, api_key, proxy=None, request_body=None: {'error': 'x'})
+    real = _real_name_orders()
+    try:
+        real(service, 'K', 'A')
+    except huginn_service._CSFloatNameLookupUnsupported:
+        pass
+    else:
+        raise AssertionError('expected unsupported')
+
+
+def test_post_request_carries_a_json_body(monkeypatch):
+    service = HuginnService(steam_service=None, ratatoskr_service=None)
+    seen = {}
+
+    class Response:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def read(self):
+            return b'{"data": []}'
+
+    def fake_open(request, timeout=30):
+        seen.update(method=request.get_method(), data=request.data,
+                    content_type=request.get_header('Content-type'))
+        return Response()
+
+    monkeypatch.setattr(huginn_service.urllib.request, 'urlopen', fake_open)
+    service._csfloat_fetch_once('https://csfloat.com/api/v1/buy-orders/similar-orders', 'K',
+                                request_body={'market_hash_name': 'A'})
+    assert seen == {'method': 'POST', 'data': b'{"market_hash_name": "A"}', 'content_type': 'application/json'}
+
+
+
+def test_name_lookup_retries_a_brief_rate_limit(monkeypatch):
+    service = HuginnService(steam_service=None, ratatoskr_service=None)
+    monkeypatch.setattr(huginn_service.time, 'sleep', lambda seconds: None)
+    answers = [_CSFloatRateLimited('HTTP 429'), {'data': [{'market_hash_name': 'A', 'price': 150, 'qty': 2, 'hybrid_properties': {}}]}]
+
+    def fetch(url, api_key, proxy=None, request_body=None):
+        answer = answers.pop(0)
+        if isinstance(answer, Exception):
+            raise answer
+        return answer
+
+    monkeypatch.setattr(service, '_csfloat_fetch_once', fetch)
+    assert _real_name_orders()(service, 'K', 'A')['price'] == 1.5
+
+
+def test_name_lookup_errors_only_switch_off_for_a_missing_endpoint(monkeypatch):
+    service = HuginnService(steam_service=None, ratatoskr_service=None)
+    for code, expected in [(405, huginn_service._CSFloatNameLookupUnsupported),
+                           (410, huginn_service._CSFloatNameLookupUnsupported),
+                           (404, huginn_service._CSFloatUnavailable),          # one unknown name only
+                           (502, huginn_service._CSFloatUnavailable),
+                           (400, huginn_service._CSFloatUnavailable)]:
+        def fetch(url, api_key, proxy=None, request_body=None, code=code):
+            raise urllib.error.HTTPError(url, code, 'x', {}, io.BytesIO(b''))
+
+        monkeypatch.setattr(service, '_csfloat_fetch_once', fetch)
+        try:
+            _real_name_orders()(service, 'K', 'A')
+        except expected:
+            pass
+        else:
+            raise AssertionError(f'HTTP {code} should raise {expected.__name__}')
+
+
+def test_direct_blocked_several_times_stops_the_name_lookup(monkeypatch, tmp_path):
+    names = [f'Item {index}' for index in range(6)]
+    service = _service(monkeypatch, tmp_path, scan={name: {'count': 1} for name in names})
+    service.sync_csfloat_item_links()
+    calls = Calls(listings={name: 'L-' + name for name in names},
+                  orders={'L-' + name: {'price': 1.0, 'qty': 1} for name in names})
+    _patch_calls(monkeypatch, calls)
+    tries = []
+
+    def blocked(self, key, name, **options):
+        tries.append(name)
+        raise huginn_service._CSFloatUnavailable('HTTP 403')
+
+    monkeypatch.setattr(HuginnService, '_csfloat_name_orders', blocked)
+    result = service.fetch_csfloat_buy_orders(token=None, names=names)
+    assert len(tries) == huginn_service._CSFLOAT_NAME_LOOKUP_BLOCKED_LIMIT
+    assert len(result['by_name']) == 6                     # all priced through listings
+
+
+
+def test_with_a_proxy_a_direct_rate_limit_uses_the_listing_instead_of_benching(monkeypatch, tmp_path):
+    service = _service(monkeypatch, tmp_path, scan={'A': {'count': 1}})
+    monkeypatch.setattr(huginn_service, 'load_csfloat_proxy', lambda: 'http://user:pass@proxy:1')
+    service.sync_csfloat_item_links()
+    calls = Calls(listings={'A': 'L-A'}, orders={'L-A': {'price': 1.0, 'qty': 1}})
+    _patch_calls(monkeypatch, calls)
+    options_seen = []
+
+    def limited(self, key, name, **options):
+        options_seen.append(options)
+        raise _CSFloatRateLimited('HTTP 429')
+
+    monkeypatch.setattr(HuginnService, '_csfloat_name_orders', limited)
+    result = service.fetch_csfloat_buy_orders(token=None, names=['A'])
+    assert options_seen == [{'retry_rate_limit': False}]            # no 15-second back-off either
+    assert result['by_name']['A']['price'] == 1.0
+    assert service.csfloat_keys._remaining('K') == 0                # key not benched
+
+
+def test_blocked_with_no_way_around_still_stops_the_name_lookup(monkeypatch, tmp_path):
+    names = [f'Item {index}' for index in range(6)]
+    service = _service(monkeypatch, tmp_path, scan={name: {'count': 1} for name in names})
+    service.sync_csfloat_item_links()
+    tries = []
+
+    def blocked_name(self, key, name, **options):
+        tries.append(name)
+        raise huginn_service._CSFloatUnavailable('HTTP 403')
+
+    def blocked_listing(self, key, name, proxy=None):
+        raise huginn_service._CSFloatUnavailable('HTTP 403')
+
+    monkeypatch.setattr(HuginnService, '_csfloat_name_orders', blocked_name)
+    monkeypatch.setattr(HuginnService, '_csfloat_find_listing_id', blocked_listing)
+    try:
+        service.fetch_csfloat_buy_orders(token=None, names=names)
+    except RuntimeError:
+        pass                                               # nothing priced: aborts loudly
+    assert len(tries) == huginn_service._CSFLOAT_NAME_LOOKUP_BLOCKED_LIMIT

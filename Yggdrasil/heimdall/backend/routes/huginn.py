@@ -617,14 +617,12 @@ def huginn_lootfarm_auctions_track():
 @bp.route('/api/huginn/tradeon/lootfarm', methods=['GET'])
 def huginn_tradeon_lootfarm():
     """Tradeon (buy) → LOOT.Farm (sell) arbitrage. LootFarm price + limits come
-    from LOOT.Farm's own feed; ?fee= is your LOOT.Farm acceptance fee % (default 5)."""
+    from LOOT.Farm's own feed; the fee is the LOOT.Farm fee from the Fees editor."""
     token = ctx.settings_manager.get_settings().get('tradeon_token', '')
     if not token:
         return jsonify({'error': 'tradeon_token not set in settings'}), 400
-    try:
-        fee = float(request.args.get('fee', 5))
-    except (TypeError, ValueError):
-        fee = 5.0
+    # ?fee= (percent) overrides; without it the LOOT.Farm fee from the Fees editor is used.
+    fee = request.args.get('fee', type=float)
     try:
         data = ctx.huginn_service.fetch_tradeon_lootfarm(token, fee)
         return jsonify(data)
@@ -638,10 +636,8 @@ def huginn_tradeon_lisskins_lootfarm():
     token = ctx.settings_manager.get_settings().get('tradeon_token', '')
     if not token:
         return jsonify({'error': 'tradeon_token not set in settings'}), 400
-    try:
-        fee = float(request.args.get('fee', 5))
-    except (TypeError, ValueError):
-        fee = 5.0
+    # ?fee= (percent) overrides; without it the LOOT.Farm fee from the Fees editor is used.
+    fee = request.args.get('fee', type=float)
     try:
         data = ctx.huginn_service.fetch_lisskins_lootfarm(token, fee)
         return jsonify(data)

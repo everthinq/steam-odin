@@ -93,12 +93,6 @@ const HuginnArbitrage = () => {
     const [includedCollections, setIncludedCollections] = useState([]);
     const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
     const [copiedName, setCopiedName] = useState('');
-    // LOOT.Farm acceptance fee (3–5% by subscription; default 5). Applied to the
-    // LOOT.Farm sell price server-side. Persisted per browser.
-    const [lootfarmFee, setLootfarmFee] = useState(() => {
-        try { const v = Number(localStorage.getItem('huginn_lootfarm_fee')); return Number.isFinite(v) && v > 0 ? v : 5; }
-        catch { return 5; }
-    });
     // Filtering ~17k rows on every keystroke is heavy; defer it so typing stays snappy.
     const deferredSearch = useDeferredValue(itemSearch);
 
@@ -118,6 +112,31 @@ const HuginnArbitrage = () => {
         .then(data => { if (Array.isArray(data)) setMarkets(data); })
         .catch(() => {});
     useEffect(() => { refreshMarkets(); }, []);
+
+    // One-time move of the old per-browser "LF fee" box (percent, localStorage) into
+    // the one Fees editor, so a subscription fee (e.g. 3%) is not silently lost. Only
+    // when LOOT.Farm's fee there is still the default; the old key is removed after.
+    useEffect(() => {
+        let stored = null;
+        try { stored = localStorage.getItem('huginn_lootfarm_fee'); } catch { /* private window */ }
+        if (stored === null || !markets.length) return;
+        const forget = () => { try { localStorage.removeItem('huginn_lootfarm_fee'); } catch { /* ignore */ } };
+        const lootfarm = markets.find(m => m.id === 'LootFarm');
+        const percent = Number(stored);
+        // The old box treated 0 (or anything invalid) as "use 5%", so only 0 < fee ≤ 20 moves.
+        if (!lootfarm || !Number.isFinite(percent) || percent <= 0 || percent > 20
+            || lootfarm.fee !== lootfarm.feeDefault || Math.abs(lootfarm.fee - percent / 100) < 1e-9) {
+            forget();
+            return;
+        }
+        fetch('/api/huginn/markets/fees', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ fees: { LootFarm: percent / 100 } }),
+        })
+            .then(r => { if (r.ok) { forget(); refreshMarkets(); } })
+            .catch(() => {});
+    }, [markets]);
 
     // No preload. Just reflect whether this profile already has session data:
     // collapse the fetch panel if it does, open it (prompt to fetch) if it doesn't.
@@ -204,13 +223,8 @@ const HuginnArbitrage = () => {
         setTradeonFetching(true);
         setTradeonError(null);
         try {
-            // The LootFarm ?fee= (percent) belongs only to the dedicated feed-based
-            // profiles (endpoints with no query string); generated pairs already carry
-            // their own query and net the sell market's registry fee server-side.
-            const url = (profile.sellMarket === 'LootFarm' && !profile.fetchEndpoint.includes('?'))
-                ? `${profile.fetchEndpoint}?fee=${lootfarmFee || 0}`
-                : profile.fetchEndpoint;
-            const res = await fetch(url);
+            // Every fee, LOOT.Farm's included, comes from the Fees editor server-side.
+            const res = await fetch(profile.fetchEndpoint);
             const data = await res.json();
             if (!res.ok) throw new Error(data.error || 'Fetch failed');
             if (!Array.isArray(data)) throw new Error('Unexpected response format');
@@ -426,22 +440,6 @@ const HuginnArbitrage = () => {
                                 </span>
                             )}
                         </button>
-                        {activeProfile.sellMarket === 'LootFarm' && (
-                            <div className="flex items-center gap-1.5 mr-2 shrink-0" title="Your LOOT.Farm acceptance fee (3–5% by subscription level; 5% with no subscription). Applied to the LOOT.Farm sell price. Re-fetch to apply.">
-                                <span className="text-[10px] font-bold tracking-widest text-slate-500 uppercase">LF fee</span>
-                                <input
-                                    type="number" min="0" max="20" step="0.5" value={lootfarmFee}
-                                    onChange={e => {
-                                        const v = e.target.value === '' ? '' : Math.max(0, Math.min(20, Number(e.target.value)));
-                                        setLootfarmFee(v);
-                                        try { if (v !== '') localStorage.setItem('huginn_lootfarm_fee', String(v)); } catch { /* ignore */ }
-                                    }}
-                                    onBlur={e => { if (e.target.value === '') setLootfarmFee(5); }}
-                                    className="w-14 bg-black/30 border border-white/10 rounded px-2 py-1.5 text-slate-200 text-xs tabular-nums focus:outline-none focus:ring-1 focus:ring-amber-500/50"
-                                />
-                                <span className="text-slate-500 text-xs">%</span>
-                            </div>
-                        )}
                         {activeProfile.fetchEndpoint && (
                             <button
                                 type="button"
