@@ -191,7 +191,9 @@ export const groupItemsByName = (items, { includeStorage = false } = {}) => {
                     tradeHoldDays: getTradeHoldDaysForItems(v.items),
                 }))
                 .sort(compareFloatVariantsWithTradeHoldLast);
-            const { floatVariantMap, ...rest } = line;
+            // Drop the working map from the returned line (floatVariants replaces it).
+            const rest = { ...line };
+            delete rest.floatVariantMap;
             return {
                 ...rest,
                 qty: line.item_ids.length,

@@ -29,11 +29,18 @@ HTTP API:
   Andvari's badges scan, or a "farm now" request after buying a game), at most
   ``MAX_RUNNING_BOTS`` at once, and switched off once ASF has looked and found
   nothing. Its login token is kept, so switching back on needs no password.
+* **Global config watch** — every tick reads ASF's global config (read only)
+  and checks the safety settings ``make asf-setup`` wrote still hold: no
+  ``SteamOwnerID`` (an owner could order loot or transfers from Steam chat, and
+  Heimdall auto-confirms trades), Counter-Strike 2 blacklisted, no self-update.
+  If one drifted, every bot is switched off and the status says why until the
+  config is safe again. Heimdall never rewrites ``ASF.json`` itself.
 * **Status** — per account: farming what, cards left, time left, or what it
   needs. No secrets ever appear in it.
 
 Off (every method a no-op) until ``ASF_IPC_PASSWORD`` is set — ``make asf-setup``.
 """
+import copy
 import logging
 import os
 import re
@@ -69,6 +76,8 @@ REQUEST_TIMEOUT_SECONDS = 15
 MAX_RUNNING_BOTS = 10            # ASF's recommended ceiling ("based on internal Valve guidelines")
 EMPTY_CHECK_SECONDS = 5 * 60     # connected this long with nothing queued = ASF checked the badges
 FARM_NOW_SECONDS = 60 * 60       # a "farm now" request keeps a bot on at most this long
+ACCOUNTS_CACHE_SECONDS = 5 * 60  # status() reuses the account list (reading it decrypts every maFile)
+COUNTER_STRIKE_2 = 730           # blacklisted in ASF.json by scripts/asf_setup.py
 
 # The bot config Heimdall writes. Everything not listed stays at ASF's default
 # (card farming on, HoursUntilCardDrops 3, login tokens kept).
@@ -169,14 +178,20 @@ class AsfService:
         self._attempts = dict(saved.get('attempts') or {})
         # {bot_name: epoch} — "farm now" requests (switch on even without known drops)
         self._farm_requests = dict(saved.get('farm_requests') or {})
-        # {bot_name: epoch} — when ASF last looked and found nothing to farm; Andvari's
-        # drop counts older than this are stale for that account
+        # {bot_name: {at, drops}} — when ASF last looked and found nothing to farm, and
+        # Andvari's drop count for that account then; only a different count later
+        # switches the bot back on. (Older saves hold a bare epoch: {bot_name: epoch}.)
         self._checked_empty = dict(saved.get('checked_empty') or {})
+        # Why ASF's global config is unsafe (None while it is safe): every bot stays off
+        self._global_config_unsafe = saved.get('global_config_unsafe')
+        self._global_config_shape_logged = False
         self._connected_since = {}       # {bot_name: epoch}, in memory only
         self._queued = set()             # wanted on, but over MAX_RUNNING_BOTS
         self.card_deals = None           # set by app.py: Andvari's per-account drop counts
         self._last_bots = None
         self._accounts_cache = {}
+        self._accounts_cached_at = 0
+        self._write_lock = threading.Lock()   # one state-file write at a time, newest snapshot last
         self._last_error = None
         self._last_tick_at = None
 
@@ -222,6 +237,19 @@ class AsfService:
                 accounts[login] = {'steamid': str(steamid), 'account_name': login}
         return accounts
 
+    def _refresh_accounts(self):
+        accounts = self._accounts()
+        self._accounts_cache, self._accounts_cached_at = accounts, time.time()
+        return accounts
+
+    def _cached_accounts(self):
+        """The account list from the last tick, re-read when older than
+        ACCOUNTS_CACHE_SECONDS: status() is polled by the UI, and reading the
+        accounts decrypts every maFile."""
+        if not self._accounts_cache or time.time() - self._accounts_cached_at >= ACCOUNTS_CACHE_SECONDS:
+            return self._refresh_accounts()
+        return self._accounts_cache
+
     def _bot_name_for_login(self, account_name):
         login = (account_name or '').strip().lower()
         for name in self._accounts():
@@ -230,13 +258,19 @@ class AsfService:
         return None
 
     def _persist(self):
-        with self._lock:
-            state = {'paused_for_ratatoskr': self._paused_for_ratatoskr, 'attempts': self._attempts,
-                     'farm_requests': self._farm_requests, 'checked_empty': self._checked_empty}
-        try:
-            atomic_write_json(self.state_path, state)
-        except Exception as e:
-            logger.error('[ASF] could not save %s: %s', self.state_path, e)
+        # Copies taken under the lock (request threads mutate these dicts while the
+        # file is written), and one write at a time so an older snapshot never
+        # lands after a newer one.
+        with self._write_lock:
+            with self._lock:
+                state = copy.deepcopy({'paused_for_ratatoskr': self._paused_for_ratatoskr,
+                                       'attempts': self._attempts, 'farm_requests': self._farm_requests,
+                                       'checked_empty': self._checked_empty,
+                                       'global_config_unsafe': self._global_config_unsafe})
+            try:
+                atomic_write_json(self.state_path, state)
+            except Exception as e:
+                logger.error('[ASF] could not save %s: %s', self.state_path, e)
 
     # ---- provisioning ------------------------------------------------------------
 
@@ -258,7 +292,11 @@ class AsfService:
             if existing is None:
                 kept = {'Enabled': name in wanted}
             desired = {**kept, **HARDENED_BOT_CONFIG, 'SteamLogin': account['account_name']}
-            self._call('POST', f'/Api/Bot/{name}', {'BotConfig': desired})
+            try:
+                self._call('POST', f'/Api/Bot/{name}', {'BotConfig': desired})
+            except AsfError as e:
+                logger.warning('[ASF] could not write the bot config for %s: %s', name, e)
+                continue
             written.append(name)
             logger.info('[ASF] %s bot config for %s', 'rewrote' if existing is not None else 'created', name)
         return written
@@ -377,9 +415,15 @@ class AsfService:
             status = (self.ratatoskr.get_status(info['steamid']) or {}).get('status')
             if status in ('connected', 'gc_lost'):
                 continue                 # Ratatoskr still holds the session
-            if name in bots:
-                self._command(name, 'Resume')
-                logger.info('[ASF] resumed %s (Ratatoskr session over)', name)
+            # Only a farmer that is still paused needs a Resume: after an ASF restart
+            # it is not, and ASF answers a Resume then with Success false.
+            if name in bots and bot_view(bots[name])['paused']:
+                try:
+                    self._command(name, 'Resume')
+                    logger.info('[ASF] resumed %s (Ratatoskr session over)', name)
+                except AsfError as e:
+                    logger.warning('[ASF] could not resume %s after Ratatoskr: %s', name, e)
+            # Forgotten either way, so one refused Resume never blocks every later tick.
             with self._lock:
                 self._paused_for_ratatoskr.pop(name, None)
             self._persist()
@@ -394,30 +438,50 @@ class AsfService:
             logger.warning('[ASF] could not read Andvari drop counts: %s', e)
             return {}
 
-    def _note_checks(self, bots, now):
-        """Record which bots ASF has checked and found empty (and close their
-        "farm now" requests)."""
+    def _note_checks(self, bots, accounts, drops, now):
+        """Record which bots ASF has checked and found empty, with Andvari's drop
+        count for the account at that moment (and close their "farm now" requests)."""
         changed = False
         for name, bot in bots.items():
             if not bot.get('IsConnectedAndLoggedOn'):
                 self._connected_since.pop(name, None)
                 continue
-            since = self._connected_since.setdefault(name, now)
             view = bot_view(bot)
+            if not view['playing_possible']:
+                # The account is being played elsewhere, so ASF reports nothing to
+                # farm: that is no check. The clock starts once it can play.
+                self._connected_since.pop(name, None)
+                continue
+            since = self._connected_since.setdefault(name, now)
             if view['now_farming'] or view['games_to_farm'] or view['paused']:
                 continue
             if now - since >= EMPTY_CHECK_SECONDS:
+                steamid = (accounts.get(name) or {}).get('steamid')
+                left = drops.get(steamid, (0, 0))[0] if steamid else 0
                 with self._lock:
-                    self._checked_empty[name] = now
+                    previous = self._checked_empty.get(name)
+                    self._checked_empty[name] = {'at': now, 'drops': left}
                     changed |= self._farm_requests.pop(name, None) is not None
                 changed = True
+                if left > 0 and not (isinstance(previous, dict) and previous.get('drops') == left):
+                    logger.warning('[ASF] %s: ASF found nothing to farm, but Andvari counts %s card '
+                                   'drops left; keeping it off until that count changes', name, left)
         if changed:
             self._persist()
 
-    def _wanted(self, bots, accounts, now):
+    @staticmethod
+    def _drops_changed_since_check(check, left, fetched_at):
+        """Whether Andvari's drop count for an account ASF found empty is news."""
+        if not check:
+            return True
+        if isinstance(check, dict):
+            return left != check.get('drops')
+        return (fetched_at or 0) > check     # older save: only the check time is known
+
+    def _wanted(self, bots, accounts, now, drops=None):
         """Bots that should run: ASF's own queue first, then "farm now" requests,
         then accounts Andvari saw with drops left — at most MAX_RUNNING_BOTS."""
-        drops = self._andvari_drops()
+        drops = self._andvari_drops() if drops is None else drops
         with self._lock:
             requests_, checked = dict(self._farm_requests), dict(self._checked_empty)
             paused = set(self._paused_for_ratatoskr)
@@ -432,7 +496,7 @@ class AsfService:
                 ranked.append((1, 0, name))
             else:
                 left, fetched_at = drops.get(account['steamid'], (0, 0))
-                if left > 0 and (fetched_at or 0) > (checked.get(name) or 0):
+                if left > 0 and self._drops_changed_since_check(checked.get(name), left, fetched_at):
                     ranked.append((2, -left, name))
         ranked.sort()
         return {name for _, _, name in ranked[:MAX_RUNNING_BOTS]}, {name for _, _, name in ranked[MAX_RUNNING_BOTS:]}
@@ -450,10 +514,67 @@ class AsfService:
             kept = {key: value for key, value in config.items() if not key.startswith('s_')}
             desired = {**kept, **HARDENED_BOT_CONFIG, 'Enabled': name in wanted,
                        'SteamLogin': self._accounts_cache[name]['account_name']}
-            self._call('POST', f'/Api/Bot/{name}', {'BotConfig': desired})
+            try:
+                self._call('POST', f'/Api/Bot/{name}', {'BotConfig': desired})
+            except AsfError as e:
+                logger.warning('[ASF] could not switch %s %s: %s', name, 'on' if name in wanted else 'off', e)
+                continue
             changed.append(name)
             logger.info('[ASF] switched %s %s', name, 'on (cards to farm)' if name in wanted else 'off (nothing to farm)')
         return changed
+
+    # ---- global config watch ---------------------------------------------------------
+
+    def _global_config_problems(self):
+        """What in ASF's global config breaks the safety settings asf_setup.py
+        wrote: [] when safe, None when the answer's shape is unknown (then
+        nothing is switched off — a shape change must not stop farming)."""
+        result = self._call('GET', '/Api/ASF')
+        config = result.get('GlobalConfig') if isinstance(result, dict) else None
+        if not isinstance(config, dict) or 'SteamOwnerID' not in config:
+            if not self._global_config_shape_logged:
+                self._global_config_shape_logged = True
+                logger.warning('[ASF] could not read the global config (unknown /Api/ASF answer): '
+                               'owner and safety settings are not checked')
+            return None
+        problems = []
+        try:
+            if int(config.get('SteamOwnerID') or 0) != 0:
+                problems.append('SteamOwnerID is set (an owner can command every bot from Steam chat)')
+        except (TypeError, ValueError):
+            problems.append('SteamOwnerID is not a number')
+        blacklist = config.get('Blacklist')
+        if isinstance(blacklist, list) and COUNTER_STRIKE_2 not in blacklist:
+            problems.append('Counter-Strike 2 (730) is no longer in Blacklist')
+        if 'UpdateChannel' in config and config.get('UpdateChannel') != 0:
+            problems.append('UpdateChannel is not 0 (ASF would update itself)')
+        return problems
+
+    def _check_global_config(self):
+        """Refresh the sticky "global config unsafe" flag. True while unsafe."""
+        try:
+            problems = self._global_config_problems()
+        except AsfError as e:
+            logger.warning('[ASF] could not read the global config: %s', e)
+            problems = None
+        with self._lock:
+            before = self._global_config_unsafe
+        if problems is None:
+            return before is not None    # unknown: keep whatever was known last
+        message = None
+        if problems:
+            message = ('ASF global config is unsafe: ' + '; '.join(problems)
+                       + '. Every bot is switched off. Fix Yggdrasil/asf/config/ASF.json '
+                         '(re-run `make asf-setup`) and restart ASF.')
+        if message != before:
+            with self._lock:
+                self._global_config_unsafe = message
+            self._persist()
+            if message:
+                logger.error('[ASF] %s', message)
+            else:
+                logger.info('[ASF] global config is safe again: bots may run')
+        return message is not None
 
     def farm_now(self, steamid):
         """Switch this account's bot on so ASF checks it right away (after buying
@@ -496,14 +617,19 @@ class AsfService:
             return
         now = time.time()
         try:
-            accounts = self._accounts_cache = self._accounts()
+            accounts = self._refresh_accounts()
             bots = self._bots()
-            self._note_checks(bots, now)
-            wanted, self._queued = self._wanted(bots, accounts, now)
+            unsafe = self._check_global_config()
+            drops = self._andvari_drops()
+            self._note_checks(bots, accounts, drops, now)
+            wanted, self._queued = self._wanted(bots, accounts, now, drops)
+            if unsafe:
+                wanted, self._queued = set(), set()   # every bot off until the config is safe
             if self.provision(bots, wanted) + self._apply_enabled(bots, wanted):
                 bots = self._bots()
             self._resume_after_ratatoskr(bots)
-            self._assist_one(bots, accounts, now)
+            if not unsafe:
+                self._assist_one(bots, accounts, now)
             self._last_bots, self._last_error = self._bots(), None
         except AsfError as e:
             self._last_error = str(e)
@@ -537,8 +663,9 @@ class AsfService:
         with self._lock:
             paused, attempts = dict(self._paused_for_ratatoskr), dict(self._attempts)
             queued = set(self._queued)
+            global_config_unsafe = self._global_config_unsafe
         rows = []
-        for name, account in sorted(self._accounts().items(), key=lambda item: item[0].lower()):
+        for name, account in sorted(self._cached_accounts().items(), key=lambda item: item[0].lower()):
             view = bot_view(bots[name]) if name in bots else None
             tries = attempts.get(name) or {}
             row = {'steamid': account['steamid'], 'account_name': name,
@@ -550,6 +677,7 @@ class AsfService:
             rows.append(row)
         return {
             'enabled': True, 'reachable': error is None, 'error': error,
+            'global_config_unsafe': global_config_unsafe,
             'checked_at': self._last_tick_at, 'accounts': rows,
             'totals': {
                 'farming': sum(1 for row in rows if row['state'] == 'farming'),

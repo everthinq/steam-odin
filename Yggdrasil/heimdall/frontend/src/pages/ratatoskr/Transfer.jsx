@@ -86,6 +86,23 @@ const RatatoskrTransfer = () => {
     const [storageSectionOpen, setStorageSectionOpen] = useState(true);
     const filterRef = useRef(null);
     const fetchingAllStorage = useRef(false);
+    // Bumped on every casket selection change and every single-casket fetch:
+    // a contents response only lands if nothing newer was asked for since, so
+    // a slow reply for a unit the user already left never shows up.
+    const casketContentsRequestRef = useRef(0);
+    // Bumped whenever the all-storage cache is invalidated or reloaded, so an
+    // older load that is still walking the units cannot overwrite a newer one.
+    const allStorageGenerationRef = useRef(0);
+    // False after unmount: stops the move-status poll and its watchers.
+    const mountedRef = useRef(true);
+    // Whether the last move-status response said a move is still running.
+    const moveRunningRef = useRef(false);
+    const [loadError, setLoadError] = useState(null);
+
+    useEffect(() => {
+        mountedRef.current = true;
+        return () => { mountedRef.current = false; };
+    }, []);
 
     const fetchMoveDelay = async () => {
         try {
@@ -126,6 +143,7 @@ const RatatoskrTransfer = () => {
     }, [steamid]);
 
     useEffect(() => {
+        casketContentsRequestRef.current += 1;
         if (transferMode !== 'from') {
             setCasketItems([]);
             return;
@@ -170,20 +188,40 @@ const RatatoskrTransfer = () => {
         if (!stillValid) setSelectedCasketIds([]);
     }, [transferMode, caskets, selectedCasketIds, allStorageSelected]);
 
+    // Inventory and storage-unit list failures are shown in a banner (keyed so
+    // one succeeding does not hide the other's error).
+    const reportLoadError = (key, message) =>
+        setLoadError((previous) => {
+            const next = { ...(previous || {}) };
+            if (message) next[key] = message;
+            else delete next[key];
+            return Object.keys(next).length ? next : null;
+        });
+
     const fetchInventory = async () => {
         try {
             const res = await fetch(`/api/ratatoskr/inventory/${steamid}`);
-            const data = await res.json();
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok || data.error) throw new Error(data.error || `HTTP ${res.status}`);
             if (data.items) setInventory(data.items);
-        } catch (err) { console.error(err); }
+            reportLoadError('inventory', null);
+        } catch (err) {
+            console.error(err);
+            reportLoadError('inventory', `Could not load the inventory: ${err.message}`);
+        }
     };
 
     const fetchCaskets = async () => {
         try {
             const res = await fetch(`/api/ratatoskr/caskets/${steamid}`);
-            const data = await res.json();
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok || data.error) throw new Error(data.error || `HTTP ${res.status}`);
             if (data.caskets) setCaskets(data.caskets);
-        } catch (err) { console.error(err); }
+            reportLoadError('caskets', null);
+        } catch (err) {
+            console.error(err);
+            reportLoadError('caskets', `Could not load the storage units: ${err.message}`);
+        }
     };
 
     const openRenameCasket = (casket) => {
@@ -245,10 +283,15 @@ const RatatoskrTransfer = () => {
     };
 
     const fetchCasketContents = async (casketId) => {
+        const requestNumber = ++casketContentsRequestRef.current;
+        const isCurrent = () => requestNumber === casketContentsRequestRef.current;
         setLoading(true);
         try {
             const res = await fetch(`/api/ratatoskr/casket/${steamid}/${casketId}`);
             const data = await res.json();
+            // The selection moved on (another unit, all storage, or none):
+            // this unit's contents no longer belong on screen.
+            if (!isCurrent()) return;
             if (data.items) setCasketItems(data.items);
         } catch (err) { console.error(err); }
         finally { setLoading(false); }
@@ -257,6 +300,8 @@ const RatatoskrTransfer = () => {
     const fetchAllStorageContents = async () => {
         if (fetchingAllStorage.current) return [];
         fetchingAllStorage.current = true;
+        const generation = ++allStorageGenerationRef.current;
+        const isCurrent = () => generation === allStorageGenerationRef.current;
         setAllCasketLoading(true);
         try {
             const units = caskets.filter((c) => getCasketCount(c) > 0);
@@ -271,7 +316,11 @@ const RatatoskrTransfer = () => {
                     console.error(`Failed to load casket ${c.item_id}`, err);
                 }
                 if (i < units.length - 1) await new Promise((r) => setTimeout(r, 350));
+                // Invalidated mid-walk (a move finished, the mode changed): stop
+                // spending Steam calls on a load whose result will be dropped.
+                if (!isCurrent()) return [];
             }
+            if (!isCurrent()) return [];
             setAllCasketItems(allItems);
             setAllCasketLoaded(true);
             return allItems;
@@ -279,12 +328,17 @@ const RatatoskrTransfer = () => {
             console.error(err);
             return [];
         } finally {
-            fetchingAllStorage.current = false;
-            setAllCasketLoading(false);
+            // A newer load owns the in-flight flag and the spinner now.
+            if (isCurrent()) {
+                fetchingAllStorage.current = false;
+                setAllCasketLoading(false);
+            }
         }
     };
 
     const invalidateAllStorageCache = () => {
+        allStorageGenerationRef.current += 1;
+        setAllCasketLoading(false);
         fetchingAllStorage.current = false;
         setAllCasketLoaded(false);
         setAllCasketItems([]);
@@ -377,16 +431,49 @@ const RatatoskrTransfer = () => {
         }
     };
 
+    // Waits in the background until Ratatoskr reports the move queue idle, so
+    // the Move button stays disabled while a move may still be running even
+    // after the main status poll gave up. Then clears the progress bar.
+    const watchUntilMoveIdle = () => {
+        const check = async () => {
+            if (!mountedRef.current) return;
+            try {
+                const res = await fetch(`/api/ratatoskr/move/status/${steamid}`);
+                const data = await res.json();
+                if (res.ok && !data.error) {
+                    moveRunningRef.current = !!data.running;
+                    if (!data.running) {
+                        setMoveProgress(null);
+                        return;
+                    }
+                    setMoveProgress(data);
+                }
+            } catch (err) {
+                console.error('Move status check failed', err);
+            }
+            setTimeout(check, 5000);
+        };
+        setTimeout(check, 5000);
+    };
+
+    const MOVE_STATUS_RETRIES = 4;   // failed polls in a row before giving up (backoff 1s, 2s, 4s, 8s)
+
     const pollMoveStatus = () =>
         new Promise((resolve, reject) => {
+            let failures = 0;
             const poll = async () => {
+                if (!mountedRef.current) {
+                    reject(Object.assign(new Error('Page closed'), { cancelled: true }));
+                    return;
+                }
                 try {
                     const res = await fetch(`/api/ratatoskr/move/status/${steamid}`);
                     const data = await res.json();
-                    if (data.error) {
-                        reject(new Error(data.error));
-                        return;
+                    if (!res.ok || data.error) {
+                        throw new Error(data.error || `Move status HTTP ${res.status}`);
                     }
+                    failures = 0;
+                    moveRunningRef.current = !!data.running;
                     setMoveProgress(data);
                     if (!data.running && data.pending === 0) {
                         resolve(data);
@@ -394,7 +481,13 @@ const RatatoskrTransfer = () => {
                     }
                     setTimeout(poll, 500);
                 } catch (err) {
-                    reject(err);
+                    failures += 1;
+                    if (failures > MOVE_STATUS_RETRIES) {
+                        reject(new Error(`Lost track of the move (${err.message}). It may still be running — the Move button re-enables once Ratatoskr reports it finished.`));
+                        return;
+                    }
+                    console.warn(`Move status poll failed (attempt ${failures}), retrying`, err);
+                    setTimeout(poll, 1000 * 2 ** (failures - 1));
                 }
             };
             poll();
@@ -435,6 +528,7 @@ const RatatoskrTransfer = () => {
         setPricingSampleReport(null);
         setPricingSampleQueued(false);
         setMoveProgress({ running: true, done: 0, failed: 0, total: itemsToMove.length, pending: itemsToMove.length });
+        moveRunningRef.current = true;
 
         try {
             let totalDone = 0;
@@ -493,11 +587,21 @@ const RatatoskrTransfer = () => {
             await new Promise((r) => setTimeout(r, 1500));
             await refreshAfterMove();
         } catch (err) {
+            if (err.cancelled) return;   // page closed mid-move: nothing to update
             console.error(err);
             setMoveError(err.message || 'Transfer failed');
         } finally {
-            setLoading(false);
-            setTimeout(() => setMoveProgress(null), 2000);
+            if (mountedRef.current) {
+                setLoading(false);
+                if (moveRunningRef.current) {
+                    // The last status still said "running" (the poll gave up, or
+                    // queueing a later batch failed): keep the Move button
+                    // disabled until Ratatoskr says the queue is idle.
+                    watchUntilMoveIdle();
+                } else {
+                    setTimeout(() => setMoveProgress(null), 2000);
+                }
+            }
         }
     };
 
@@ -1332,6 +1436,19 @@ const RatatoskrTransfer = () => {
                     className="mb-4 bg-black/30 border border-white/10 rounded-lg px-4 py-3"
                     labelDone="Transfer complete"
                 />
+            )}
+
+            {loadError && (
+                <div className="mb-4 bg-red-500/20 border border-red-500/30 text-red-300 px-4 py-2 rounded-lg text-sm text-center flex flex-wrap items-center justify-center gap-3">
+                    <span>{Object.values(loadError).join(' · ')}</span>
+                    <button
+                        type="button"
+                        onClick={() => { fetchInventory(); fetchCaskets(); }}
+                        className="px-2 py-0.5 rounded border border-red-400/40 hover:bg-red-500/20 text-xs"
+                    >
+                        Retry
+                    </button>
+                </div>
             )}
 
             {moveError && (

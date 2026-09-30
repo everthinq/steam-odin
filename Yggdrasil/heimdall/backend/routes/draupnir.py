@@ -9,9 +9,16 @@ import re
 from flask import Blueprint, Response, jsonify, request
 
 from context import ctx
+from draupnir_service import CsvImportError, PortfolioSaveError
 from validation import validate_transaction, validate_portfolio_name
 
 bp = Blueprint('draupnir', __name__)
+
+
+@bp.errorhandler(PortfolioSaveError)
+def portfolio_save_failed(error):
+    """portfolios.json could not be written: the change was not saved."""
+    return jsonify({'error': str(error), 'saved': False}), 500
 
 
 def _portfolio_prices(market):
@@ -52,10 +59,21 @@ def portfolios_import():
     csv_text = body.get('csv')
     if not csv_text:
         return jsonify({'error': 'csv is required'}), 400
-    p, count = ctx.draupnir_service.import_csv(csv_text, name=body.get('name'), pid=body.get('pid'))
+    try:
+        p, count, errors = ctx.draupnir_service.import_csv(
+            csv_text, name=body.get('name'), pid=body.get('pid'))
+    except CsvImportError as e:
+        # No valid row: nothing was created. Say why, row by row.
+        return jsonify({'error': str(e), 'errors': e.errors, 'imported': 0}), 400
     if p is None:
         return jsonify({'error': 'portfolio not found'}), 404
-    return jsonify({'portfolio': {'id': p['id'], 'name': p['name']}, 'imported': count}), 201
+    return jsonify({
+        'portfolio': {'id': p['id'], 'name': p['name']},
+        'imported': count,
+        # Rows skipped because they failed validation (the rest were imported).
+        'skipped': len(errors),
+        'errors': errors,
+    }), 201
 
 
 @bp.route('/api/draupnir/portfolios/combined', methods=['GET'])
@@ -237,9 +255,10 @@ def portfolios_backup_restore():
     """Restore a snapshot over portfolios.json (current state saved first)."""
     body = request.get_json(force=True, silent=True) or {}
     name = body.get('name')
-    result = ctx.draupnir_backup.restore(name)
+    # The store validates and persists the snapshot under its own lock, so a
+    # write racing the restore cannot put the pre-restore state back.
+    result = ctx.draupnir_backup.restore(name, store=ctx.draupnir_service)
     if not result.get('ok'):
         code = 404 if result.get('error') == 'backup not found' else 400
         return jsonify(result), code
-    ctx.draupnir_service.reload()  # pull the restored state into memory
     return jsonify({'ok': True, 'restored': name})

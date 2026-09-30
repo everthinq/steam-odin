@@ -52,6 +52,12 @@ services:
   # RATATOSKR: Casemove/Courier Service (Node.js)
   ratatoskr:
     build: ./Yggdrasil/ratatoskr
+    # Restart after a crash (server.js exits on an uncaught exception).
+    restart: unless-stopped
+    # It holds live Steam sessions: no Linux capabilities, no privilege escalation,
+    # non-root user (Dockerfile), source mounted read-only.
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
     ports:
       - "127.0.0.1:3001:3000"   # this Mac only (the backend uses the Docker network)
     environment:
@@ -61,7 +67,7 @@ services:
       # Auto-disconnect after idle (ms). 0 = never. Default 3600000 (1 hour).
       # - SESSION_IDLE_TIMEOUT_MS=1800000
     volumes:
-      - ./Yggdrasil/ratatoskr:/app
+      - ./Yggdrasil/ratatoskr:/app:ro
       - /app/node_modules
 
   # ASF: ArchiSteamFarm — idles games so their trading cards drop (Andvari's farmer).

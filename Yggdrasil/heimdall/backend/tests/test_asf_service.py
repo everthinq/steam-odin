@@ -65,9 +65,9 @@ class FakeRatatoskr:
 
 
 def make_bot(connected=True, running=True, required=INPUT_NONE, farming=False, paused=False,
-             to_farm=(), config=None):
+             to_farm=(), config=None, playing_possible=True):
     return {'IsConnectedAndLoggedOn': connected, 'KeepRunning': running, 'RequiredInput': required,
-            'IsPlayingPossible': True,
+            'IsPlayingPossible': playing_possible,
             'BotConfig': config if config is not None else {'Enabled': True, **HARDENED_BOT_CONFIG},
             'CardsFarmer': {'NowFarming': farming, 'Paused': paused, 'TimeRemaining': '01:30:00',
                             'CurrentGamesFarming': [{'AppID': 10, 'GameName': 'Ten', 'CardsRemaining': 2,
@@ -83,13 +83,27 @@ class FakeAsf:
         self.bots = bots or {}
         self.calls = []
         self.fail_on = None
+        self.refuse = set()              # paths ASF answers with Success false
+        # What asf_setup.py writes (the real /Api/ASF answer carries many more keys)
+        self.global_config = {'SteamOwnerID': 0, 's_SteamOwnerID': '0', 'Blacklist': [730],
+                              'UpdateChannel': 0, 'UpdatePeriod': 0, 'Headless': True}
 
     def __call__(self, method, path, body=None):
         self.calls.append((method, path, body))
         if self.fail_on and self.fail_on in path:
             raise AsfError('boom')
+        if path in self.refuse:
+            raise AsfError('refused')
         if method == 'GET' and path == '/Api/Bot/ASF':
             return json.loads(json.dumps(self.bots))
+        if method == 'GET' and path == '/Api/ASF':
+            if self.global_config is None:
+                return {'Version': '6.0.0.0'}
+            return {'Version': '6.0.0.0', 'GlobalConfig': json.loads(json.dumps(self.global_config))}
+        if method == 'POST' and path.endswith(('/Pause', '/Resume')):
+            farmer = (self.bots.get(path.split('/')[3]) or {}).get('CardsFarmer')
+            if farmer is not None:
+                farmer['Paused'] = path.endswith('/Pause')
         if method == 'POST' and path.startswith('/Api/Bot/') and path.count('/') == 3:
             name = path.rsplit('/', 1)[1]
             self.bots.setdefault(name, make_bot(connected=False, running=False, required=INPUT_PASSWORD))
@@ -233,6 +247,49 @@ def test_fresh_andvari_drops_switch_a_bot_on_but_stale_ones_do_not(world, monkey
     monkeypatch.setattr(asf_service.time, 'time', lambda: 40_000.0)
     service.tick()
     assert enabled_changes(fake) == [('alpha', True)]
+
+
+def test_bot_played_elsewhere_is_not_marked_checked(world, monkeypatch):
+    service, fake, *_ = world
+    fake.bots = {'alpha': make_bot(playing_possible=False), 'bravo': make_bot(farming=True, to_farm=(10,))}
+    clock = [10_000.0]
+    monkeypatch.setattr(asf_service.time, 'time', lambda: clock[0])
+    for _ in range(3):
+        service.tick()
+        clock[0] += EMPTY_CHECK_SECONDS + 1
+    assert 'alpha' not in service._checked_empty      # blocked by another session: no check
+    assert enabled_changes(fake) == []
+    fake.bots['alpha'] = make_bot()                   # free to play again: the clock starts now
+    service.tick()
+    assert 'alpha' not in service._checked_empty
+    clock[0] += EMPTY_CHECK_SECONDS + 1
+    service.tick()
+    assert service._checked_empty['alpha']['drops'] == 3
+    assert enabled_changes(fake) == [('alpha', False)]
+
+
+def test_checked_bot_comes_back_only_when_andvari_drop_count_changes(world, monkeypatch, caplog):
+    service, fake, *_ = world
+    service.card_deals = FakeCardDeals({'76561198000000001': (3, 5_000.0)})
+    fake.bots = {'alpha': make_bot(), 'bravo': make_bot(farming=True, to_farm=(10,))}
+    clock = [10_000.0]
+    monkeypatch.setattr(asf_service.time, 'time', lambda: clock[0])
+    service.tick()
+    clock[0] += EMPTY_CHECK_SECONDS + 1
+    with caplog.at_level('WARNING', logger='asf_service'):
+        service.tick()                               # ASF found nothing although Andvari counts 3
+    assert enabled_changes(fake) == [('alpha', False)]
+    assert service._checked_empty['alpha'] == {'at': clock[0], 'drops': 3}
+    assert any('Andvari counts 3' in record.getMessage() for record in caplog.records)
+    fake.bots['alpha'] = make_bot(connected=False, running=False,
+                                  config={'Enabled': False, **HARDENED_BOT_CONFIG})
+    service.card_deals.drops['76561198000000001'] = (3, 90_000.0)   # newer refresh, same count
+    clock[0] += 60
+    service.tick()
+    assert enabled_changes(fake) == [('alpha', False)]              # no flapping back on
+    service.card_deals.drops['76561198000000001'] = (5, 95_000.0)   # a game bought: count changed
+    service.tick()
+    assert enabled_changes(fake) == [('alpha', False), ('alpha', True)]
 
 
 def test_farm_now_switches_on_then_off_when_empty(world, monkeypatch):
@@ -432,6 +489,42 @@ def test_resume_waits_out_the_ratatoskr_login_grace(world, monkeypatch):
     assert fake.posts('/Resume') == [('/Api/Bot/alpha/Resume', {})]
 
 
+def test_refused_resume_is_forgotten_and_the_tick_goes_on(world):
+    service, fake, *_ = world
+    fake.bots = {'alpha': make_bot(paused=True), 'bravo': make_bot(paused=True),
+                 'charlie': make_bot()}
+    service._paused_for_ratatoskr = {'alpha': {'steamid': '76561198000000001', 'since': 0},
+                                     'bravo': {'steamid': '76561198000000002', 'since': 0}}
+    fake.refuse = {'/Api/Bot/alpha/Resume'}          # ASF: HTTP 200, Success false
+    service.tick()
+    assert [path for path, _ in fake.posts('/Resume')] == ['/Api/Bot/alpha/Resume', '/Api/Bot/bravo/Resume']
+    assert service._paused_for_ratatoskr == {}
+    assert service._last_error is None               # the rest of the tick ran
+    service.tick()
+    assert len(fake.posts('/Resume')) == 2           # never retried forever
+
+
+def test_resume_skipped_when_farmer_is_no_longer_paused(world):
+    service, fake, *_ = world
+    fake.bots = {'alpha': make_bot(farming=True, to_farm=(1,)), 'bravo': make_bot()}   # ASF restarted
+    service._paused_for_ratatoskr = {'alpha': {'steamid': '76561198000000001', 'since': 0}}
+    service.tick()
+    assert fake.posts('/Resume') == []
+    assert service._paused_for_ratatoskr == {}
+
+
+def test_one_bot_switch_failure_does_not_stop_the_others(world):
+    service, fake, *_ = world
+    off = {'Enabled': False, **HARDENED_BOT_CONFIG}
+    fake.bots = {'alpha': make_bot(connected=False, running=False, config=dict(off)),
+                 'bravo': make_bot(connected=False, running=False, config=dict(off))}
+    fake.refuse = {'/Api/Bot/alpha'}
+    service.tick()
+    assert enabled_changes(fake) == [('alpha', True), ('bravo', True)]
+    assert fake.bots['bravo']['BotConfig']['Enabled'] is True
+    assert fake.bots['alpha']['BotConfig']['Enabled'] is False
+
+
 def test_manual_pause_is_never_auto_resumed(world):
     service, fake, *_ = world
     fake.bots = {'alpha': make_bot(farming=True, to_farm=(1,)), 'bravo': make_bot()}
@@ -482,6 +575,88 @@ def test_status_reports_unreachable_asf(world):
     service.tick()
     status = service.status()
     assert status['reachable'] is False and status['error'] == 'boom'
+
+
+# ---- global config watch ----------------------------------------------------------------
+
+@pytest.mark.parametrize('drift, words', [
+    ({'SteamOwnerID': 76561190000000000, 's_SteamOwnerID': '76561190000000000'}, 'SteamOwnerID'),
+    ({'Blacklist': []}, 'Blacklist'),
+    ({'UpdateChannel': 1}, 'UpdateChannel'),
+])
+def test_unsafe_global_config_switches_every_bot_off(world, drift, words):
+    service, fake, *_ = world
+    fake.bots = {'alpha': make_bot(farming=True, to_farm=(10,)),
+                 'bravo': make_bot(connected=False, running=False, required=INPUT_PASSWORD)}
+    fake.global_config.update(drift)
+    service.tick()
+    assert sorted(enabled_changes(fake)) == [('alpha', False), ('bravo', False)]
+    assert fake.posts('/Input') == [] and fake.posts('/Start') == []     # no login assist either
+    status = service.status()
+    assert words in status['global_config_unsafe'] and 'switched off' in status['global_config_unsafe']
+    assert all(call[0] == 'GET' or call[1].count('/') == 3 for call in fake.calls)   # ASF.json never written
+    reloaded = AsfService(service.steam, service.ratatoskr, ipc_password='ipc', state_path=service.state_path)
+    assert reloaded._global_config_unsafe == status['global_config_unsafe']   # sticky across reloads
+
+
+def test_global_config_flag_clears_once_safe_again(world):
+    service, fake, *_ = world
+    fake.bots = {'alpha': make_bot(farming=True, to_farm=(10,)), 'bravo': make_bot()}
+    fake.global_config['SteamOwnerID'] = 1
+    service.tick()
+    assert service.status()['global_config_unsafe']
+    fake.global_config['SteamOwnerID'] = 0
+    service.tick()
+    assert service.status()['global_config_unsafe'] is None
+
+
+def test_unknown_global_config_shape_switches_nothing_off(world, caplog):
+    service, fake, *_ = world
+    fake.bots = {'alpha': make_bot(farming=True, to_farm=(10,)), 'bravo': make_bot(farming=True, to_farm=(11,))}
+    fake.global_config = None
+    with caplog.at_level('WARNING', logger='asf_service'):
+        service.tick()
+        service.tick()
+    assert enabled_changes(fake) == []
+    assert service.status()['global_config_unsafe'] is None
+    assert sum('unknown /Api/ASF answer' in record.getMessage() for record in caplog.records) == 1
+
+
+def test_safe_global_config_changes_nothing(world):
+    service, fake, *_ = world
+    fake.bots = {'alpha': make_bot(farming=True, to_farm=(10,)), 'bravo': make_bot(farming=True, to_farm=(11,))}
+    service.tick()
+    assert enabled_changes(fake) == [] and service.status()['global_config_unsafe'] is None
+
+
+# ---- state file + account cache -------------------------------------------------------------
+
+def test_status_reuses_the_account_list(world, monkeypatch):
+    service, fake, steam, *_ = world
+    fake.bots = {'alpha': make_bot(), 'bravo': make_bot()}
+    service.tick()
+    loads = []
+    original = steam.storage.load_account
+    monkeypatch.setattr(steam.storage, 'load_account', lambda steamid: loads.append(steamid) or original(steamid))
+    for _ in range(5):
+        service.status()
+    assert loads == []                               # no maFile decrypted per status call
+    service._accounts_cached_at -= asf_service.ACCOUNTS_CACHE_SECONDS + 1
+    service.status()
+    assert len(loads) == len(ACCOUNTS)               # refreshed once it is old
+
+
+def test_persist_snapshots_under_the_lock(world, monkeypatch):
+    service, *_ = world
+    service._attempts = {'alpha': {'count': 1, 'last_at': 1, 'last_error': None}}
+    written = []
+
+    def fake_write(path, state):
+        service._attempts['bravo'] = {'count': 9}    # a request thread mutating mid-write
+        written.append(json.dumps(state))
+    monkeypatch.setattr(asf_service, 'atomic_write_json', fake_write)
+    service._persist()
+    assert 'bravo' not in json.loads(written[0])['attempts']
 
 
 def test_disabled_service_does_nothing(tmp_path):

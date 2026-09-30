@@ -15,7 +15,8 @@ const groupProfiles = (profiles) => {
 };
 
 // Dropdown picker of buy→sell arbitrage profiles, grouped by buy market. From Arbitrage.jsx.
-const ProfilePicker = ({ profiles, value, onChange }) => {
+// `groupLabel` names each section (default "Buy on <market>"); Harvest uses the account.
+const ProfilePicker = ({ profiles, value, onChange, groupLabel = (from) => `Buy on ${from}`, searchPlaceholder = 'Search markets…' }) => {
     const [open, setOpen] = useState(false);
     const [query, setQuery] = useState('');
     const ref = useRef(null);
@@ -58,7 +59,7 @@ const ProfilePicker = ({ profiles, value, onChange }) => {
                                 type="text"
                                 value={query}
                                 onChange={e => setQuery(e.target.value)}
-                                placeholder="Search markets…"
+                                placeholder={searchPlaceholder}
                                 className="w-full bg-transparent text-sm text-slate-200 placeholder:text-slate-600 outline-none"
                             />
                         </div>
@@ -70,7 +71,7 @@ const ProfilePicker = ({ profiles, value, onChange }) => {
                         {groupProfiles(filtered).map(group => (
                             <div key={group.from}>
                                 <div className="flex items-center gap-1.5 px-3 pt-2.5 pb-1 text-[10px] font-bold uppercase tracking-wider text-slate-500">
-                                    Buy on {group.from}
+                                    {groupLabel(group.from)}
                                 </div>
                                 {group.items.map(p => {
                                     const isActive = p.id === value;

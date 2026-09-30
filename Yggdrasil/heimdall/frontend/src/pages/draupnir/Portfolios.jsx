@@ -47,15 +47,24 @@ const DraupnirPortfolios = () => {
 
     const persistLayout = (next) => { setLayout(next); savePortfolioLayout(next); };
 
+    // Each list request takes a number; only the newest one may write state, so
+    // a slow response for the previous market or view cannot overwrite the
+    // current one (the combined and arbitrage views share the pricing flags).
+    const listRequestRef = useRef(0);
+
     const fetchList = async (mkt = market, mode = viewMode) => {
+        const requestNumber = ++listRequestRef.current;
+        const isCurrent = () => requestNumber === listRequestRef.current;
         try {
             let url;
             if (mode === 'combined') url = `/api/draupnir/portfolios/combined?market=${mkt}`;
             else if (mode === 'arbitrage') url = `/api/draupnir/portfolios/arbitrage?market=${mkt}`;
             else url = `/api/draupnir/portfolios?market=${mkt}`;
             const res = await fetch(url);
+            if (!isCurrent()) return;
             if (!res.ok) throw new Error('Failed to load portfolios');
             const data = await res.json();
+            if (!isCurrent()) return;
             if (mode === 'combined') setCombined(data);
             else if (mode === 'arbitrage') setArbitrage(data);
             else setPortfolios(data.portfolios || []);
@@ -63,10 +72,12 @@ const DraupnirPortfolios = () => {
             setPricing(data.pricing || 'fresh');
             setError(null);
         } catch (e) {
-            setError(e.message);
+            if (isCurrent()) setError(e.message);
         } finally {
-            setLoading(false);
-            setFetchSeq(s => s + 1);
+            if (isCurrent()) {
+                setLoading(false);
+                setFetchSeq(s => s + 1);
+            }
         }
     };
 

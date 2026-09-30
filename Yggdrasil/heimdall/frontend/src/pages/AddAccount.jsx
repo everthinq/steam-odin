@@ -5,7 +5,10 @@ import { Link, useNavigate } from 'react-router-dom';
 const AddAccount = () => {
     const navigate = useNavigate();
     const [dragging, setDragging] = useState(false);
-    const [loading, setLoading] = useState(false);
+    // Files that could not be parsed, and accounts that already succeeded in an
+    // earlier attempt of this same import (kept so the summary stays complete).
+    const [fileErrors, setFileErrors] = useState([]);
+    const [previousSuccessCount, setPreviousSuccessCount] = useState(0);
 
     const [results, setResults] = useState(null);
     const [pendingAccounts, setPendingAccounts] = useState([]);
@@ -25,8 +28,8 @@ const AddAccount = () => {
     };
 
     const processFiles = async (files) => {
-        setLoading(true);
         setResults(null);
+        setPreviousSuccessCount(0);
 
         const accounts = [];
         const errors = [];
@@ -54,7 +57,7 @@ const AddAccount = () => {
             }
         }
 
-        setLoading(false);
+        setFileErrors(errors);
 
         if (accounts.length === 0) {
             setResults({
@@ -68,6 +71,7 @@ const AddAccount = () => {
 
         setPendingAccounts(accounts);
         setPasswords({});
+        setPasswordErrors({});
         setShowPasswordModal(true);
     };
 
@@ -92,6 +96,16 @@ const AddAccount = () => {
         return result;
     };
 
+    // SteamIDs already on the dashboard before this import started. A failed
+    // authentication only cleans up an account this import created — it must
+    // never delete a working maFile that was simply imported a second time.
+    const fetchExistingSteamids = async () => {
+        const res = await fetch('/api/accounts');
+        if (!res.ok) throw new Error('Could not read the current account list');
+        const json = await res.json();
+        return new Set((json.accounts || []).map((account) => String(account.steamid)));
+    };
+
     const handlePasswordSubmit = async (e) => {
         e.preventDefault();
         if (!pendingAccounts.length || importLoading) return;
@@ -101,10 +115,23 @@ const AddAccount = () => {
         setAuthNotice(null);
 
         try {
+            let existingSteamids;
+            try {
+                existingSteamids = await fetchExistingSteamids();
+            } catch (err) {
+                // Without the list we cannot tell a new account from an existing
+                // one, so do not import at all rather than risk deleting one.
+                setAuthNotice(`Import not started: ${err.message}. Please try again.`);
+                return;
+            }
+
             let successCount = 0;
             let failCount = 0;
-            const errors = (results && results.errors ? [...results.errors] : []);
+            const errors = [...fileErrors];
             const fieldErrors = {};
+            const remainingAccounts = [];
+            const remainingPasswords = {};
+            const remainingFieldErrors = {};
 
             for (let i = 0; i < pendingAccounts.length; i++) {
                 const account = pendingAccounts[i];
@@ -113,6 +140,7 @@ const AddAccount = () => {
                 if (!password) {
                     failCount++;
                     errors.push(`${account.fileName}: Password is required`);
+                    fieldErrors[i] = 'Password is required';
                     continue;
                 }
 
@@ -121,14 +149,19 @@ const AddAccount = () => {
                     const payload = {
                         ...account.data,
                         fileName: account.fileName,
-                        account_password: password
+                        account_password: password,
+                        // Exact SteamID64 read from the raw text (JSON.parse rounds it);
+                        // used when the file is not named <SteamID64>.maFile.
+                        steamid_from_text: account.steamid !== 'Unknown' ? account.steamid : undefined
                     };
 
                     // 1. Import account (Saves and encrypts on backend)
                     const importRes = await importAccount(payload);
 
-                    // FIXED: Always use the SteamID returned by the server
+                    // Always use the SteamID returned by the server
                     savedSteamid = importRes.steamid;
+                    const createdByThisImport =
+                        savedSteamid != null && !existingSteamids.has(String(savedSteamid));
 
                     const username =
                         account.data?.account_name ||
@@ -146,10 +179,11 @@ const AddAccount = () => {
                             })
                         });
 
-                        const authJson = await authRes.json();
+                        const authJson = await authRes.json().catch(() => ({}));
                         if (!authRes.ok || authJson.error) {
-                            // If auth fails, remove the account to keep storage clean
-                            if (savedSteamid) {
+                            // Remove the account only when this import created it;
+                            // an account that was already here keeps its maFile.
+                            if (createdByThisImport) {
                                 await fetch(`/api/accounts/${savedSteamid}`, { method: 'DELETE' });
                             }
                             throw new Error(authJson.error || 'Authentication failed');
@@ -164,21 +198,33 @@ const AddAccount = () => {
                 }
             }
 
-            setPasswordErrors(fieldErrors);
+            // Keep only the accounts that failed, so a retry does not import or
+            // authenticate the ones that already succeeded a second time.
+            pendingAccounts.forEach((account, index) => {
+                if (fieldErrors[index] === undefined) return;
+                const newIndex = remainingAccounts.length;
+                remainingAccounts.push(account);
+                remainingPasswords[newIndex] = passwords[index] || '';
+                remainingFieldErrors[newIndex] = fieldErrors[index];
+            });
+
+            const totalSucceeded = previousSuccessCount + successCount;
+            setPreviousSuccessCount(totalSucceeded);
+            setPendingAccounts(remainingAccounts);
+            setPasswords(remainingPasswords);
+            setPasswordErrors(remainingFieldErrors);
 
             if (failCount === 0) {
                 setShowPasswordModal(false);
-                setPendingAccounts([]);
-                setPasswords({});
                 setAuthNotice('All accounts imported and authenticated successfully.');
             } else {
                 setAuthNotice('Some accounts failed. Please fix errors and try again.');
             }
 
             setResults({
-                total: pendingAccounts.length,
-                success: successCount,
-                failed: failCount,
+                total: totalSucceeded + failCount + fileErrors.length,
+                success: totalSucceeded,
+                failed: failCount + fileErrors.length,
                 errors
             });
         } catch (err) {

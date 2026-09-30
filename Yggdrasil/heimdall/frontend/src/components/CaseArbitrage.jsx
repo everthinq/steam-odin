@@ -5,6 +5,12 @@ import { getTradeonShortLink } from '../utils/tradeonShortLink';
 import CaseAlertsPanel from './CaseAlertsPanel';
 
 const PAGE_SIZE = 150;
+// While pulse snapshots warm, re-fetch every WARM_POLL_MS — but at most
+// MAX_WARM_POLLS times in a row (about two minutes), so a market that never
+// finishes warming cannot keep the page polling forever. A manual Refresh or a
+// category change starts a new round.
+const WARM_POLL_MS = 4000;
+const MAX_WARM_POLLS = 30;
 
 // market key (backend) -> display label, short chip code, pulse short-link slug.
 // `sellable` marks markets you can realistically cash out on (drives flip/profit).
@@ -134,7 +140,7 @@ const CaseArbitrage = () => {
     const deferredSearch = useDeferredValue(search);
     const retryRef = useRef(null);
 
-    const fetchCases = async (cats) => {
+    const fetchCases = async (cats, warmPoll = 0) => {
         setLoading(true);
         setError(null);
         try {
@@ -145,7 +151,9 @@ const CaseArbitrage = () => {
             setData(d);
             const warming = Object.values(d.status || {}).some(s => s === 'refreshing');
             clearTimeout(retryRef.current);
-            if (warming) retryRef.current = setTimeout(() => fetchCases(cats), 4000);
+            if (warming && warmPoll < MAX_WARM_POLLS) {
+                retryRef.current = setTimeout(() => fetchCases(cats, warmPoll + 1), WARM_POLL_MS);
+            }
         } catch (err) {
             setError(err.message);
         } finally {

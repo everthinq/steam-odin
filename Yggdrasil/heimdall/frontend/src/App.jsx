@@ -1,6 +1,7 @@
 import { useEffect, lazy, Suspense } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import Dashboard from './pages/Dashboard';
+import ErrorBoundary from './components/ErrorBoundary';
 import './index.css';
 
 // Each tool screen is code-split into its own chunk and loaded on first
@@ -48,6 +49,13 @@ function RouteFallback() {
   );
 }
 
+// Keyed by the path so navigating to another page clears a crashed page's
+// error state instead of leaving the fallback stuck on screen.
+function RouteErrorBoundary({ children }) {
+  const { pathname } = useLocation();
+  return <ErrorBoundary key={pathname}>{children}</ErrorBoundary>;
+}
+
 function App() {
   return (
     <Router>
@@ -56,6 +64,7 @@ function App() {
         <div className="background-image" />
       </div>
       <div className="min-h-screen text-white relative">
+        <RouteErrorBoundary>
         <Suspense fallback={<RouteFallback />}>
         <Routes>
           <Route path="/" element={<Dashboard />} />
@@ -84,6 +93,7 @@ function App() {
 
         </Routes>
         </Suspense>
+        </RouteErrorBoundary>
       </div>
     </Router>
   );

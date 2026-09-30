@@ -6,6 +6,21 @@ logger = logging.getLogger(__name__)
 
 RATATOSKR_URL = os.environ.get('RATATOSKR_URL', 'http://localhost:3030')
 
+def _error_body(error, fallback):
+    """The error Ratatoskr sent back ({"error": ...} with any 4xx/5xx), or None when
+    it never answered. A requests.Response is falsy for 4xx/5xx, so this must test
+    `is not None`, not truthiness; a non-JSON body falls back to `fallback`."""
+    response = getattr(error, 'response', None)
+    if response is None:
+        return None
+    try:
+        body = response.json()
+    except ValueError:
+        body = {}
+    message = body.get('error') if isinstance(body, dict) else None
+    return {"error": message or fallback, "status_code": response.status_code}
+
+
 class RatatoskrService:
     def __init__(self):
         self.base_url = RATATOSKR_URL
@@ -38,9 +53,7 @@ class RatatoskrService:
             return response.json()
         except requests.exceptions.RequestException as e:
             logger.error(f"Ratatoskr Login Error: {e}")
-            if e.response:
-                return {"error": e.response.json().get('error', 'Login failed'), "details": e.response.text}
-            return {"error": "Failed to connect to Ratatoskr"}
+            return _error_body(e, 'Login failed') or {"error": "Failed to connect to Ratatoskr"}
 
     def get_status(self, steam_id):
         """
@@ -90,9 +103,7 @@ class RatatoskrService:
             return response.json()
         except requests.exceptions.RequestException as e:
             logger.error(f"Ratatoskr Move Error: {e}")
-            if e.response:
-                 return {"error": e.response.json().get('error', 'Move failed')}
-            return {"error": "Failed to connect to Ratatoskr"}
+            return _error_body(e, 'Move failed') or {"error": "Failed to connect to Ratatoskr"}
 
     def move_batch(self, steam_id, item_ids, source, target, casket_id=None):
         """Queue a batch of item moves with server-side throttling."""
@@ -109,9 +120,7 @@ class RatatoskrService:
             return response.json()
         except requests.exceptions.RequestException as e:
             logger.error(f"Ratatoskr Batch Move Error: {e}")
-            if e.response:
-                return {"error": e.response.json().get('error', 'Batch move failed')}
-            return {"error": "Failed to connect to Ratatoskr"}
+            return _error_body(e, 'Batch move failed') or {"error": "Failed to connect to Ratatoskr"}
 
     def get_move_status(self, steam_id):
         """Poll move queue progress for an account."""
@@ -145,9 +154,7 @@ class RatatoskrService:
             return response.json()
         except requests.exceptions.RequestException as e:
             logger.error(f"Ratatoskr Move Delay SET Error: {e}")
-            if e.response:
-                return {"error": e.response.json().get('error', 'Failed to set move delay')}
-            return {"error": "Failed to connect to Ratatoskr"}
+            return _error_body(e, 'Failed to set move delay') or {"error": "Failed to connect to Ratatoskr"}
 
     def set_protected_accounts(self, steam_ids):
         """Tell Ratatoskr which accounts must never be idle-disconnected."""
@@ -185,9 +192,7 @@ class RatatoskrService:
             return response.json()
         except requests.exceptions.RequestException as e:
             logger.error(f"Ratatoskr Session Idle SET Error: {e}")
-            if e.response:
-                return {"error": e.response.json().get('error', 'Failed to set session idle timeout')}
-            return {"error": "Failed to connect to Ratatoskr"}
+            return _error_body(e, 'Failed to set session idle timeout') or {"error": "Failed to connect to Ratatoskr"}
 
     def get_inventory(self, steam_id):
         """Fetch inventory."""
@@ -208,7 +213,8 @@ class RatatoskrService:
     def get_casket_contents(self, steam_id, casket_id):
         """Fetch contents of a specific storage unit."""
         try:
-            response = requests.get(f"{self.base_url}/casket/{steam_id}/{casket_id}", timeout=10)
+            response = requests.get(f"{self.base_url}/casket/{steam_id}/{casket_id}",
+                                    timeout=35)   # the Game Coordinator itself waits up to 30 s
             return response.json()
         except requests.exceptions.RequestException:
             return {"error": "Failed to fetch casket contents from Ratatoskr"}
@@ -230,7 +236,4 @@ class RatatoskrService:
             return response.json()
         except requests.exceptions.RequestException as e:
             logger.error(f"Ratatoskr Casket Rename Error: {e}")
-            if e.response:
-                body = e.response.json()
-                return {"error": body.get("error", "Rename failed")}
-            return {"error": "Failed to connect to Ratatoskr"}
+            return _error_body(e, "Rename failed") or {"error": "Failed to connect to Ratatoskr"}

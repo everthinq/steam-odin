@@ -1,8 +1,9 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Plus, RefreshCw, Search, Trash2, Settings, Eye, EyeOff, TrendingUp, Coins, KeyRound, Siren, Layers } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import AccountCard from '../components/AccountCard';
 import GlobalConfirmationsModal from '../components/GlobalConfirmationsModal';
+import TypedConfirmDialog from '../components/TypedConfirmDialog';
 import {
     loadDashboardLayout,
     saveDashboardLayout,
@@ -21,6 +22,14 @@ const Dashboard = () => {
     const [isVigilMode, setIsVigilMode] = useState(false);
     const [layout, setLayout] = useState(() => loadDashboardLayout());
     const [dragSteamId, setDragSteamId] = useState(null);
+    // "Remove All" asks for a typed phrase in a dialog instead of a native confirm().
+    const [removeAllOpen, setRemoveAllOpen] = useState(false);
+    const [removeAllBusy, setRemoveAllBusy] = useState(false);
+    const [removeAllError, setRemoveAllError] = useState(null);
+    // Freezes the count shown in the phrase while the dialog is open, so a poll
+    // that changes the account list does not change what must be typed.
+    const [removeAllCount, setRemoveAllCount] = useState(0);
+    const aliveRef = useRef(true);
 
     const persistLayout = (next) => {
         setLayout(next);
@@ -32,6 +41,7 @@ const Dashboard = () => {
             const response = await fetch('/api/accounts');
             if (!response.ok) throw new Error('Failed to fetch accounts');
             const data = await response.json();
+            if (!aliveRef.current) return;
             setAccounts(data.accounts || []);
             setError(null);
         } catch (err) {
@@ -44,32 +54,46 @@ const Dashboard = () => {
             }
             setError(err.message);
         } finally {
-            setLoading(false);
+            if (aliveRef.current) setLoading(false);
         }
     };
 
-    const handleRemoveAll = async () => {
-        if (!confirm(`Are you sure you want to remove ALL ${accounts.length} accounts? This action cannot be undone.`)) {
-            return;
-        }
+    const openRemoveAll = () => {
+        setRemoveAllCount(accounts.length);
+        setRemoveAllError(null);
+        setRemoveAllOpen(true);
+    };
 
+    const handleRemoveAll = async () => {
+        setRemoveAllBusy(true);
+        setRemoveAllError(null);
         try {
             const response = await fetch('/api/accounts', { method: 'DELETE' });
-            if (response.ok) {
-                await fetchAccounts();
-            } else {
-                throw new Error('Failed to remove accounts');
-            }
+            if (!response.ok) throw new Error('Failed to remove accounts');
+            setRemoveAllOpen(false);
+            await fetchAccounts();
         } catch (err) {
-            setError(err.message);
+            setRemoveAllError(err.message);
+        } finally {
+            setRemoveAllBusy(false);
         }
     };
 
     useEffect(() => {
-        fetchAccounts();
-        // Poll every second to keep timer in sync and codes updated
-        const interval = setInterval(fetchAccounts, 1000);
-        return () => clearInterval(interval);
+        // Poll about every second to keep the timer in sync and the codes
+        // updated. The next request is scheduled only after the previous one
+        // finished, so a slow backend never piles up overlapping requests.
+        aliveRef.current = true;
+        let timer = null;
+        const tick = async () => {
+            await fetchAccounts();
+            if (aliveRef.current) timer = setTimeout(tick, 1000);
+        };
+        tick();
+        return () => {
+            aliveRef.current = false;
+            clearTimeout(timer);
+        };
     }, []);
 
     const accountIdsKey = useMemo(
@@ -140,6 +164,18 @@ const Dashboard = () => {
     return (
         <div className="min-h-screen text-white p-4 md:p-8">
             <GlobalConfirmationsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
+            {removeAllOpen && (
+                <TypedConfirmDialog
+                    title="Remove all accounts"
+                    message={`This removes all ${removeAllCount} accounts and their maFiles from Heimdall. It cannot be undone.`}
+                    phrase={`DELETE ${removeAllCount}`}
+                    confirmLabel="Remove All"
+                    busy={removeAllBusy}
+                    error={removeAllError}
+                    onConfirm={handleRemoveAll}
+                    onCancel={() => setRemoveAllOpen(false)}
+                />
+            )}
 
             {/* Heimdall's Vigil Toggle */}
             <button
@@ -184,7 +220,7 @@ const Dashboard = () => {
                         </button>
                         {accounts.length > 0 && (
                             <button
-                                onClick={handleRemoveAll}
+                                onClick={openRemoveAll}
                                 className="flex-1 md:flex-none justify-center flex items-center gap-2 bg-[#4a040b] hover:bg-[#630611] text-red-100 border border-[#2b0206] px-4 py-2 rounded-lg transition-all hover:scale-105 active:scale-95 font-medium shadow-lg shadow--[#4a040b]/50 text-sm md:text-base whitespace-nowrap"
                             >
                                 <Trash2 size={18} />

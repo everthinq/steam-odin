@@ -1,11 +1,17 @@
 # Secrets & per-user runtime data — must never be baked into an image layer.
 # At runtime these are provided by the compose volume mount, not the image.
+# ("**/" so a stray copy in any sub-folder is excluded too.)
 maFiles/
-*.maFile
-*.vault
+**/*.maFile
+**/.heimdall_key
+**/.heimdall_salt
+**/*.vault
+**/credentials.vault*
 csfloat_keys.json
 settings.json
-.env
+telegram_caller.json
+**/.env
+**/.env.*
 
 # Regenerable / large runtime data (123MB+ of portfolio backups, scan caches).
 cache/

@@ -13,6 +13,26 @@ import json
 import urllib.request
 import urllib.error
 
+# Hard message-length ceilings: Telegram rejects text over 4096 characters and a
+# Discord webhook rejects content over 2000 (Slack accepts more; 2000 is safe for
+# both), so an over-long board would silently never arrive. Messages are trimmed at
+# a line break and marked, so the HTML stays balanced (each line closes its tags).
+TELEGRAM_MESSAGE_LIMIT = 4096
+WEBHOOK_MESSAGE_LIMIT = 2000
+_TRIMMED_MARKER = '\n… (trimmed)'
+
+
+def trim_message(text, limit):
+    """*text* cut to at most *limit* characters, at the last line break that fits,
+    with a trailing marker. Unchanged when it already fits."""
+    if text is None or len(text) <= limit:
+        return text
+    room = limit - len(_TRIMMED_MARKER)
+    cut = text.rfind('\n', 0, room + 1)
+    if cut <= 0:
+        cut = room
+    return text[:cut] + _TRIMMED_MARKER
+
 
 def _post_json(url, payload, timeout=10):
     data = json.dumps(payload).encode('utf-8')
@@ -49,10 +69,10 @@ def _tg(settings, method, payload, timeout=10):
 def _tg_text_payload(text, html):
     p = {'disable_web_page_preview': True}
     if html:
-        p['text'] = html
+        p['text'] = trim_message(html, TELEGRAM_MESSAGE_LIMIT)
         p['parse_mode'] = 'HTML'
     else:
-        p['text'] = text
+        p['text'] = trim_message(text, TELEGRAM_MESSAGE_LIMIT)
     return p
 
 
@@ -71,6 +91,7 @@ def send_notification(settings, text, html=None):
             return {'ok': ok, 'channel': 'telegram', 'message_id': mid,
                     'error': None if ok else f"HTTP {status}: {data.get('description', '')}"}
         url = settings['notify_webhook_url'].strip()
+        text = trim_message(text, WEBHOOK_MESSAGE_LIMIT)
         status, body = _post_json(url, {'content': text, 'text': text})
         ok = 200 <= status < 300
         return {'ok': ok, 'channel': 'webhook', 'message_id': None,

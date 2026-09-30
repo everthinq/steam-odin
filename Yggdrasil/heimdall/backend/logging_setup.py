@@ -11,10 +11,23 @@ it more than once is a no-op, so imports and re-imports won't duplicate handlers
 """
 import logging
 import os
+import sys
 from logging.handlers import RotatingFileHandler
 
 _CONFIGURED = False
 _FORMAT = '%(asctime)s %(levelname)-7s %(name)s: %(message)s'
+
+
+def is_reloader_parent():
+    """True in the werkzeug reloader's watcher process (``python app.py`` with
+    ``FLASK_ENV=development``, before werkzeug sets ``WERKZEUG_RUN_MAIN=true``
+    in the child it spawns). That parent serves nothing; if it also opened
+    ``heimdall.log`` two processes would rotate the same file and break it."""
+    return (
+        os.environ.get('FLASK_ENV') == 'development'
+        and os.environ.get('WERKZEUG_RUN_MAIN') != 'true'
+        and os.path.basename(sys.argv[0] if sys.argv else '') == 'app.py'
+    )
 
 
 def setup_logging(level=None, log_dir=None):
@@ -31,15 +44,17 @@ def setup_logging(level=None, log_dir=None):
     root.setLevel(level)
     fmt = logging.Formatter(_FORMAT)
 
-    file_handler = RotatingFileHandler(
-        os.path.join(log_dir, 'heimdall.log'),
-        maxBytes=5_000_000, backupCount=5, encoding='utf-8')
-    file_handler.setFormatter(fmt)
+    # Only the serving process writes the rotating file; the reloader parent
+    # logs to the console alone (see is_reloader_parent).
+    if not is_reloader_parent():
+        file_handler = RotatingFileHandler(
+            os.path.join(log_dir, 'heimdall.log'),
+            maxBytes=5_000_000, backupCount=5, encoding='utf-8')
+        file_handler.setFormatter(fmt)
+        root.addHandler(file_handler)
 
     console = logging.StreamHandler()
     console.setFormatter(fmt)
-
-    root.addHandler(file_handler)
     root.addHandler(console)
 
     _CONFIGURED = True

@@ -6,7 +6,7 @@ keep a full history of it and can restore any past state.
 Design
 ------
 * **Content-addressed snapshots**: every backup is a full copy of the JSON named
-  ``portfolios__<UTC-timestamp>__<reason>__<sha1-8>.json`` in a gitignored
+  ``portfolios__<UTC-timestamp>__<reason>__<sha1-8>.json.gz`` in a gitignored
   ``backups/portfolios/`` dir. The hash in the name lets us dedupe identical
   states cheaply (no reading of file bodies to list history).
 * **Two triggers, one guarantee**:
@@ -22,8 +22,10 @@ Design
   90 days, newest-per-week up to 2 years, then drop. Deep history without
   unbounded growth. A tiny personal JSON — even years of history is a few MB.
 * **Safe restore**: restoring first snapshots the *current* state as
-  ``pre-restore`` so an unwanted restore is itself reversible, then overwrites
-  the source file. The caller reloads the in-memory store afterwards.
+  ``pre-restore`` so an unwanted restore is itself reversible, then hands the
+  snapshot to the portfolio store (``DraupnirService.restore_bytes``), which
+  validates it and swaps + persists it under its own lock — so a write racing
+  the restore can never silently put the old state back.
 
 Every operation is best-effort and self-contained: a backup failure logs and
 returns, it never propagates into (and breaks) a portfolio write.
@@ -47,12 +49,16 @@ _DAILY_UNTIL_DAYS = 90
 _WEEKLY_UNTIL_DAYS = 730
 
 _VALID_REASONS = ('change', 'daily', 'boot', 'manual', 'pre-restore')
-# portfolios__20260823T224700Z__change__1a2b3c4d.json[.gz]
+# portfolios__20260823T224700123456Z__change__1a2b3c4d.json[.gz]
+# The timestamp carries microseconds so two snapshots taken within one second
+# still sort in the order they were taken. Older names with whole seconds only
+# (portfolios__20260823T224700Z__...) are still read.
 # Snapshots are gzip-compressed (.json.gz); the plain .json form is still
 # accepted so any legacy/un-migrated snapshot keeps working unchanged.
 _NAME_RE = re.compile(
-    r'^portfolios__(\d{8}T\d{6}Z)__([a-z-]+)__([0-9a-f]{8})\.json(?:\.gz)?$')
-_TS_FMT = '%Y%m%dT%H%M%SZ'
+    r'^portfolios__(\d{8}T\d{6}(?:\d{6})?Z)__([a-z-]+)__([0-9a-f]{8})\.json(?:\.gz)?$')
+_TS_FMT = '%Y%m%dT%H%M%S%fZ'
+_TS_FMT_SECONDS = '%Y%m%dT%H%M%SZ'   # names written before sub-second timestamps
 
 
 def _utcnow():
@@ -136,12 +142,15 @@ class BackupService:
             if not m:
                 continue
             ts_str, reason, digest = m.groups()
+            fmt = _TS_FMT if len(ts_str) > len('20260823T224700Z') else _TS_FMT_SECONDS
             try:
-                ts = datetime.strptime(ts_str, _TS_FMT).replace(tzinfo=timezone.utc)
+                ts = datetime.strptime(ts_str, fmt).replace(tzinfo=timezone.utc)
             except ValueError:
                 continue
             out.append({'name': name, 'ts': ts, 'reason': reason, 'hash': digest})
-        out.sort(key=lambda e: e['ts'])
+        # The name is the tiebreak so equal timestamps (old whole-second names)
+        # still sort the same way every time.
+        out.sort(key=lambda e: (e['ts'], e['name']))
         return out
 
     def list_backups(self):
@@ -165,26 +174,43 @@ class BackupService:
 
     # ---- restore -----------------------------------------------------------
 
-    def restore(self, name):
-        """Overwrite the source file with a chosen snapshot.
+    def restore(self, name, store=None):
+        """Restore a chosen snapshot.
 
-        Snapshots the current state as ``pre-restore`` first, so restoring is
-        itself reversible. Returns {ok, error}. The caller must reload the
-        in-memory store afterwards."""
+        The snapshot is read and validated first (an unreadable or malformed one
+        is refused before anything changes), then the current state is saved as
+        ``pre-restore`` so restoring is itself reversible.
+
+        With ``store`` (the :class:`DraupnirService`) the snapshot is applied via
+        ``store.restore_bytes`` — swapped in and persisted under the store's own
+        lock, so memory and file change together. Without it (scripts/tests)
+        the source file is overwritten atomically and the caller must reload the
+        in-memory store. Returns {ok, error}."""
+        from draupnir_service import parse_store_bytes   # lazy: avoids an import cycle
+
         if not _NAME_RE.match(name or ''):
             return {'ok': False, 'error': 'invalid backup name'}
         src = os.path.join(self.backup_dir, name)
         if not os.path.exists(src):
             return {'ok': False, 'error': 'backup not found'}
-        # Safety snapshot of the live state before we clobber it.
-        self.snapshot('pre-restore')
         try:
             with self._lock:
                 data = self._read_snapshot_bytes(src)
-                tmp = f'{self.source_path}.restore.tmp'
-                with open(tmp, 'wb') as f:
-                    f.write(data)
-                os.replace(tmp, self.source_path)  # atomic
+            parse_store_bytes(data)
+        except (OSError, ValueError, EOFError) as e:
+            logger.error(f'[DRAUPNIR-BACKUP] restore refused, unreadable snapshot {name}: {e}')
+            return {'ok': False, 'error': f'backup is unreadable: {e}'}
+        # Safety snapshot of the live state before we replace it.
+        self.snapshot('pre-restore')
+        try:
+            if store is not None:
+                store.restore_bytes(data)   # takes the store lock, then snapshots 'change'
+            else:
+                with self._lock:
+                    tmp = f'{self.source_path}.restore.tmp'
+                    with open(tmp, 'wb') as f:
+                        f.write(data)
+                    os.replace(tmp, self.source_path)  # atomic
             return {'ok': True, 'error': None}
         except Exception as e:
             logger.error(f'[DRAUPNIR-BACKUP] restore failed: {e}')

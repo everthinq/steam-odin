@@ -33,13 +33,39 @@ fi
 # Hash the current file into the object database.
 blob="$(git hash-object -w "$FILE")"
 
+# Push the backup branch; on failure keep the local commit (the next run retries).
+push_branch() {
+  local push_log
+  push_log="$(mktemp -t portfolio-backup-push.XXXXXX)"
+  if git push "$REMOTE" "refs/heads/$BRANCH:refs/heads/$BRANCH" 2>"$push_log"; then
+    rm -f "$push_log"
+    echo "[backup] pushed $BRANCH @ $(git rev-parse --short "refs/heads/$BRANCH") ($1)"
+  else
+    echo "[backup] local commit $(git rev-parse --short "refs/heads/$BRANCH") made, but push failed:" >&2
+    cat "$push_log" >&2
+    rm -f "$push_log"
+    exit 1
+  fi
+}
+
 # Resolve the current tip of the backup branch (may not exist yet).
 parent=""
 if parent="$(git rev-parse --verify -q "refs/heads/$BRANCH")"; then
-  # Skip if the file is byte-identical to what the branch already holds.
+  # Skip if the file is byte-identical to what the branch already holds...
   prev="$(git rev-parse -q --verify "$parent:$FILE" 2>/dev/null || echo '')"
   if [[ "$prev" == "$blob" ]]; then
-    echo "[backup] portfolios.json unchanged since last backup; skipping"
+    # ...but only once that commit has actually reached the remote. The local
+    # branch moves as soon as a backup is committed, so after a failed push the
+    # file looks "unchanged" here while the remote never got it. Compare with
+    # what the remote really holds (a failed lookup = not pushed) and retry the
+    # push when the local branch is ahead.
+    remote_tip="$(git ls-remote "$REMOTE" "refs/heads/$BRANCH" 2>/dev/null | head -n1 | cut -f1 || true)"
+    if [[ "$remote_tip" == "$parent" ]]; then
+      echo "[backup] portfolios.json unchanged since last backup; skipping"
+      exit 0
+    fi
+    echo "[backup] portfolios.json unchanged, but the last backup never reached $REMOTE; pushing it"
+    push_branch "retry"
     exit 0
   fi
 fi
@@ -66,10 +92,4 @@ else
 fi
 git update-ref "refs/heads/$BRANCH" "$commit"
 
-if git push "$REMOTE" "$BRANCH" 2>/tmp/portfolio-backup-push.log; then
-  echo "[backup] pushed $BRANCH @ ${commit:0:8} ($ts)"
-else
-  echo "[backup] local commit ${commit:0:8} made, but push failed:" >&2
-  cat /tmp/portfolio-backup-push.log >&2
-  exit 1
-fi
+push_branch "$ts"

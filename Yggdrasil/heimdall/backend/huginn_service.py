@@ -36,6 +36,17 @@ CASE_ALERT_STATE_FILE = os.path.join(os.path.dirname(__file__), 'cache', 'case_a
 # LOOT.Farm auction tracker: per-lot trajectory (base, start/last price, bids, a Steam
 # resale reference at capture, cleared-detection) accumulated over time for the backtest.
 LOOTFARM_AUCTION_LOG = os.path.join(os.path.dirname(__file__), 'cache', 'lootfarm_auction_log.json')
+# Last full container refresh (per-market snapshots + when the full pull ran), so a
+# werkzeug reload does not trigger a fresh six-market pulse pull straight away.
+CONTAINER_SNAPSHOT_FILE = os.path.join(os.path.dirname(__file__), 'cache', 'huginn_container_snapshots.json')
+# atomic_write_json leaves '.tmp-*.json' behind only when the process is killed
+# mid-write; ones older than this are swept from cache/ on boot.
+_STALE_TEMPORARY_FILE_AGE_SEC = 60 * 60
+
+# A background warm (portfolio valuation map, container snapshot) that failed is
+# not retried for this long; requests in that window get status 'error' so the
+# frontend stops polling instead of restarting a doomed pulse pull every call.
+_WARM_RETRY_AFTER_FAILURE_SEC = 120
 
 _CSFLOAT_API_BASE = 'https://csfloat.com/api/v1'
 _CSFLOAT_UA = ('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 '
@@ -444,8 +455,18 @@ class HuginnService:
         self._proxy_seq = 0   # increments per proxied attempt → fresh Bright Data session/IP
         self._price_cache = {}   # market -> (fetched_at_epoch, {name: price}) for portfolio valuation
         self._price_state = {}   # market -> 'refreshing' | 'ok' | 'error'
+        self._price_failed_at = {}   # market -> epoch of the last failed background refresh
         self._price_lock = threading.Lock()
         self._market_pull_cache = {}   # (market_id, price_type) -> (fetched_at, items) for generated pairs
+        self._market_pull_lock = threading.Lock()
+        # Parsed-file caches keyed by (modification time, size): the 16 MB inventory
+        # scan and the ~3 MB case price history are re-read only when the file changes.
+        self._scan_file_cache = None      # ((mtime_ns, size), parsed scan)
+        self._case_history_cache = None   # ((mtime_ns, size), parsed history)
+        # Serialises case-history load/modify/save (loop + requests both record) and
+        # the whole case-alert run (loop + "Check now" both read and write its state).
+        self._case_history_lock = threading.RLock()
+        self._case_alert_lock = threading.Lock()
         # Bumped on every _price_cache write so known_item_names() (hit per typeahead
         # keystroke) can memoize its unioned name set instead of rebuilding it each call.
         self._price_cache_gen = 0
@@ -460,6 +481,8 @@ class HuginnService:
         self._auction_tracker_started = False
         self._container_cache = {}
         self._container_state = {}
+        self._container_failed_at = {}   # market -> epoch of the last failed snapshot refresh
+        self._container_last_full = 0.0  # epoch of the last full refresh (restored from disk on start)
         self._container_refresh_started = False
         # Bundled container catalog is immutable at runtime → parse once, cache the
         # full list and the derived name set (both read-only to callers).
@@ -555,10 +578,22 @@ class HuginnService:
         return result
 
     def get_cache(self):
-        if not os.path.exists(CACHE_PATH):
+        """The last inventory scan, or None. The file is ~16 MB, so the parsed result
+        is kept in memory and re-parsed only when the file's modification time or
+        size changes. The returned dict is SHARED: callers must treat it as
+        read-only (every current caller only reads it)."""
+        try:
+            stat = os.stat(CACHE_PATH)
+        except OSError:
             return None
+        signature = (stat.st_mtime_ns, stat.st_size)
+        cached = self._scan_file_cache
+        if cached is not None and cached[0] == signature:
+            return cached[1]
         with open(CACHE_PATH) as f:
-            return json.load(f)
+            data = json.load(f)
+        self._scan_file_cache = (signature, data)
+        return data
 
     def _post_tradeon(self, url, token, body=None):
         """POST a tradeon table query and return the list of items (no caching)."""
@@ -966,7 +1001,7 @@ class HuginnService:
         self._buyorder_cache[market] = (now, out)
         return out
 
-    def lootfarm_arbitrage(self, token='', balance_rate=0.5208, unlocked=True, in_stock=True):
+    def lootfarm_arbitrage(self, token='', balance_rate=0.5208, unlocked=True, in_stock=True, settings=None):
         """The core play: buy LOOT.Farm balance cheap (from the USDT OTC trader) → acquire
         an item from LOOT.Farm → sell it instantly into a Steam/Buff/CSFloat BUY ORDER.
 
@@ -989,7 +1024,9 @@ class HuginnService:
         buff_bo = self._buyorder_map(token, 'buff') if token else {}
         csf_bo = (self.get_csfloat_buy_orders_cache() or {}).get('by_name', {})
 
-        fees = {'steam': STEAM_SALES_FEE, 'buff': BUFF_SALES_FEE, 'csfloat': CSFLOAT_SALES_FEE}
+        # Effective sell fees (the editable per-market overrides in settings win).
+        fees = {'steam': self.market_fee('Steam', settings), 'buff': self.market_fee('Buff', settings),
+                'csfloat': self.market_fee('CsFloat', settings)}
         real_cash = {'steam': False, 'buff': True, 'csfloat': True}   # Steam = locked wallet
         rows = []
         for name, r in feed.items():
@@ -1098,12 +1135,20 @@ class HuginnService:
         generating several pairs that share a market doesn't re-hit pulse each time."""
         key = (market_id, price_type)
         now = time.time()
-        hit = self._market_pull_cache.get(key)
+        with self._market_pull_lock:
+            hit = self._market_pull_cache.get(key)
         if hit and now - hit[0] < _MARKET_PULL_TTL:
             return hit[1]
         items = self._post_tradeon(_TRADEON_TABLE_URL.format(market_id), token,
                                    self._body_for_type(price_type))
-        self._market_pull_cache[key] = (now, items)
+        with self._market_pull_lock:
+            # A raw pull is tens of megabytes and only reused for _MARKET_PULL_TTL
+            # seconds, so drop every expired pull on write instead of keeping one per
+            # (market, price type) forever.
+            fresh_cutoff = time.time() - _MARKET_PULL_TTL
+            self._market_pull_cache = {k: v for k, v in self._market_pull_cache.items()
+                                       if v[0] >= fresh_cutoff}
+            self._market_pull_cache[key] = (now, items)
         return items
 
     def _join_direct(self, items, sell_fee):
@@ -1139,11 +1184,12 @@ class HuginnService:
         come from TradeOnMarket/{id} pulls (never the paywalled direct pair)."""
         buy = _MARKET_BY_ID[buy_id]      # KeyError -> route returns 400
         sell = _MARKET_BY_ID[sell_id]
-        if sell_id in _AUTOBUY_VIA_CSFLOAT_SWEEP and mode == 'autobuy':
-            # Sell into CSFloat buy orders (swept cache), not a pulse price type.
-            return self.fetch_generated_csfloat_autobuy(token, buy_id)
         if fee is None:
             fee = sell['fee']
+        if sell_id in _AUTOBUY_VIA_CSFLOAT_SWEEP and mode == 'autobuy':
+            # Sell into CSFloat buy orders (swept cache), not a pulse price type —
+            # netting the same (possibly edited) fee as every other pair.
+            return self.fetch_generated_csfloat_autobuy(token, buy_id, fee)
         sell_type = sell['autobuy'] if (mode == 'autobuy' and sell['autobuy']) else 'Sell'
         if buy_id == 'TradeOnMarket':
             # Tradeon is the pull's own first market — one pull, buy = firstMarket.
@@ -1153,19 +1199,20 @@ class HuginnService:
         sell_items = self._pull_market(token, sell_id, sell_type)
         return self._join_arbitrage(buy_items, sell_items, fee)
 
-    def fetch_generated_csfloat_autobuy(self, token, buy_id):
+    def fetch_generated_csfloat_autobuy(self, token, buy_id, fee=None):
         """Sell into CSFloat's buy orders (from the swept cache) from any buy market.
         Generalises the four hand-written *_csfloat_autobuy profiles: the buy price is
         the buy market's min listing — TradeOnMarket's own price when it's the buy side
-        (buy_side='first'), otherwise the target market's second-market price."""
+        (buy_side='first'), otherwise the target market's second-market price. `fee`
+        defaults to CSFloat's registry fee."""
         buy = _MARKET_BY_ID[buy_id]      # KeyError -> route returns 400
         if buy_id == 'TradeOnMarket':
             # firstMarket of any TradeOnMarket table is TradeOnMarket's min; use the
             # CsFloat table so only CSFloat-listed items are considered (as the curated one does).
             return self._combine_autobuy(token, _TRADEON_TABLE_URL.format('CsFloat'),
-                                         self._body_for_type('Sell'), buy_side='first')
+                                         self._body_for_type('Sell'), buy_side='first', sell_fee=fee)
         return self._combine_autobuy(token, _TRADEON_TABLE_URL.format(buy_id),
-                                     self._body_for_type(buy['buy_type']), buy_side='second')
+                                     self._body_for_type(buy['buy_type']), buy_side='second', sell_fee=fee)
 
     def market_ids(self):
         """Set of valid market identifiers (for request validation)."""
@@ -1363,12 +1410,17 @@ class HuginnService:
         for attempt in range(3):
             try:
                 return self._csfloat_fetch_once(url, api_key, None)
-            except (_CSFloatRateLimited, _CSFloatUnavailable):
+            except (_CSFloatRateLimited, _CSFloatUnavailable) as e:
                 if proxy:
                     break                      # hand off to proxy fallback
                 if attempt < 2:
                     time.sleep(5 * (attempt + 1))
                     continue
+                if isinstance(e, _CSFloatUnavailable):
+                    # The last direct failure was a block / connection failure, not a
+                    # 429: keep it "unavailable" so the key is not benched for it and
+                    # the sweep counts the item as unreachable (retried on Resume).
+                    raise
                 raise _CSFloatRateLimited('CSFloat throttled (direct, no proxy)')
 
         # --- proxy fallback: rotate exit IPs ---
@@ -1406,8 +1458,15 @@ class HuginnService:
 
     def _resumable_state(self, names):
         """Return (processed_set, by_name, started_at) — resuming a recent, unfinished
-        prior sweep if one exists within the resume window, else a fresh start."""
+        prior sweep if one exists within the resume window, else a fresh start.
+
+        A fresh start is SEEDED with the previous cache's prices (for the current
+        candidates) but nothing marked processed: every item is swept again and its
+        new result overwrites (or removes) the seeded one. Without the seed, the first
+        checkpoint would replace a complete cache with ~25 items for the hours a
+        sweep takes, and every CSFloat-autobuy view would go nearly empty meanwhile."""
         prev = self.get_csfloat_buy_orders_cache()
+        candidate = set(names)
         if prev and not prev.get('complete'):
             stamp = prev.get('updated_at') or prev.get('fetched_at')
             try:
@@ -1416,11 +1475,11 @@ class HuginnService:
                 age = None
             if age is not None and age < _CSFLOAT_RESUME_WINDOW_SEC:
                 # Only resume names still relevant to the current candidate set.
-                candidate = set(names)
                 processed = {n for n in (prev.get('processed') or []) if n in candidate}
                 by_name = {k: v for k, v in (prev.get('by_name') or {}).items() if k in candidate}
                 return processed, by_name, prev.get('started_at')
-        return set(), {}, None
+        seeded = {k: v for k, v in ((prev or {}).get('by_name') or {}).items() if k in candidate}
+        return set(), seeded, None
 
     def _write_buyorders_cache(self, by_name, processed, total, started_at, complete, reason=None):
         result = {
@@ -1478,11 +1537,18 @@ class HuginnService:
         processed, by_name, started_at = self._resumable_state(names)
         started_at = started_at or datetime.now(timezone.utc).isoformat()
         todo = [n for n in names if n not in processed]
+        # Items priced BY THIS SWEEP (resumed part included). by_name may also hold
+        # prices seeded from the previous cache that are not re-swept yet; those must
+        # not count as "the route works" for the abort / total-failure checks.
+        priced_now = sum(1 for n in processed if n in by_name)
         if processed:
             logger.info(f'[HUGINN] Resuming CSFloat sweep: {len(processed)}/{total} already done, '
-                  f'{len(todo)} to go, {len(by_name)} priced so far')
+                  f'{len(todo)} to go, {priced_now} priced so far')
+        elif by_name:
+            logger.info(f'[HUGINN] CSFloat sweep starting over {total} items, keeping '
+                        f'{len(by_name)} previous prices until each is re-swept')
         if progress:
-            progress(len(processed), total, None, len(by_name))
+            progress(len(processed), total, None, priced_now)
 
         reason = None
         since_checkpoint = 0
@@ -1493,6 +1559,7 @@ class HuginnService:
             order = None
             paused = False
             unreachable = False
+            fetch_failed = False   # unexpected error: skip the item, keep any seeded price
             # Try this item across keys; a rate-limited key is benched and we try another.
             while True:
                 key = self.csfloat_keys.next_key(keys)
@@ -1533,6 +1600,7 @@ class HuginnService:
                     break
                 except Exception as e:
                     logger.error(f'[HUGINN] CSFloat buy-order fetch failed for {name!r}: {e}')
+                    fetch_failed = True
                     break                         # unexpected → skip this item permanently
 
             if paused:
@@ -1545,8 +1613,8 @@ class HuginnService:
                 # a clear reason instead of grinding through every remaining item.
                 consecutive_unreachable += 1
                 if progress:
-                    progress(len(processed), total, name, len(by_name))
-                if consecutive_unreachable >= _CSFLOAT_ABORT_AFTER_UNREACHABLE and not by_name:
+                    progress(len(processed), total, name, priced_now)
+                if consecutive_unreachable >= _CSFLOAT_ABORT_AFTER_UNREACHABLE and not priced_now:
                     hint = classify_proxy_error(last_unreachable or '').get('hint')
                     reason = (f'CSFloat unreachable — {consecutive_unreachable} items in a row failed to '
                               f'connect. '
@@ -1561,11 +1629,14 @@ class HuginnService:
             consecutive_unreachable = 0    # connected → reset the abort counter
             if order:
                 by_name[name] = order
+                priced_now += 1
+            elif not fetch_failed:
+                by_name.pop(name, None)    # re-swept with no buy order → drop the seeded price
             processed.add(name)
             consecutive_waits = 0          # made progress → reset the auto-resume cap
             since_checkpoint += 1
             if progress:
-                progress(len(processed), total, name, len(by_name))
+                progress(len(processed), total, name, priced_now)
             if since_checkpoint >= _CSFLOAT_CHECKPOINT_EVERY:
                 self._write_buyorders_cache(by_name, processed, total, started_at, complete=False)
                 since_checkpoint = 0
@@ -1573,7 +1644,7 @@ class HuginnService:
 
         complete = reason is None and all(n in processed for n in names)
         result = self._write_buyorders_cache(by_name, processed, total, started_at, complete, reason)
-        if reason and not by_name:
+        if reason and not priced_now:
             # Total failure (nothing priced). Raise so the UI shows a loud error instead
             # of a silent, misleading "swept fine, no buy orders exist" / "No deals".
             raise RuntimeError(reason)
@@ -1634,13 +1705,16 @@ class HuginnService:
             result['public_ip'] = detect_public_ip()
         return result
 
-    def _combine_autobuy(self, token, pulse_url, pulse_body, buy_side='second'):
+    def _combine_autobuy(self, token, pulse_url, pulse_body, buy_side='second', sell_fee=None):
         """Combine a buy-side market's min price (from pulse) with CSFloat's highest
         buy order (from the cached sweep). `buy_side` selects which pulse market holds
         the buy price: 'first' = Tradeon (the query's first market), 'second' = the
         target market (LisSkins/Buff). Only owned items with a cached CSFloat buy order
         appear. Shaped like the other profiles so the UI renders it unchanged.
+        `sell_fee` is the CSFloat seller fee to net (default: its registry fee).
         """
+        if sell_fee is None:
+            sell_fee = self.market_fee('CsFloat')
         cache = self.get_csfloat_buy_orders_cache() or {}
         by_name = cache.get('by_name', {})
         if not by_name:
@@ -1657,7 +1731,7 @@ class HuginnService:
             if not name or buy is None or not buy or not order:
                 continue
             sell_price = order['price']
-            net_sell = sell_price * (1 - CSFLOAT_SALES_FEE)
+            net_sell = sell_price * (1 - sell_fee)
             profit = net_sell - buy
             combined.append({
                 'itemName': it.get('itemName'),
@@ -1671,17 +1745,21 @@ class HuginnService:
         combined.sort(key=lambda x: x['profitPercent'], reverse=True)
         return combined
 
-    def fetch_tradeon_csfloat_autobuy(self, token):
-        return self._combine_autobuy(token, _TRADEON_CSFLOAT_URL, _TRADEON_CSFLOAT_BODY, buy_side='first')
+    def fetch_tradeon_csfloat_autobuy(self, token, settings=None):
+        return self._combine_autobuy(token, _TRADEON_CSFLOAT_URL, _TRADEON_CSFLOAT_BODY, buy_side='first',
+                                     sell_fee=self.market_fee('CsFloat', settings))
 
-    def fetch_lisskins_csfloat_autobuy(self, token):
-        return self._combine_autobuy(token, _TRADEON_LISSKINS_URL, _TRADEON_LISSKINS_BODY, buy_side='second')
+    def fetch_lisskins_csfloat_autobuy(self, token, settings=None):
+        return self._combine_autobuy(token, _TRADEON_LISSKINS_URL, _TRADEON_LISSKINS_BODY, buy_side='second',
+                                     sell_fee=self.market_fee('CsFloat', settings))
 
-    def fetch_buff_csfloat_autobuy(self, token):
-        return self._combine_autobuy(token, _TRADEON_BUFF_URL, _TRADEON_BUFF_BUY_BODY, buy_side='second')
+    def fetch_buff_csfloat_autobuy(self, token, settings=None):
+        return self._combine_autobuy(token, _TRADEON_BUFF_URL, _TRADEON_BUFF_BUY_BODY, buy_side='second',
+                                     sell_fee=self.market_fee('CsFloat', settings))
 
-    def fetch_dmarket_csfloat_autobuy(self, token):
-        return self._combine_autobuy(token, _TRADEON_DMARKET_URL, _TRADEON_DMARKET_BUY_BODY, buy_side='second')
+    def fetch_dmarket_csfloat_autobuy(self, token, settings=None):
+        return self._combine_autobuy(token, _TRADEON_DMARKET_URL, _TRADEON_DMARKET_BUY_BODY, buy_side='second',
+                                     sell_fee=self.market_fee('CsFloat', settings))
 
     # ---- Live price map (portfolio valuation) ------------------------------
 
@@ -1726,12 +1804,22 @@ class HuginnService:
             market = 'steam'
         return self._single_price_map(token, market)
 
+    def _normalize_price_market(self, market):
+        """A known valuation market slug ('lowest' or a _PRICE_MARKETS key); anything
+        else (a typo, a request-supplied junk value) becomes 'steam', which is what
+        _compute_price_map already priced it as — so unknown strings never become
+        cache keys or background warms of their own."""
+        if market == 'lowest' or market in self._PRICE_MARKETS:
+            return market
+        return 'steam'
+
     def price_map(self, token, market='steam', force=False):
         """market_hash_name -> current unit price (USD) on the chosen reference market.
 
         BLOCKING: fetches from pulse if the cache is cold/stale. Prefer
         prices_for_valuation() for request paths — it never blocks. Result is
         cached per market for _PRICE_CACHE_TTL_SEC; pass force=True to refetch."""
+        market = self._normalize_price_market(market)
         cached = self._price_cache.get(market)
         if not force and cached and (time.time() - cached[0]) < self._PRICE_CACHE_TTL_SEC:
             return cached[1]
@@ -1778,6 +1866,7 @@ class HuginnService:
             logger.error(f'[DRAUPNIR] price refresh failed ({market}): {e}')
             with self._price_lock:
                 self._price_state[market] = 'error'
+                self._price_failed_at[market] = time.time()
 
     def prices_for_valuation(self, token, market='steam'):
         """NON-BLOCKING. Returns (prices_or_None, status) for portfolio valuation.
@@ -1786,7 +1875,12 @@ class HuginnService:
         it kicks off a single background refresh (one per market at a time) and
         returns immediately with whatever we have (stale cache, or None on a cold
         start) so the page never waits on pulse. status is one of:
-        'no_token', 'fresh', 'refreshing', 'error'."""
+        'no_token', 'fresh', 'refreshing', 'error'.
+
+        A refresh that failed is not retried for _WARM_RETRY_AFTER_FAILURE_SEC;
+        within that window the status is 'error' (stale prices still served) so
+        the page stops polling instead of restarting a doomed pull on every call."""
+        market = self._normalize_price_market(market)
         with self._price_lock:
             cached = self._price_cache.get(market)
         if not token:
@@ -1795,14 +1889,19 @@ class HuginnService:
             return cached[1], 'fresh'
         # cold or stale → refresh in the background (single-flight per market)
         with self._price_lock:
-            if self._price_state.get(market) != 'refreshing':
+            state = self._price_state.get(market)
+            backing_off = (state == 'error' and time.time() - self._price_failed_at.get(market, 0)
+                           < _WARM_RETRY_AFTER_FAILURE_SEC)
+            if state != 'refreshing' and not backing_off:
                 self._price_state[market] = 'refreshing'
                 threading.Thread(target=self._refresh_prices_bg,
                                  args=(token, market), daemon=True).start()
-            state = self._price_state.get(market)
+                state = 'refreshing'
+        if state == 'error':
+            return (cached[1] if cached else None), 'error'
         if cached:
             return cached[1], 'refreshing'          # serve stale while warming
-        return None, ('error' if state == 'error' else 'refreshing')
+        return None, 'refreshing'
 
     # ---- Container price tracker ("Case Arbitrage") ------------------------
 
@@ -1889,11 +1988,14 @@ class HuginnService:
             logger.error(f'[HUGINN] container snapshot refresh failed ({market}): {e}')
             with self._price_lock:
                 self._container_state[market] = 'error'
+                self._container_failed_at[market] = time.time()
 
     def _container_snapshot(self, token, market):
         """NON-BLOCKING {name:{price,count}} for one market. Serves cache instantly,
         warms cold/stale in the background (single-flight per market), like
-        prices_for_valuation. status: 'no_token'|'fresh'|'refreshing'|'error'."""
+        prices_for_valuation. status: 'no_token'|'fresh'|'refreshing'|'error'.
+        A failed refresh is not retried for _WARM_RETRY_AFTER_FAILURE_SEC; the
+        status is 'error' in that window (stale snapshot still served)."""
         with self._price_lock:
             cached = self._container_cache.get(market)
         if not token:
@@ -1901,23 +2003,48 @@ class HuginnService:
         if cached and (time.time() - cached[0]) < self._PRICE_CACHE_TTL_SEC:
             return cached[1], 'fresh'
         with self._price_lock:
-            if self._container_state.get(market) != 'refreshing':
+            state = self._container_state.get(market)
+            backing_off = (state == 'error' and time.time() - self._container_failed_at.get(market, 0)
+                           < _WARM_RETRY_AFTER_FAILURE_SEC)
+            if state != 'refreshing' and not backing_off:
                 self._container_state[market] = 'refreshing'
                 threading.Thread(target=self._refresh_container_bg,
                                  args=(token, market), daemon=True).start()
-            state = self._container_state.get(market)
+                state = 'refreshing'
+        if state == 'error':
+            return (cached[1] if cached else {}), 'error'
         if cached:
             return cached[1], 'refreshing'
-        return {}, ('error' if state == 'error' else 'refreshing')
+        return {}, 'refreshing'
 
     # --- history (daily cheapest price + spread) ---
 
-    def _load_case_history(self):
+    @staticmethod
+    def _file_signature(path):
+        """(modification time in nanoseconds, size) of *path*, or None if missing."""
         try:
-            with open(CASE_HISTORY_FILE, 'r', encoding='utf-8') as f:
-                return json.load(f)
-        except Exception:
-            return {}
+            stat = os.stat(path)
+        except OSError:
+            return None
+        return (stat.st_mtime_ns, stat.st_size)
+
+    def _load_case_history(self):
+        """The parsed price history. Kept in memory and re-parsed only when the
+        file changes (it is ~3 MB and every /api/huginn/cases call reads it). The
+        returned dict is the live in-memory copy: only cases_prices mutates it, and
+        only while holding _case_history_lock."""
+        with self._case_history_lock:
+            signature = self._file_signature(CASE_HISTORY_FILE)
+            cached = self._case_history_cache
+            if signature is not None and cached is not None and cached[0] == signature:
+                return cached[1]
+            try:
+                with open(CASE_HISTORY_FILE, 'r', encoding='utf-8') as f:
+                    history = json.load(f)
+            except Exception:
+                return {}
+            self._case_history_cache = (signature, history)
+            return history
 
     @classmethod
     def _compact_history(cls, history, full_cutoff):
@@ -1950,9 +2077,15 @@ class HuginnService:
                            - timedelta(days=self._CASE_HISTORY_FULL_DAYS)
                            ).isoformat()
             history = self._compact_history(history, full_cutoff)
-            atomic_write_json(CASE_HISTORY_FILE, history, indent=None)
+            with self._case_history_lock:
+                atomic_write_json(CASE_HISTORY_FILE, history, indent=None)
+                # What is on disk now IS this dict — keep it as the in-memory copy
+                # so the next read does not re-parse the file just written.
+                self._case_history_cache = (self._file_signature(CASE_HISTORY_FILE), history)
         except Exception as e:
             logger.error('case history save failed: %s', e)
+            with self._case_history_lock:
+                self._case_history_cache = None   # re-read what is really on disk
 
     @staticmethod
     def _hist_price(entry):
@@ -2006,20 +2139,10 @@ class HuginnService:
         out = [self._hist_price(series[d]) for d in dates[-points:]]
         return [p for p in out if p is not None]
 
-    def cases_prices(self, token, categories=None):
-        """Price every tracked container across all markets. Per item: cheapest
-        market to buy on, listing counts (liquidity), the best net-of-fee flip over
-        *sellable* markets, a daily trend + sparkline, and a 'hot' flag for containers
-        that are unusually profitable today. Non-blocking: serves cached snapshots and
-        warms cold ones in the background, like portfolio valuation."""
-        containers = self._load_containers(categories)
-        snaps, status = {}, {}
-        for m in self._CONTAINER_MARKETS:
-            snap, st = self._container_snapshot(token, m)
-            snaps[m] = snap or {}
-            status[m] = st
+    def _price_rows_recording_history(self, containers, snaps, today):
+        """Per-container rows for cases_prices, recording today's lo/hi into the
+        price history as a side effect. Callers hold _case_history_lock."""
         history = self._load_case_history()
-        today = datetime.now(timezone.utc).strftime('%Y-%m-%d')
         dirty = False
         rows = []
         for c in containers:
@@ -2100,6 +2223,25 @@ class HuginnService:
             rows.append(row)
         if dirty:
             self._save_case_history(history)
+        return rows
+
+    def cases_prices(self, token, categories=None):
+        """Price every tracked container across all markets. Per item: cheapest
+        market to buy on, listing counts (liquidity), the best net-of-fee flip over
+        *sellable* markets, a daily trend + sparkline, and a 'hot' flag for containers
+        that are unusually profitable today. Non-blocking: serves cached snapshots and
+        warms cold ones in the background, like portfolio valuation."""
+        containers = self._load_containers(categories)
+        snaps, status = {}, {}
+        for m in self._CONTAINER_MARKETS:
+            snap, st = self._container_snapshot(token, m)
+            snaps[m] = snap or {}
+            status[m] = st
+        today = datetime.now(timezone.utc).strftime('%Y-%m-%d')
+        # Load, update and save the history under one lock: the refresh loop, the
+        # alert run and page requests all record into it concurrently.
+        with self._case_history_lock:
+            rows = self._price_rows_recording_history(containers, snaps, today)
         # cross-sectional "hot": today's most profitable across the priced set (works
         # from day one, before any history exists). 85th percentile, floored at 5%.
         profits = [(r.get('flip') or {}).get('profit_pct') for r in rows]
@@ -2135,9 +2277,74 @@ class HuginnService:
         if getattr(self, '_container_refresh_started', False):
             return
         self._container_refresh_started = True
+        self._sweep_stale_temporary_files()
+        self._load_container_snapshots()
         threading.Thread(target=self._container_refresh_loop,
                          args=(settings_provider, default_interval), daemon=True).start()
         logger.info(f'[HUGINN] container refresh loop started (poll default {default_interval}s)')
+
+    @staticmethod
+    def _sweep_stale_temporary_files(directory=None, max_age=_STALE_TEMPORARY_FILE_AGE_SEC):
+        """Delete leftover '.tmp-*.json' files in cache/ older than *max_age* — the
+        partial writes atomic_write_json leaves only when the process is killed
+        mid-write. Only that exact name pattern is touched. Returns the count removed."""
+        directory = directory or os.path.dirname(CACHE_PATH)
+        removed = 0
+        cutoff = time.time() - max_age
+        try:
+            entries = os.listdir(directory)
+        except OSError:
+            return 0
+        for entry in entries:
+            if not (entry.startswith('.tmp-') and entry.endswith('.json')):
+                continue
+            path = os.path.join(directory, entry)
+            try:
+                if os.path.isfile(path) and os.path.getmtime(path) < cutoff:
+                    os.remove(path)
+                    removed += 1
+            except OSError as e:
+                logger.warning(f'[HUGINN] could not remove stale temporary file {entry}: {e}')
+        if removed:
+            logger.info(f'[HUGINN] removed {removed} stale temporary file(s) from cache/')
+        return removed
+
+    def _load_container_snapshots(self, path=None):
+        """Restore the last full refresh's per-market snapshots and its time, so a
+        restart (every werkzeug reload) serves warm prices and does not re-run the
+        six-market pull until the full-refresh interval has really passed."""
+        path = path or CONTAINER_SNAPSHOT_FILE
+        try:
+            with open(path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+        except FileNotFoundError:
+            return
+        except Exception as e:
+            logger.warning(f'[HUGINN] container snapshot file unreadable, ignoring: {e}')
+            return
+        with self._price_lock:
+            for market, entry in (data.get('markets') or {}).items():
+                if market not in self._CONTAINER_MARKETS or market in self._container_cache:
+                    continue
+                try:
+                    fetched_at, snapshot = float(entry[0]), dict(entry[1])
+                except (TypeError, ValueError, IndexError, KeyError):
+                    continue
+                self._container_cache[market] = (fetched_at, snapshot)
+                self._container_state[market] = 'ok'
+        try:
+            self._container_last_full = float(data.get('last_full') or 0)
+        except (TypeError, ValueError):
+            self._container_last_full = 0.0
+
+    def _save_container_snapshots(self, last_full, path=None):
+        path = path or CONTAINER_SNAPSHOT_FILE
+        with self._price_lock:
+            markets = {m: [ts, snapshot] for m, (ts, snapshot) in self._container_cache.items()}
+        try:
+            atomic_write_json(path, {'last_full': last_full, 'markets': markets}, indent=None)
+        except Exception as e:
+            logger.error(f'[HUGINN] container snapshot save failed: {e}')
 
     def _refresh_one(self, token, market):
         try:
@@ -2149,6 +2356,7 @@ class HuginnService:
             logger.error(f'[HUGINN] container refresh failed ({market}): {e}')
             with self._price_lock:
                 self._container_state[market] = 'error'
+                self._container_failed_at[market] = time.time()
 
     def _refresh_markets(self, token, markets, parallel=False):
         """Refresh each market's snapshot. parallel=True fetches them concurrently so
@@ -2165,7 +2373,9 @@ class HuginnService:
                 self._refresh_one(token, m)
 
     def _container_refresh_loop(self, settings_provider, default_interval):
-        last_full = 0
+        # Persisted by the previous process, so a reload does not force an
+        # immediate full pull (0 when there is no snapshot file yet).
+        last_full = self._container_last_full
         while True:
             interval = default_interval
             try:
@@ -2187,6 +2397,7 @@ class HuginnService:
                         except Exception as e:
                             logger.error(f'[HUGINN] history record failed: {e}')
                         last_full = now
+                        self._save_container_snapshots(last_full)
                         logger.info('[HUGINN] full container refresh from pulse')
                     elif alerts_on:
                         self._refresh_markets(token, self._ALERT_MARKETS, parallel=True)
@@ -2195,6 +2406,9 @@ class HuginnService:
                             res = self.run_case_alerts(settings)
                             if res.get('new'):
                                 logger.info(f"[HUGINN] case alerts: {res['new']} new, sent={res.get('sent')}")
+                            if res.get('send_error'):
+                                logger.warning(f"[HUGINN] case alert send failed (retried next poll): "
+                                               f"{res['send_error']}")
                         except Exception as e:
                             logger.error(f'[HUGINN] case alerts failed: {e}')
                 else:
@@ -2323,7 +2537,15 @@ class HuginnService:
         `force=True` re-sends all currently-active alerts (used by "Check now").
         `refresh=True` re-pulls the alert markets (in parallel, near-simultaneous)
         before comparing, so a manual check reflects live prices, not a stale cache.
-        Returns a summary dict; never raises into the caller."""
+        Returns a summary dict.
+
+        One run at a time: the background loop and "Check now" both read the alert
+        state, talk to Telegram (one board message) and write the state back, so
+        two overlapping runs would double-post or lose the board id."""
+        with self._case_alert_lock:
+            return self._run_case_alerts_locked(settings, force=force, refresh=refresh)
+
+    def _run_case_alerts_locked(self, settings, force=False, refresh=False):
         if not settings.get('case_alerts_enabled') and not force:
             return {'ran': False, 'reason': 'disabled'}
         if notification_channel(settings) is None:
@@ -2373,6 +2595,9 @@ class HuginnService:
         result = {'ran': True, 'active': len(now_keys), 'new': len(fresh), 'notify': len(notify),
                   'cleared': len(prev - now_keys), 'channel': channel,
                   'sent': False, 'edited': False}
+        # Fresh deals whose notification did not go out. They are NOT saved as
+        # 'active', so the next poll sees them as new again and retries the send.
+        unsent = set()
         owned_map = (self.get_cache() or {}).get('by_hash') or {}
 
         if channel == 'telegram':
@@ -2398,6 +2623,8 @@ class HuginnService:
                         result['sent'] = True
                         for k in now_keys:
                             notified[k] = now_ts
+                    else:
+                        unsent = set(fresh)
                     result['send_error'] = snd.get('error')
                 else:
                     # no new deal — just keep the board current (silent, no push)
@@ -2410,6 +2637,10 @@ class HuginnService:
                             result['sent'] = True
                             for k in now_keys:
                                 notified[k] = now_ts
+                        else:
+                            board_id = None    # the old board is gone; post a new one next poll
+                            unsent = set(fresh)
+                        result['send_error'] = snd.get('error')
         else:
             # webhook (Discord/Slack): no edit API here — only post on a real new deal
             if now_keys and should_ping:
@@ -2420,12 +2651,14 @@ class HuginnService:
                 if snd.get('ok'):
                     for k in now_keys:
                         notified[k] = now_ts
+                else:
+                    unsent = set(fresh)
 
         # keep only recent notified timestamps (bounded) and persist state
         cutoff = now_ts - self._ALERT_NOTIFY_COOLDOWN_SEC * 3
         notified = {k: t for k, t in notified.items() if t >= cutoff}
         self._save_alert_state({
-            'active': sorted(now_keys), 'details': active, 'board_message_id': board_id,
+            'active': sorted(now_keys - unsent), 'details': active, 'board_message_id': board_id,
             'notified': notified, 'updated': datetime.now(timezone.utc).isoformat(),
         })
         return result

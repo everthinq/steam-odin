@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 
-export const getMoveProgressPercent = (moveProgress) => {
+const getMoveProgressPercent = (moveProgress) => {
     if (!moveProgress?.total) return 0;
     const processed =
         moveProgress.processed ??
@@ -20,10 +20,17 @@ const useSmoothProgress = (moveProgress) => {
     const displayRef = useRef(0);
     const creepAnchorRef = useRef({ processed: 0, at: 0 });
 
+    // When the bar goes idle, reset the shown percentage during render (not in
+    // an effect), so the next transfer starts its animation from zero.
+    const [wasActive, setWasActive] = useState(isActive);
+    if (wasActive !== isActive) {
+        setWasActive(isActive);
+        if (!isActive) setDisplay(0);
+    }
+
     useEffect(() => {
         if (!isActive) {
             displayRef.current = 0;
-            setDisplay(0);
             creepAnchorRef.current = { processed: 0, at: 0 };
             return;
         }

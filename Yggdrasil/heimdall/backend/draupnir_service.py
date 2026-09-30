@@ -1,9 +1,9 @@
 """Draupnir — portfolio tracker.
 
 Portfolios hold buy/sell transactions for CS items. We track cost basis,
-realized P/L (avg-cost method) and, using Huginn's live pulse prices,
-current market value and unrealized P/L. State persists as a single JSON
-file (gitignored — it's personal holdings data), guarded by a lock.
+realized P/L (moving-average cost method, see :meth:`DraupnirService._replay_moving_average`)
+and, using Huginn's live pulse prices, current market value and unrealized P/L.
+State persists as a single JSON file, guarded by a lock.
 """
 import csv
 import io
@@ -15,11 +15,139 @@ import uuid
 from datetime import datetime, timezone
 
 from jsonio import atomic_write_json
-from validation import normalize_datetime
+from validation import normalize_datetime, validate_transaction
 
 log = logging.getLogger(__name__)
 
 PORTFOLIOS_FILE = os.path.join(os.path.dirname(__file__), 'portfolios.json')
+
+# Spellings of one market typed into the platform field -> its one canonical,
+# lower-case name. Keys are matched lower-cased with runs of whitespace
+# collapsed. Genuinely different markets stay different: 'buff163_buy' (a buy
+# order filled) is not 'buff163' (a listing bought), 'steam_buy' is not
+# 'steam', 'dmarket_buy' is not 'dmarket', 'cs.money.market' is not
+# 'cs.money.trade'. Anything not listed here — including free-text notes typed
+# into the platform field, such as 'sent from hidey_spidey' — is kept exactly as
+# typed. Bump PLATFORM_ALIASES_VERSION when this map changes so the stored
+# transactions are migrated again on the next start.
+PLATFORM_ALIASES = {
+    # Seen in the stored transactions (2026-09-30).
+    'buff': 'buff163',
+    'avan.market': 'avanmarket',
+    'halo': 'haloskins',
+    'haloskins avg': 'haloskins',
+    'tradeit.gg': 'tradeit',
+    'sold to tradeit.gg': 'tradeit',
+    'tradeon,market': 'tradeon.market',
+    'bought at skin.land': 'skin.land',
+    'sold to skin.land': 'skin.land',
+    'csfloat after fees': 'csfloat',
+    # Other spellings of the same markets, so new entries stay consistent.
+    'buff.163': 'buff163',
+    'buff 163': 'buff163',
+    'avan market': 'avanmarket',
+    'avan': 'avanmarket',
+    'halo skins': 'haloskins',
+    'haloskins.com': 'haloskins',
+    'trade it': 'tradeit',
+    'tradeon': 'tradeon.market',
+    'tradeon market': 'tradeon.market',
+    'skinland': 'skin.land',
+    'skin land': 'skin.land',
+    'cs float': 'csfloat',
+    'csfloat.com': 'csfloat',
+    'cs.money trade': 'cs.money.trade',
+    'cs money trade': 'cs.money.trade',
+    'csmoney trade': 'cs.money.trade',
+    'csmoney.trade': 'cs.money.trade',
+    'cs.money market': 'cs.money.market',
+    'cs money market': 'cs.money.market',
+    'csmoney market': 'cs.money.market',
+    'csmoney.market': 'cs.money.market',
+    'lis-skins': 'lisskins',
+    'lis skins': 'lisskins',
+    'lootfarm': 'loot.farm',
+    'loot farm': 'loot.farm',
+    'white.market': 'whitemarket',
+    'white market': 'whitemarket',
+    'swapgg': 'swap.gg',
+    'aim market': 'aim.market',
+}
+
+# Canonical market names: typed in any letter case they are stored lower-case.
+PLATFORM_CANONICAL_NAMES = frozenset(PLATFORM_ALIASES.values()) | {
+    'buff163_buy', 'steam', 'steam_buy', 'dmarket', 'dmarket_buy', 'lisskins',
+    'loot.farm', 'whitemarket', 'swap.gg', 'skinswap_cn', 'uuskins', 'skins',
+    'aim.market',
+}
+
+# Stored in data['meta']['platform_aliases_version'] once the stored
+# transactions have been normalized with this version of PLATFORM_ALIASES.
+PLATFORM_ALIASES_VERSION = 1
+
+
+def normalize_platform(raw):
+    """The canonical name of a market typed into the platform field.
+
+    A known alias ('buff', 'tradeit.gg', 'Halo') becomes its canonical
+    lower-case name ('buff163', 'tradeit', 'haloskins'); a canonical name in
+    any letter case becomes lower-case; anything else (a market we do not know,
+    or a free-text note) is returned as typed, only trimmed."""
+    text = (raw or '').strip()
+    lookup = ' '.join(text.lower().split())
+    if lookup in PLATFORM_ALIASES:
+        return PLATFORM_ALIASES[lookup]
+    if lookup in PLATFORM_CANONICAL_NAMES:
+        return lookup
+    return text
+
+
+def _chronological_key(transaction):
+    """Sort key that replays transactions in the order they happened: by date,
+    then by created_at for transactions entered on the same date. Python's sort
+    is stable, so transactions with neither keep their list order."""
+    return (transaction.get('date') or '', transaction.get('created_at') or '')
+
+
+class PortfolioSaveError(RuntimeError):
+    """portfolios.json could not be written. The change is NOT on disk; the
+    in-memory store is rolled back to what the file holds whenever that file can
+    be read, so a retry does not double-apply the change."""
+
+
+class CsvImportError(ValueError):
+    """A CSV import had no valid row, so nothing (not even an empty portfolio)
+    was created. ``errors`` lists what was wrong, row by row."""
+
+    def __init__(self, message, errors):
+        super().__init__(message)
+        self.errors = errors
+
+
+def parse_store_bytes(data):
+    """Parse and validate raw portfolio-store JSON (a backup being restored).
+
+    Returns the parsed dict. Raises ValueError unless it is a JSON object whose
+    ``portfolios`` is an object of portfolio objects, each with a
+    ``transactions`` list — the shape every other method relies on."""
+    if isinstance(data, (bytes, bytearray)):
+        try:
+            data = data.decode('utf-8')
+        except UnicodeDecodeError as e:
+            raise ValueError(f'backup is not UTF-8 text: {e}') from e
+    try:
+        parsed = json.loads(data)
+    except (json.JSONDecodeError, TypeError) as e:
+        raise ValueError(f'backup is not valid JSON: {e}') from e
+    if not isinstance(parsed, dict):
+        raise ValueError('backup is not a JSON object')
+    portfolios = parsed.get('portfolios')
+    if not isinstance(portfolios, dict):
+        raise ValueError("backup has no 'portfolios' object")
+    for pid, portfolio in portfolios.items():
+        if not isinstance(portfolio, dict) or not isinstance(portfolio.get('transactions'), list):
+            raise ValueError(f'portfolio {pid!r} in the backup has no transaction list')
+    return parsed
 
 
 def _now():
@@ -66,16 +194,39 @@ def _cents_to_usd(v):
 
     A value that already contains a decimal point is treated as real dollars —
     Pricempire never writes decimals, but our own export (export_csv) does, so
-    this keeps an exported CSV round-trippable through import."""
+    this keeps an exported CSV round-trippable through import. Real dollars keep
+    4 decimals (the stored precision) so a sub-cent unit price survives."""
     v = (v or '').strip()
     if v in ('', 'N/A', 'n/a'):
         return None
     try:
         if '.' in v:
-            return round(float(v), 2)
+            return round(float(v), 4)
         return round(float(v) / 100.0, 2)
     except ValueError:
         return None
+
+
+_TRUE_WORDS = ('1', 'true', 'yes', 'y')
+
+
+def _strip_byte_order_mark(text):
+    """Drop a leading UTF-8 byte order mark, whether it was decoded properly
+    (U+FEFF) or as latin-1/cp1252 mojibake ('ï»¿'); otherwise the first header
+    would start with an invisible U+FEFF and every row's name would look
+    missing."""
+    for mark in ('\ufeff', '\u00ef\u00bb\u00bf'):
+        if text.startswith(mark):
+            return text[len(mark):]
+    return text
+
+
+def _sniff_delimiter(text):
+    """';' when the header line has more semicolons than commas (a CSV saved by
+    a spreadsheet in a locale that uses the comma as the decimal separator),
+    else ','."""
+    header = text.split('\n', 1)[0]
+    return ';' if header.count(';') > header.count(',') else ','
 
 
 class DraupnirService:
@@ -102,6 +253,13 @@ class DraupnirService:
             with self._lock:
                 self._data = self._load()
                 self._store_gen += 1
+        # One-time normalization of the stored platform names. It runs here and
+        # not in __init__ because it must take a backup snapshot first. It never
+        # stops the app from starting.
+        try:
+            self.migrate_platform_aliases()
+        except Exception as e:
+            log.error('platform alias migration failed: %s', e)
 
     def reload(self):
         """Re-read the source file into memory — used after a backup restore
@@ -163,17 +321,124 @@ class DraupnirService:
         return None
 
     def _persist(self):
-        """Caller must hold self._lock."""
+        """Caller must hold self._lock. Raises :class:`PortfolioSaveError` when
+        the file cannot be written, so the route answers 500 instead of reporting
+        a change that exists only in memory."""
         self._store_gen += 1   # invalidate the memoized name set
         try:
             atomic_write_json(self.path, self._data, indent=2)
         except Exception as e:
             log.error('could not persist portfolios: %s', e)
-            return
+            self._rollback_to_disk()
+            raise PortfolioSaveError(f'could not save portfolios: {e}') from e
         # Snapshot the new state for point-in-time restore. Best-effort and
         # deduped by content hash — never lets a backup issue break the write.
         if self._backup is not None:
             self._backup.snapshot('change')
+
+    def _rollback_to_disk(self):
+        """After a failed write, put the in-memory store back to what the file
+        holds, so memory never carries a change the caller was told failed.
+        Only when the file exists and parses cleanly — otherwise memory is kept,
+        because replacing it with an empty store would risk the next successful
+        write wiping the book. Caller must hold self._lock."""
+        try:
+            with open(self.path) as f:
+                on_disk = json.load(f)
+        except (OSError, ValueError) as e:
+            log.error('could not re-read portfolios after a failed save (%s); '
+                      'keeping the in-memory store', e)
+            return
+        if isinstance(on_disk, dict) and isinstance(on_disk.get('portfolios'), dict):
+            self._data = on_disk
+            self._store_gen += 1
+
+    def restore_bytes(self, data):
+        """Replace the whole store with a backup's JSON, validated and persisted
+        under the service lock.
+
+        Doing it here (instead of overwriting the file and calling reload())
+        means no concurrent write can slip in between and put the pre-restore
+        state back. Raises ValueError for an invalid backup (store untouched) and
+        PortfolioSaveError when the write fails (store left as it was)."""
+        parsed = parse_store_bytes(data)
+        with self._lock:
+            previous = self._data
+            self._data = parsed
+            try:
+                self._persist()
+            except Exception:
+                self._data = previous
+                self._store_gen += 1
+                raise
+            self._last_load_corrupt = False
+
+    # ---- platform alias migration ----------------------------------------
+
+    def _backup_holds_current_file(self):
+        """True when a backup snapshot holds exactly the bytes of the live file.
+        Caller must hold self._lock."""
+        try:
+            with open(self.path, 'rb') as f:
+                live = f.read()
+        except OSError:
+            return False
+        for entry in self._backup.list_backups():   # newest first
+            if self._backup.read_backup(entry['name']) == live:
+                return True
+        return False
+
+    def migrate_platform_aliases(self):
+        """Rewrite every stored transaction's platform through
+        :func:`normalize_platform`, once per PLATFORM_ALIASES_VERSION.
+
+        Safety, in order: it needs the backup service; it skips a store that was
+        not read cleanly from the file (corrupt, recovered from a backup, or no
+        file yet) so it can never write over data it did not load; it takes a
+        'manual' backup snapshot and checks a snapshot holds the exact current
+        file before changing anything; then it changes only the platform field
+        and saves through :meth:`_persist` under the store lock. The version
+        marker is stored in data['meta']['platform_aliases_version'].
+
+        Returns ``{'old -> new': transactions changed}`` when it ran (empty when
+        nothing needed changing), or None when it was not due or was skipped."""
+        if self._backup is None:
+            return None
+        with self._lock:
+            meta = self._data.get('meta')
+            meta = meta if isinstance(meta, dict) else {}
+            if meta.get('platform_aliases_version', 0) >= PLATFORM_ALIASES_VERSION:
+                return None
+            if getattr(self, '_last_load_corrupt', False):
+                log.warning('platform alias migration skipped: the store did not load cleanly')
+                return None
+            try:
+                with open(self.path) as f:
+                    on_disk = json.load(f)
+            except (OSError, ValueError):
+                on_disk = None
+            if on_disk != self._data:
+                log.warning('platform alias migration skipped: memory does not match %s', self.path)
+                return None
+            self._backup.snapshot('manual')
+            if not self._backup_holds_current_file():
+                log.error('platform alias migration skipped: no verified backup snapshot')
+                return None
+
+            changed = {}
+            for portfolio in self._data['portfolios'].values():
+                for txn in portfolio['transactions']:
+                    old = txn.get('platform') or ''
+                    new = normalize_platform(old)
+                    if new != old:
+                        txn['platform'] = new
+                        change = f'{old} -> {new}'
+                        changed[change] = changed.get(change, 0) + 1
+            self._data['meta'] = {**meta, 'platform_aliases_version': PLATFORM_ALIASES_VERSION}
+            self._persist()   # on a failed write it rolls memory back and raises
+            log.info('platform alias migration version %s: %s transactions changed %s',
+                     PLATFORM_ALIASES_VERSION, sum(changed.values()), changed)
+            return changed
 
     # ---- transaction shaping ----------------------------------------------
 
@@ -202,7 +467,9 @@ class DraupnirService:
             'type': typ,
             'qty': qty,
             'price': price,
-            'platform': (raw.get('platform') or '').strip(),
+            # One canonical name per market ('buff' -> 'buff163'); free text
+            # and unknown markets are kept as typed. See normalize_platform.
+            'platform': normalize_platform(raw.get('platform')),
             # Normalize whatever date/datetime shape was entered into the canonical
             # stored form (YYYY-MM-DD, or YYYY-MM-DDThh:mm:ss when a time is given).
             # An unparseable non-empty value is kept as-is rather than dropped;
@@ -314,18 +581,27 @@ class DraupnirService:
     # ---- CSV import --------------------------------------------------------
 
     @staticmethod
-    def parse_csv(text):
-        """Parse a price-tracker CSV export into a list of transaction dicts.
+    def _parse_csv_rows(text):
+        """Parse CSV text into ``[(line_number, transaction_dict), ...]``.
 
-        Handles the integer-cents 'Unit Price' quirk (no decimal point) and
-        mojibake item names. Unknown columns are ignored."""
-        txns = []
-        reader = csv.DictReader(io.StringIO(text))
+        Handles the integer-cents 'Unit Price' quirk (no decimal point), mojibake
+        item names, a UTF-8 byte order mark and ';' as the delimiter. Unknown
+        columns are ignored. Reads our own export's 'Arbitrage' and 'Created At'
+        columns back, so export -> import round-trips; older files without them
+        import as before."""
+        text = _strip_byte_order_mark(text or '')
+        reader = csv.DictReader(io.StringIO(text), delimiter=_sniff_delimiter(text))
+        # Our own export (it has the 'Created At' column) writes every field
+        # where it belongs, so the price-tracker "market in Note" repair below
+        # must not move a note into an empty platform.
+        own_export = 'Created At' in (reader.fieldnames or [])
+        rows = []
         for row in reader:
             name = _demojibake((row.get('Name') or '').strip())
             if not name:
                 continue
-            price = _cents_to_usd(row.get('Unit Price'))
+            raw_unit_price = (row.get('Unit Price') or '').strip()
+            price = _cents_to_usd(raw_unit_price)
             if price is None:
                 # fall back to Total / Quantity if unit price is missing
                 total = _cents_to_usd(row.get('Total Price'))
@@ -333,12 +609,17 @@ class DraupnirService:
                     q = float(row.get('Quantity') or 1)
                 except ValueError:
                     q = 1
-                price = round(total / q, 4) if (total is not None and q) else 0.0
+                if total is not None and q:
+                    price = round(total / q, 4)
+                elif raw_unit_price not in ('', 'N/A', 'n/a'):
+                    price = raw_unit_price   # unparseable: let validation report it
+                else:
+                    price = 0.0
             platform = (row.get('Marketplace') or '').strip()
             note = _demojibake((row.get('Note') or '').strip())
-            if platform in ('', 'N/A') and note:
+            if not own_export and platform in ('', 'N/A') and note:
                 platform = note  # some rows put the real market in Note
-            txns.append({
+            txn = {
                 'item_name': name,
                 'type': row.get('Type'),
                 'qty': row.get('Quantity'),
@@ -346,20 +627,47 @@ class DraupnirService:
                 'platform': platform if platform != 'N/A' else '',
                 'date': (row.get('Date') or '').strip(),
                 'note': note if note != 'N/A' else '',
-                'fee_percent': row.get('Fee Percentage'),
-            })
-        return txns
+                # The price tracker writes 'N/A' for no fee; treat it (and blank) as 0.
+                'fee_percent': (0 if (row.get('Fee Percentage') or '').strip() in ('', 'N/A', 'n/a')
+                                else row.get('Fee Percentage')),
+                'is_arbitrage': (row.get('Arbitrage') or '').strip().lower() in _TRUE_WORDS,
+            }
+            created_at = (row.get('Created At') or '').strip()
+            if created_at:
+                txn['created_at'] = created_at
+            rows.append((reader.line_num, txn))
+        return rows
+
+    @staticmethod
+    def parse_csv(text):
+        """Parse a price-tracker (or our own exported) CSV into a list of
+        transaction dicts. See :meth:`_parse_csv_rows`."""
+        return [txn for _, txn in DraupnirService._parse_csv_rows(text)]
 
     def import_csv(self, text, name=None, pid=None):
         """Import a CSV into a new portfolio (default) or append to `pid`.
-        Returns (portfolio, imported_count)."""
-        txns = [self._clean_txn(t) for t in self.parse_csv(text)]
+
+        Every row goes through the same validation as a hand-entered
+        transaction; invalid rows are skipped and reported. Returns
+        ``(portfolio, imported_count, errors)`` — ``(None, 0, [])`` when `pid`
+        does not exist. Raises :class:`CsvImportError` when no row is valid,
+        before anything (not even a new portfolio) is created."""
+        txns, errors = [], []
+        for line_number, raw in self._parse_csv_rows(text):
+            row_errors = validate_transaction(raw)
+            if row_errors:
+                errors.append(f"line {line_number} ({raw['item_name']}): "
+                              + '; '.join(row_errors))
+                continue
+            txns.append(self._clean_txn(raw))
         with self._lock:
             if pid:
                 p = self._get(pid)
                 if not p:
-                    return None, 0
-            else:
+                    return None, 0, []
+            if not txns:
+                raise CsvImportError('no valid rows to import', errors)
+            if not pid:
                 pid = _new_id()
                 p = {
                     'id': pid, 'name': (name or 'Imported').strip() or 'Imported',
@@ -369,12 +677,13 @@ class DraupnirService:
             p['transactions'].extend(txns)
             p['updated_at'] = _now()
             self._persist()
-            return p, len(txns)
+            return p, len(txns), errors
 
     # ---- CSV export --------------------------------------------------------
 
     EXPORT_COLUMNS = ['Name', 'Type', 'Quantity', 'Unit Price', 'Total Price',
-                      'Marketplace', 'Date', 'Note', 'Fee Percentage']
+                      'Marketplace', 'Date', 'Note', 'Fee Percentage',
+                      'Arbitrage', 'Created At']
 
     def export_csv(self, pid):
         """Serialize one portfolio's transactions to CSV text (real dollars, not
@@ -397,41 +706,106 @@ class DraupnirService:
                 'Name': t.get('item_name', ''),
                 'Type': t.get('type', 'buy'),
                 'Quantity': qty,
-                'Unit Price': f'{price:.2f}',
+                # 4 decimals = the stored precision (a sub-cent unit price of a
+                # bulk case buy would otherwise lose money on re-import).
+                'Unit Price': f'{price:.4f}',
                 'Total Price': f'{qty * price:.2f}',
                 'Marketplace': t.get('platform', ''),
                 'Date': t.get('date', ''),
                 'Note': t.get('note', ''),
                 'Fee Percentage': t.get('fee_percent', 0) or 0,
+                'Arbitrage': 'true' if t.get('is_arbitrage') else 'false',
+                'Created At': t.get('created_at', ''),
             })
         return name, buf.getvalue()
 
     # ---- valuation / aggregation ------------------------------------------
 
     @staticmethod
+    def _replay_moving_average(txns):
+        """Replay transactions in date order (created_at breaks a tie) with a
+        moving-average cost per item. No fee is applied.
+
+        * A buy moves the average: (held cost + qty * price) / (held qty + qty).
+          When nothing is held the average simply becomes the buy price.
+        * A sell costs the current average per unit sold (realized profit =
+          (price - average) * qty) and lowers the held quantity; the average
+          itself does not move, so held cost stays average * held quantity.
+        * A sell of more than is held (a missing buy, or selling the copy you
+          have and buying it back later) is charged the current average for the
+          units not held, provisionally. The next buys first cover those units
+          and replace the provisional cost with what was really paid, so a
+          sell-then-rebuy books the real spread. Units never covered keep the
+          provisional cost (the old all-time method did the same).
+
+        Returns ``(items, sell_costs)``: ``items`` is {item_name: {'held_qty',
+        'avg_cost'}}, where ``avg_cost`` is the moving average of what is held —
+        once everything is sold it stays at the last average, a sell never
+        moves it; ``sell_costs`` is {index in txns: cost of that sell's units}."""
+        items = {}
+        sell_costs = {}
+        order = sorted(range(len(txns)), key=lambda index: _chronological_key(txns[index]))
+        for index in order:
+            txn = txns[index]
+            state = items.setdefault(txn['item_name'], {
+                'held_qty': 0, 'avg_cost': 0.0,
+                'uncovered': [],   # [[qty not yet covered, cost charged per unit, sell index], ...]
+            })
+            qty, price = txn['qty'], txn['price']
+            if txn['type'] == 'sell':
+                sell_costs[index] = state['avg_cost'] * qty
+                not_held = qty - max(state['held_qty'], 0)
+                if not_held > 0:
+                    state['uncovered'].append([not_held, state['avg_cost'], index])
+                state['held_qty'] -= qty
+                continue
+            remaining = qty
+            while remaining > 0 and state['uncovered']:
+                short = state['uncovered'][0]
+                covered = min(remaining, short[0])
+                sell_costs[short[2]] += (price - short[1]) * covered
+                short[0] -= covered
+                remaining -= covered
+                if short[0] <= 0:
+                    state['uncovered'].pop(0)
+            if state['held_qty'] > 0:
+                held_cost = state['avg_cost'] * state['held_qty']
+                state['avg_cost'] = (held_cost + qty * price) / (state['held_qty'] + qty)
+            else:
+                state['avg_cost'] = price
+            state['held_qty'] += qty
+        return items, sell_costs
+
+    @staticmethod
     def _holdings(txns, prices):
         """Aggregate transactions per item into holdings with cost basis, P/L
-        and (if a price is known) current value. `prices` is {name: usd} or None."""
+        and (if a price is known) current value. `prices` is {name: usd} or None.
+
+        Cost basis and realized P/L come from the moving-average replay
+        (:meth:`_replay_moving_average`); ``avg_cost`` is the moving average of
+        the units held (the last average once the item is fully sold)."""
         prices = prices or {}
+        replay, sell_costs = DraupnirService._replay_moving_average(txns)
         by_item = {}
-        for t in txns:
+        for index, t in enumerate(txns):
             h = by_item.setdefault(t['item_name'], {
                 'item_name': t['item_name'], 'buy_qty': 0, 'buy_cost': 0.0,
-                'sell_qty': 0, 'sell_proceeds': 0.0,
+                'sell_qty': 0, 'sell_proceeds': 0.0, '_realized': 0.0,
             })
             total = t['qty'] * t['price']
             if t['type'] == 'sell':
                 h['sell_qty'] += t['qty']
                 h['sell_proceeds'] += total
+                h['_realized'] += total - sell_costs[index]
             else:
                 h['buy_qty'] += t['qty']
                 h['buy_cost'] += total
 
         holdings = []
         for h in by_item.values():
-            avg_cost = (h['buy_cost'] / h['buy_qty']) if h['buy_qty'] else 0.0
+            realized = h.pop('_realized')
+            avg_cost = replay[h['item_name']]['avg_cost']
             net_qty = h['buy_qty'] - h['sell_qty']
-            realized = h['sell_proceeds'] - avg_cost * h['sell_qty']
             price = prices.get(h['item_name'])
             cost_basis = avg_cost * max(net_qty, 0)
             market_value = (price * net_qty) if (price is not None and net_qty > 0) else None
@@ -445,6 +819,10 @@ class DraupnirService:
                 'market_value': round(market_value, 2) if market_value is not None else None,
                 'realized_pl': round(realized, 2),
                 'unrealized_pl': round(unrealized, 2) if unrealized is not None else None,
+                # More sold than bought (a missing buy, or a typo). The P/L math
+                # above is unchanged; this only flags it for the user to fix.
+                'oversold': net_qty < 0,
+                'oversold_qty': max(-net_qty, 0),
             })
         holdings.sort(key=lambda x: (x['market_value'] or x['cost_basis'] or 0), reverse=True)
         return holdings
@@ -585,6 +963,7 @@ class DraupnirService:
                     m = merged[h['item_name']] = {
                         'item_name': h['item_name'], 'buy_qty': 0, 'buy_cost': 0.0,
                         'sell_qty': 0, 'sell_proceeds': 0.0, 'net_qty': 0,
+                        'oversold_qty': 0, 'sold_avg_cost_total': 0.0,
                         'cost_basis': 0.0, 'realized_pl': 0.0,
                         'current_price': None, 'market_value': None, 'unrealized_pl': None,
                     }
@@ -592,7 +971,13 @@ class DraupnirService:
                 m['buy_cost'] += h['buy_cost']
                 m['sell_qty'] += h['sell_qty']
                 m['sell_proceeds'] += h['sell_proceeds']
-                m['net_qty'] += h['net_qty']
+                m['sold_avg_cost_total'] += h['avg_cost'] * h['sell_qty']
+                # Only what an account really holds adds to the combined
+                # quantity: one account's oversold (negative) position must not
+                # cancel units another account still has. The oversold amount is
+                # carried separately as a flag; realized P/L still sums as-is.
+                m['net_qty'] += max(h['net_qty'], 0)
+                m['oversold_qty'] += max(-h['net_qty'], 0)
                 m['cost_basis'] += h['cost_basis']
                 m['realized_pl'] += h['realized_pl']
                 if h['current_price'] is not None:
@@ -605,9 +990,15 @@ class DraupnirService:
         holdings = []
         for m in merged.values():
             net, buy_qty = m['net_qty'], m['buy_qty']
-            # Held avg cost keeps avg_cost × net_qty == cost_basis in the table;
-            # for fully-sold items fall back to the pooled buy average.
-            avg_cost = (m['cost_basis'] / net) if net > 0 else ((m['buy_cost'] / buy_qty) if buy_qty else 0.0)
+            # Held avg cost keeps avg_cost × net_qty == cost_basis in the table.
+            # For a fully sold item: the accounts' last moving averages, weighted
+            # by how many units each account sold (one account: its own).
+            if net > 0:
+                avg_cost = m['cost_basis'] / net
+            elif m['sell_qty']:
+                avg_cost = m['sold_avg_cost_total'] / m['sell_qty']
+            else:
+                avg_cost = 0.0
             mv = m['market_value']
             holdings.append({
                 'item_name': m['item_name'],
@@ -620,6 +1011,8 @@ class DraupnirService:
                 'market_value': round(mv, 2) if mv is not None else None,
                 'realized_pl': round(m['realized_pl'], 2),
                 'unrealized_pl': round(m['unrealized_pl'], 2) if m['unrealized_pl'] is not None else None,
+                'oversold': m['oversold_qty'] > 0,
+                'oversold_qty': m['oversold_qty'],
             })
         holdings.sort(key=lambda x: (x['market_value'] or x['cost_basis'] or 0), reverse=True)
 
@@ -656,6 +1049,58 @@ class DraupnirService:
             'arbitrage_count': arb,
         }
 
+    def open_lots(self):
+        """Every unit still held, as the purchases it came from — no averaging:
+        [{portfolio_id, account, item_name, price, qty, platform, last_buy_date}].
+        Per account (accounts are separate books), arbitrage legs left out. Sells
+        use up the OLDEST buys first (first in, first out), since the ledger does
+        not record which copy was sold. What is left is grouped by item, unit
+        price and platform as entered, so two buys of 50 at $4.00 on buff163_buy
+        show as one lot of 100; `last_buy_date` is the newest buy in the lot (a
+        hint for Steam's 7-day trade protection). Read-only."""
+        with self._lock:
+            portfolios = json.loads(json.dumps(list(self._data['portfolios'].values())))
+        lots_out = []
+        for portfolio in portfolios:
+            transactions = sorted(self._non_arb(portfolio['transactions']),
+                                  key=lambda txn: (txn.get('date') or '', txn.get('created_at') or ''))
+            queues = {}      # item -> [[qty_left, price, platform, date], ...] oldest first
+            # Units sold before any recorded buy (the original buy was never entered):
+            # the next buys cover them first, matching the moving-average replay, so
+            # an item whose net quantity is zero never shows up as a held lot.
+            uncovered = {}   # item -> units sold with no earlier buy
+            for txn in transactions:
+                item = txn['item_name']
+                queue = queues.setdefault(item, [])
+                if txn['type'] != 'sell':
+                    qty = txn['qty']
+                    covered = min(qty, uncovered.get(item, 0))
+                    if covered:
+                        uncovered[item] -= covered
+                        qty -= covered
+                    if qty > 0:
+                        queue.append([qty, txn['price'], (txn.get('platform') or '').strip(), txn.get('date') or ''])
+                    continue
+                left = txn['qty']
+                while left > 0 and queue:
+                    used = min(left, queue[0][0])
+                    queue[0][0] -= used
+                    left -= used
+                    if queue[0][0] <= 0:
+                        queue.pop(0)
+                if left > 0:
+                    uncovered[item] = uncovered.get(item, 0) + left
+            for item, queue in queues.items():
+                grouped = {}
+                for qty, price, platform, date in queue:
+                    lot = grouped.setdefault((round(price, 4), platform), {
+                        'portfolio_id': portfolio['id'], 'account': portfolio['name'], 'item_name': item,
+                        'price': round(price, 4), 'qty': 0, 'platform': platform, 'last_buy_date': ''})
+                    lot['qty'] += qty
+                    lot['last_buy_date'] = max(lot['last_buy_date'], date)
+                lots_out.extend(sorted(grouped.values(), key=lambda lot: lot['price']))
+        return lots_out
+
     @staticmethod
     def _is_steam(platform):
         """True if a platform is Steam. Steam balance is locked wallet money, not
@@ -668,15 +1113,18 @@ class DraupnirService:
         is_arbitrage), pooled across ALL accounts — a play can source on one
         account/market and sell on another, so it's never scoped to one account.
 
-        Realized profit uses the same avg-cost method as the rest of Draupnir,
-        applied to the tagged subset: buys build the cost basis, sells realize the
-        spread. Cross-account and cross-date pairs fall out naturally, so we don't
-        try to match individual buy↔sell legs.
+        Realized profit uses the same moving-average method as the rest of
+        Draupnir (:meth:`_replay_moving_average`), applied to the tagged subset
+        pooled across accounts in date order: buys move the average, sells
+        realize the spread against it, and a sell made before its rebuy is
+        costed at what the rebuy paid. Cross-account and cross-date pairs fall
+        out naturally, so we don't try to match individual buy↔sell legs.
 
         Every SELL leg is split into a category by where it settled: `steam`
         (locked wallet money) vs `market` (real, withdrawable cash). Realized P/L is
         additive across sell legs, so each category's total is exact; the shared
-        avg-cost basis is pooled across all tagged buys of an item. Steam profit is
+        moving-average basis is pooled across all tagged buys of an item. An
+        item row's ``avg_cost`` is the average cost of the units it sold. Steam profit is
         counted at face value but kept in its own bucket so it's never confused with
         real cash.
 
@@ -697,27 +1145,26 @@ class DraupnirService:
                     open_buys += 1
 
         holdings = self._holdings(txns, prices)
-        avg_cost = {h['item_name']: h['avg_cost'] for h in holdings}
+        _, sell_costs = self._replay_moving_average(txns)
 
         # Bucket each sell leg into steam vs market and tally per-item within each.
         cats = {'market': {'realized_pl': 0.0, 'closed_deals': 0, 'units_flipped': 0,
                            'cost_of_sold': 0.0, 'proceeds': 0.0, '_items': {}},
                 'steam':  {'realized_pl': 0.0, 'closed_deals': 0, 'units_flipped': 0,
                            'cost_of_sold': 0.0, 'proceeds': 0.0, '_items': {}}}
-        for t in txns:
+        for index, t in enumerate(txns):
             if t['type'] != 'sell':
                 continue
             cat = cats['steam' if self._is_steam(t.get('platform')) else 'market']
             item, qty, price = t['item_name'], t['qty'], t['price']
-            ac = avg_cost.get(item, 0.0)
-            cost, proc = ac * qty, price * qty
+            cost, proc = sell_costs[index], price * qty
             rp = proc - cost
             cat['realized_pl'] += rp
             cat['closed_deals'] += 1
             cat['units_flipped'] += qty
             cat['cost_of_sold'] += cost
             cat['proceeds'] += proc
-            d = cat['_items'].setdefault(item, {'item_name': item, 'sell_qty': 0, 'avg_cost': ac,
+            d = cat['_items'].setdefault(item, {'item_name': item, 'sell_qty': 0, 'avg_cost': 0.0,
                                                 'cost_of_sold': 0.0, 'proceeds': 0.0, 'realized_pl': 0.0})
             d['sell_qty'] += qty
             d['cost_of_sold'] += cost
@@ -727,6 +1174,7 @@ class DraupnirService:
         def _finish(cat):
             rows = []
             for d in cat['_items'].values():
+                d['avg_cost'] = round(d['cost_of_sold'] / d['sell_qty'], 4) if d['sell_qty'] else 0.0
                 d['cost_of_sold'] = round(d['cost_of_sold'], 2)
                 d['proceeds'] = round(d['proceeds'], 2)
                 d['realized_pl'] = round(d['realized_pl'], 2)
@@ -763,7 +1211,7 @@ class DraupnirService:
 
         # Per-leg ledger: every tagged transaction with account, date and category.
         legs = []
-        for t in txns:
+        for index, t in enumerate(txns):
             price, qty = t['price'], t['qty']
             is_sell = t['type'] == 'sell'
             st = self._is_steam(t.get('platform'))
@@ -780,8 +1228,7 @@ class DraupnirService:
                 'steam': st,
                 'category': ('steam' if st else 'market') if is_sell else None,
                 'note': t.get('note', ''),
-                'realized_pl': (round((price - avg_cost.get(t['item_name'], 0.0)) * qty, 2)
-                                if is_sell else None),
+                'realized_pl': round(price * qty - sell_costs[index], 2) if is_sell else None,
             })
         legs.sort(key=lambda l: l['date'], reverse=True)
 

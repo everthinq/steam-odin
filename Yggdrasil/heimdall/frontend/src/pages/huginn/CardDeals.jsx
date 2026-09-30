@@ -63,9 +63,13 @@ const CardDeals = () => {
     // ASF card farming status: refreshed every 30 seconds (cheap: Heimdall answers
     // from its last ASF poll).
     const fetchFarming = useCallback(() => fetch('/api/huginn/card-deals/farming')
-        .then((r) => r.json())
+        .then(async (r) => {
+            const body = await r.json().catch(() => null);
+            if (!r.ok || !body) throw new Error(body?.error || `HTTP ${r.status}`);
+            return body;
+        })
         .then(setFarming)
-        .catch(() => setFarming({ enabled: true, reachable: false, error: 'backend unreachable', accounts: [] })), []);
+        .catch((e) => setFarming({ enabled: true, reachable: false, error: e.message === 'Failed to fetch' ? 'backend unreachable' : e.message, accounts: [] })), []);
     useEffect(() => {
         fetchFarming();
         const timer = setInterval(fetchFarming, 30000);
@@ -74,8 +78,11 @@ const CardDeals = () => {
     const farmingAction = (steamid, action) => {
         setFarmingBusy(true);
         fetch(`/api/huginn/card-deals/farming/${steamid}/${action}`, { method: 'POST' })
-            .then((r) => r.json())
-            .then((d) => { if (d.error) setError(`Card farming: ${d.error}`); })
+            .then(async (r) => {
+                const d = await r.json().catch(() => ({}));
+                if (!r.ok || d.error) setError(`Card farming: ${d.error || `request failed (HTTP ${r.status})`}`);
+            })
+            .catch((e) => setError(`Card farming: ${e.message}`))
             .finally(() => { setFarmingBusy(false); fetchFarming(); });
     };
     const farmingTotals = farming?.totals;

@@ -25,14 +25,30 @@ _csfloat_job = {
 }
 
 
+# One inventory scan at a time: a scan logs every account into Ratatoskr and walks
+# every Storage Unit, so two overlapping scans would double the Game Coordinator
+# traffic (and its rate limits). The request itself stays synchronous.
+_scan_lock = threading.Lock()
+_scan_running = False
+
+
 @bp.route('/api/huginn/scan', methods=['POST'])
 def huginn_scan():
-    """Scan all accounts and cache inventory grouped by market hash name."""
+    """Scan all accounts and cache inventory grouped by market hash name.
+    409 when a scan is already running."""
+    global _scan_running
+    with _scan_lock:
+        if _scan_running:
+            return jsonify({'error': 'An inventory scan is already running'}), 409
+        _scan_running = True
     try:
         result = ctx.huginn_service.scan()
         return jsonify(result)
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+    finally:
+        with _scan_lock:
+            _scan_running = False
 
 @bp.route('/api/huginn/scan/cache', methods=['GET'])
 def huginn_scan_cache():
@@ -136,8 +152,15 @@ def huginn_csfloat_buy_orders_fetch():
     if not load_csfloat_keys():
         return jsonify({'error': 'No CSFloat API keys configured — add them to csfloat_keys.json'}), 400
 
+    # Candidates: the latest inventory scan plus every item still held in a
+    # Draupnir portfolio. Always both: the Arbitrage page and Harvest share one
+    # cache, and a sweep keeps only its own candidates, so a scan-only sweep would
+    # drop Harvest's prices for items held only in Draupnir. (?include_holdings is
+    # still accepted from older pages; it no longer changes anything.)
     scan = ctx.huginn_service.get_cache()
-    if not scan or not scan.get('by_hash'):
+    names = set((scan or {}).get('by_hash') or {})
+    names |= {lot['item_name'] for lot in ctx.draupnir_service.open_lots()}
+    if not names:
         return jsonify({'error': 'No inventory scan yet — run "Get all items" first'}), 409
 
     with _csfloat_job_lock:
@@ -159,7 +182,8 @@ def huginn_csfloat_buy_orders_fetch():
 
     def _run():
         try:
-            ctx.huginn_service.fetch_csfloat_buy_orders(token=token, progress=_progress, wait_cb=_on_wait)
+            ctx.huginn_service.fetch_csfloat_buy_orders(token=token, names=sorted(names), progress=_progress,
+                                                        wait_cb=_on_wait)
         except Exception as e:
             with _csfloat_job_lock:
                 _csfloat_job['error'] = str(e)
@@ -270,6 +294,8 @@ def huginn_tradeon_pair():
     fee = request.args.get('fee', type=float)
     if fee is None:
         fee = ctx.huginn_service.market_fee(sell, settings)
+    elif not (0 <= fee < 1):
+        return jsonify({'error': 'fee must be a fraction with 0 <= fee < 1'}), 400
     try:
         data = ctx.huginn_service.fetch_generated_pair(token, buy, sell, mode, fee)
         return jsonify(data)
@@ -309,6 +335,32 @@ def huginn_cross_profile_config_set():
     autobuy are dropped; chains need >= 2 markets. Persisted to settings.json."""
     body = request.get_json(silent=True) or {}
     return jsonify(ctx.cross_arbitrage_service.save_config(body, ctx.settings_manager))
+
+
+@bp.route('/api/huginn/harvest', methods=['GET'])
+def huginn_harvest():
+    """Harvest: open positions (per account, at your own average cost) against
+    what autobuy markets pay instantly. ?account=<portfolio id>|all
+    ?markets=CsMoneyTrade,Buff (autobuy ids; default CSMoney Trade) ?min_pct=<float>.
+    Non-blocking: serves cached prices and warms missing markets in the background."""
+    settings = ctx.settings_manager.get_settings()
+    markets = [m for m in (request.args.get('markets') or '').split(',') if m]
+    try:
+        return jsonify(ctx.harvest_service.board(
+            settings.get('tradeon_token', ''), account=request.args.get('account', 'all'),
+            market_ids=markets, min_profit_pct=request.args.get('min_pct', type=float),
+            settings=settings))
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@bp.route('/api/huginn/harvest/options', methods=['GET'])
+def huginn_harvest_options():
+    """Account picker + autobuy market list for the Harvest tab."""
+    settings = ctx.settings_manager.get_settings()
+    return jsonify({'accounts': ctx.harvest_service.accounts(),
+                    'markets': ctx.harvest_service.autobuy_markets(settings),
+                    'default_markets': ctx.harvest_service.DEFAULT_MARKETS})
 
 # --- Gjallarhorn (event-rotation cockpit) ------------------------------------
 
@@ -409,6 +461,10 @@ def gjallarhorn_ring_status():
     return jsonify(ctx.telegram_caller.status())
 
 
+# Inclusive (low, high) bounds for the ring request fields.
+_RING_LIMITS = {'ring_seconds': (1, 45), 'repeats': (1, 5), 'gap_seconds': (0, 60)}
+
+
 @bp.route('/api/huginn/gjallarhorn/ring', methods=['POST'])
 def gjallarhorn_ring():
     """Wake-call the target on Telegram (event alarm): send an explanatory message,
@@ -421,9 +477,12 @@ def gjallarhorn_ring():
     for key in ('ring_seconds', 'repeats', 'gap_seconds'):
         if body.get(key) is not None:
             try:
-                kwargs[key] = int(body[key])
+                value = int(body[key])
             except (TypeError, ValueError):
-                pass
+                continue
+            # Clamp so a request can never turn a test ring into a phone-bombing loop.
+            low, high = _RING_LIMITS[key]
+            kwargs[key] = max(low, min(high, value))
     result = ctx.telegram_caller.ring(message=message, **kwargs)
     return jsonify(result), (200 if result.get('ok') else 400)
 
@@ -458,7 +517,8 @@ def gjallarhorn_news_test():
 def huginn_lootfarm_arbitrage():
     """Buy LF balance cheap → acquire LF item → instant-sell into Steam/Buff/CSFloat buy
     orders. ?balance= USDT per $1 balance (default 0.5208), ?unlocked=1 (+3%), ?in_stock=1."""
-    token = ctx.settings_manager.get_settings().get('tradeon_token', '')
+    settings = ctx.settings_manager.get_settings()
+    token = settings.get('tradeon_token', '')
     try:
         balance = float(request.args.get('balance', 0.5208))
     except (TypeError, ValueError):
@@ -466,7 +526,8 @@ def huginn_lootfarm_arbitrage():
     unlocked = request.args.get('unlocked', '1') not in ('0', 'false', 'False')
     in_stock = request.args.get('in_stock', '1') not in ('0', 'false', 'False')
     try:
-        return jsonify(ctx.huginn_service.lootfarm_arbitrage(token, balance, unlocked, in_stock))
+        return jsonify(ctx.huginn_service.lootfarm_arbitrage(token, balance, unlocked, in_stock,
+                                                             settings=settings))
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
@@ -538,11 +599,12 @@ def huginn_tradeon_lisskins_lootfarm():
 @bp.route('/api/huginn/tradeon/csfloat-autobuy', methods=['GET'])
 def huginn_tradeon_csfloat_autobuy():
     """Tradeon (min) buy + CSFloat buy-order (autobuy) sell, for owned items."""
-    token = ctx.settings_manager.get_settings().get('tradeon_token', '')
+    settings = ctx.settings_manager.get_settings()
+    token = settings.get('tradeon_token', '')
     if not token:
         return jsonify({'error': 'tradeon_token not set in settings'}), 400
     try:
-        data = ctx.huginn_service.fetch_tradeon_csfloat_autobuy(token)
+        data = ctx.huginn_service.fetch_tradeon_csfloat_autobuy(token, settings)
         return jsonify(data)
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -586,11 +648,12 @@ def huginn_tradeon_lisskins_csfloat():
 @bp.route('/api/huginn/tradeon/lisskins-csfloat-autobuy', methods=['GET'])
 def huginn_tradeon_lisskins_csfloat_autobuy():
     """LisSkins (min) buy + CSFloat buy-order (autobuy) sell, for owned items."""
-    token = ctx.settings_manager.get_settings().get('tradeon_token', '')
+    settings = ctx.settings_manager.get_settings()
+    token = settings.get('tradeon_token', '')
     if not token:
         return jsonify({'error': 'tradeon_token not set in settings'}), 400
     try:
-        data = ctx.huginn_service.fetch_lisskins_csfloat_autobuy(token)
+        data = ctx.huginn_service.fetch_lisskins_csfloat_autobuy(token, settings)
         return jsonify(data)
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -622,11 +685,12 @@ def huginn_tradeon_buff_csfloat():
 @bp.route('/api/huginn/tradeon/buff-csfloat-autobuy', methods=['GET'])
 def huginn_tradeon_buff_csfloat_autobuy():
     """Buff163 (min) buy + CSFloat buy-order (autobuy) sell, for owned items."""
-    token = ctx.settings_manager.get_settings().get('tradeon_token', '')
+    settings = ctx.settings_manager.get_settings()
+    token = settings.get('tradeon_token', '')
     if not token:
         return jsonify({'error': 'tradeon_token not set in settings'}), 400
     try:
-        data = ctx.huginn_service.fetch_buff_csfloat_autobuy(token)
+        data = ctx.huginn_service.fetch_buff_csfloat_autobuy(token, settings)
         return jsonify(data)
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -730,11 +794,12 @@ def huginn_tradeon_dmarket_csfloat():
 @bp.route('/api/huginn/tradeon/dmarket-csfloat-autobuy', methods=['GET'])
 def huginn_tradeon_dmarket_csfloat_autobuy():
     """Fetch DMarket min buy + CSFloat autobuy (buy-order) sell prices and combine."""
-    token = ctx.settings_manager.get_settings().get('tradeon_token', '')
+    settings = ctx.settings_manager.get_settings()
+    token = settings.get('tradeon_token', '')
     if not token:
         return jsonify({'error': 'tradeon_token not set in settings'}), 400
     try:
-        data = ctx.huginn_service.fetch_dmarket_csfloat_autobuy(token)
+        data = ctx.huginn_service.fetch_dmarket_csfloat_autobuy(token, settings)
         return jsonify(data)
     except Exception as e:
         return jsonify({'error': str(e)}), 500

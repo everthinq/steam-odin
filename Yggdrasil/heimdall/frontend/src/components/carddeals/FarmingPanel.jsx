@@ -38,6 +38,9 @@ const FarmingPanel = ({ farming, onAction, busy }) => {
             {!farming.reachable && (
                 <p className="text-red-400 mb-2">ASF is not answering: {farming.error}</p>
             )}
+            {farming.global_config_unsafe && (
+                <p className="text-red-400 mb-2">All bots switched off: {farming.global_config_unsafe}</p>
+            )}
             <p className="text-slate-500 mb-2">
                 {farming.totals?.running ?? 0} of {farming.totals?.max_running ?? 10} bots running. A bot runs only
                 while its account has cards to farm (ASF recommends at most 10). Bought a game? Press

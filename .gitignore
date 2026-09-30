@@ -202,6 +202,7 @@ token.txt
 **/.heimdall_salt
 # Mimir credential vault (encrypted login/password/email store — NEVER commit)
 credentials.vault
+**/credentials.vault.bak-*
 **/credentials.vault
 
 # ArchiSteamFarm runtime (bot configs + login-token databases + logs) — SECRET, keep local
@@ -214,6 +215,7 @@ Yggdrasil/heimdall/backend/cache/
 
 # Heimdall settings hold the Tradeon token — keep local, use settings.example.json as the template
 Yggdrasil/heimdall/backend/settings.json
+**/settings.json.corrupt-*
 # CSFloat API keys (rotation pool) — secrets, keep local
 Yggdrasil/heimdall/backend/csfloat_keys.json
 # Telegram caller account (api_hash + login session for ring-alerts) — SECRET, keep local

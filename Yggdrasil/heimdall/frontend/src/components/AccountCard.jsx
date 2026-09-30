@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Copy, Check, Trash2, Package, Eye, EyeOff, Pin, GripVertical } from 'lucide-react';
+import TypedConfirmDialog from './TypedConfirmDialog';
 
 const AccountCard = ({ account, onDelete, isPinned = false, onTogglePin, draggable = false }) => {
     const { account_name, steamid, code, time_remaining } = account;
@@ -9,6 +10,8 @@ const AccountCard = ({ account, onDelete, isPinned = false, onTogglePin, draggab
     const [copied, setCopied] = useState(false);
     const [deleting, setDeleting] = useState(false);
     const [revealed, setRevealed] = useState(false);
+    const [confirmOpen, setConfirmOpen] = useState(false);
+    const [deleteError, setDeleteError] = useState(null);
 
     useEffect(() => {
         setRevealed(false);
@@ -21,18 +24,26 @@ const AccountCard = ({ account, onDelete, isPinned = false, onTogglePin, draggab
         setTimeout(() => setCopied(false), 3000);
     };
 
-    const handleDelete = async () => {
-        if (!confirm(`Are you sure you want to remove ${account_name}?`)) return;
+    const openDeleteConfirm = () => {
+        setDeleteError(null);
+        setConfirmOpen(true);
+    };
 
+    const handleDelete = async () => {
         setDeleting(true);
+        setDeleteError(null);
         try {
             const res = await fetch(`/api/accounts/${steamid}`, { method: 'DELETE' });
-            if (res.ok) {
-                if (onDelete) onDelete();
-                else window.location.reload();
+            if (!res.ok) {
+                const body = await res.json().catch(() => ({}));
+                throw new Error(body.error || `Remove failed (HTTP ${res.status})`);
             }
+            setConfirmOpen(false);
+            if (onDelete) onDelete();
+            else window.location.reload();
         } catch (error) {
             console.error("Failed to delete", error);
+            setDeleteError(error.message);
         } finally {
             setDeleting(false);
         }
@@ -47,6 +58,19 @@ const AccountCard = ({ account, onDelete, isPinned = false, onTogglePin, draggab
     else if (time_remaining < 10) progressBarColor = 'bg-yellow-500';
 
     return (
+        <>
+        {confirmOpen && (
+            <TypedConfirmDialog
+                title={`Remove ${account_name}`}
+                message="This removes the account and its maFile from Heimdall. Without a backup of the maFile, its Steam Guard codes are lost."
+                phrase={account_name}
+                confirmLabel="Remove"
+                busy={deleting}
+                error={deleteError}
+                onConfirm={handleDelete}
+                onCancel={() => setConfirmOpen(false)}
+            />
+        )}
         <div
             className={`glass-card rounded-lg p-4 md:p-6 w-full max-w-sm relative group mx-auto border backdrop-blur-sm transition-all ${
                 isPinned
@@ -103,7 +127,7 @@ const AccountCard = ({ account, onDelete, isPinned = false, onTogglePin, draggab
                         </button>
                     )}
                     <button
-                        onClick={handleDelete}
+                        onClick={openDeleteConfirm}
                         disabled={deleting}
                         className="p-2 rounded-full text-slate-500 hover:text-red-500 hover:bg-red-500/10 transition-all duration-200"
                         title="Remove Account"
@@ -183,6 +207,7 @@ const AccountCard = ({ account, onDelete, isPinned = false, onTogglePin, draggab
                 </div>
             </div>
         </div>
+        </>
     );
 };
 

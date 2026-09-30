@@ -103,8 +103,10 @@ def _bbcode_to_lines(raw):
     if not raw:
         return []
     text = raw.replace("\\[", "[").replace("\\]", "]")
-    # Turn structural tags into line breaks before stripping the rest.
-    text = re.sub(r"\[/?(?:p|list|\*|br|h\d|tr)\b[^\]]*\]", "\n", text, flags=re.IGNORECASE)
+    # Turn structural tags into line breaks before stripping the rest. (The tag
+    # name must end at a space, "=" or "]": a word boundary never follows "*",
+    # so "[*]" bullets would stay glued together.)
+    text = re.sub(r"\[/?(?:p|list|\*|br|h\d|tr)(?=[\s=\]])[^\]]*\]", "\n", text, flags=re.IGNORECASE)
     # Drop every remaining BBCode tag ([b], [url=...], [img], [i], ...).
     text = re.sub(r"\[/?[a-z][^\]]*\]", "", text, flags=re.IGNORECASE)
     lines = [re.sub(r"\s+", " ", ln).strip() for ln in text.split("\n")]
@@ -163,6 +165,9 @@ class GjallarhornNewsService:
         self.stop_event = threading.Event()
         self._last_run = None      # unix ts of the last poll attempt
         self._last_error = None
+        # One poll at a time: the background loop and "Check now" must never
+        # scan (and ring for) the same post twice in parallel.
+        self._check_lock = threading.Lock()
 
     # -- feed --------------------------------------------------------------
     def _fetch(self):
@@ -197,8 +202,18 @@ class GjallarhornNewsService:
         """Poll once. Alert on new limiting posts. Returns a summary dict.
 
         `force` re-evaluates the newest post even if already seen (used by the
-        "check now" button) but never re-alerts older backlog.
+        "check now" button) but never re-alerts: a post already in the news
+        history is reported, not rung again, and older backlog is never alerted.
+        An overlapping call returns at once with "already running".
         """
+        if not self._check_lock.acquire(blocking=False):
+            return {"ok": False, "error": "already running", "running": True}
+        try:
+            return self._check_once_locked(force)
+        finally:
+            self._check_lock.release()
+
+    def _check_once_locked(self, force):
         self._last_run = time.time()
         settings = self.settings_manager.get_settings()
         last_seen = int(settings.get("gjallarhorn_news_last_seen_date") or 0)
@@ -237,6 +252,11 @@ class GjallarhornNewsService:
             candidates = [max(posts, key=lambda p: int(p.get("date") or 0))]
         candidates.sort(key=lambda p: int(p.get("date") or 0))
 
+        # Posts already alerted (or logged) once: "Check now" reports them again
+        # but never re-sends the text or rings the phone for them.
+        known_gids = {str(entry.get("gid")) for entry in (settings.get("gjallarhorn_news_history") or [])
+                      if entry.get("gid") is not None}
+
         fired = []
         for post in candidates:
             hits = self._hits(post)
@@ -251,18 +271,22 @@ class GjallarhornNewsService:
                 "hits": hits,
                 "armed": armed,
             }
+            if str(post.get("gid")) in known_gids:
+                fired.append({**record, "already_alerted": True})
+                continue
+            # Record BEFORE alerting: ringing takes minutes, and a backend reload
+            # mid-ring must not find the post unrecorded and ring it all over again.
+            # The mark advances only to this post, so a reload never skips a later one.
+            self.settings_manager.record_gjallarhorn_news(max(last_seen, record["date"]), record)
+            known_gids.add(str(post.get("gid")))
             if armed:
                 self._alert(record)
-            self.settings_manager.record_gjallarhorn_news(newest_date, record, last_gid=newest_gid)
             fired.append(record)
 
-        # No hits anywhere, but advance the marker so we don't re-scan them.
-        if not fired and candidates:
-            self.settings_manager.record_gjallarhorn_news(newest_date, last_gid=newest_gid)
-        elif not candidates:
-            # Newest changed (e.g. a post edited/re-id'd) but nothing newer to scan;
-            # still record the id so we don't re-scan next poll.
-            self.settings_manager.record_gjallarhorn_news(last_seen, last_gid=newest_gid)
+        # Advance the marker to the newest post (hits or not) so nothing is re-scanned.
+        # When nothing newer was published (a post edited/re-id'd) the date stays
+        # and only the id is recorded.
+        self.settings_manager.record_gjallarhorn_news(max(last_seen, newest_date), last_gid=newest_gid)
 
         return {"ok": True, "checked": len(candidates), "events": fired}
 

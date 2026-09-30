@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useEffect } from 'react';
+import React, { useMemo, useState } from 'react';
 import { RefreshCw, Search, Repeat, Lock, ArrowUp, ArrowDown, ArrowUpDown } from 'lucide-react';
 import { matchesSearchQuery } from '../utils/transferItems';
 
@@ -31,7 +31,14 @@ const PAGE_SIZE = 100;
 const SortableTable = ({ columns, rows, initialSort, emptyText, rowKey, minWidth = 820 }) => {
     const [sort, setSort] = useState(initialSort);
     const [visible, setVisible] = useState(PAGE_SIZE);
-    useEffect(() => { setVisible(PAGE_SIZE); }, [rows]);
+    // Back to the first page whenever the rows change (new data or a search).
+    // Adjusted during render rather than in an effect, so there is no extra
+    // render showing the old page count first. Callers pass memoized rows.
+    const [previousRows, setPreviousRows] = useState(rows);
+    if (rows !== previousRows) {
+        setPreviousRows(rows);
+        setVisible(PAGE_SIZE);
+    }
 
     const sorted = useMemo(() => {
         const { key, dir } = sort;
@@ -134,7 +141,7 @@ const CategoryCard = ({ title, note, icon, accent, cat }) => {
     );
 };
 
-const ArbitrageDeals = ({ data, loading, pricing }) => {
+const ArbitrageDeals = ({ data, loading }) => {
     const [search, setSearch] = useState('');
     const [copiedName, setCopiedName] = useState('');
 
@@ -146,7 +153,7 @@ const ArbitrageDeals = ({ data, loading, pricing }) => {
 
     const market = data?.market || {};
     const steam = data?.steam || {};
-    const legs = data?.legs || [];
+    const legs = useMemo(() => data?.legs || [], [data]);
 
     const itemCell = (name) => (
         <div className="flex items-center gap-2">
@@ -156,9 +163,14 @@ const ArbitrageDeals = ({ data, loading, pricing }) => {
         </div>
     );
 
-    const filterRows = (rows) => rows.filter(r => matchesSearchQuery([r.item_name], search));
-    const marketRows = useMemo(() => filterRows(market.rows || []), [market.rows, search]);
-    const steamRows = useMemo(() => filterRows(steam.rows || []), [steam.rows, search]);
+    const marketRows = useMemo(
+        () => (market.rows || []).filter(r => matchesSearchQuery([r.item_name], search)),
+        [market.rows, search]
+    );
+    const steamRows = useMemo(
+        () => (steam.rows || []).filter(r => matchesSearchQuery([r.item_name], search)),
+        [steam.rows, search]
+    );
     const filteredLegs = useMemo(
         () => legs.filter(l => matchesSearchQuery([l.item_name, l.account, l.platform], search)),
         [legs, search]

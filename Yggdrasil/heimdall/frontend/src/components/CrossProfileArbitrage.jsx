@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { RefreshCw, Filter, Boxes, Settings2, Plus, X, ArrowRight, Link2 } from 'lucide-react';
 import InfoTip from './gjallarhorn/InfoTip';
 
@@ -85,13 +85,18 @@ const CrossProfileArbitrage = () => {
             .catch(() => {});
     }, []);
 
+    // Each request takes a number; only the newest one may write state, so a
+    // slow response for the previous filters cannot overwrite the current one.
+    const requestRef = useRef(0);
     const fetchData = useCallback(() => {
+        const requestNumber = ++requestRef.current;
+        const isCurrent = () => requestNumber === requestRef.current;
         const params = new URLSearchParams({ owned: ownedOnly ? '1' : '0' });
         if (minPct !== '') params.set('min_pct', minPct);
         return fetch(`/api/huginn/arbitrage/cross-profile?${params.toString()}`)
             .then((r) => (r.ok ? r.json() : null))
-            .then((d) => { setData(d); setLoading(false); })
-            .catch(() => { setData(null); setLoading(false); });
+            .then((d) => { if (isCurrent()) { setData(d); setLoading(false); } })
+            .catch(() => { if (isCurrent()) { setData(null); setLoading(false); } });
     }, [ownedOnly, minPct]);
 
     const refresh = () => { setLoading(true); fetchData(); };

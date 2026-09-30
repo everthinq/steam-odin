@@ -47,6 +47,7 @@ class CrossArbitrageService:
     _PRICE_MAP_SLUG = {'LisSkins': 'lisskins', 'Buff': 'buff', 'CsFloat': 'csfloat',
                        'Dmarket': 'dmarket', 'Steam': 'steam'}
     _RESULT_TTL = 10 * 60      # seconds a warmed scan is served before re-warming
+    _RETRY_AFTER_FAILURE = 120 # a scan with a failed market pull is re-warmed this soon instead
     _ALL_MODE_CAP = 300        # max rows when not restricted to owned items
     _CACHE_CAP = 8             # distinct (mode, config) results kept warm at once
     # Pulse throttles hard under many concurrent big pulls, so cap concurrency low
@@ -139,8 +140,10 @@ class CrossArbitrageService:
             'cross_arb_chains': chains,
         })
         with self._lock:
+            # Drop the warmed results only. In-flight warm flags stay: clearing them
+            # would let a second warm of the same config start while the first runs
+            # (each warm clears its own flag when it finishes).
             self._cache.clear()
-            self._warming.clear()
         return {'buy_markets': buy, 'sell_markets': sell, 'chains': chains,
                 'available': self._available_markets()}
 
@@ -200,8 +203,14 @@ class CrossArbitrageService:
                     sig[0], len(config[0]), len(config[1]), len(config[2]))
         try:
             base = self._compute(token, owned_only=sig[0], config=config, settings=settings)
+            warmed_at = time.time()
+            markets = base.get('markets') or {}
+            if any(m.get('failed') for m in [*markets.get('buy', []), *markets.get('sell', [])]):
+                # A market pull failed: serve this partial result, but re-warm after
+                # _RETRY_AFTER_FAILURE instead of holding the gap for the full TTL.
+                warmed_at -= self._RESULT_TTL - self._RETRY_AFTER_FAILURE
             with self._lock:
-                self._cache[sig] = (time.time(), base)
+                self._cache[sig] = (warmed_at, base)
                 # keep only the most recent few configs warm
                 if len(self._cache) > self._CACHE_CAP:
                     oldest = sorted(self._cache.items(), key=lambda kv: kv[1][0])[:-self._CACHE_CAP]
@@ -259,7 +268,7 @@ class CrossArbitrageService:
         for ch in chains:
             buy_needed |= set(ch['markets'][:-1])
             sell_needed |= set(ch['markets'][1:])
-        buy_maps, sell_idx = self._fetch_indexes(token, buy_needed, sell_needed)
+        buy_maps, sell_idx, failed = self._fetch_indexes(token, buy_needed, sell_needed)
         fees = {mid: self.huginn.market_fee(mid, settings) for mid in sell_needed}
 
         if owned_only:
@@ -296,7 +305,7 @@ class CrossArbitrageService:
             'rows': rows,
             'chains': chains_out,
             'owned': owned,
-            'markets': self._market_status(buy_maps, sell_idx, buy_markets, sell_markets),
+            'markets': self._market_status(buy_maps, sell_idx, buy_markets, sell_markets, failed),
             'generated_at': int(time.time()),
         }
 
@@ -382,8 +391,11 @@ class CrossArbitrageService:
     def _fetch_indexes(self, token, buy_needed, sell_needed):
         """Build the buy price maps ({name: price}) and autobuy indexes
         ({name: {price,...}}) for exactly the markets needed, through ONE small pool
-        so we never burst many huge pulls at once."""
+        so we never burst many huge pulls at once. Returns (buy_maps, sell_idx,
+        failed) where failed = {(kind, market id): error text} for pulls that raised
+        (their index is empty, and the market status says so)."""
         tasks = [('buy', m) for m in sorted(buy_needed)] + [('sell', m) for m in sorted(sell_needed)]
+        failed = {}
 
         def fetch(kind, mid):
             try:
@@ -392,6 +404,7 @@ class CrossArbitrageService:
                 return self.huginn.market_autobuy_index(token, mid)
             except Exception as e:
                 logger.warning('[CROSS-ARB] %s index failed for %s: %s', kind, mid, e)
+                failed[(kind, mid)] = str(e)[:200] or type(e).__name__
                 return {}
 
         results = {}
@@ -402,7 +415,7 @@ class CrossArbitrageService:
 
         buy_maps = {m: results.get(('buy', m)) or {} for m in buy_needed}
         sell_idx = {m: results.get(('sell', m)) or {} for m in sell_needed}
-        return buy_maps, sell_idx
+        return buy_maps, sell_idx, failed
 
     # ---- helpers -----------------------------------------------------------
 
@@ -425,12 +438,21 @@ class CrossArbitrageService:
             'total_potential_profit': round(sum(r['potential_profit'] for r in rows if r['potential_profit'] > 0), 2),
         }
 
-    def _market_status(self, buy_maps, sell_idx, buy_markets, sell_markets):
+    def _market_status(self, buy_maps, sell_idx, buy_markets, sell_markets, failed=None):
+        """Per-market row counts; a market whose pull raised carries failed=True and
+        its error, so an empty market reads as "pull failed", not "no prices"."""
+        failed = failed or {}
+
+        def entry(kind, market_id, index):
+            out = {'id': market_id, 'display': self.huginn.market_display(market_id), 'count': len(index or {}),
+                   'failed': (kind, market_id) in failed}
+            if out['failed']:
+                out['error'] = failed[(kind, market_id)]
+            return out
+
         return {
-            'buy': [{'id': m, 'display': self.huginn.market_display(m), 'count': len(buy_maps.get(m) or {})}
-                    for m in buy_markets],
-            'sell': [{'id': m, 'display': self.huginn.market_display(m), 'count': len(sell_idx.get(m) or {})}
-                     for m in sell_markets],
+            'buy': [entry('buy', m, buy_maps.get(m)) for m in buy_markets],
+            'sell': [entry('sell', m, sell_idx.get(m)) for m in sell_markets],
         }
 
     def _csfloat_status(self):

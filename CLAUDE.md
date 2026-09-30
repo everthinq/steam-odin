@@ -36,10 +36,11 @@ not a separate deployable):
 | Tool | Role | Backend service | Frontend pages |
 |------|------|-----------------|----------------|
 | (core) | Steam authenticator: TOTP codes, sessions, mobile confirmations | `steam_service.py`, `scheduler.py` | `Confirmations.jsx`, `AddAccount.jsx` |
-| **Draupnir** | Portfolio tracker (buy/sell, average-cost profit/loss, live valuation, point-in-time backups) | `draupnir_service.py`, `draupnir_backup_service.py` | `pages/draupnir/` |
+| **Draupnir** | Portfolio tracker (buy/sell, moving-average profit/loss, canonical platform names, live valuation, point-in-time backups) | `draupnir_service.py`, `draupnir_backup_service.py` | `pages/draupnir/` |
 | **Huginn** | Cross-market price scout / arbitrage (Tradeon pulse feed, case arbitrage) | `huginn_service.py` | `pages/huginn/` |
 | **Mímir** | Encrypted credential vault (login / password / email), shares the maFile key | `mimir_service.py` | `pages/mimir/` |
 | **Ratatoskr** | Moves items between Storage Units and inventory | `ratatoskr_service.py` → Node service | `pages/ratatoskr/` |
+| **Harvest** (in Huginn) | Every purchase lot you still hold, at the price you paid (no averaging, oldest sold first), vs what an autobuy market pays now; account → market profiles like Arbitrage | `harvest_service.py` | `components/Harvest.jsx` (Arbitrage page tab) |
 | **Andvari** (in Huginn) | Games whose card drops pay for them + ASF card farming status | `card_deals_service.py`, `asf_service.py` → ASF container | `pages/huginn/CardDeals.jsx` |
 
 ## Architecture in one breath

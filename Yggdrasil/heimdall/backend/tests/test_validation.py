@@ -99,3 +99,29 @@ def test_portfolio_name_rules():
     assert validate_portfolio_name('', required=True) != []
     assert validate_portfolio_name(None, required=False) == []
     assert validate_portfolio_name('x' * 200, required=True) != []
+
+
+@pytest.mark.parametrize('field', ['price', 'qty', 'fee_percent'])
+@pytest.mark.parametrize('value', [float('nan'), float('inf'), float('-inf'),
+                                   'NaN', 'nan', 'Infinity', '-inf', '1e999'])
+def test_non_finite_numbers_rejected(field, value):
+    errs = validate_transaction({'item_name': 'X', field: value})
+    assert any(field in e for e in errs), (field, value, errs)
+
+
+@pytest.mark.parametrize('field', ['price', 'date', 'qty'])
+def test_partial_update_rejects_an_empty_string(field):
+    # PATCH with '' used to become price 0.0 / today / qty 1 without a word.
+    errs = validate_transaction({field: ''}, partial=True)
+    assert any(field in e and 'empty' in e for e in errs)
+    errs = validate_transaction({field: '   '}, partial=True)
+    assert any(field in e and 'empty' in e for e in errs)
+
+
+def test_full_add_still_treats_blank_price_and_date_as_defaults():
+    assert validate_transaction({'item_name': 'X', 'price': '', 'date': ''}) == []
+
+
+def test_partial_update_with_real_values_passes():
+    assert validate_transaction({'price': 1.5, 'date': '2026-08-11', 'qty': 3},
+                                partial=True) == []

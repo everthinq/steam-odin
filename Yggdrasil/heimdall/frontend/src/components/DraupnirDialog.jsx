@@ -43,11 +43,21 @@ export const ConfirmDialog = ({ open, title, message, confirmLabel = 'Confirm', 
 };
 
 // Styled text-input dialog — replaces window.prompt(). Enter submits, Esc cancels.
-export const PromptDialog = ({ open, title, label, initial = '', confirmLabel = 'Save', placeholder = '', onConfirm, onCancel }) => {
+// The body mounts fresh each time the dialog opens (and whenever `initial`
+// changes, via the key), so the field starts from `initial` without an effect
+// copying it into state.
+export const PromptDialog = ({ open, initial = '', ...rest }) => {
+    if (!open) return null;
+    return <PromptDialogBody key={initial} initial={initial} {...rest} />;
+};
+
+const PromptDialogBody = ({ title, label, initial, confirmLabel = 'Save', placeholder = '', onConfirm, onCancel }) => {
     const [val, setVal] = useState(initial);
     const inputRef = useRef(null);
-    useEffect(() => { if (open) { setVal(initial); setTimeout(() => inputRef.current?.focus(), 30); } }, [open, initial]);
-    if (!open) return null;
+    useEffect(() => {
+        const timer = setTimeout(() => inputRef.current?.focus(), 30);
+        return () => clearTimeout(timer);
+    }, []);
     const submit = () => { if (val.trim()) onConfirm?.(val.trim()); };
     return (
         <Backdrop onCancel={onCancel}>

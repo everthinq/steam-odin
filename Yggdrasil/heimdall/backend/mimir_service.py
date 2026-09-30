@@ -16,6 +16,7 @@ maFile yet (extra/parked accounts), and there may be maFiles with no vault entry
 (e.g. the main accounts, whose passwords were never in the imported list).
 """
 import logging
+import os
 import re
 import threading
 import uuid
@@ -34,6 +35,21 @@ _EMAIL_RE = re.compile(r'^[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}$')
 
 _VAULT_FILENAME = 'credentials.vault'
 
+# Rolling encrypted backups: before every save that changes credentials, the
+# current vault file is copied to ``credentials.vault.bak-<UTC timestamp>``
+# (same ciphertext, same 0600 permissions) and only the newest ones are kept.
+_BACKUP_PREFIX = _VAULT_FILENAME + '.bak-'
+_BACKUP_KEEP = 10
+_BACKUP_TIMESTAMP_FORMAT = '%Y%m%dT%H%M%S%fZ'
+
+
+class VaultUnreadableError(RuntimeError):
+    """The vault file exists but could not be decrypted or parsed at boot.
+
+    While this is the case the service refuses every write, so the unreadable
+    file (which may still hold every password) is never overwritten by the
+    empty in-memory vault it loaded as."""
+
 
 def _now():
     return datetime.now(timezone.utc).isoformat()
@@ -48,6 +64,13 @@ def parse_credentials_text(text):
       login and the email column, re-joined with ``;``.
     * **Passwords that contain ``@``** — the email is the first field that is a
       *complete* address (strict regex), not merely the first field with an '@'.
+    * **Records with no email but a comment** — :meth:`MimirService.export_text`
+      writes those as ``login;password;;comment``. When no field is an email,
+      the last empty field (before the final field) is taken as the empty email
+      slot: the password is everything before it, the comment everything after.
+
+    The password is never stripped — leading/trailing spaces are part of it.
+    Only the login, email and comment are stripped.
 
     Returns ``(rows, warnings)``. ``rows`` is a list of
     ``{login, password, email, comment}`` dicts; ``warnings`` is a list of
@@ -67,15 +90,31 @@ def parse_credentials_text(text):
             None,
         )
         if email_idx is None:
-            password = ';'.join(fields[1:]).strip()
-            email, comment = '', ''
+            # An empty field in the email slot: ``login;password;;comment``.
+            # Taking the LAST empty field keeps a ';' at the end of (or ';;'
+            # inside) the password intact, because the exporter always writes
+            # the empty email slot explicitly for records without an email.
+            empty_slot = next(
+                (i for i in range(len(fields) - 2, 1, -1) if not fields[i].strip()),
+                None,
+            )
+            if empty_slot is None:
+                password = ';'.join(fields[1:])
+                comment = ''
+            else:
+                password = ';'.join(fields[1:empty_slot])
+                comment = ';'.join(fields[empty_slot + 1:]).strip()
+            email = ''
             warnings.append(f'line {lineno} ({login}): no email detected')
         else:
-            password = ';'.join(fields[1:email_idx]).strip()
+            password = ';'.join(fields[1:email_idx])
             email = fields[email_idx].strip()
             comment = ';'.join(fields[email_idx + 1:]).strip()
         if not password:
             warnings.append(f'line {lineno} ({login}): empty password')
+        elif password != password.strip():
+            warnings.append(f'line {lineno} ({login}): password has leading or '
+                            'trailing spaces (kept as part of the password)')
         rows.append({'login': login, 'password': password,
                      'email': email, 'comment': comment})
     return rows, warnings
@@ -88,6 +127,9 @@ class MimirService:
         self.storage = storage
         self._path = storage.storage_dir / _VAULT_FILENAME
         self._lock = threading.RLock()
+        # Set by _load when credentials.vault exists but cannot be read; every
+        # save is then refused (see VaultUnreadableError).
+        self.load_error = None
         self._records = self._load()
 
     # ---- persistence -------------------------------------------------------
@@ -101,13 +143,61 @@ class MimirService:
             recs = data.get('records', []) if isinstance(data, dict) else []
             return [self._normalize(r) for r in recs]
         except (InvalidToken, ValueError) as e:
-            logger.error('Mimir vault unreadable (%s) — starting empty; the file '
-                         'is left untouched at %s', e, self._path)
+            self.load_error = f'{type(e).__name__}: {e}' if str(e) else type(e).__name__
+            logger.error('Mimir vault unreadable (%s) — starting empty and REFUSING '
+                         'every write; the file is left untouched at %s',
+                         self.load_error, self._path)
             return []
 
-    def _save(self):
+    def _check_writable(self):
+        if self.load_error is not None:
+            raise VaultUnreadableError(
+                f'the credential vault at {self._path} could not be read '
+                f'({self.load_error}); refusing to save so it is not overwritten. '
+                'Fix or restore the file (see the credentials.vault.bak-* copies) '
+                'and restart Heimdall.')
+
+    def _save(self, backup=True):
+        """Encrypt and atomically write the vault.
+
+        ``backup=True`` first copies the current file to a rolling backup. Only
+        the login-health stamp (:meth:`record_login_result`) passes False — it
+        changes no credential, and a login scan over every account would
+        otherwise rotate all the real backups away within one scan."""
+        self._check_writable()
         blob = self.storage.encrypt_json({'version': 1, 'records': self._records})
+        if backup:
+            self._backup_current_file()
         atomic_write_bytes(str(self._path), blob)
+        try:
+            os.chmod(self._path, 0o600)
+        except OSError:
+            pass
+
+    def _backup_paths(self):
+        """Existing rolling backups, oldest first (the timestamp sorts by name)."""
+        directory = self._path.parent
+        return sorted(p for p in directory.glob(_BACKUP_PREFIX + '*') if p.is_file())
+
+    def _backup_current_file(self):
+        """Copy the current vault file to ``credentials.vault.bak-<UTC timestamp>``
+        (0600) and keep only the newest :data:`_BACKUP_KEEP`. Best-effort: a
+        failed backup is logged and never blocks the save itself."""
+        if not self._path.exists():
+            return
+        try:
+            stamp = datetime.now(timezone.utc).strftime(_BACKUP_TIMESTAMP_FORMAT)
+            destination = self._path.with_name(_BACKUP_PREFIX + stamp)
+            atomic_write_bytes(str(destination), self._path.read_bytes())
+            os.chmod(destination, 0o600)
+            backups = self._backup_paths()
+            for old in backups[:-_BACKUP_KEEP]:
+                try:
+                    old.unlink()
+                except OSError:
+                    pass
+        except Exception as e:
+            logger.error('Mimir vault backup failed (%s); saving anyway', e)
 
     @staticmethod
     def _normalize(r):
@@ -157,20 +247,31 @@ class MimirService:
             rec = self._find_by_login(login)
             if not rec:
                 return
+            if self.load_error is not None:
+                # Only an annotation: never break a login scan over it.
+                logger.warning('Mimir vault unreadable — not recording the login '
+                               'result for %s', login)
+                return
             rec['last_login_status'] = 'ok' if ok else 'failed'
             rec['last_login_at'] = _now()
             rec['last_login_error'] = None if ok else (error or 'login failed')
-            self._save()
+            self._save(backup=False)
 
     def export_text(self):
         """Serialize the vault back to ``login;password;email;comment`` lines
         (sorted by login) — the exact format :meth:`import_text` accepts, for an
-        off-machine backup. Trailing empty fields are trimmed for readability."""
+        off-machine backup.
+
+        With an email, an empty trailing comment is trimmed for readability.
+        Without an email all four fields are always written
+        (``login;password;;comment``, or ``login;password;;`` with no comment):
+        the explicit empty email slot is what lets the parser tell where a
+        password that contains ';' ends."""
         lines = []
         with self._lock:
             for r in sorted(self._records, key=lambda x: x['login'].lower()):
                 fields = [r['login'], r['password'], r['email'], r['comment']]
-                while len(fields) > 2 and not fields[-1]:
+                if r['email'] and not r['comment']:
                     fields.pop()
                 lines.append(';'.join(fields))
         return '\n'.join(lines) + ('\n' if lines else '')
@@ -179,6 +280,7 @@ class MimirService:
 
     def add(self, login, password='', email='', comment=''):
         with self._lock:
+            self._check_writable()
             login = (login or '').strip()
             if not login:
                 raise ValueError('login is required')
@@ -192,6 +294,7 @@ class MimirService:
 
     def update(self, rec_id, fields):
         with self._lock:
+            self._check_writable()
             rec = next((r for r in self._records if r['id'] == rec_id), None)
             if not rec:
                 raise KeyError(rec_id)
@@ -207,6 +310,7 @@ class MimirService:
 
     def delete(self, rec_id):
         with self._lock:
+            self._check_writable()
             before = len(self._records)
             self._records = [r for r in self._records if r['id'] != rec_id]
             if len(self._records) == before:
@@ -224,6 +328,7 @@ class MimirService:
         rows, warnings = parse_credentials_text(text)
         added = updated = 0
         with self._lock:
+            self._check_writable()
             for row in rows:
                 existing = self._find_by_login(row['login'])
                 if existing:

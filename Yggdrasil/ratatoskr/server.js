@@ -23,8 +23,12 @@ app.use(bodyParser.json());
 // Initialize Item Processor
 const itemsProcessor = new Items();
 
-// Store active sessions: { steamID: { user: SteamUser, csgo: GlobalOffensive, ... } }
+// Store active sessions: { steamID: { user: SteamUser, csgo: GlobalOffensive, accountName, ... } }
 const sessions = {};
+// Account names with a login running right now. A second login for the same
+// account (UI button + Mímir test + scheduler at once) would start a second
+// Steam client that kicks the first one off ("logged in elsewhere").
+const loginsInProgress = new Set();
 
 const MIN_MOVE_DELAY_MS = 100;
 const MAX_MOVE_DELAY_MS = 5000;
@@ -229,6 +233,17 @@ const processMoveQueue = async (steamID) => {
     state.running = true;
 
     while (state.jobs.length > 0) {
+        // The session was disconnected, replaced, or lost the Game Coordinator:
+        // nothing sent now would move, so fail what is left instead of counting it done.
+        // Compare the Steam client, not the entry object: a Game Coordinator
+        // reconnect of the same client rebuilds sessions[steamID].
+        if (!sessions[steamID] || sessions[steamID].user !== session.user || !session.csgo.haveGCSession) {
+            const left = state.jobs.splice(0);
+            state.failed += left.length;
+            state.errors.push({ error: `Game Coordinator session lost: ${left.length} moves not sent` });
+            console.error(`Move queue stopped (${steamID}): session lost, ${left.length} moves not sent`);
+            break;
+        }
         const job = state.jobs.shift();
         state.currentItemID = job.itemID;
 
@@ -281,6 +296,22 @@ app.post('/login', (req, res) => {
         return res.status(400).json({ error: 'Missing credentials' });
     }
 
+    const key = String(accountName).toLowerCase();
+    if (loginsInProgress.has(key)) {
+        return res.status(409).json({ error: 'A login for this account is already running' });
+    }
+    // Already logged in: reuse a healthy session, replace a broken one.
+    const existingID = Object.keys(sessions).find((id) => sessions[id].accountName === key);
+    if (existingID) {
+        const existing = sessions[existingID];
+        if (existing.csgo && existing.csgo.haveGCSession) {
+            existing.lastActivity = Date.now();
+            return res.json({ success: true, steamID: existingID, reused: true, message: 'Already connected to Steam and GC' });
+        }
+        disconnectSession(existingID);
+    }
+    loginsInProgress.add(key);
+
     const user = new SteamUser();
     const csgo = new GlobalOffensive(user);
 
@@ -291,9 +322,24 @@ app.post('/login', (req, res) => {
         logOnOptions.twoFactorCode = SteamTotp.generateAuthCode(sharedSecret);
     }
 
-    user.logOn(logOnOptions);
-
     let isResponded = false;
+    let loginTimer = null;
+    const respond = (status, body) => {
+        if (isResponded) return;
+        isResponded = true;
+        loginsInProgress.delete(key);
+        clearTimeout(loginTimer);
+        res.status(status).json(body);
+    };
+
+    // Steam wants a Steam Guard code we did not have (or rejected ours). Without
+    // this listener steam-user would wait for a console prompt that never comes.
+    user.on('steamGuard', (domain, callback, lastCodeWrong) => {
+        respond(401, { error: lastCodeWrong ? 'Steam Guard code rejected' : 'Steam Guard code required' });
+        user.logOff();
+    });
+
+    user.logOn(logOnOptions);
 
     user.on('loggedOn', (details) => {
         console.log(`Logged into Steam as ${user.steamID.getSteamID64()}`);
@@ -303,7 +349,8 @@ app.post('/login', (req, res) => {
 
     user.on('webSession', (sessionID, cookies) => {
         console.log(`[DEBUG] Got web session for ${user.steamID.getSteamID64()}`);
-        console.log('[DEBUG] Cookies received:', cookies);
+        // Never log the cookies: steamLoginSecure is a live Steam web token.
+        console.log(`[SESSION] Web session cookies received (${cookies.length})`);
 
         // Send cookies to Heimdall
         const heimdallUrl = process.env.HEIMDALL_API_URL || 'http://localhost:5000';
@@ -333,28 +380,28 @@ app.post('/login', (req, res) => {
     });
 
     user.on('error', (err) => {
-        console.error('Steam login error:', err);
-        if (!isResponded) {
-            res.status(401).json({ error: 'Login failed', details: err.message });
-            isResponded = true;
-        }
-        // Cleanup if we have a steamID
-        if (user.steamID) {
-            delete sessions[user.steamID.getSteamID64()];
+        console.error('Steam login error:', err.message || err);
+        respond(401, { error: 'Login failed', details: err.message });
+        // Remove the session only if it is THIS client's: an older client being
+        // kicked ("logged in elsewhere") must not delete the newer, healthy one.
+        const id = user.steamID && user.steamID.getSteamID64();
+        if (id && sessions[id] && sessions[id].user === user) {
+            delete sessions[id];
         }
     });
 
     csgo.on('connectedToGC', () => {
         console.log(`Connected to GC for ${user.steamID.getSteamID64()}`);
 
-        // Store session
+        // Store session (a Game Coordinator reconnect fires this again for the same client)
         const steamID64 = user.steamID.getSteamID64();
-        sessions[steamID64] = { user, csgo, lastActivity: Date.now() };
-
-        if (!isResponded) {
-            res.json({ success: true, steamID: steamID64, message: 'Connected to Steam and GC' });
-            isResponded = true;
+        const previous = sessions[steamID64];
+        if (previous && previous.user !== user) {
+            try { previous.user.logOff(); } catch (err) { console.error(`Error logging off old client ${steamID64}:`, err); }
         }
+        sessions[steamID64] = { user, csgo, accountName: key, lastActivity: Date.now() };
+
+        respond(200, { success: true, steamID: steamID64, message: 'Connected to Steam and GC' });
     });
 
     csgo.on('disconnectedFromGC', (reason) => {
@@ -364,10 +411,9 @@ app.post('/login', (req, res) => {
     });
 
     // Timeout (if GC doesn't connect in 30s)
-    setTimeout(() => {
+    loginTimer = setTimeout(() => {
         if (!isResponded) {
-            res.status(504).json({ error: 'Gateway Timeout: GC Connection took too long' });
-            isResponded = true;
+            respond(504, { error: 'Gateway Timeout: GC Connection took too long' });
             user.logOff();
         }
     }, 30000);
@@ -665,8 +711,13 @@ app.post('/config/protected-accounts', (req, res) => {
     if (!Array.isArray(ids)) {
         return res.status(400).json({ error: 'steamIds must be an array' });
     }
-    protectedSteamIds = new Set(ids.map(String));
-    console.log(`[SESSION] Protected accounts set: ${[...protectedSteamIds].join(', ') || '(none)'}`);
+    const next = new Set(ids.map(String));
+    const changed = next.size !== protectedSteamIds.size || [...next].some((id) => !protectedSteamIds.has(id));
+    protectedSteamIds = next;
+    // Heimdall re-sends this every scheduler tick; log only real changes.
+    if (changed) {
+        console.log(`[SESSION] Protected accounts set: ${[...protectedSteamIds].join(', ') || '(none)'}`);
+    }
     res.json({ success: true, steamIds: [...protectedSteamIds] });
 });
 
@@ -686,6 +737,17 @@ setInterval(() => {
         disconnectSession(steamID);
     }
 }, SESSION_SWEEP_MS);
+
+// A throw inside a steam-user / globaloffensive event callback would otherwise
+// kill the process silently. Log it and exit so Docker restarts the container
+// (restart: unless-stopped); sessions are lost either way.
+process.on('uncaughtException', (err) => {
+    console.error('[FATAL] Uncaught exception, exiting for a clean restart:', err);
+    process.exit(1);
+});
+process.on('unhandledRejection', (reason) => {
+    console.error('[ERROR] Unhandled promise rejection:', reason);
+});
 
 app.listen(port, () => {
     console.log(`Ratatoskr listening at http://localhost:${port}`);

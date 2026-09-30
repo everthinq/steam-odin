@@ -116,19 +116,32 @@ const DraupnirPortfolio = () => {
     const [fetchSeq, setFetchSeq] = useState(0);
     const pollRef = useRef(0);
     const MAX_POLLS = 8;
+    // Each detail request takes a number; only the newest one may write state,
+    // so a slow response for the previous market (or portfolio) cannot
+    // overwrite the one the user just switched to.
+    const detailRequestRef = useRef(0);
+    const [saving, setSaving] = useState(false);
+    const savingRef = useRef(false);   // synchronous guard: a double Enter must not add two transactions
 
     const fetchDetail = useCallback(async (mkt) => {
+        const requestNumber = ++detailRequestRef.current;
+        const isCurrent = () => requestNumber === detailRequestRef.current;
         try {
             const res = await fetch(`/api/draupnir/portfolios/${portfolioId}?market=${mkt}`);
+            if (!isCurrent()) return;
             if (res.status === 404) { setError('Portfolio not found'); return; }
             if (!res.ok) throw new Error('Failed to load portfolio');
-            setData(await res.json());
+            const json = await res.json();
+            if (!isCurrent()) return;
+            setData(json);
             setError(null);
         } catch (e) {
-            setError(e.message);
+            if (isCurrent()) setError(e.message);
         } finally {
-            setLoading(false);
-            setFetchSeq(s => s + 1);
+            if (isCurrent()) {
+                setLoading(false);
+                setFetchSeq(s => s + 1);
+            }
         }
     }, [portfolioId]);
 
@@ -263,6 +276,9 @@ const DraupnirPortfolio = () => {
     };
 
     const doSave = async () => {
+        if (savingRef.current) return;
+        savingRef.current = true;
+        setSaving(true);
         const payload = {
             ...form, item_name: form.item_name.trim(), platform: form.platform.trim(),
             date: form.date.trim(), price: parseFloat(form.price), qty: parseInt(form.qty, 10),
@@ -299,10 +315,14 @@ const DraupnirPortfolio = () => {
             fetchDetail(market);
         } catch (e) {
             setError(e.message);
+        } finally {
+            savingRef.current = false;
+            setSaving(false);
         }
     };
 
     const submitForm = async () => {
+        if (savingRef.current || checking) return;
         const reqErr = requiredError();
         if (reqErr) { setFormError(reqErr); return; }
         setFormError(null);
@@ -497,8 +517,8 @@ const DraupnirPortfolio = () => {
                                 >
                                     <ArrowLeftRight size={14} /> Arbitrage
                                 </button>
-                                <button type="submit" disabled={checking} className="flex items-center gap-1.5 px-3 py-1.5 rounded bg-yellow-600 hover:bg-yellow-500 text-white text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
-                                    {checking ? <><RefreshCw size={14} className="animate-spin" /> Checking…</> : editingId ? <><Check size={14} /> Save</> : <><Plus size={14} /> Add</>}
+                                <button type="submit" disabled={checking || saving} className="flex items-center gap-1.5 px-3 py-1.5 rounded bg-yellow-600 hover:bg-yellow-500 text-white text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+                                    {checking ? <><RefreshCw size={14} className="animate-spin" /> Checking…</> : saving ? <><RefreshCw size={14} className="animate-spin" /> Saving…</> : editingId ? <><Check size={14} /> Save</> : <><Plus size={14} /> Add</>}
                                 </button>
                                 {editingId && (
                                     <button type="button" onClick={resetForm} className="flex items-center gap-1 px-2 py-1.5 rounded text-slate-400 hover:text-white hover:bg-white/10 text-sm transition-colors"><X size={14} /></button>

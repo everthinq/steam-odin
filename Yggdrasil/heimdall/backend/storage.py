@@ -34,6 +34,7 @@ import json
 import logging
 import os
 import secrets
+from datetime import datetime, timezone
 from pathlib import Path
 
 from cryptography.fernet import Fernet, InvalidToken
@@ -62,6 +63,9 @@ _SALT_INFO = b'heimdall-kdf-v2::'  # domain-separation prefix for the derived sa
 
 _KEYFILE = '.heimdall_key'
 _PRE_MIGRATION_DIR = '.pre-migration'
+# Deleted accounts are moved here instead of being unlinked: a maFile holds the
+# only copy of an account's 2FA seeds, so a delete must never be a one-way door.
+_DELETED_DIR = '.deleted'
 
 
 def _derive_salt(secret):
@@ -171,18 +175,42 @@ class SecureStorage:
         return json.loads(self._fernet.decrypt(blob))
 
     def list_accounts(self):
-        return [p.stem for p in self.storage_dir.glob('*.maFile')]
+        # Only top-level files: the .deleted/ and .pre-migration/ folders hold
+        # archived copies that must never show up as live accounts.
+        return [p.stem for p in self.storage_dir.glob('*.maFile') if p.is_file()]
 
     def delete_account(self, steamid):
+        """Soft-delete one account: move its maFile into ``.deleted/``.
+
+        The file is never unlinked — it lands at
+        ``.deleted/<steamid>.<UTC timestamp>.maFile`` (folder 0700, file 0600),
+        so an accidental delete can be undone by moving the file back.
+        Returns True when a maFile was archived, False when there was none.
+        """
+        steamid = str(steamid)
+        if not steamid or '/' in steamid or '\\' in steamid or steamid.startswith('.'):
+            log.error('refusing to delete maFile with unsafe name %r', steamid)
+            return False
         file_path = self.storage_dir / f'{steamid}.maFile'
-        if file_path.exists():
-            file_path.unlink()
-            return True
-        return False
+        if not file_path.is_file():
+            return False
+        deleted_dir = self.storage_dir / _DELETED_DIR
+        deleted_dir.mkdir(mode=0o700, exist_ok=True)
+        _chmod(deleted_dir, 0o700)
+        timestamp = datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%fZ')
+        destination = deleted_dir / f'{steamid}.{timestamp}.maFile'
+        os.replace(file_path, destination)
+        _chmod_600(destination)
+        log.warning('soft-deleted maFile for %s (archived in %s/)', steamid, _DELETED_DIR)
+        return True
 
 
 def _chmod_600(path):
+    _chmod(path, 0o600)
+
+
+def _chmod(path, mode):
     try:
-        os.chmod(path, 0o600)
+        os.chmod(path, mode)
     except OSError:
         pass

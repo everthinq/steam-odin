@@ -63,7 +63,8 @@ const BackupsPanel = ({ onClose, onRestored }) => {
         setBusy('snapshot');
         try {
             const r = await fetch('/api/draupnir/portfolios/backups/snapshot', { method: 'POST' });
-            const d = await r.json();
+            const d = await r.json().catch(() => ({}));
+            if (!r.ok || d.error) throw new Error(d.error || `Snapshot failed (HTTP ${r.status})`);
             flash(true, d.deduped ? 'Already up to date — no change since the last snapshot.' : 'Snapshot saved.');
             load();
         } catch (e) {

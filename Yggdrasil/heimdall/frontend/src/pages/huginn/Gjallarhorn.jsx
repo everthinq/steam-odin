@@ -69,14 +69,20 @@ const Gjallarhorn = () => {
             .catch(() => {});
     }, []);
 
+    // Each rotation request takes a number; only the newest one may write state,
+    // so a slow response for the previous portfolio, market or account cannot
+    // overwrite the selection the user just made.
+    const rotationRequestRef = useRef(0);
     const fetchRotation = useCallback(() => {
+        const requestNumber = ++rotationRequestRef.current;
+        const isCurrent = () => requestNumber === rotationRequestRef.current;
         const params = new URLSearchParams({ portfolio: portfolioId, market });
         if (steamid) params.set('steamid', steamid);
         return fetch(`/api/huginn/gjallarhorn/rotation?${params.toString()}`)
             .then((r) => (r.ok ? r.json() : null))
-            .then((d) => { if (d && !d.error) setData(d); })
+            .then((d) => { if (isCurrent() && d && !d.error) setData(d); })
             .catch(() => {})
-            .finally(() => setLoading(false));
+            .finally(() => { if (isCurrent()) setLoading(false); });
     }, [portfolioId, market, steamid]);
 
     // Refresh button (event handler — spinner state is fine to set here).

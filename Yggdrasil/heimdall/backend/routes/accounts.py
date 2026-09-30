@@ -8,7 +8,6 @@ import logging
 from flask import Blueprint, jsonify, request
 
 from context import ctx
-from system_ops import trigger_restart
 
 logger = logging.getLogger(__name__)
 
@@ -30,7 +29,8 @@ def import_account():
     if not request.json:
         return jsonify({"error": "Missing JSON body"}), 400
 
-    # Capture 'fileName' which is already sent by your AddAccount.jsx
+    # Capture 'fileName' which is already sent by your AddAccount.jsx; the service
+    # strips it (and account_password) before the maFile is written.
     filename = request.json.get('fileName')
     result = ctx.steam_service.import_account(request.json, filename=filename)
 
@@ -67,11 +67,12 @@ def authenticate_account():
         # Many Steam auth endpoints return a 'success' flag and message
         if result.get('success') is False:
             message = result.get('message') or 'Authentication failed'
-            return jsonify({"error": message, "details": result}), 400
+            return jsonify({"error": message, "details": result.get('details')}), 400
 
-    # Remove internal-only fields before returning (session objects are not JSON serializable)
-    auth_response = {k: v for k, v in result.items() if not k.startswith('_')}
-    return jsonify({"status": "success", "auth": auth_response})
+    # The tokens never go to the browser: they are stored in the account's own
+    # maFile (when it exists and its login matches) and only the outcome is returned.
+    stored = ctx.steam_service.store_login_tokens(username, result)
+    return jsonify({"status": "success", "steamid": result.get('steamid'), "session_stored": stored})
 
 
 @bp.route('/api/accounts/<steamid>/confirmations', methods=['GET'])
@@ -116,9 +117,10 @@ def act_on_confirmation(steamid, cid):
 @bp.route('/api/accounts', methods=['DELETE'])
 def remove_all_accounts():
     """Remove all accounts"""
+    # Soft delete (maFiles move to maFiles/.deleted/). Every service reads the
+    # account list from disk on each use, so no backend restart is needed.
     count = ctx.steam_service.remove_all_accounts()
-    trigger_restart()
-    return jsonify({"status": "success", "message": f"Removed {count} accounts. Restarting backend...", "count": count}), 200
+    return jsonify({"status": "success", "message": f"Removed {count} accounts.", "count": count}), 200
 
 
 @bp.route('/api/accounts/<steamid>', methods=['DELETE'])
@@ -126,8 +128,7 @@ def remove_account(steamid):
     """Remove an account"""
     success = ctx.steam_service.remove_account(steamid)
     if success:
-        trigger_restart()
-        return jsonify({"status": "success", "message": "Account removed. Restarting backend..."}), 200
+        return jsonify({"status": "success", "message": "Account removed."}), 200
     return jsonify({"error": "Account not found"}), 404
 
 
@@ -136,7 +137,11 @@ def check_all_confirmations():
     """Trigger an immediate check for confirmations on all accounts."""
     try:
         settings = ctx.settings_manager.get_settings()
-        ctx.scheduler._check_all_accounts(settings)
+        if not ctx.scheduler._check_all_accounts(settings):
+            return jsonify({
+                "error": "A confirmation check is already running",
+                "already_running": True,
+            }), 409
         return jsonify({
             "status": "success",
             "message": "Check completed",
@@ -159,7 +164,8 @@ def update_account_session():
         return jsonify({"error": "Missing JSON body"}), 400
 
     data = request.json
-    logger.info(f"[DEBUG] Received session update payload: {data}")
+    # Never log the payload itself: the cookies carry a live Steam web token.
+    logger.info("Session update from Ratatoskr for %s", data.get('steamID'))
 
     steamid = data.get('steamID')
     cookies = data.get('cookies')  # Expected to be array of strings or dict

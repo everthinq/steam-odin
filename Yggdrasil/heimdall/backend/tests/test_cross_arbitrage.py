@@ -271,3 +271,45 @@ def test_scan_filters_chain_rows_by_min_pct():
     assert all(r['total_profit_pct'] >= 25.0 for r in chain['rows'])
     names = {r['item_name'] for r in chain['rows']}
     assert 'M4' in names and 'AK' not in names       # M4 28.63% stays; AK ~8.35% filtered
+
+
+def test_save_config_keeps_in_flight_warm_flags():
+    svc = _svc()
+    sig = ('in-flight',)
+    svc._warming[sig] = True
+
+    class Settings:
+        def save_settings(self, patch):
+            pass
+
+    svc.save_config({}, Settings())
+    assert svc._warming[sig] is True     # a second warm of that config cannot start
+
+
+def test_failed_market_pull_is_marked_in_market_status():
+    huginn = FakeHuginn()
+
+    def broken_autobuy(token, market_id):
+        if market_id == 'CsMoneyTrade':
+            raise RuntimeError('pulse 502')
+        return dict(huginn._auto.get(market_id, {}))
+
+    huginn.market_autobuy_index = broken_autobuy
+    svc = CrossArbitrageService(huginn, FakeDraupnir())
+    base = svc._compute('tok', owned_only=True, settings={})
+    sell = {m['id']: m for m in base['markets']['sell']}
+    assert sell['CsMoneyTrade']['failed'] is True and 'pulse 502' in sell['CsMoneyTrade']['error']
+    assert sell['Buff']['failed'] is False
+    assert all(m['failed'] is False for m in base['markets']['buy'])
+
+
+def test_partial_warm_is_rewarmed_sooner():
+    huginn = FakeHuginn()
+    huginn.market_autobuy_index = lambda token, market_id: (_ for _ in ()).throw(RuntimeError('down'))
+    svc = CrossArbitrageService(huginn, FakeDraupnir())
+    buy, sell, chains = svc._config_from_settings({})
+    sig = ('partial',)
+    svc._warm('tok', sig, (buy, sell, chains), {})
+    warmed_at = svc._cache[sig][0]
+    age_until_stale = svc._RESULT_TTL - (time.time() - warmed_at)
+    assert age_until_stale <= svc._RETRY_AFTER_FAILURE + 1

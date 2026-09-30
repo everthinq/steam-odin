@@ -4,6 +4,8 @@ import threading
 import time
 from datetime import datetime, timezone
 
+import notifications
+
 logger = logging.getLogger(__name__)
 
 # Storage units hold up to 1000 items (mirrors STORAGE_CAPACITY in the frontend).
@@ -18,6 +20,22 @@ _INFLIGHT_TTL_SEC = 15 * 60
 # regardless of the auto-confirm settings — token freshness is a separate concern.
 _KEEPALIVE_INTERVAL_SEC = 4 * 3600   # how often to run the freshness sweep
 _KEEPALIVE_MIN_TTL_SEC = 8 * 3600    # renew any account with less than this left
+# Spread renewals out: accounts renewed in one sweep would otherwise all expire
+# together and renew in one burst forever. Each account's threshold gets up to
+# this much extra (random), so some renew a sweep early and the fleet drifts apart.
+_KEEPALIVE_THRESHOLD_SPREAD_SEC = 2 * 3600
+# Extra pause after an account actually hit Steam for a renewal (on top of the
+# 1 s between accounts), plus up to this much random jitter.
+_KEEPALIVE_RENEWAL_PAUSE_SEC = 5
+_KEEPALIVE_RENEWAL_JITTER_SEC = 5
+
+# Confirmation types (the `type` field of mobileconf/getlist).
+_CONFIRMATION_TYPE_TRADE = 2
+_CONFIRMATION_TYPE_MARKET_LISTING = 3
+# 12 is not in the documented type list; it has been seen on market
+# confirmations, so it is accepted under the market switch only when Steam's own
+# `type_name` says it is a market confirmation.
+_CONFIRMATION_TYPE_UNDOCUMENTED_MARKET = 12
 
 
 class ConfirmationScheduler:
@@ -32,6 +50,9 @@ class ConfirmationScheduler:
         self._auto_store_inflight = {}
         # Last time the proactive token keep-alive sweep ran (0 = run on first loop).
         self._last_keepalive = 0.0
+        # Held for the whole confirmation sweep so the "Check now" button and the
+        # background loop can never run two sweeps (double Steam traffic) at once.
+        self._sweep_lock = threading.Lock()
 
     def start(self):
         if self.thread and self.thread.is_alive():
@@ -89,7 +110,10 @@ class ConfirmationScheduler:
             # Keep every account's web token fresh on a slow cadence, independent
             # of whether auto-confirm is on, so a stale token never silently breaks
             # confirmations again.
-            if time.time() - self._last_keepalive >= _KEEPALIVE_INTERVAL_SEC:
+            # While Steam is backing us off, wait (the sweep is retried on the next
+            # loop once the cooldown clears) instead of adding renewal traffic.
+            if (time.time() - self._last_keepalive >= _KEEPALIVE_INTERVAL_SEC
+                    and not self.steam_service._mobileconf_cooldown_remaining()):
                 self._last_keepalive = time.time()
                 try:
                     self._keepalive_sessions()
@@ -130,9 +154,10 @@ class ConfirmationScheduler:
         failures = []
         for i, account in enumerate(accounts):
             steamid = account['steamid']
+            min_ttl = _KEEPALIVE_MIN_TTL_SEC + random.uniform(0, _KEEPALIVE_THRESHOLD_SPREAD_SEC)
             try:
                 status = self.steam_service.ensure_fresh_session(
-                    steamid, min_ttl_seconds=_KEEPALIVE_MIN_TTL_SEC
+                    steamid, min_ttl_seconds=int(min_ttl)
                 )
             except Exception as e:
                 failures.append((steamid, str(e)))
@@ -142,13 +167,21 @@ class ConfirmationScheduler:
                 renewed += 1
             elif not status.get('ok'):
                 failures.append((steamid, status.get('message') or status.get('state')))
-                # Steam rate-limited us — stop hammering and finish next sweep.
-                if '429' in str(status.get('message') or ''):
+                # Steam rate-limited us (HTTP 429 / 5xx / network error) — stop
+                # hammering and finish next sweep.
+                if status.get('rate_limited'):
                     logger.warning("[KEEPALIVE] hit Steam rate limit — aborting rest of sweep")
                     break
 
             if i < len(accounts) - 1:
                 time.sleep(1)
+                hit_steam = (status.get('state') == 'renewed'
+                             or (status.get('state') == 'failed' and not status.get('no_password')))
+                if hit_steam:
+                    # This account hit Steam — pause longer (with jitter) before
+                    # the next one so renewals never land in one burst.
+                    time.sleep(_KEEPALIVE_RENEWAL_PAUSE_SEC
+                               + random.uniform(0, _KEEPALIVE_RENEWAL_JITTER_SEC))
 
         # Always log a one-line heartbeat so "still healthy" is visible in the log.
         logger.info(f"[KEEPALIVE] session sweep: {len(accounts)} checked, "
@@ -159,6 +192,21 @@ class ConfirmationScheduler:
                          f"— add its password to the Mimir vault or re-import the maFile")
 
     def _check_all_accounts(self, settings):
+        """Run one confirmation sweep over every account.
+
+        Returns False (and does nothing) when another sweep is already running —
+        the background loop and the "Check now" button share this lock — else True.
+        """
+        if not self._sweep_lock.acquire(blocking=False):
+            logger.info("[SCHEDULER] Confirmation sweep already running — not starting another")
+            return False
+        try:
+            self._check_all_accounts_locked(settings)
+        finally:
+            self._sweep_lock.release()
+        return True
+
+    def _check_all_accounts_locked(self, settings):
         # If mobileconf is in backoff, skip the whole sweep so we don't keep hitting it.
         cooldown = self.steam_service._mobileconf_cooldown_remaining()
         if cooldown:
@@ -199,14 +247,9 @@ class ConfirmationScheduler:
         auto_trades = settings.get("auto_confirm_trades")
 
         to_accept = []
+        accepted_details = []
         skipped = 0
         for conf in confirmations:
-            # Steam: type 2 = Trade, 3 = Market listing, 12 = Market purchase (may arrive as str)
-            try:
-                ctype = int(conf.get('type', 0) or 0)
-            except (TypeError, ValueError):
-                ctype = 0
-
             cid = conf.get('id')
             ck = conf.get('nonce') or conf.get('key')
             if cid is None or not ck:
@@ -216,8 +259,9 @@ class ConfirmationScheduler:
                 )
                 continue
 
-            if (ctype in (3, 12) and auto_market) or (ctype == 2 and auto_trades):
+            if self._should_auto_accept(conf, settings):
                 to_accept.append((str(cid), str(ck)))
+                accepted_details.append(conf)
             else:
                 skipped += 1
 
@@ -229,11 +273,113 @@ class ConfirmationScheduler:
             return
 
         logger.info(f"[SCHEDULER] Auto-accepting {len(to_accept)} confirmation(s) for {steamid} in one batch")
+        # One audit line per confirmation: what it was and who the partner is.
+        for conf in accepted_details:
+            logger.info(
+                f"[SCHEDULER] {steamid}: auto-accepting id={conf.get('id')} "
+                f"type={conf.get('type')} ({conf.get('type_name')!r}) "
+                f"headline={conf.get('headline')!r} summary={conf.get('summary')!r} "
+                f"creator_id={conf.get('creator_id')}"
+            )
         res = self.steam_service.act_on_confirmations_batch(steamid, to_accept, 'allow')
         if res.get('success'):
             logger.info(f"[SCHEDULER] Accepted {res.get('accepted', len(to_accept))} for {steamid}")
+            self._alert_auto_confirmed_trades(steamid, accepted_details, settings)
         else:
             logger.error(f"[SCHEDULER] Batch accept failed for {steamid}: {res.get('message')}")
+
+    def _alert_auto_confirmed_trades(self, steamid, accepted_confirmations, settings):
+        """Send ONE notification listing every trade offer just auto-confirmed.
+
+        A trade auto-confirmed from a stolen API key is the classic scam, so each one
+        is announced (market listings are not — too noisy). Runs on a background
+        thread and swallows every error: the alert must never break or delay the
+        confirmation sweep. Off when `alert_auto_confirmed_trades` is false.
+        """
+        try:
+            if not settings.get("alert_auto_confirmed_trades", True):
+                return
+            trades = [conf for conf in accepted_confirmations
+                      if self._confirmation_type(conf) == _CONFIRMATION_TYPE_TRADE]
+            if not trades or notifications.notification_channel(settings) is None:
+                return
+            try:
+                account_name = self._account_name(steamid)
+            except Exception:
+                account_name = "Unknown"
+            text = self._auto_confirmed_trades_message(steamid, account_name, trades)
+        except Exception as e:
+            logger.warning(f"[SCHEDULER] {steamid}: could not build the auto-confirmed trade alert: {e}")
+            return
+        threading.Thread(target=self._send_trade_alert, args=(steamid, settings, text),
+                         name="auto-confirmed-trade-alert", daemon=True).start()
+
+    @staticmethod
+    def _send_trade_alert(steamid, settings, text):
+        try:
+            result = notifications.send_notification(settings, text)
+            if not result.get('ok'):
+                logger.warning(f"[SCHEDULER] {steamid}: auto-confirmed trade alert not sent: {result.get('error')}")
+        except Exception as e:
+            logger.warning(f"[SCHEDULER] {steamid}: auto-confirmed trade alert failed: {e}")
+
+    @staticmethod
+    def _auto_confirmed_trades_message(steamid, account_name, trades):
+        """Plain-text alert body: account, then per trade the partner and the summary lines."""
+        count = len(trades)
+        lines = [f"Auto-confirmed {count} trade offer{'s' if count != 1 else ''} on "
+                 f"{account_name} ({steamid})",
+                 "If you did not make this trade, revoke the Steam Web API key now."]
+        for index, conf in enumerate(trades, start=1):
+            partner = str(conf.get('headline') or 'unknown partner')
+            creator_id = conf.get('creator_id')
+            if creator_id:
+                partner += f" (trade offer {creator_id})"
+            lines.append("")
+            lines.append(f"{index}. Partner: {partner}")
+            summary = conf.get('summary') or []
+            if isinstance(summary, str):
+                summary = [summary]
+            for summary_line in summary:
+                lines.append(f"   {summary_line}")
+            if not summary:
+                lines.append("   (no item summary from Steam)")
+        return "\n".join(lines)
+
+    @staticmethod
+    def _confirmation_type(conf):
+        """The confirmation's numeric type (it may arrive as a string); 0 if unknown."""
+        try:
+            return int(conf.get('type', 0) or 0)
+        except (TypeError, ValueError):
+            return 0
+
+    @classmethod
+    def _should_auto_accept(cls, conf, settings):
+        """Whether the auto-confirm switches allow accepting this confirmation.
+
+        Steam types: 2 = Trade (auto_confirm_trades), 3 = Market listing
+        (auto_confirm_market). Type 12 is undocumented, so it is accepted under
+        the market switch only when its `type_name` names a market confirmation;
+        anything else (API key, account recovery, phone change, ...) never is.
+        """
+        ctype = cls._confirmation_type(conf)
+        if ctype == _CONFIRMATION_TYPE_TRADE:
+            return bool(settings.get("auto_confirm_trades"))
+        if ctype == _CONFIRMATION_TYPE_MARKET_LISTING:
+            return bool(settings.get("auto_confirm_market"))
+        if ctype == _CONFIRMATION_TYPE_UNDOCUMENTED_MARKET:
+            if not settings.get("auto_confirm_market"):
+                return False
+            type_name = str(conf.get('type_name') or '')
+            if 'market' in type_name.lower():
+                return True
+            logger.warning(
+                f"[SCHEDULER] Not auto-accepting type 12 confirmation id={conf.get('id')} "
+                f"(type_name={type_name!r}, headline={conf.get('headline')!r}) — "
+                f"not recognisable as a market confirmation"
+            )
+        return False
 
     # ------------------------------------------------------------------
     # Auto-store watcher: sweep watched items from inventory into storage.

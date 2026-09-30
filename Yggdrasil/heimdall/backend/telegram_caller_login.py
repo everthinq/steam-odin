@@ -40,7 +40,10 @@ def main():
         'session': session,
         'target': int(target) if target.lstrip('-').isdigit() else target,
     }
-    with open(OUT_FILE, 'w') as f:
+    # Created owner-only (0600) before the session lands in it — never world-readable,
+    # not even for a moment; the chmod also tightens a file left by an older run.
+    descriptor = os.open(OUT_FILE, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(descriptor, 'w') as f:
         json.dump(data, f, indent=2)
     os.chmod(OUT_FILE, 0o600)
     print(f'\nSaved {OUT_FILE}')

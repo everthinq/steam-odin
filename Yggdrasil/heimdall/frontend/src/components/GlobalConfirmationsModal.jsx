@@ -2,6 +2,22 @@ import React, { useState, useEffect } from 'react';
 import { X, Check, Save, Play, Loader2 } from 'lucide-react';
 import NorseStepper from './NorseStepper';
 
+// The only settings keys this modal edits. Saving posts just these, so it can
+// never overwrite settings other pages own (tokens, alert channels, and so on)
+// with a stale copy loaded when the modal opened.
+const CONFIRMATION_SETTING_KEYS = [
+    'check_interval',
+    'auto_check_enabled',
+    'auto_confirm_market',
+    'auto_confirm_trades',
+];
+
+const pickConfirmationSettings = (source) => Object.fromEntries(
+    CONFIRMATION_SETTING_KEYS
+        .filter((key) => source && source[key] !== undefined)
+        .map((key) => [key, source[key]])
+);
+
 const GlobalConfirmationsModal = ({ isOpen, onClose }) => {
     const [settings, setSettings] = useState({
         check_interval: 300,
@@ -10,6 +26,9 @@ const GlobalConfirmationsModal = ({ isOpen, onClose }) => {
         auto_confirm_trades: false
     });
     const [loading, setLoading] = useState(false);
+    // True once the current settings were read from the backend, so the form
+    // never shows (or saves) the placeholder defaults as if they were real.
+    const [loaded, setLoaded] = useState(false);
     const [checking, setChecking] = useState(false);
     const [message, setMessage] = useState(null);
 
@@ -21,26 +40,36 @@ const GlobalConfirmationsModal = ({ isOpen, onClose }) => {
 
     const fetchSettings = async () => {
         setLoading(true);
+        setLoaded(false);
+        setMessage(null);
         try {
             const res = await fetch('/api/settings');
+            if (!res.ok) throw new Error(`Failed to load settings (HTTP ${res.status})`);
             const data = await res.json();
-            setSettings(data);
+            setSettings((previous) => ({ ...previous, ...pickConfirmationSettings(data) }));
+            setLoaded(true);
         } catch (error) {
             console.error("Failed to load settings", error);
+            setMessage({ type: 'error', text: error.message || 'Failed to load settings' });
         } finally {
             setLoading(false);
         }
     };
 
     const handleSave = async () => {
+        if (loading || !loaded) return;
         setLoading(true);
         try {
             const res = await fetch('/api/settings', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(settings)
+                body: JSON.stringify(pickConfirmationSettings(settings))
             });
             if (res.ok) {
+                const data = await res.json().catch(() => ({}));
+                if (data.settings) {
+                    setSettings((previous) => ({ ...previous, ...pickConfirmationSettings(data.settings) }));
+                }
                 setMessage({ type: 'success', text: 'Settings saved successfully' });
                 setTimeout(() => setMessage(null), 3000);
             } else {
@@ -60,9 +89,11 @@ const GlobalConfirmationsModal = ({ isOpen, onClose }) => {
             if (res.ok) {
                 setMessage({ type: 'success', text: 'Check initiated for all accounts' });
                 setTimeout(() => setMessage(null), 3000);
+            } else {
+                setMessage({ type: 'error', text: `Failed to initiate check (HTTP ${res.status})` });
             }
         } catch (error) {
-            setMessage({ type: 'error', text: 'Failed to initiate check' });
+            setMessage({ type: 'error', text: `Failed to initiate check: ${error.message}` });
         } finally {
             setChecking(false);
         }
@@ -86,9 +117,21 @@ const GlobalConfirmationsModal = ({ isOpen, onClose }) => {
 
                 {/* Body */}
                 <div className="p-6 space-y-6">
-                    {loading && !settings.check_interval ? (
-                        <div className="flex justify-center p-8">
-                            <Loader2 className="animate-spin text-asgard-gold" size={32} />
+                    {!loaded ? (
+                        <div className="flex flex-col items-center gap-4 p-8">
+                            {loading ? (
+                                <Loader2 className="animate-spin text-asgard-gold" size={32} />
+                            ) : (
+                                <>
+                                    <p className="text-sm text-red-400 text-center">{message?.text || 'Settings are not loaded.'}</p>
+                                    <button
+                                        onClick={fetchSettings}
+                                        className="px-4 py-2 bg-odin-blue hover:bg-odin-blue/80 text-frost-white/80 rounded-lg text-sm border border-white/10"
+                                    >
+                                        Retry
+                                    </button>
+                                </>
+                            )}
                         </div>
                     ) : (
                         <>
@@ -177,10 +220,11 @@ const GlobalConfirmationsModal = ({ isOpen, onClose }) => {
 
                                 <button
                                     onClick={handleSave}
-                                    className="w-full sm:w-auto flex justify-center items-center gap-2 px-6 py-2 bg-gradient-to-r from-bifrost-purple to-bifrost-cyan hover:from-bifrost-purple/80 hover:to-bifrost-cyan/80 text-odin-dark rounded-lg text-sm font-bold shadow-lg shadow-bifrost-cyan/20 transition-all active:scale-95"
+                                    disabled={loading}
+                                    className="w-full sm:w-auto flex justify-center items-center gap-2 px-6 py-2 bg-gradient-to-r from-bifrost-purple to-bifrost-cyan hover:from-bifrost-purple/80 hover:to-bifrost-cyan/80 text-odin-dark rounded-lg text-sm font-bold shadow-lg shadow-bifrost-cyan/20 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
                                 >
-                                    <Save size={16} />
-                                    Save Settings
+                                    {loading ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
+                                    {loading ? 'Saving…' : 'Save Settings'}
                                 </button>
                             </div>
 

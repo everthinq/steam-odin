@@ -1,7 +1,9 @@
 import json
 import logging
 import os
+import shutil
 import threading
+from datetime import datetime, timezone
 
 from jsonio import atomic_write_json
 
@@ -14,6 +16,8 @@ DEFAULT_SETTINGS = {
     "auto_check_enabled": False,
     "auto_confirm_market": False,
     "auto_confirm_trades": False,
+    # Telegram/webhook alert for every auto-confirmed trade offer (scam watch).
+    "alert_auto_confirmed_trades": True,
     # Bearer token for pulse.tradeon.space, used by Huginn to fetch skin prices.
     # Grab it from the `authorization: Bearer <...>` header of any request the
     # pulse.tradeon.space site makes (DevTools → Network). Leave empty to disable
@@ -123,39 +127,94 @@ GJALLARHORN_NEWS_HISTORY_CAP = 50
 class SettingsManager:
     def __init__(self):
         self.lock = threading.Lock()
+        # True while settings.json exists but could not be parsed: the in-memory
+        # settings are then only defaults, and writing them would overwrite the
+        # real tokens (tradeon_token, Telegram, CSFloat) with empty strings.
+        self.persist_blocked = False
         self.settings = self._load_settings()
 
     def _load_settings(self):
         if not os.path.exists(SETTINGS_FILE):
+            self.persist_blocked = False
             return DEFAULT_SETTINGS.copy()
         try:
             with open(SETTINGS_FILE, 'r') as f:
-                return {**DEFAULT_SETTINGS, **json.load(f)}
+                loaded = json.load(f)
+            if not isinstance(loaded, dict):
+                raise ValueError(f'expected a JSON object, got {type(loaded).__name__}')
         except Exception as e:
-            log.error('failed to load settings: %s', e)
+            self.persist_blocked = True
+            corrupt_copy = self._keep_corrupt_copy()
+            log.error('failed to load %s (%s); running on defaults and REFUSING to '
+                      'write settings until the file loads again — fix it (a copy is at '
+                      '%s) and restart the backend', SETTINGS_FILE, e, corrupt_copy)
             return DEFAULT_SETTINGS.copy()
+        self.persist_blocked = False
+        return {**DEFAULT_SETTINGS, **loaded}
+
+    @staticmethod
+    def _keep_corrupt_copy():
+        """Copy the unreadable settings.json aside so it can be repaired by hand."""
+        timestamp = datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')
+        destination = f'{SETTINGS_FILE}.corrupt-{timestamp}'
+        try:
+            shutil.copy2(SETTINGS_FILE, destination)
+            os.chmod(destination, 0o600)  # it may hold tokens
+            return destination
+        except OSError as e:
+            log.error('could not copy unreadable %s aside: %s', SETTINGS_FILE, e)
+            return None
+
+    def reload_settings(self):
+        """Re-read settings.json; clears the write block once it parses again."""
+        with self.lock:
+            self.settings = self._load_settings()
+            return not self.persist_blocked
+
+    @staticmethod
+    def _convert_updates(new_settings):
+        """Validate and convert every known key BEFORE anything is applied.
+
+        Returns the converted {key: value} updates; raises ValueError/TypeError
+        on the first bad value so a failed save never half-applies.
+        """
+        updates = {}
+        for key, default in DEFAULT_SETTINGS.items():
+            if key not in new_settings:
+                continue
+            value = new_settings[key]
+            # Type casting for safety
+            if isinstance(default, bool):
+                updates[key] = bool(value)
+            elif isinstance(default, int):
+                updates[key] = int(value)
+            elif isinstance(default, list):
+                if isinstance(value, list):
+                    updates[key] = value
+            else:
+                updates[key] = value
+        return updates
 
     def save_settings(self, new_settings):
         with self.lock:
-            # Update only valid keys
-            for key in DEFAULT_SETTINGS:
-                if key in new_settings:
-                    # Type casting for safety
-                    if isinstance(DEFAULT_SETTINGS[key], bool):
-                        self.settings[key] = bool(new_settings[key])
-                    elif isinstance(DEFAULT_SETTINGS[key], int):
-                        self.settings[key] = int(new_settings[key])
-                    elif isinstance(DEFAULT_SETTINGS[key], list):
-                        val = new_settings[key]
-                        if isinstance(val, list):
-                            self.settings[key] = val
-                    else:
-                        self.settings[key] = new_settings[key]
-
+            if self.persist_blocked:
+                log.error('not saving settings: %s failed to load at startup '
+                          '(fix it and restart the backend)', SETTINGS_FILE)
+                return False
+            try:
+                updates = self._convert_updates(new_settings)
+            except (TypeError, ValueError) as e:
+                log.error('rejected settings update, nothing applied: %s', e)
+                return False
+            self.settings.update(updates)
             return self._persist()
 
     def _persist(self):
         """Write current settings to disk atomically. Caller must hold self.lock."""
+        if self.persist_blocked:
+            log.error('skipped writing %s: it failed to load, so writing now would '
+                      'replace the real settings with defaults', SETTINGS_FILE)
+            return False
         try:
             atomic_write_json(SETTINGS_FILE, self.settings, indent=4)
             return True

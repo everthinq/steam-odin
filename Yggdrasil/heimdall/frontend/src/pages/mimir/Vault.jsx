@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import {
     LayoutDashboard, KeyRound, Search, Plus, Upload, Download, Eye, EyeOff, Copy, Check,
@@ -9,6 +9,22 @@ import {
 // Steam account, encrypted at rest with the same key as the maFiles. Rows are
 // split into "With maFile" (a maFile whose account_name matches this login
 // exists, so Ratatoskr can log it on) and "No maFile" (credential stored only).
+//
+// The list endpoint never sends passwords (only a has_password flag). A single
+// password is fetched on demand from /api/mimir/credentials/<id>/password when
+// the row is revealed, copied, or opened for editing.
+
+// How long a revealed password stays on screen before it is hidden again.
+const REVEAL_TIMEOUT_MILLISECONDS = 30000;
+
+const fetchPassword = async (credentialId) => {
+    const res = await fetch(`/api/mimir/credentials/${credentialId}/password`);
+    const data = await res.json().catch(() => null);
+    if (!res.ok || !data || typeof data.password !== 'string') {
+        throw new Error(data?.error || `the backend answered HTTP ${res.status}`);
+    }
+    return data.password;
+};
 
 const empty = { login: '', password: '', email: '', comment: '' };
 
@@ -59,15 +75,45 @@ const CopyButton = ({ value, title }) => {
     );
 };
 
+// Copies one password without showing it: fetched from the backend on click.
+const PasswordCopyButton = ({ credential }) => {
+    const [done, setDone] = useState(false);
+    if (!credential.has_password) return null;
+    return (
+        <button
+            type="button"
+            title="Copy password"
+            onClick={async () => {
+                try {
+                    const password = await fetchPassword(credential.id);
+                    await navigator.clipboard.writeText(password);
+                    setDone(true);
+                    setTimeout(() => setDone(false), 1200);
+                } catch (e) {
+                    alert(`Copy failed: ${e.message}`);
+                }
+            }}
+            className="p-1 rounded text-slate-500 hover:text-cyan-300 hover:bg-white/5 transition-colors shrink-0"
+        >
+            {done ? <Check size={13} className="text-emerald-400" /> : <Copy size={13} />}
+        </button>
+    );
+};
+
 const MimirVault = () => {
     const [creds, setCreds] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
     const [search, setSearch] = useState('');
-    const [revealAll, setRevealAll] = useState(false);
-    const [shown, setShown] = useState({});          // per-row reveal overrides
+    const [revealed, setRevealed] = useState({});    // credential id -> password currently on screen
+    const [revealing, setRevealing] = useState(null); // credential id whose password is being fetched
+    const hideTimers = useRef({});                    // credential id -> auto-hide timeout
     const [editing, setEditing] = useState(null);    // record being edited, or {new:true}
     const [form, setForm] = useState(empty);
+    // Editing an existing credential: the password is fetched when the dialog
+    // opens. Until it has arrived the save leaves the stored password untouched.
+    const [editPasswordState, setEditPasswordState] = useState('loaded'); // 'loading' | 'loaded' | 'failed'
+    const editRequest = useRef(0);                    // ignores a password that arrives for a dialog already closed
     const [saving, setSaving] = useState(false);
     const [showImport, setShowImport] = useState(false);
     const [importText, setImportText] = useState('');
@@ -91,6 +137,37 @@ const MimirVault = () => {
 
     useEffect(() => { load(); }, []);
 
+    // Clear every pending auto-hide timer when the page is left.
+    useEffect(() => {
+        const timers = hideTimers.current;
+        return () => Object.values(timers).forEach(clearTimeout);
+    }, []);
+
+    const hidePassword = (credentialId) => {
+        clearTimeout(hideTimers.current[credentialId]);
+        delete hideTimers.current[credentialId];
+        setRevealed(r => {
+            const next = { ...r };
+            delete next[credentialId];
+            return next;
+        });
+    };
+
+    const toggleReveal = async (c) => {
+        if (c.id in revealed) { hidePassword(c.id); return; }
+        setRevealing(c.id);
+        try {
+            const password = await fetchPassword(c.id);
+            setRevealed(r => ({ ...r, [c.id]: password }));
+            clearTimeout(hideTimers.current[c.id]);
+            hideTimers.current[c.id] = setTimeout(() => hidePassword(c.id), REVEAL_TIMEOUT_MILLISECONDS);
+        } catch (e) {
+            alert(`Reveal failed: ${e.message}`);
+        } finally {
+            setRevealing(null);
+        }
+    };
+
     // Filter, then split into the two maFile groups — each sorted alphabetically.
     const { withMafile, noMafile } = useMemo(() => {
         const q = search.trim().toLowerCase();
@@ -110,24 +187,43 @@ const MimirVault = () => {
     const linkedCount = creds.filter(c => c.linked_steamid).length;
     const totalShown = withMafile.length + noMafile.length;
 
-    const openNew = () => { setForm(empty); setEditing({ new: true }); };
-    const openEdit = (c) => { setForm({ login: c.login, password: c.password, email: c.email, comment: c.comment }); setEditing(c); };
-    const closeForm = () => { setEditing(null); setForm(empty); };
+    const openNew = () => { editRequest.current += 1; setForm(empty); setEditPasswordState('loaded'); setEditing({ new: true }); };
+    const openEdit = async (c) => {
+        const request = ++editRequest.current;
+        setForm({ login: c.login, password: '', email: c.email, comment: c.comment });
+        setEditing(c);
+        if (!c.has_password) { setEditPasswordState('loaded'); return; }
+        setEditPasswordState('loading');
+        try {
+            const password = await fetchPassword(c.id);
+            if (request !== editRequest.current) return;
+            setForm(f => ({ ...f, password }));
+            setEditPasswordState('loaded');
+        } catch {
+            if (request === editRequest.current) setEditPasswordState('failed');
+        }
+    };
+    const closeForm = () => { editRequest.current += 1; setEditing(null); setForm(empty); };
 
     const saveForm = async () => {
         setSaving(true);
         try {
             const isNew = editing?.new;
+            // Never send a password that was not loaded: an empty field would
+            // wipe the stored one. Omitted, the backend keeps it as it is.
+            const body = { ...form };
+            if (!isNew && editPasswordState !== 'loaded') delete body.password;
             const res = await fetch(
                 isNew ? '/api/mimir/credentials' : `/api/mimir/credentials/${editing.id}`,
                 {
                     method: isNew ? 'POST' : 'PUT',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(form),
+                    body: JSON.stringify(body),
                 },
             );
             const data = await res.json();
             if (!res.ok) throw new Error(data.error || 'Save failed');
+            if (!isNew) hidePassword(editing.id);         // a revealed password may be stale now
             closeForm();
             await load();
         } catch (e) {
@@ -173,6 +269,7 @@ const MimirVault = () => {
             const data = await res.json();
             await load();                                  // refresh so the health dot updates
             if (res.status === 409) alert(data.error);     // no maFile — can't test
+            else if (data.untested) alert(data.error);     // live session reused — password not checked
             else if (data.ok === false) alert(`Login failed for ${c.login}${data.error ? `: ${data.error}` : ''}`);
         } catch (e) {
             alert(e.message);
@@ -184,8 +281,13 @@ const MimirVault = () => {
     const exportVault = async () => {
         try {
             const res = await fetch('/api/mimir/export');
-            const data = await res.json();
-            const blob = new Blob([data.text || ''], { type: 'text/plain' });
+            const data = await res.json().catch(() => null);
+            // Never save a file unless the backend really sent the export: a
+            // failed request would otherwise download an empty credentials file.
+            if (!res.ok || !data || typeof data.text !== 'string') {
+                throw new Error(data?.error || `the backend answered HTTP ${res.status}`);
+            }
+            const blob = new Blob([data.text], { type: 'text/plain' });
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
@@ -198,8 +300,6 @@ const MimirVault = () => {
             alert(`Export failed: ${e.message}`);
         }
     };
-
-    const isShown = (id) => revealAll || shown[id];
 
     // One credential row, reused by both groups.
     const renderRow = (c, hasMafile) => (
@@ -219,18 +319,27 @@ const MimirVault = () => {
             </td>
             <td className="px-4 py-3 align-top">
                 <div className="flex items-center gap-1.5">
-                    <span className={`font-mono ${isShown(c.id) ? 'text-slate-300' : 'text-slate-600 select-none'}`}>
-                        {isShown(c.id) ? (c.password || '—') : '••••••••••'}
-                    </span>
-                    <button
-                        type="button"
-                        onClick={() => setShown(s => ({ ...s, [c.id]: !s[c.id] }))}
-                        className="p-1 rounded text-slate-500 hover:text-cyan-300 hover:bg-white/5 transition-colors shrink-0"
-                        title={isShown(c.id) ? 'Hide' : 'Reveal'}
-                    >
-                        {isShown(c.id) ? <EyeOff size={13} /> : <Eye size={13} />}
-                    </button>
-                    <CopyButton value={c.password} title="Copy password" />
+                    {!c.has_password ? (
+                        <span className="text-slate-600">—</span>
+                    ) : (
+                        <>
+                            <span className={`font-mono ${c.id in revealed ? 'text-slate-300' : 'text-slate-600 select-none'}`}>
+                                {c.id in revealed ? revealed[c.id] : '••••••••'}
+                            </span>
+                            <button
+                                type="button"
+                                onClick={() => toggleReveal(c)}
+                                disabled={revealing === c.id}
+                                className="p-1 rounded text-slate-500 hover:text-cyan-300 hover:bg-white/5 transition-colors shrink-0 disabled:opacity-60"
+                                title={c.id in revealed ? 'Hide' : 'Reveal (hides again after 30 seconds)'}
+                            >
+                                {revealing === c.id
+                                    ? <Loader2 size={13} className="animate-spin" />
+                                    : c.id in revealed ? <EyeOff size={13} /> : <Eye size={13} />}
+                            </button>
+                            <PasswordCopyButton credential={c} />
+                        </>
+                    )}
                 </div>
             </td>
             <td className="px-4 py-3 align-top">
@@ -323,15 +432,15 @@ const MimirVault = () => {
                             }
                         />
                     </button>
-                    {/* 3 · Reveal all (tertiary, ghost) */}
-                    <button
-                        onClick={() => setRevealAll(v => !v)}
-                        className="flex items-center gap-2 px-3 py-2 rounded-lg text-slate-300 hover:bg-white/10 hover:text-cyan-100 border border-transparent hover:border-white/10 text-sm transition-colors"
-                    >
-                        {revealAll ? <EyeOff size={14} /> : <Eye size={14} />}
-                        {revealAll ? 'Hide all' : 'Reveal all'}
-                        <InfoHint text="Show or hide every password in the table at once. Each row also has its own eye toggle." />
-                    </button>
+                    {/* 3 · Hide all (tertiary, ghost) — only while a password is revealed */}
+                    {Object.keys(revealed).length > 0 && (
+                        <button
+                            onClick={() => Object.keys(revealed).forEach(hidePassword)}
+                            className="flex items-center gap-2 px-3 py-2 rounded-lg text-slate-300 hover:bg-white/10 hover:text-cyan-100 border border-transparent hover:border-white/10 text-sm transition-colors"
+                        >
+                            <EyeOff size={14} /> Hide all
+                        </button>
+                    )}
                     {/* 4 · Export (utility, ghost) */}
                     <button
                         onClick={exportVault}
@@ -432,8 +541,14 @@ const MimirVault = () => {
                                         type="text"
                                         value={form[field]}
                                         onChange={e => setForm(f => ({ ...f, [field]: e.target.value }))}
-                                        placeholder={field === 'comment' ? 'optional' : ''}
-                                        className="px-3 py-2 rounded-lg bg-black/30 border border-white/10 text-slate-200 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-cyan-500/50"
+                                        disabled={field === 'password' && editPasswordState !== 'loaded'}
+                                        placeholder={
+                                            field === 'comment' ? 'optional'
+                                                : field === 'password' && editPasswordState === 'loading' ? 'loading…'
+                                                    : field === 'password' && editPasswordState === 'failed' ? 'could not load — the stored password is kept'
+                                                        : ''
+                                        }
+                                        className="px-3 py-2 rounded-lg bg-black/30 border border-white/10 text-slate-200 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-cyan-500/50 disabled:opacity-60"
                                     />
                                 </label>
                             ))}

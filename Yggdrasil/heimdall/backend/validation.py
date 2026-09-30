@@ -9,6 +9,7 @@ boundary so the caller gets a 400 instead of a quietly-wrong ledger.
 Hand-rolled (no schema dependency) to match the project's lean stack. Each
 function returns a list of human-readable error strings; empty means valid.
 """
+import math
 from datetime import datetime
 
 MAX_NAME_LEN = 120
@@ -52,6 +53,14 @@ def validate_transaction(body, *, partial=False):
         if str(body['type']).strip().lower() not in ('buy', 'sell'):
             errors.append("type must be 'buy' or 'sell'")
 
+    # On a partial update (PATCH) an explicit empty string is an error, not a
+    # "leave it as it is": the normalizer would silently turn '' into qty 1,
+    # price 0.0 or today's date. On a full add a blank still means the default.
+    if partial:
+        for field in ('qty', 'quantity', 'price', 'date'):
+            if isinstance(body.get(field), str) and not body[field].strip():
+                errors.append(f'{field} must not be empty')
+
     # qty — optional; positive integer if present.
     qty = body.get('qty', body.get('quantity'))
     if qty is not None and qty != '':
@@ -63,7 +72,7 @@ def validate_transaction(body, *, partial=False):
         elif iv > MAX_QTY:
             errors.append(f'qty must be at most {MAX_QTY}')
 
-    # price — optional; non-negative number if present.
+    # price — optional; non-negative finite number if present.
     price = body.get('price')
     if price is not None and price != '':
         fv = _as_float(price)
@@ -95,17 +104,23 @@ def validate_transaction(body, *, partial=False):
 
 
 def _as_int(v):
-    try:
-        return int(float(v))
-    except (ValueError, TypeError):
-        return None
+    """Whole number, or None for anything that is not a finite number
+    (NaN and Infinity are rejected, not coerced)."""
+    fv = _as_float(v)
+    return int(fv) if fv is not None else None
 
 
 def _as_float(v):
-    try:
+    """Finite float, or None. ``float('nan')`` / ``float('inf')`` (and the
+    strings "NaN" / "Infinity") parse in Python but would poison every sum in
+    the ledger, so they count as "not a number" here."""
+    if isinstance(v, bool):
         return float(v)
+    try:
+        fv = float(v)
     except (ValueError, TypeError):
         return None
+    return fv if math.isfinite(fv) else None
 
 
 # Accepted hand-entry date shapes, most-preferred first. ISO (year-first) and US
