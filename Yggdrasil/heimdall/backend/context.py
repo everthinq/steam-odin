@@ -22,6 +22,7 @@ class _Context:
     gjallarhorn_news_service = None
     cross_arbitrage_service = None
     harvest_service = None
+    morning_routine = None
     telegram_caller = None
     card_deals_service = None
     asf_service = None

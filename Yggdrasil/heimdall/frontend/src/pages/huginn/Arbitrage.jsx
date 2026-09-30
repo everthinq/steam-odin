@@ -67,6 +67,8 @@ const HuginnArbitrage = () => {
     // Top-level view: cross-market item arbitrage (default) vs the container/case tracker.
     const [view, setView] = useState('arbitrage');
     const [scanData, setScanData] = useState(null);
+    // Daily "Get all items" (backend morning routine): time + last result, for the header.
+    const [morning, setMorning] = useState(null);
     const [scanning, setScanning] = useState(false);
     const [scanError, setScanError] = useState(null);
 
@@ -104,6 +106,10 @@ const HuginnArbitrage = () => {
         fetch('/api/huginn/scan/cache')
             .then(r => r.ok ? r.json() : null)
             .then(data => { if (data) setScanData(data); })
+            .catch(() => {});
+        fetch('/api/huginn/morning-routine')
+            .then(r => (r.ok ? r.json() : null))
+            .then(data => { if (data?.enabled) setMorning(data); })
             .catch(() => {});
     }, []);
 
@@ -349,6 +355,18 @@ const HuginnArbitrage = () => {
                         {scanData && (
                             <span className="text-xs text-slate-500 tabular-nums">
                                 {scanData.total_items.toLocaleString()} items · {formatTs(scanData.scan_timestamp)}
+                            </span>
+                        )}
+                        {morning && (
+                            <span
+                                className={`text-xs tabular-nums ${morning.last_error ? 'text-amber-400/80' : 'text-slate-600'}`}
+                                title={[
+                                    `Runs by itself every day at ${morning.time_of_day} (or as soon as the Mac is awake after it), then refreshes CSFloat prices.`,
+                                    morning.last_result && `Last: ${morning.last_result}`,
+                                    morning.last_error && `Problem: ${morning.last_error}`,
+                                ].filter(Boolean).join('\n')}
+                            >
+                                daily {morning.time_of_day}{morning.done_today ? ' ✓' : ''}
                             </span>
                         )}
                         <button

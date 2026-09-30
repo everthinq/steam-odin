@@ -1,0 +1,328 @@
+"""CSFloat buy-order sweep pacing: one request per item while its remembered
+listing is still up, CSFloat's own retry time (or one hour) after a rate limit,
+and the most valuable items first with few-cent items refreshed only weekly.
+
+Everything is faked: no CSFloat, pulse or file outside tmp_path is touched (the
+key-cooldown state lives in tmp_path too, so the real keys are never benched)."""
+import email.utils
+import io
+import json
+import time
+import urllib.error
+from datetime import datetime, timedelta, timezone
+
+import huginn_service
+from huginn_service import CSFloatKeyManager, HuginnService, _CSFloatRateLimited, _retry_after_seconds
+
+
+def _service(monkeypatch, tmp_path, scan=None, prices=None):
+    monkeypatch.setattr(huginn_service, 'load_csfloat_keys', lambda: [{'label': 'k1', 'key': 'K'}])
+    monkeypatch.setattr(huginn_service, 'load_csfloat_proxy', lambda: '')
+    monkeypatch.setattr(huginn_service, 'CSFLOAT_BUYORDERS_CACHE', str(tmp_path / 'buy_orders.json'))
+    monkeypatch.setattr(huginn_service, 'CSFLOAT_ITEM_LINKS_FILE', str(tmp_path / 'item_links.json'))
+    monkeypatch.setattr(huginn_service, '_CSFLOAT_REQUEST_DELAY', 0)
+    service = HuginnService(steam_service=None, ratatoskr_service=None)
+    service.csfloat_keys = CSFloatKeyManager(state_path=str(tmp_path / 'key_state.json'))
+    monkeypatch.setattr(service, 'get_cache', lambda: {'by_hash': scan or {}})
+    monkeypatch.setattr(service, 'price_map', lambda token, market: prices or {})
+    return service
+
+
+def _write_previous(tmp_path, by_name, listing_ids=None, swept_at=None):
+    (tmp_path / 'buy_orders.json').write_text(json.dumps({
+        'by_name': by_name, 'processed': sorted(by_name), 'complete': True,
+        'updated_at': '2020-01-01T00:00:00+00:00', 'started_at': '2020-01-01T00:00:00+00:00',
+    }))
+    names = set(listing_ids or {}) | set(swept_at or {})
+    (tmp_path / 'item_links.json').write_text(json.dumps({
+        name: {'listing_id': (listing_ids or {}).get(name), 'link': None,
+               'checked_at': (swept_at or {}).get(name)} for name in names}))
+
+
+def _links(tmp_path):
+    return json.loads((tmp_path / 'item_links.json').read_text())
+
+
+class Calls:
+    """Fake CSFloat: listings per item, buy orders per listing, and a request log."""
+
+    def __init__(self, listings, orders, gone=()):
+        self.listings, self.orders, self.gone = listings, orders, set(gone)
+        self.log = []
+
+    def find(self, service, key, name, proxy=None):
+        self.log.append(('find', name))
+        return self.listings.get(name)
+
+    def top(self, service, key, listing_id, proxy=None):
+        self.log.append(('orders', listing_id))
+        if listing_id in self.gone:
+            raise urllib.error.HTTPError('u', 404, 'not found', {}, io.BytesIO(b''))
+        return self.orders.get(listing_id)
+
+
+def _patch_calls(monkeypatch, calls):
+    monkeypatch.setattr(HuginnService, '_csfloat_find_listing_id', lambda self, *a, **k: calls.find(self, *a, **k))
+    monkeypatch.setattr(HuginnService, '_csfloat_top_buy_order', lambda self, *a, **k: calls.top(self, *a, **k))
+
+
+# ---- 1. one request per item while the remembered listing is up --------------
+
+def test_remembered_listing_costs_one_request(monkeypatch, tmp_path):
+    service = _service(monkeypatch, tmp_path)
+    _write_previous(tmp_path, {'A': {'price': 1.0, 'qty': 1}}, listing_ids={'A': 'L-A'})
+    calls = Calls(listings={'A': 'L-A'}, orders={'L-A': {'price': 1.5, 'qty': 3}})
+    _patch_calls(monkeypatch, calls)
+    result = service.fetch_csfloat_buy_orders(token=None, names=['A'])
+    assert calls.log == [('orders', 'L-A')]
+    assert result['by_name']['A'] == {'price': 1.5, 'qty': 3}
+
+
+def test_sold_listing_is_looked_up_again(monkeypatch, tmp_path):
+    service = _service(monkeypatch, tmp_path)
+    _write_previous(tmp_path, {'A': {'price': 1.0, 'qty': 1}}, listing_ids={'A': 'L-old'})
+    calls = Calls(listings={'A': 'L-new'}, orders={'L-new': {'price': 2.0, 'qty': 1}}, gone={'L-old'})
+    _patch_calls(monkeypatch, calls)
+    result = service.fetch_csfloat_buy_orders(token=None, names=['A'])
+    assert calls.log == [('orders', 'L-old'), ('find', 'A'), ('orders', 'L-new')]
+    assert result['by_name']['A']['price'] == 2.0
+    assert _links(tmp_path)['A']['listing_id'] == 'L-new'
+    assert _links(tmp_path)['A']['link'] == 'https://csfloat.com/item/L-new'
+
+
+def test_same_listing_with_no_orders_is_not_read_twice(monkeypatch, tmp_path):
+    service = _service(monkeypatch, tmp_path)
+    _write_previous(tmp_path, {'A': {'price': 1.0, 'qty': 1}}, listing_ids={'A': 'L-A'})
+    calls = Calls(listings={'A': 'L-A'}, orders={})
+    _patch_calls(monkeypatch, calls)
+    result = service.fetch_csfloat_buy_orders(token=None, names=['A'])
+    assert calls.log == [('orders', 'L-A'), ('find', 'A')]
+    assert 'A' not in result['by_name']                   # no buy order any more
+
+
+def test_listing_ids_and_sweep_times_are_saved(monkeypatch, tmp_path):
+    service = _service(monkeypatch, tmp_path, scan={'A': {'count': 1}, 'B': {'count': 1}})
+    service.sync_csfloat_item_links()                # as the sweep route does first
+    calls = Calls(listings={'A': 'L-A', 'B': None}, orders={'L-A': {'price': 1.0, 'qty': 1}})
+    _patch_calls(monkeypatch, calls)
+    service.fetch_csfloat_buy_orders(token=None, names=['A', 'B'])
+    links = _links(tmp_path)
+    assert links['A']['listing_id'] == 'L-A' and links['B']['listing_id'] is None
+    assert links['A']['checked_at'] and links['B']['checked_at']
+
+
+# ---- 2. wait CSFloat's own retry time, else one hour ------------------------
+
+def test_retry_after_parsing():
+    assert _retry_after_seconds({'Retry-After': '120'}) == 120
+    later = email.utils.format_datetime(datetime.now(timezone.utc) + timedelta(minutes=10), usegmt=True)
+    assert 590 <= _retry_after_seconds({'Retry-After': later}) <= 600
+    assert 1790 <= _retry_after_seconds({'X-RateLimit-Reset': str(time.time() + 1800)}) <= 1800
+    assert _retry_after_seconds({'X-RateLimit-Reset': '45'}) == 45
+    assert _retry_after_seconds({}) is None and _retry_after_seconds(None) is None
+    assert _retry_after_seconds({'Retry-After': 'soon'}) is None
+
+
+def test_bench_uses_the_retry_time_or_one_hour(tmp_path):
+    keys = CSFloatKeyManager(state_path=str(tmp_path / 'key_state.json'))
+    keys.mark_limited('A')                              # no hint: one hour
+    keys.mark_limited('B', retry_after=300)             # CSFloat said 5 minutes
+    keys.mark_limited('C', retry_after=1)               # too short: at least a minute
+    keys.mark_limited('D', retry_after=99999)           # too long: at most three hours
+    remaining = {key: keys._remaining(key) for key in 'ABCD'}
+    assert 3590 <= remaining['A'] <= 3600
+    assert 290 <= remaining['B'] <= 300
+    assert 50 <= remaining['C'] <= 60
+    assert 3 * 3600 - 10 <= remaining['D'] <= 3 * 3600
+    keys.mark_limited('A')                              # a repeat strike does not grow the wait
+    assert 3590 <= keys._remaining('A') <= 3600
+
+
+def test_http_429_carries_the_retry_time(monkeypatch):
+    service = HuginnService(steam_service=None, ratatoskr_service=None)
+
+    def refuse(request, timeout=30):
+        raise urllib.error.HTTPError('u', 429, 'too many', {'Retry-After': '900'}, io.BytesIO(b''))
+
+    monkeypatch.setattr(huginn_service.urllib.request, 'urlopen', refuse)
+    try:
+        service._csfloat_fetch_once('https://csfloat.com/api/v1/listings', 'K')
+    except _CSFloatRateLimited as error:
+        assert error.retry_after == 900
+    else:
+        raise AssertionError('expected a rate limit')
+
+
+# ---- 3. most valuable first, few-cent items weekly -------------------------
+
+def test_most_valuable_first_and_cheap_recent_items_skipped(monkeypatch, tmp_path):
+    fresh = datetime.now(timezone.utc).isoformat()
+    stale = (datetime.now(timezone.utc) - timedelta(days=8)).isoformat()
+    scan = {'Knife': {'count': 1}, 'Case': {'count': 300}, 'Sticker': {'count': 2},
+            'Cheap fresh': {'count': 50}, 'Cheap stale': {'count': 50}}
+    prices = {'Knife': 120.0, 'Case': 1.0, 'Sticker': 5.0, 'Cheap fresh': 0.05, 'Cheap stale': 0.05}
+    service = _service(monkeypatch, tmp_path, scan=scan, prices=prices)
+    # token given: the sweep first asks pulse which items CSFloat lists (faked here)
+    monkeypatch.setattr(service, '_post_tradeon',
+                        lambda url, token, body=None: [{'itemName': {'marketHashName': name}} for name in scan])
+    _write_previous(tmp_path, {'Cheap fresh': {'price': 0.04, 'qty': 9}},
+                    swept_at={'Cheap fresh': fresh, 'Cheap stale': stale})
+    calls = Calls(listings={name: 'L-' + name for name in scan},
+                  orders={'L-' + name: {'price': 1.0, 'qty': 1} for name in scan})
+    _patch_calls(monkeypatch, calls)
+    result = service.fetch_csfloat_buy_orders(token='token', names=sorted(scan))
+    swept = [name for kind, name in calls.log if kind == 'find']
+    # value = price × units held: Case 300, Knife 120, Sticker 10, Cheap stale 2.5
+    assert swept == ['Case', 'Knife', 'Sticker', 'Cheap stale']
+    assert result['by_name']['Cheap fresh'] == {'price': 0.04, 'qty': 9}   # kept, no request
+    assert result['complete'] is True
+
+
+# ---- the item dictionary: rebuilt from what you hold ------------------------
+
+def test_dictionary_keeps_held_items_adds_new_and_drops_sold(monkeypatch, tmp_path):
+    service = _service(monkeypatch, tmp_path, scan={'Kept': {'count': 1}, 'New': {'count': 2}})
+    (tmp_path / 'item_links.json').write_text(json.dumps({
+        'Kept': {'listing_id': 'L-1', 'link': 'https://csfloat.com/item/L-1', 'checked_at': 'x'},
+        'Sold': {'listing_id': 'L-2', 'link': 'https://csfloat.com/item/L-2', 'checked_at': 'y'}}))
+    names, added, removed = service.sync_csfloat_item_links(['Only in Draupnir'])
+    assert names == ['Kept', 'New', 'Only in Draupnir'] and (added, removed) == (2, 1)
+    links = _links(tmp_path)
+    assert links['Kept']['listing_id'] == 'L-1'                 # kept as it was
+    assert links['New'] == {'listing_id': None, 'link': None, 'checked_at': None}
+    assert 'Sold' not in links
+
+
+def test_no_usable_scan_keeps_every_entry(monkeypatch, tmp_path):
+    service = _service(monkeypatch, tmp_path, scan={})
+    (tmp_path / 'item_links.json').write_text(json.dumps({
+        'Kept': {'listing_id': 'L-1', 'link': 'https://csfloat.com/item/L-1', 'checked_at': 'x'}}))
+    names, added, removed = service.sync_csfloat_item_links(['Draupnir item'])
+    assert names == ['Draupnir item', 'Kept'] and removed == 0
+    assert _links(tmp_path)['Kept']['listing_id'] == 'L-1'
+
+
+def test_a_rebuild_during_a_sweep_is_not_undone(monkeypatch, tmp_path):
+    service = _service(monkeypatch, tmp_path, scan={'A': {'count': 1}, 'Sold': {'count': 1}})
+    service.sync_csfloat_item_links()
+    # the sweep read the dictionary; meanwhile a scan finds 'Sold' gone and 'New' added
+    (tmp_path / 'item_links.json').write_text(json.dumps({
+        'A': {'listing_id': None, 'link': None, 'checked_at': None},
+        'New': {'listing_id': None, 'link': None, 'checked_at': None}}))
+    service._update_csfloat_item_links({
+        'A': service._csfloat_link_entry('L-A', 't'), 'Sold': service._csfloat_link_entry('L-S', 't')})
+    links = _links(tmp_path)
+    assert set(links) == {'A', 'New'} and links['A']['listing_id'] == 'L-A'
+
+
+# ---- the scan logs out only the sessions it opened --------------------------
+
+def test_scan_logs_out_sessions_it_opened(monkeypatch, tmp_path):
+    monkeypatch.setattr(huginn_service, 'CACHE_PATH', str(tmp_path / 'scan.json'))
+
+    class Steam:
+        def get_all_accounts_data(self):
+            return [{'steamid': '1', 'account_name': 'already'}, {'steamid': '2', 'account_name': 'opened'}]
+
+        def get_account(self, steam_id):
+            return {'account_name': {'1': 'already', '2': 'opened'}[steam_id]}
+
+        def get_password(self, steam_id):
+            return 'password'
+
+    class Ratatoskr:
+        disconnected = []
+
+        def get_status(self, steam_id):
+            return {'status': 'connected' if steam_id == '1' else 'disconnected'}
+
+        def login(self, **kwargs):
+            return {'success': True}
+
+        def get_inventory(self, steam_id):
+            return {'items': []}
+
+        def get_caskets(self, steam_id):
+            return {'caskets': []}
+
+        def disconnect(self, steam_id):
+            self.disconnected.append(steam_id)
+            return {'success': True}
+
+        def get_move_status(self, steam_id):
+            return {'running': False, 'pending': 0}
+
+    service = HuginnService(steam_service=Steam(), ratatoskr_service=Ratatoskr())
+    monkeypatch.setattr(HuginnService, '_record_login', staticmethod(lambda *args, **kwargs: None))
+    service.scan()
+    assert Ratatoskr.disconnected == ['2']
+
+
+
+def test_scan_that_reached_no_account_keeps_the_previous_scan(monkeypatch, tmp_path):
+    monkeypatch.setattr(huginn_service, 'CACHE_PATH', str(tmp_path / 'scan.json'))
+    (tmp_path / 'scan.json').write_text(json.dumps({'by_hash': {'Kept': {'count': 1}}}))
+
+    class Steam:
+        def get_all_accounts_data(self):
+            return [{'steamid': '1', 'account_name': 'a'}]
+
+        def get_account(self, steam_id):
+            return {'account_name': 'a'}
+
+        def get_password(self, steam_id):
+            return None                                  # login impossible
+
+    class Ratatoskr:
+        def get_status(self, steam_id):
+            return {'status': 'disconnected'}
+
+    service = HuginnService(steam_service=Steam(), ratatoskr_service=Ratatoskr())
+    monkeypatch.setattr(HuginnService, '_record_login', staticmethod(lambda *args, **kwargs: None))
+    try:
+        service.scan()
+    except RuntimeError as error:
+        assert 'previous scan is kept' in str(error)
+    else:
+        raise AssertionError('expected the scan to fail')
+    assert json.loads((tmp_path / 'scan.json').read_text()) == {'by_hash': {'Kept': {'count': 1}}}
+
+
+def test_scan_leaves_a_session_that_is_moving_items(monkeypatch, tmp_path):
+    monkeypatch.setattr(huginn_service, 'CACHE_PATH', str(tmp_path / 'scan.json'))
+
+    class Steam:
+        def get_all_accounts_data(self):
+            return [{'steamid': '2', 'account_name': 'opened'}]
+
+        def get_account(self, steam_id):
+            return {'account_name': 'opened'}
+
+        def get_password(self, steam_id):
+            return 'password'
+
+    class Ratatoskr:
+        disconnected = []
+
+        def get_status(self, steam_id):
+            return {'status': 'disconnected'}
+
+        def login(self, **kwargs):
+            return {'success': True}
+
+        def get_inventory(self, steam_id):
+            return {'items': []}
+
+        def get_caskets(self, steam_id):
+            return {'caskets': []}
+
+        def get_move_status(self, steam_id):
+            return {'running': True, 'pending': 40}      # a transfer started meanwhile
+
+        def disconnect(self, steam_id):
+            self.disconnected.append(steam_id)
+
+    service = HuginnService(steam_service=Steam(), ratatoskr_service=Ratatoskr())
+    monkeypatch.setattr(HuginnService, '_record_login', staticmethod(lambda *args, **kwargs: None))
+    service.scan()
+    assert Ratatoskr.disconnected == []

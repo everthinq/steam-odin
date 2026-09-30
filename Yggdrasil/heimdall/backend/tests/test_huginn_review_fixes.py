@@ -409,3 +409,19 @@ def test_stale_temporary_files_are_swept(tmp_path):
     assert removed == 1
     assert not old_temporary.exists()
     assert new_temporary.exists() and keep_other.exists() and keep_binary.exists()
+
+
+def test_fixed_arbitrage_pairs_use_the_edited_sell_fee(monkeypatch):
+    from huginn_service import HuginnService
+    service = HuginnService(None, None)
+    seen = []
+    monkeypatch.setattr(service, '_combine_arbitrage',
+                        lambda token, buy_url, buy_body, sell_url, sell_fee, sell_body=None: seen.append(sell_fee) or [])
+    edited = {'huginn_market_fees': {'CsFloat': 0.03, 'Steam': 0.15, 'Buff': 0.02, 'Dmarket': 0.01}}
+    service.fetch_lisskins_csfloat('token', edited)
+    service.fetch_buff_steam('token', edited)
+    service.fetch_csfloat_buff('token', edited)
+    service.fetch_dmarket_csfloat('token', edited)
+    service.fetch_lisskins_dmarket('token', edited)
+    service.fetch_lisskins_csfloat('token')          # no settings: the registry default
+    assert seen == [0.03, 0.15, 0.02, 0.03, 0.01, 0.02]

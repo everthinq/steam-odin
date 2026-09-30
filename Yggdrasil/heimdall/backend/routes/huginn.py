@@ -5,8 +5,10 @@ Extracted verbatim from the former monolithic app.py; behavior is unchanged.
 Services are read from :data:`context.ctx` at request time. The CSFloat sweep's
 one-at-a-time job state lives here as module state (it was app.py-global before).
 """
+import logging
 import threading
 import time
+from datetime import datetime
 
 from flask import Blueprint, jsonify, request
 
@@ -15,6 +17,7 @@ from huginn_service import load_csfloat_keys, load_csfloat_proxy, classify_proxy
 from notifications import notification_channel, send_notification
 
 bp = Blueprint('huginn', __name__)
+logger = logging.getLogger(__name__)
 
 # Background CSFloat buy-order sweep state (one at a time). Progress is polled by the UI.
 _csfloat_job_lock = threading.Lock()
@@ -32,23 +35,55 @@ _scan_lock = threading.Lock()
 _scan_running = False
 
 
+class ScanAlreadyRunning(Exception):
+    pass
+
+
+def run_scan_exclusive():
+    """Run "Get all items" unless one is already running (then ScanAlreadyRunning).
+    Shared by the button and the morning routine. After the scan, the CSFloat item
+    dictionary is rebuilt from what is now held."""
+    global _scan_running
+    with _scan_lock:
+        if _scan_running:
+            raise ScanAlreadyRunning('An inventory scan is already running')
+        _scan_running = True
+    try:
+        result = ctx.huginn_service.scan()
+    finally:
+        with _scan_lock:
+            _scan_running = False
+    try:
+        sync_csfloat_item_links()
+    except Exception as e:   # the scan itself succeeded; the dictionary heals next time
+        logger.warning(f'CSFloat item links not rebuilt after the scan: {e}')
+    return result
+
+
+def sync_csfloat_item_links():
+    """Rebuild the CSFloat item dictionary: the latest scan plus Draupnir holdings."""
+    held_in_draupnir = {lot['item_name'] for lot in ctx.draupnir_service.open_lots()}
+    return ctx.huginn_service.sync_csfloat_item_links(held_in_draupnir)
+
+
 @bp.route('/api/huginn/scan', methods=['POST'])
 def huginn_scan():
     """Scan all accounts and cache inventory grouped by market hash name.
     409 when a scan is already running."""
-    global _scan_running
-    with _scan_lock:
-        if _scan_running:
-            return jsonify({'error': 'An inventory scan is already running'}), 409
-        _scan_running = True
     try:
-        result = ctx.huginn_service.scan()
-        return jsonify(result)
+        return jsonify(run_scan_exclusive())
+    except ScanAlreadyRunning as e:
+        return jsonify({'error': str(e)}), 409
     except Exception as e:
         return jsonify({'error': str(e)}), 500
-    finally:
-        with _scan_lock:
-            _scan_running = False
+
+
+@bp.route('/api/huginn/morning-routine', methods=['GET'])
+def huginn_morning_routine():
+    """Daily "Get all items" + CSFloat sweep: time, next run, last result."""
+    if not ctx.morning_routine:
+        return jsonify({'enabled': False})
+    return jsonify({'enabled': True, **ctx.morning_routine.status()})
 
 @bp.route('/api/huginn/scan/cache', methods=['GET'])
 def huginn_scan_cache():
@@ -147,25 +182,42 @@ def huginn_csfloat_connectivity():
 @bp.route('/api/huginn/csfloat/buy-orders', methods=['POST'])
 def huginn_csfloat_buy_orders_fetch():
     """Kick off a background CSFloat buy-order sweep over owned items."""
+    ok, message, status = start_csfloat_sweep()
+    if not ok:
+        return jsonify({'error': message}), status
+    return jsonify({'status': 'started'}), 202
+
+
+def csfloat_sweep_state():
+    """{'running', 'complete', 'finished_at'} for the morning routine."""
+    with _csfloat_job_lock:
+        running = _csfloat_job['running']
+    cache = ctx.huginn_service.get_csfloat_buy_orders_cache() or {}
+    finished_at = None
+    try:
+        finished_at = datetime.fromisoformat(cache.get('updated_at')) if cache.get('updated_at') else None
+    except ValueError:
+        pass
+    return {'running': running, 'complete': bool(cache.get('complete')), 'finished_at': finished_at}
+
+
+def start_csfloat_sweep():
+    """Start the background CSFloat buy-order sweep. Returns (ok, message, http status).
+    Its items are the CSFloat item dictionary, rebuilt first from the latest scan
+    plus every item still held in a Draupnir portfolio (the Arbitrage page and
+    Harvest share one cache, so both always sweep the same items)."""
     settings = ctx.settings_manager.get_settings()
     token = settings.get('tradeon_token', '')
     if not load_csfloat_keys():
-        return jsonify({'error': 'No CSFloat API keys configured — add them to csfloat_keys.json'}), 400
+        return False, 'No CSFloat API keys configured — add them to csfloat_keys.json', 400
 
-    # Candidates: the latest inventory scan plus every item still held in a
-    # Draupnir portfolio. Always both: the Arbitrage page and Harvest share one
-    # cache, and a sweep keeps only its own candidates, so a scan-only sweep would
-    # drop Harvest's prices for items held only in Draupnir. (?include_holdings is
-    # still accepted from older pages; it no longer changes anything.)
-    scan = ctx.huginn_service.get_cache()
-    names = set((scan or {}).get('by_hash') or {})
-    names |= {lot['item_name'] for lot in ctx.draupnir_service.open_lots()}
+    names, _, _ = sync_csfloat_item_links()
     if not names:
-        return jsonify({'error': 'No inventory scan yet — run "Get all items" first'}), 409
+        return False, 'No inventory scan yet — run "Get all items" first', 409
 
     with _csfloat_job_lock:
         if _csfloat_job['running']:
-            return jsonify({'error': 'A CSFloat buy-order sweep is already running'}), 409
+            return False, 'A CSFloat buy-order sweep is already running', 409
         _csfloat_job.update({
             'running': True, 'done': 0, 'total': 0, 'found': 0,
             'current': None, 'started_at': time.time(), 'finished_at': None, 'error': None,
@@ -182,7 +234,7 @@ def huginn_csfloat_buy_orders_fetch():
 
     def _run():
         try:
-            ctx.huginn_service.fetch_csfloat_buy_orders(token=token, names=sorted(names), progress=_progress,
+            ctx.huginn_service.fetch_csfloat_buy_orders(token=token, names=names, progress=_progress,
                                                         wait_cb=_on_wait)
         except Exception as e:
             with _csfloat_job_lock:
@@ -193,7 +245,7 @@ def huginn_csfloat_buy_orders_fetch():
                 _csfloat_job['finished_at'] = time.time()
 
     threading.Thread(target=_run, daemon=True).start()
-    return jsonify({'status': 'started'}), 202
+    return True, 'started', 202
 
 @bp.route('/api/huginn/tradeon/steam', methods=['GET'])
 def huginn_tradeon_steam():
@@ -612,11 +664,12 @@ def huginn_tradeon_csfloat_autobuy():
 @bp.route('/api/huginn/tradeon/lisskins-steam', methods=['GET'])
 def huginn_tradeon_lisskins_steam():
     """Fetch LisSkins buy + Steam sell prices and combine into arbitrage data."""
-    token = ctx.settings_manager.get_settings().get('tradeon_token', '')
+    settings = ctx.settings_manager.get_settings()
+    token = settings.get('tradeon_token', '')
     if not token:
         return jsonify({'error': 'tradeon_token not set in settings'}), 400
     try:
-        data = ctx.huginn_service.fetch_lisskins_steam(token)
+        data = ctx.huginn_service.fetch_lisskins_steam(token, settings)
         return jsonify(data)
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -624,11 +677,12 @@ def huginn_tradeon_lisskins_steam():
 @bp.route('/api/huginn/tradeon/lisskins-buff', methods=['GET'])
 def huginn_tradeon_lisskins_buff():
     """Fetch LisSkins buy + Buff163 sell prices and combine into arbitrage data."""
-    token = ctx.settings_manager.get_settings().get('tradeon_token', '')
+    settings = ctx.settings_manager.get_settings()
+    token = settings.get('tradeon_token', '')
     if not token:
         return jsonify({'error': 'tradeon_token not set in settings'}), 400
     try:
-        data = ctx.huginn_service.fetch_lisskins_buff(token)
+        data = ctx.huginn_service.fetch_lisskins_buff(token, settings)
         return jsonify(data)
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -636,11 +690,12 @@ def huginn_tradeon_lisskins_buff():
 @bp.route('/api/huginn/tradeon/lisskins-csfloat', methods=['GET'])
 def huginn_tradeon_lisskins_csfloat():
     """Fetch LisSkins buy + CSFloat sell (min listing) prices and combine into arbitrage data."""
-    token = ctx.settings_manager.get_settings().get('tradeon_token', '')
+    settings = ctx.settings_manager.get_settings()
+    token = settings.get('tradeon_token', '')
     if not token:
         return jsonify({'error': 'tradeon_token not set in settings'}), 400
     try:
-        data = ctx.huginn_service.fetch_lisskins_csfloat(token)
+        data = ctx.huginn_service.fetch_lisskins_csfloat(token, settings)
         return jsonify(data)
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -661,11 +716,12 @@ def huginn_tradeon_lisskins_csfloat_autobuy():
 @bp.route('/api/huginn/tradeon/buff-steam', methods=['GET'])
 def huginn_tradeon_buff_steam():
     """Fetch Buff163 buy + Steam sell prices and combine into arbitrage data."""
-    token = ctx.settings_manager.get_settings().get('tradeon_token', '')
+    settings = ctx.settings_manager.get_settings()
+    token = settings.get('tradeon_token', '')
     if not token:
         return jsonify({'error': 'tradeon_token not set in settings'}), 400
     try:
-        data = ctx.huginn_service.fetch_buff_steam(token)
+        data = ctx.huginn_service.fetch_buff_steam(token, settings)
         return jsonify(data)
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -673,11 +729,12 @@ def huginn_tradeon_buff_steam():
 @bp.route('/api/huginn/tradeon/buff-csfloat', methods=['GET'])
 def huginn_tradeon_buff_csfloat():
     """Fetch Buff163 buy + CSFloat sell (min listing) prices and combine into arbitrage data."""
-    token = ctx.settings_manager.get_settings().get('tradeon_token', '')
+    settings = ctx.settings_manager.get_settings()
+    token = settings.get('tradeon_token', '')
     if not token:
         return jsonify({'error': 'tradeon_token not set in settings'}), 400
     try:
-        data = ctx.huginn_service.fetch_buff_csfloat(token)
+        data = ctx.huginn_service.fetch_buff_csfloat(token, settings)
         return jsonify(data)
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -698,11 +755,12 @@ def huginn_tradeon_buff_csfloat_autobuy():
 @bp.route('/api/huginn/tradeon/csfloat-steam', methods=['GET'])
 def huginn_tradeon_csfloat_steam():
     """Fetch CSFloat min buy + Steam autobuy sell prices and combine into arbitrage data."""
-    token = ctx.settings_manager.get_settings().get('tradeon_token', '')
+    settings = ctx.settings_manager.get_settings()
+    token = settings.get('tradeon_token', '')
     if not token:
         return jsonify({'error': 'tradeon_token not set in settings'}), 400
     try:
-        data = ctx.huginn_service.fetch_csfloat_steam(token)
+        data = ctx.huginn_service.fetch_csfloat_steam(token, settings)
         return jsonify(data)
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -710,11 +768,12 @@ def huginn_tradeon_csfloat_steam():
 @bp.route('/api/huginn/tradeon/csfloat-buff', methods=['GET'])
 def huginn_tradeon_csfloat_buff():
     """Fetch CSFloat min buy + Buff163 autobuy sell prices and combine into arbitrage data."""
-    token = ctx.settings_manager.get_settings().get('tradeon_token', '')
+    settings = ctx.settings_manager.get_settings()
+    token = settings.get('tradeon_token', '')
     if not token:
         return jsonify({'error': 'tradeon_token not set in settings'}), 400
     try:
-        data = ctx.huginn_service.fetch_csfloat_buff(token)
+        data = ctx.huginn_service.fetch_csfloat_buff(token, settings)
         return jsonify(data)
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -722,11 +781,12 @@ def huginn_tradeon_csfloat_buff():
 @bp.route('/api/huginn/tradeon/lisskins-dmarket', methods=['GET'])
 def huginn_tradeon_lisskins_dmarket():
     """Fetch LisSkins min buy + DMarket autobuy sell prices and combine into arbitrage data."""
-    token = ctx.settings_manager.get_settings().get('tradeon_token', '')
+    settings = ctx.settings_manager.get_settings()
+    token = settings.get('tradeon_token', '')
     if not token:
         return jsonify({'error': 'tradeon_token not set in settings'}), 400
     try:
-        data = ctx.huginn_service.fetch_lisskins_dmarket(token)
+        data = ctx.huginn_service.fetch_lisskins_dmarket(token, settings)
         return jsonify(data)
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -734,11 +794,12 @@ def huginn_tradeon_lisskins_dmarket():
 @bp.route('/api/huginn/tradeon/buff-dmarket', methods=['GET'])
 def huginn_tradeon_buff_dmarket():
     """Fetch Buff163 min buy + DMarket autobuy sell prices and combine into arbitrage data."""
-    token = ctx.settings_manager.get_settings().get('tradeon_token', '')
+    settings = ctx.settings_manager.get_settings()
+    token = settings.get('tradeon_token', '')
     if not token:
         return jsonify({'error': 'tradeon_token not set in settings'}), 400
     try:
-        data = ctx.huginn_service.fetch_buff_dmarket(token)
+        data = ctx.huginn_service.fetch_buff_dmarket(token, settings)
         return jsonify(data)
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -746,11 +807,12 @@ def huginn_tradeon_buff_dmarket():
 @bp.route('/api/huginn/tradeon/csfloat-dmarket', methods=['GET'])
 def huginn_tradeon_csfloat_dmarket():
     """Fetch CSFloat min buy + DMarket autobuy sell prices and combine into arbitrage data."""
-    token = ctx.settings_manager.get_settings().get('tradeon_token', '')
+    settings = ctx.settings_manager.get_settings()
+    token = settings.get('tradeon_token', '')
     if not token:
         return jsonify({'error': 'tradeon_token not set in settings'}), 400
     try:
-        data = ctx.huginn_service.fetch_csfloat_dmarket(token)
+        data = ctx.huginn_service.fetch_csfloat_dmarket(token, settings)
         return jsonify(data)
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -758,11 +820,12 @@ def huginn_tradeon_csfloat_dmarket():
 @bp.route('/api/huginn/tradeon/dmarket-steam', methods=['GET'])
 def huginn_tradeon_dmarket_steam():
     """Fetch DMarket min buy + Steam autobuy sell prices and combine into arbitrage data."""
-    token = ctx.settings_manager.get_settings().get('tradeon_token', '')
+    settings = ctx.settings_manager.get_settings()
+    token = settings.get('tradeon_token', '')
     if not token:
         return jsonify({'error': 'tradeon_token not set in settings'}), 400
     try:
-        data = ctx.huginn_service.fetch_dmarket_steam(token)
+        data = ctx.huginn_service.fetch_dmarket_steam(token, settings)
         return jsonify(data)
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -770,11 +833,12 @@ def huginn_tradeon_dmarket_steam():
 @bp.route('/api/huginn/tradeon/dmarket-buff', methods=['GET'])
 def huginn_tradeon_dmarket_buff():
     """Fetch DMarket min buy + Buff163 autobuy sell prices and combine into arbitrage data."""
-    token = ctx.settings_manager.get_settings().get('tradeon_token', '')
+    settings = ctx.settings_manager.get_settings()
+    token = settings.get('tradeon_token', '')
     if not token:
         return jsonify({'error': 'tradeon_token not set in settings'}), 400
     try:
-        data = ctx.huginn_service.fetch_dmarket_buff(token)
+        data = ctx.huginn_service.fetch_dmarket_buff(token, settings)
         return jsonify(data)
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -782,11 +846,12 @@ def huginn_tradeon_dmarket_buff():
 @bp.route('/api/huginn/tradeon/dmarket-csfloat', methods=['GET'])
 def huginn_tradeon_dmarket_csfloat():
     """Fetch DMarket min buy + CSFloat min sell prices and combine into arbitrage data."""
-    token = ctx.settings_manager.get_settings().get('tradeon_token', '')
+    settings = ctx.settings_manager.get_settings()
+    token = settings.get('tradeon_token', '')
     if not token:
         return jsonify({'error': 'tradeon_token not set in settings'}), 400
     try:
-        data = ctx.huginn_service.fetch_dmarket_csfloat(token)
+        data = ctx.huginn_service.fetch_dmarket_csfloat(token, settings)
         return jsonify(data)
     except Exception as e:
         return jsonify({'error': str(e)}), 500

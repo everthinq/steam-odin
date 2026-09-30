@@ -16,6 +16,7 @@ from cross_arbitrage_service import CrossArbitrageService
 from harvest_service import HarvestService
 from card_deals_service import CardDealsService
 from asf_service import AsfService
+from morning_routine import MorningRoutine
 from telegram_caller import TelegramCaller
 from logging_setup import setup_logging
 import request_guard
@@ -93,6 +94,37 @@ ctx.card_deals_service = card_deals_service
 ctx.asf_service = asf_service
 register_blueprints(app)
 
+# Morning routine: "Get all items" once a day at 08:00 (or the first minute the Mac
+# is awake after it), then the CSFloat buy-order sweep. It uses
+# the same guarded scan and sweep as the buttons (routes/huginn.py).
+import routes.huginn as huginn_routes  # noqa: E402 (needs the blueprints registered)
+
+
+def _morning_scan():
+    try:
+        huginn_routes.run_scan_exclusive()
+        return True, 'ok'
+    except Exception as e:   # includes ScanAlreadyRunning: retried later
+        return False, str(e)
+
+
+def _last_scan_at():
+    from datetime import datetime
+    stamp = (huginn_service.get_cache() or {}).get('scan_timestamp')
+    try:
+        return datetime.fromisoformat(stamp) if stamp else None
+    except ValueError:
+        return None
+
+
+morning_routine = MorningRoutine(
+    run_scan=_morning_scan,
+    start_sweep=lambda: huginn_routes.start_csfloat_sweep()[:2],
+    last_scan_at=_last_scan_at,
+    sweep_state=huginn_routes.csfloat_sweep_state,
+)
+ctx.morning_routine = morning_routine
+
 
 def _should_start_background_scheduler():
     """
@@ -122,6 +154,8 @@ if _should_start_background_scheduler():
     card_deals_service.start_background()
     # ASF: provision bots, assist logins, resume bots after Ratatoskr sessions.
     asf_service.start_background()
+    # Daily "Get all items" + CSFloat sweep (catches up after the Mac slept).
+    morning_routine.start_background()
 
 # Ensure all errors return JSON, not HTML
 @app.errorhandler(404)

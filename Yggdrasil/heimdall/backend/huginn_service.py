@@ -1,4 +1,5 @@
 import copy
+import email.utils
 import json
 import logging
 import os
@@ -23,6 +24,14 @@ CACHE_PATH = os.path.join(os.path.dirname(__file__), 'cache', 'huginn_scan.json'
 # them is a slow, throttled sweep (~2 API calls per item), so it runs as a background
 # job and the result is reused by every "=> CSFloat (autobuy)" profile until refreshed.
 CSFLOAT_BUYORDERS_CACHE = os.path.join(os.path.dirname(__file__), 'cache', 'huginn_csfloat_buyorders.json')
+# The items you hold, keyed by market_hash_name (the name every market shares), each
+# with the CSFloat listing whose buy orders the sweep reads:
+# {name: {listing_id, link, checked_at}}. Rebuilt from every inventory scan (plus
+# Draupnir holdings): items you no longer hold are dropped, new ones added. A listing
+# is someone's copy for sale, so it goes stale when sold; the sweep then finds a new
+# one and writes it back.
+CSFLOAT_ITEM_LINKS_FILE = os.path.join(os.path.dirname(__file__), 'cache', 'csfloat_item_links.json')
+_CSFLOAT_ITEM_URL = 'https://csfloat.com/item/{}'
 
 # Bundled catalog of tradeable containers (cases + sticker/souvenir/autograph capsules)
 # used by the "Case Arbitrage" tracker. Regenerated from the community CSGO-API.
@@ -57,9 +66,18 @@ CSFLOAT_KEYS_FILE = os.path.join(os.path.dirname(__file__), 'csfloat_keys.json')
 # Per-key cooldown state (strikes + until-when benched). Lives in cache/ (gitignored)
 # so it survives restarts and is separate from the user-owned keys file.
 CSFLOAT_KEY_STATE_FILE = os.path.join(os.path.dirname(__file__), 'cache', 'csfloat_key_state.json')
-# A rate-limited key is benched for this base, growing by the same step each repeat strike
-# (strike 1 → 10 min, strike 2 → 20 min, strike 3 → 30 min, …).
-_CSFLOAT_COOLDOWN_STEP_SEC = 10 * 60
+# A rate-limited key is benched until CSFloat says it may retry (Retry-After /
+# X-RateLimit-Reset on the 429), or else for this long. Measured 2026-09-28..30: the
+# quota (about 400 requests an hour across the keys) comes back about an hour after it
+# runs out; the old 10 → 20 → 30 minute steps only produced refused retries.
+_CSFLOAT_LIMIT_WAIT_SECONDS = 60 * 60
+_CSFLOAT_LIMIT_WAIT_MINIMUM_SECONDS = 60
+_CSFLOAT_LIMIT_WAIT_MAXIMUM_SECONDS = 3 * 60 * 60
+# Items whose Buff163 listing is below this (USD) are re-swept only when their last
+# CSFloat price is older than _CSFLOAT_CHEAP_REFRESH_SECONDS: a buy order on a few-cent
+# item is not worth an API request every sweep.
+_CSFLOAT_CHEAP_ITEM_USD = 0.25
+_CSFLOAT_CHEAP_REFRESH_SECONDS = 7 * 24 * 60 * 60
 # When EVERY key is cooling, the sweep waits out the soonest cooldown and auto-resumes.
 # This caps how many such waits it will sit through before pausing for a manual resume.
 _CSFLOAT_MAX_AUTO_WAITS = 12
@@ -80,7 +98,38 @@ _CSFLOAT_ABORT_AFTER_UNREACHABLE = 8
 
 class _CSFloatRateLimited(Exception):
     """Raised when CSFloat rate-limits a KEY (HTTP 429). The sweep benches the key
-    and retries the item on another key; if all keys are cooling it pauses (resumable)."""
+    and retries the item on another key; if all keys are cooling it pauses (resumable).
+    `retry_after` is the seconds CSFloat asked us to wait, when it said so."""
+
+    def __init__(self, message='', retry_after=None):
+        super().__init__(message)
+        self.retry_after = retry_after
+
+
+def _retry_after_seconds(headers):
+    """Seconds to wait from a 429's Retry-After (seconds or an HTTP date) or
+    X-RateLimit-Reset (an epoch time or seconds), or None when neither is usable."""
+    if not headers:
+        return None
+    value = headers.get('Retry-After')
+    if value:
+        try:
+            return max(0.0, float(value))
+        except ValueError:
+            try:
+                when = email.utils.parsedate_to_datetime(value)
+                return max(0.0, (when - datetime.now(timezone.utc)).total_seconds())
+            except (TypeError, ValueError):
+                pass
+    value = headers.get('X-RateLimit-Reset') or headers.get('x-ratelimit-reset')
+    if value:
+        try:
+            number = float(value)
+        except ValueError:
+            return None
+        # A large number is an epoch timestamp, a small one a number of seconds.
+        return max(0.0, number - time.time()) if number > 1e9 else max(0.0, number)
+    return None
 
 
 class _CSFloatUnavailable(Exception):
@@ -226,14 +275,19 @@ class CSFloatKeyManager:
             return 0
         return max(0, s.get('cooldown_until', 0) - time.time())
 
-    def mark_limited(self, key):
+    def mark_limited(self, key, retry_after=None):
+        """Bench a rate-limited key until CSFloat's own retry time, or for
+        _CSFLOAT_LIMIT_WAIT_SECONDS when it gave none (clamped to a sane range)."""
+        wait = retry_after if retry_after is not None else _CSFLOAT_LIMIT_WAIT_SECONDS
+        wait = min(_CSFLOAT_LIMIT_WAIT_MAXIMUM_SECONDS, max(_CSFLOAT_LIMIT_WAIT_MINIMUM_SECONDS, wait))
         with self._lock:
             s = self._state.setdefault(key, {'strikes': 0, 'cooldown_until': 0})
             s['strikes'] += 1
-            s['cooldown_until'] = time.time() + _CSFLOAT_COOLDOWN_STEP_SEC * s['strikes']
+            s['cooldown_until'] = time.time() + wait
             self._save()
-            logger.info(f'[HUGINN] CSFloat key …{key[-6:]} benched {int(_CSFLOAT_COOLDOWN_STEP_SEC * s["strikes"] / 60)}m '
-                  f'(strike {s["strikes"]})')
+            source = 'as CSFloat asked' if retry_after is not None else 'default'
+            logger.info(f'[HUGINN] CSFloat key …{key[-6:]} benched {int(wait // 60)}m ({source}, '
+                        f'strike {s["strikes"]})')
 
     def mark_ok(self, key):
         with self._lock:
@@ -457,6 +511,7 @@ class HuginnService:
         self._price_state = {}   # market -> 'refreshing' | 'ok' | 'error'
         self._price_failed_at = {}   # market -> epoch of the last failed background refresh
         self._price_lock = threading.Lock()
+        self._csfloat_links_lock = threading.Lock()   # guards csfloat_item_links.json writes
         self._market_pull_cache = {}   # (market_id, price_type) -> (fetched_at, items) for generated pairs
         self._market_pull_lock = threading.Lock()
         # Parsed-file caches keyed by (modification time, size): the 16 MB inventory
@@ -489,7 +544,9 @@ class HuginnService:
         self._containers_all = None
         self._container_names_set = None
 
-    def _ensure_session(self, steam_id, account_data):
+    def _ensure_session(self, steam_id, account_data, opened=None):
+        """True when the account has a Ratatoskr session. A session this call had to
+        open is added to `opened` (so a scan can log it out again afterwards)."""
         account_name = account_data.get('account_name')
         if self.rat.get_status(steam_id).get('status') == 'connected':
             # A live session is itself proof the login works — stamp it green so a
@@ -507,6 +564,8 @@ class HuginnService:
         )
         ok = 'error' not in result
         self._record_login(account_name, ok, result.get('error'))
+        if ok and opened is not None and not result.get('reused'):
+            opened.append(steam_id)
         return ok
 
     @staticmethod
@@ -539,19 +598,43 @@ class HuginnService:
             })
 
     def scan(self):
+        """Read every account's inventory and Storage Units into the scan cache.
+        Sessions the scan had to open are logged out at the end: a Ratatoskr
+        session "plays" Counter-Strike 2, which pauses ASF card farming on that
+        account; sessions that were already open are left as they were."""
+        opened = []
+        try:
+            return self._scan_accounts(opened)
+        finally:
+            for steam_id in opened:
+                try:
+                    moves = self.rat.get_move_status(steam_id) or {}
+                    if moves.get('running') or moves.get('pending'):
+                        # Something started moving items on this session meanwhile.
+                        logger.info(f'[HUGINN] {steam_id} left logged in after the scan: items are moving')
+                        continue
+                    result = self.rat.disconnect(steam_id) or {}
+                    if result.get('error'):
+                        logger.warning(f'[HUGINN] Could not log {steam_id} out after the scan: {result["error"]}')
+                except Exception as e:
+                    logger.warning(f'[HUGINN] Could not log {steam_id} out after the scan: {e}')
+
+    def _scan_accounts(self, opened):
         accounts = self.steam.get_all_accounts_data()
         by_hash = {}
+        scanned = 0
 
         for account in accounts:
             steam_id = str(account['steamid'])
             account_name = account.get('account_name', steam_id)
             account_data = self.steam.get_account(steam_id) or {}
 
-            if not self._ensure_session(steam_id, account_data):
+            if not self._ensure_session(steam_id, account_data, opened):
                 logger.warning(f'[HUGINN] Skipping {account_name} — no session')
                 continue
 
             logger.info(f'[HUGINN] Scanning {account_name}…')
+            scanned += 1
 
             inv = self.rat.get_inventory(steam_id)
             inv_items = [i for i in (inv.get('items') or []) if i.get('def_index') != 1201]
@@ -567,10 +650,17 @@ class HuginnService:
                 if i < len(caskets) - 1:
                     time.sleep(0.35)
 
+        if accounts and not scanned:
+            # Every login failed (no network after waking, Ratatoskr down, …): keep the
+            # last good scan instead of replacing it with an empty inventory.
+            raise RuntimeError(f'No account could be scanned ({len(accounts)} skipped); '
+                               f'the previous scan is kept')
         result = {
             'scan_timestamp': datetime.now(timezone.utc).isoformat(),
             'total_items': sum(v['count'] for v in by_hash.values()),
             'by_hash': by_hash,
+            'accounts_scanned': scanned,
+            'accounts_skipped': len(accounts) - scanned,
         }
 
         atomic_write_json(CACHE_PATH, result, indent=None)
@@ -1286,68 +1376,68 @@ class HuginnService:
         m = _MARKET_BY_ID.get(market_id)
         return m['display'] if m else market_id
 
-    def fetch_lisskins_steam(self, token):
+    def fetch_lisskins_steam(self, token, settings=None):
         return self._combine_arbitrage(token, _TRADEON_LISSKINS_URL, _TRADEON_LISSKINS_BODY,
-                                       _TRADEON_STEAM_URL, STEAM_SALES_FEE)
+                                       _TRADEON_STEAM_URL, self.market_fee('Steam', settings))
 
-    def fetch_lisskins_buff(self, token):
+    def fetch_lisskins_buff(self, token, settings=None):
         return self._combine_arbitrage(token, _TRADEON_LISSKINS_URL, _TRADEON_LISSKINS_BODY,
-                                       _TRADEON_BUFF_URL, BUFF_SALES_FEE)
+                                       _TRADEON_BUFF_URL, self.market_fee('Buff', settings))
 
-    def fetch_lisskins_csfloat(self, token):
+    def fetch_lisskins_csfloat(self, token, settings=None):
         return self._combine_arbitrage(token, _TRADEON_LISSKINS_URL, _TRADEON_LISSKINS_BODY,
-                                       _TRADEON_CSFLOAT_URL, CSFLOAT_SALES_FEE,
+                                       _TRADEON_CSFLOAT_URL, self.market_fee('CsFloat', settings),
                                        sell_body=_TRADEON_CSFLOAT_BODY)
 
-    def fetch_buff_steam(self, token):
+    def fetch_buff_steam(self, token, settings=None):
         return self._combine_arbitrage(token, _TRADEON_BUFF_URL, _TRADEON_BUFF_BUY_BODY,
-                                       _TRADEON_STEAM_URL, STEAM_SALES_FEE)
+                                       _TRADEON_STEAM_URL, self.market_fee('Steam', settings))
 
-    def fetch_buff_csfloat(self, token):
+    def fetch_buff_csfloat(self, token, settings=None):
         return self._combine_arbitrage(token, _TRADEON_BUFF_URL, _TRADEON_BUFF_BUY_BODY,
-                                       _TRADEON_CSFLOAT_URL, CSFLOAT_SALES_FEE,
+                                       _TRADEON_CSFLOAT_URL, self.market_fee('CsFloat', settings),
                                        sell_body=_TRADEON_CSFLOAT_BODY)
 
-    def fetch_csfloat_steam(self, token):
+    def fetch_csfloat_steam(self, token, settings=None):
         # Buy at CSFloat's min listing, sell into Steam's autobuy (13% Steam fee).
         return self._combine_arbitrage(token, _TRADEON_CSFLOAT_URL, _TRADEON_CSFLOAT_BODY,
-                                       _TRADEON_STEAM_URL, STEAM_SALES_FEE)
+                                       _TRADEON_STEAM_URL, self.market_fee('Steam', settings))
 
-    def fetch_csfloat_buff(self, token):
+    def fetch_csfloat_buff(self, token, settings=None):
         # Buy at CSFloat's min listing, sell into Buff163's autobuy (1.5% Buff fee).
         return self._combine_arbitrage(token, _TRADEON_CSFLOAT_URL, _TRADEON_CSFLOAT_BODY,
-                                       _TRADEON_BUFF_URL, BUFF_SALES_FEE)
+                                       _TRADEON_BUFF_URL, self.market_fee('Buff', settings))
 
-    def fetch_lisskins_dmarket(self, token):
+    def fetch_lisskins_dmarket(self, token, settings=None):
         # Buy at LisSkins min, sell into DMarket autobuy (no DMarket fee).
         return self._combine_arbitrage(token, _TRADEON_LISSKINS_URL, _TRADEON_LISSKINS_BODY,
-                                       _TRADEON_DMARKET_URL, DMARKET_SALES_FEE)
+                                       _TRADEON_DMARKET_URL, self.market_fee('Dmarket', settings))
 
-    def fetch_buff_dmarket(self, token):
+    def fetch_buff_dmarket(self, token, settings=None):
         # Buy at Buff163 min, sell into DMarket autobuy (no DMarket fee).
         return self._combine_arbitrage(token, _TRADEON_BUFF_URL, _TRADEON_BUFF_BUY_BODY,
-                                       _TRADEON_DMARKET_URL, DMARKET_SALES_FEE)
+                                       _TRADEON_DMARKET_URL, self.market_fee('Dmarket', settings))
 
-    def fetch_csfloat_dmarket(self, token):
+    def fetch_csfloat_dmarket(self, token, settings=None):
         # Buy at CSFloat's min listing, sell into DMarket autobuy (no DMarket fee).
         return self._combine_arbitrage(token, _TRADEON_CSFLOAT_URL, _TRADEON_CSFLOAT_BODY,
-                                       _TRADEON_DMARKET_URL, DMARKET_SALES_FEE)
+                                       _TRADEON_DMARKET_URL, self.market_fee('Dmarket', settings))
 
-    def fetch_dmarket_steam(self, token):
+    def fetch_dmarket_steam(self, token, settings=None):
         # Buy at DMarket's min listing, sell into Steam's autobuy (13% Steam fee).
         return self._combine_arbitrage(token, _TRADEON_DMARKET_URL, _TRADEON_DMARKET_BUY_BODY,
-                                       _TRADEON_STEAM_URL, STEAM_SALES_FEE)
+                                       _TRADEON_STEAM_URL, self.market_fee('Steam', settings))
 
-    def fetch_dmarket_buff(self, token):
+    def fetch_dmarket_buff(self, token, settings=None):
         # Buy at DMarket's min listing, sell into Buff163's autobuy (1.5% Buff fee).
         return self._combine_arbitrage(token, _TRADEON_DMARKET_URL, _TRADEON_DMARKET_BUY_BODY,
-                                       _TRADEON_BUFF_URL, BUFF_SALES_FEE)
+                                       _TRADEON_BUFF_URL, self.market_fee('Buff', settings))
 
-    def fetch_dmarket_csfloat(self, token):
+    def fetch_dmarket_csfloat(self, token, settings=None):
         # Buy at DMarket's min listing, sell at CSFloat's min listing (CSFloat has no
         # autobuy, so the sell side is its lowest listing — 2% CSFloat fee).
         return self._combine_arbitrage(token, _TRADEON_DMARKET_URL, _TRADEON_DMARKET_BUY_BODY,
-                                       _TRADEON_CSFLOAT_URL, CSFLOAT_SALES_FEE,
+                                       _TRADEON_CSFLOAT_URL, self.market_fee('CsFloat', settings),
                                        sell_body=_TRADEON_CSFLOAT_BODY)
 
     # ---- CSFloat buy orders (autobuy) --------------------------------------
@@ -1382,7 +1472,8 @@ class HuginnService:
                 raise _CSFloatUnavailable('non-JSON page (bot challenge)')
         except urllib.error.HTTPError as e:
             if e.code == 429:
-                raise _CSFloatRateLimited('CSFloat rate limit (HTTP 429)')
+                raise _CSFloatRateLimited('CSFloat rate limit (HTTP 429)',
+                                          retry_after=_retry_after_seconds(e.headers))
             if e.code == 403:
                 raise _CSFloatUnavailable('CSFloat forbidden (HTTP 403)')
             raise
@@ -1421,7 +1512,8 @@ class HuginnService:
                     # 429: keep it "unavailable" so the key is not benched for it and
                     # the sweep counts the item as unreachable (retried on Resume).
                     raise
-                raise _CSFloatRateLimited('CSFloat throttled (direct, no proxy)')
+                raise _CSFloatRateLimited('CSFloat throttled (direct, no proxy)',
+                                          retry_after=getattr(e, 'retry_after', None))
 
         # --- proxy fallback: rotate exit IPs ---
         last = None
@@ -1455,6 +1547,114 @@ class HuginnService:
         if not price:
             return None
         return {'price': price / 100.0, 'qty': top.get('qty')}  # CSFloat prices are cents
+
+    def load_csfloat_item_links(self):
+        """{market_hash_name: {listing_id, link, checked_at}} for the items you hold."""
+        try:
+            with open(CSFLOAT_ITEM_LINKS_FILE) as f:
+                links = json.load(f)
+            return links if isinstance(links, dict) else {}
+        except FileNotFoundError:
+            return {}
+        except (OSError, ValueError) as e:
+            logger.warning(f'[HUGINN] CSFloat item links unreadable, starting empty: {e}')
+            return {}
+
+    @staticmethod
+    def _csfloat_link_entry(listing_id, checked_at):
+        return {'listing_id': listing_id,
+                'link': _CSFLOAT_ITEM_URL.format(listing_id) if listing_id else None,
+                'checked_at': checked_at}
+
+    def _update_csfloat_item_links(self, updates):
+        """Write swept items' new listing / time into the dictionary as it is NOW on
+        disk (a scan may have rebuilt it during a long sweep); items no longer in
+        it (sold meanwhile) are not brought back."""
+        with self._csfloat_links_lock:
+            links = self.load_csfloat_item_links()
+            for name, entry in updates.items():
+                if name in links:
+                    links[name] = entry
+            atomic_write_json(CSFLOAT_ITEM_LINKS_FILE, links, indent=None)
+
+    def sync_csfloat_item_links(self, extra_names=()):
+        """Rebuild the dictionary from the latest inventory scan plus `extra_names`
+        (Draupnir holdings): keep what is still held, add new items (no link yet),
+        drop items you no longer hold. Returns (sorted names, added, removed)."""
+        scanned = set(((self.get_cache() or {}).get('by_hash') or {}))
+        names = scanned | {name for name in extra_names if name}
+        with self._csfloat_links_lock:
+            links = self.load_csfloat_item_links()
+            if not scanned:
+                # No usable scan (missing / unreadable): nothing is known to be sold,
+                # so keep every entry and only add the extra names.
+                names |= set(links)
+            updated = {name: links.get(name) or self._csfloat_link_entry(None, None) for name in names}
+            added = len(names - set(links))
+            removed = len(set(links) - names)
+            if updated != links:
+                atomic_write_json(CSFLOAT_ITEM_LINKS_FILE, updated, indent=None)
+        if added or removed:
+            logger.info(f'[HUGINN] CSFloat item links: {len(updated)} items held '
+                        f'({added} new, {removed} no longer held)')
+        return sorted(names), added, removed
+
+    def _csfloat_item_order(self, api_key, name, remembered_listing_id, proxy=None):
+        """(highest buy order or None, listing id) for one item.
+
+        One request while the remembered listing is still up and has buy orders: its
+        buy-order book is read directly. Otherwise (sold, gone, or no orders on it) the
+        cheapest listing is looked up again and read, as before (two requests)."""
+        if remembered_listing_id:
+            try:
+                order = self._csfloat_top_buy_order(api_key, remembered_listing_id, proxy)
+                if order:
+                    return order, remembered_listing_id
+            except urllib.error.HTTPError as e:
+                if e.code not in (400, 404, 410):
+                    raise                     # anything but "that listing is gone"
+            time.sleep(_CSFLOAT_REQUEST_DELAY)  # pace every request, not just every item
+        listing_id = self._csfloat_find_listing_id(api_key, name, proxy)
+        if not listing_id:
+            return None, None
+        if listing_id == remembered_listing_id:
+            return None, listing_id           # same listing, already read: no buy orders
+        time.sleep(_CSFLOAT_REQUEST_DELAY)
+        return self._csfloat_top_buy_order(api_key, listing_id, proxy), listing_id
+
+    def _csfloat_sweep_plan(self, todo, token, swept_at):
+        """(ordered names to sweep, cheap names to skip this time).
+
+        Most valuable holdings first (Buff163 listing × units held), then the ones
+        checked longest ago. Items under _CSFLOAT_CHEAP_ITEM_USD are skipped while their
+        last sweep is younger than _CSFLOAT_CHEAP_REFRESH_SECONDS (their price is kept).
+        Without prices (no token / pull failed) the order is simply oldest-swept first."""
+        prices = {}
+        if token:
+            try:
+                prices = self.price_map(token, 'buff') or {}
+            except Exception as e:
+                logger.warning(f'[HUGINN] CSFloat sweep: no Buff163 prices for ordering ({e})')
+        held = {name: entry.get('count') or len(entry.get('instances') or []) or 1
+                for name, entry in ((self.get_cache() or {}).get('by_hash') or {}).items()}
+        now = datetime.now(timezone.utc)
+
+        def age_seconds(name):
+            try:
+                return (now - datetime.fromisoformat(swept_at[name])).total_seconds()
+            except (KeyError, TypeError, ValueError):
+                return float('inf')           # never swept: oldest of all
+
+        sweep, skip = [], []
+        for name in todo:
+            price = prices.get(name)
+            if (price is not None and price < _CSFLOAT_CHEAP_ITEM_USD
+                    and age_seconds(name) < _CSFLOAT_CHEAP_REFRESH_SECONDS):
+                skip.append(name)
+            else:
+                sweep.append(name)
+        sweep.sort(key=lambda name: (-(prices.get(name) or 0) * held.get(name, 1), -age_seconds(name), name))
+        return sweep, skip
 
     def _resumable_state(self, names):
         """Return (processed_set, by_name, started_at) — resuming a recent, unfinished
@@ -1547,6 +1747,24 @@ class HuginnService:
         elif by_name:
             logger.info(f'[HUGINN] CSFloat sweep starting over {total} items, keeping '
                         f'{len(by_name)} previous prices until each is re-swept')
+        links = self.load_csfloat_item_links()
+        listing_ids = {name: entry.get('listing_id') for name, entry in links.items() if entry.get('listing_id')}
+        swept_at = {name: entry.get('checked_at') for name, entry in links.items() if entry.get('checked_at')}
+        todo, cheap_skipped = self._csfloat_sweep_plan(todo, token, swept_at)
+        processed.update(cheap_skipped)     # kept at their recent price, no request
+        if cheap_skipped:
+            logger.info(f'[HUGINN] CSFloat sweep: {len(cheap_skipped)} items under '
+                        f'${_CSFLOAT_CHEAP_ITEM_USD:.2f} skipped (swept within '
+                        f'{_CSFLOAT_CHEAP_REFRESH_SECONDS // 86400} days); {len(todo)} to sweep, most valuable first')
+
+        def save(complete, reason=None):
+            # Only the swept items get a new listing / time, merged into the dictionary
+            # as it is on disk now.
+            self._update_csfloat_item_links({
+                name: self._csfloat_link_entry(listing_ids.get(name), swept_at.get(name))
+                for name in set(listing_ids) | set(swept_at)})
+            return self._write_buyorders_cache(by_name, processed, total, started_at, complete, reason)
+
         if progress:
             progress(len(processed), total, None, priced_now)
 
@@ -1573,7 +1791,7 @@ class HuginnService:
                         logger.info(f'[HUGINN] CSFloat sweep paused at {len(processed)}/{total}: {reason}')
                         break
                     wait_s = self.csfloat_keys.min_cooldown_remaining(keys) + 5
-                    self._write_buyorders_cache(by_name, processed, total, started_at, complete=False)
+                    save(complete=False)
                     resume_at = time.time() + wait_s
                     if wait_cb:
                         wait_cb(resume_at)
@@ -1584,13 +1802,16 @@ class HuginnService:
                         wait_cb(None)
                     continue        # keys should be free now → retry this item
                 try:
-                    listing_id = self._csfloat_find_listing_id(key, name, proxy)
+                    order, listing_id = self._csfloat_item_order(key, name, listing_ids.get(name), proxy)
                     if listing_id:
-                        order = self._csfloat_top_buy_order(key, listing_id, proxy)
+                        listing_ids[name] = listing_id
+                    else:
+                        listing_ids.pop(name, None)
+                    swept_at[name] = datetime.now(timezone.utc).isoformat()
                     self.csfloat_keys.mark_ok(key)
                     break
-                except _CSFloatRateLimited:
-                    self.csfloat_keys.mark_limited(key)
+                except _CSFloatRateLimited as e:
+                    self.csfloat_keys.mark_limited(key, getattr(e, 'retry_after', None))
                     continue                      # key throttled → bench it, try next key
                 except _CSFloatUnavailable as e:
                     self.csfloat_keys.mark_ok(key) # not the key's fault (proxy IP) — don't bench
@@ -1638,12 +1859,12 @@ class HuginnService:
             if progress:
                 progress(len(processed), total, name, priced_now)
             if since_checkpoint >= _CSFLOAT_CHECKPOINT_EVERY:
-                self._write_buyorders_cache(by_name, processed, total, started_at, complete=False)
+                save(complete=False)
                 since_checkpoint = 0
             time.sleep(_CSFLOAT_REQUEST_DELAY)
 
         complete = reason is None and all(n in processed for n in names)
-        result = self._write_buyorders_cache(by_name, processed, total, started_at, complete, reason)
+        result = save(complete, reason)
         if reason and not priced_now:
             # Total failure (nothing priced). Raise so the UI shows a loud error instead
             # of a silent, misleading "swept fine, no buy orders exist" / "No deals".

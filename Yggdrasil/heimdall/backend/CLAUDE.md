@@ -40,6 +40,7 @@ Dependency shape (who is passed what):
 | `draupnir_service.py` | Portfolio store, average-cost profit/loss, CSV import |
 | `draupnir_backup_service.py` | Point-in-time snapshots of `portfolios.json`, gzip-compressed, GFS retention |
 | `mimir_service.py` | Encrypted credential vault (shares the maFile key) |
+| `morning_routine.py` | Daily "Get all items" at 08:00 local (catches up the first minute the Mac is awake after it), then rebuilds the CSFloat item dictionary (`cache/csfloat_item_links.json`: held item → CSFloat listing) and starts the buy-order sweep unless prices are under 12 hours old; state in `cache/morning_routine.json` |
 | `harvest_service.py` | Harvest (Huginn tab): each purchase lot still held (`DraupnirService.open_lots()`: real price paid, sells use up the oldest buys first) vs the chosen autobuy market's instant offer; per-market index cached 10 min and warmed one market at a time; marks site-balance payouts and cash offers above 1.3× Buff163's listing |
 | `card_deals_service.py` | Andvari (Huginn → Card deals): games whose trading-card drops resell for more than the game costs, per account; background scan with its own Steam throttles, cache in `cache/card_deals.json.gz` |
 | `asf_service.py` | ArchiSteamFarm driver: hardened bot per account, switched on only while it has cards to farm (max 10), password + Steam Guard code only when ASF asks (paced, three tries), pause while Ratatoskr plays, farming status; off until `ASF_IPC_PASSWORD` is set |
