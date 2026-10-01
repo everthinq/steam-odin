@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Link } from 'react-router-dom';
-import { LayoutDashboard, RefreshCw, Layers, Settings, Search, Users, AlertTriangle, Pickaxe, ExternalLink } from 'lucide-react';
+import { LayoutDashboard, RefreshCw, Layers, Settings, Search, Users, AlertTriangle, Pickaxe, ExternalLink, BadgeCheck } from 'lucide-react';
 import DealsTable from '../../components/carddeals/DealsTable';
 import SettingsPanel from '../../components/carddeals/SettingsPanel';
 import FarmingPanel from '../../components/carddeals/FarmingPanel';
@@ -14,6 +14,24 @@ const SCOPES = [
     { id: 'full', label: 'Full price' },
     { id: 'all', label: 'All' },
 ];
+
+// The card-value switch: overrides Settings → Card value for this page only,
+// remembered in this browser. Without a remembered choice it starts from the
+// saved setting (Listing → Listings, otherwise Buy orders).
+const VALUATIONS = [
+    { id: 'instant', label: 'Buy orders', activeClass: 'bg-emerald-500/20 text-emerald-300' },
+    { id: 'listing', label: 'Listings', activeClass: 'bg-sky-500/20 text-sky-300' },
+];
+const VALUATION_STORAGE_KEY = 'andvari.valuation';
+
+const savedValuation = () => {
+    try {
+        const saved = window.localStorage.getItem(VALUATION_STORAGE_KEY);
+        return VALUATIONS.some((v) => v.id === saved) ? saved : null;
+    } catch {
+        return null;
+    }
+};
 
 const money = (v) => `$${Number(v || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
@@ -43,13 +61,14 @@ const ASF_UI_URL = `${window.location.protocol}//${window.location.hostname}:124
 const HOW_IT_WORKS = 'Buying a game with trading cards gives half its card set (rounded up) as drops '
     + 'while you play it. If those cards sell for more than the game costs (after Steam’s ~15% market fee), '
     + 'the game pays for itself — on every account that does not own it yet. Cards are valued at their live '
-    + 'buy orders by default (what they sell for right now; Settings → Card value). Caveats: drops need playtime '
+    + 'buy orders by default (what they sell for right now); the Buy orders / Listings switch above the table changes that. Caveats: drops need playtime '
     + '(idling works); free or giveaway copies drop nothing; accounts that never spent $5 on Steam get no '
     + 'drops; selling many copies of the same card pushes its price down.';
 
 const CardDeals = () => {
     const [scope, setScope] = useState('sale');
     const [showLosing, setShowLosing] = useState(false);
+    const [valuation, setValuation] = useState(savedValuation);
     const [search, setSearch] = useState('');
     const [data, setData] = useState(null);
     const [error, setError] = useState(null);
@@ -88,7 +107,8 @@ const CardDeals = () => {
     const farmingTotals = farming?.totals;
 
     const fetchDeals = useCallback(() => {
-        const params = new URLSearchParams({ scope });
+        if (!valuation) return Promise.resolve();
+        const params = new URLSearchParams({ scope, valuation });
         if (showLosing) params.set('include_unprofitable', '1');
         return fetch(`/api/huginn/card-deals?${params.toString()}`)
             .then((r) => r.json().then((d) => ({ ok: r.ok, d })))
@@ -98,9 +118,22 @@ const CardDeals = () => {
                 setData(d);
             })
             .catch(() => setError('Could not reach the backend.'));
-    }, [scope, showLosing]);
+    }, [scope, showLosing, valuation]);
 
     useEffect(() => { fetchDeals(); }, [fetchDeals]);
+
+    useEffect(() => {
+        if (valuation) return;
+        fetch('/api/huginn/card-deals/config')
+            .then((r) => (r.ok ? r.json() : null))
+            .then((config) => setValuation(config?.card_deals_valuation === 'listing' ? 'listing' : 'instant'))
+            .catch(() => setValuation('instant'));
+    }, [valuation]);
+
+    const chooseValuation = (next) => {
+        setValuation(next);
+        try { window.localStorage.setItem(VALUATION_STORAGE_KEY, next); } catch { /* storage blocked: the switch still works */ }
+    };
 
     // Poll while a scan runs so progress and new rows fill in by themselves.
     useEffect(() => {
@@ -117,6 +150,19 @@ const CardDeals = () => {
             .then(() => fetchDeals())
             .catch(() => setError('Could not start the scan.'));
     };
+
+    const checkBuyOrders = () => {
+        fetch('/api/huginn/card-deals/buy-orders', { method: 'POST' })
+            .then((r) => r.json().then((job) => ({ ok: r.ok, job })))
+            .then(({ ok, job }) => {
+                if (!ok) setError('Could not start the buy-order check.');
+                else if (job.kind !== 'buy_orders') setError('A scan is already running; it checks buy orders too.');
+                else setError(null);
+                fetchDeals();
+            })
+            .catch(() => setError('Could not start the buy-order check.'));
+    };
+    const jobName = (kind) => (kind === 'buy_orders' ? 'buy-order check' : 'scan');
 
     const job = data?.job;
     const running = !!job?.running;
@@ -163,6 +209,12 @@ const CardDeals = () => {
                             <RefreshCw size={14} className={running ? 'animate-spin' : ''} /> Scan sale + full price
                         </button>
                     </InfoTip>
+                    <InfoTip tip="Check card prices only, for games already scanned: no store pages, regional prices or account checks. First the Steam Market check of shortlisted games not checked in the last day (up to 80 on-sale + 40 full-price games), then their buy orders: waiting games first, best listing return first, and a game is dropped as soon as its buy orders cannot pay for it (up to 200 + 120 order-book requests, retries included).">
+                        <button type="button" onClick={checkBuyOrders} disabled={running || !data?.last_scan}
+                            className="flex items-center gap-2 px-3 py-2 rounded-lg border border-emerald-500/40 text-emerald-200 hover:bg-emerald-500/10 text-sm font-medium disabled:opacity-50">
+                            <BadgeCheck size={14} /> Check buy orders
+                        </button>
+                    </InfoTip>
                     {farming?.enabled && (
                         <InfoTip tip="Open ArchiSteamFarm’s own UI (this Mac only). First time it asks for the ASF password: run “make asf-password” in the repository to copy it. Heimdall re-applies the safety settings (no trading, no chat commands, no public listing) within a minute if they are changed there.">
                             <a href={ASF_UI_URL} target="_blank" rel="noopener noreferrer"
@@ -190,7 +242,7 @@ const CardDeals = () => {
                     <div className="shrink-0 rounded-xl border border-amber-500/20 bg-amber-500/5 px-4 py-2.5 text-sm">
                         <div className="flex items-center gap-2 text-amber-200">
                             <RefreshCw size={13} className="animate-spin" />
-                            <span>Scanning: {job.phase}{job.scope ? ` · ${job.scope === 'sale' ? 'on sale' : 'full price'}` : ''}</span>
+                            <span>{job.kind === 'buy_orders' ? 'Checking buy orders' : 'Scanning'}: {job.phase}{job.scope ? ` · ${job.scope === 'sale' ? 'on sale' : 'full price'}` : ''}</span>
                             {job.total ? <span className="text-amber-200/60 tabular-nums">{job.done}/{job.total}</span> : null}
                             {job.message && <span className="text-amber-400/80 text-xs ml-2">{job.message}</span>}
                         </div>
@@ -203,7 +255,7 @@ const CardDeals = () => {
                 )}
                 {!running && job?.error && (
                     <div className="shrink-0 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-2.5 text-sm text-red-300 flex items-center gap-2">
-                        <AlertTriangle size={14} /> Last scan failed: {job.error}
+                        <AlertTriangle size={14} /> Last {jobName(job.kind)} failed: {job.error}
                     </div>
                 )}
                 {!running && !job?.error && job?.message && (
@@ -225,7 +277,7 @@ const CardDeals = () => {
                     )}
                     {summary?.valuation === 'instant' && (
                         <Stat label="Awaiting buy orders" value={summary.awaiting_buy_orders.toLocaleString()} tone="text-sky-300"
-                            hint="Games that look profitable at listing prices but whose buy orders have not been checked yet. With the Instant card value only buy orders can confirm a deal (listing prices were measured 5–50× too optimistic), so these are not counted or alerted until a scan checks them. Tick “Show losing games too” to see them." />
+                            hint={`Games that look profitable at listing prices but whose buy orders have not all been checked yet. Only buy orders can confirm a deal here (listing prices were measured 5–50× too optimistic), so these are not counted until “Check buy orders” or a scan gets to them. Tick “Show losing games too” to see them.${summary.ruled_out_at_buy_orders ? ` Another ${summary.ruled_out_at_buy_orders} listing-price deals are already ruled out: their buy orders cannot pay for them.` : ''}`} />
                     )}
                     <Stat label="Profit, all accounts" value={summary ? money(summary.total_profit_all_accounts) : '—'} tone="text-emerald-300"
                         hint="If every account that does not own each profitable game buys one copy. Market impact not included." />
@@ -295,6 +347,16 @@ const CardDeals = () => {
                             );
                         })}
                     </div>
+                    <InfoTip tip="How dropped cards are valued in this view. Buy orders: sold straight into the highest buy orders — what they fetch right now. Listings: listed one cent under the lowest ask — more money, but you wait for buyers. Only this view changes; alerts keep the Settings → Card value choice.">
+                        <div className="flex rounded-lg border border-white/10 overflow-hidden">
+                            {VALUATIONS.map((v) => (
+                                <button key={v.id} type="button" onClick={() => chooseValuation(v.id)}
+                                    className={`px-3 py-1.5 text-xs font-medium transition-colors ${valuation === v.id ? v.activeClass : 'text-slate-400 hover:text-slate-200 hover:bg-white/5'}`}>
+                                    {v.label}
+                                </button>
+                            ))}
+                        </div>
+                    </InfoTip>
                     {scope === 'full' && !scopeCounts.full?.scanned_at && (
                         <span className="text-xs text-slate-500">Full price not scanned yet: use “Scan sale + full price”.</span>
                     )}
@@ -317,8 +379,10 @@ const CardDeals = () => {
                     emptyText={!data?.last_scan
                         ? 'No scan yet — press “Scan on sale” to start.'
                         : summary?.awaiting_buy_orders
-                            ? `No confirmed deals in this view. ${summary.awaiting_buy_orders} games look profitable at listing prices and are waiting for their buy-order check — tick “Show losing games too” to see them.`
-                            : 'No profitable games in this view right now. At buy-order prices (what cards sell for instantly) deals are rare; Settings → Card value → Listing shows what patient selling could make.'}
+                            ? `No confirmed deals in this view. ${summary.awaiting_buy_orders} games look profitable at listing prices and are waiting for their buy-order check — press “Check buy orders”, or tick “Show losing games too” to see them.`
+                            : valuation === 'instant'
+                                ? 'No profitable games in this view right now. At buy-order prices (what cards sell for instantly) deals are rare; switch to Listings to see what patient selling could make.'
+                                : 'No profitable games in this view right now, even at listing prices.'}
                 />
             </div>
         </div>

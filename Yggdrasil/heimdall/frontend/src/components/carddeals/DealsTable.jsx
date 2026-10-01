@@ -284,13 +284,24 @@ const DealsTable = ({ rows, emptyText }) => {
                                     <td className={`px-3 py-2 text-right tabular-nums ${signClass(r.total_profit_all_accounts)}`}>{signed(r.total_profit_all_accounts)}</td>
                                     <td className={`px-3 py-2 text-right tabular-nums ${r.fewest_listings != null && r.fewest_listings < 20 ? 'text-amber-400' : 'text-slate-400'}`}>{r.fewest_listings == null ? '—' : r.fewest_listings.toLocaleString()}</td>
                                     <td className="px-3 py-2 text-center">
+                                        <div className="flex flex-col items-center gap-0.5">
                                         <SourceBadge source={r.value_source} />
                                         <DealKindBadge kind={r.deal_kind} />
                                         {r.awaiting_buy_orders && (
-                                            <InfoTip tip="Profitable at listing prices, but its buy orders are not checked yet — not a confirmed deal. The next scan checks them.">
-                                                <span className="block text-[10px] text-sky-300/80 whitespace-nowrap">awaiting buy orders</span>
+                                            <InfoTip tip={r.cards
+                                                ? 'Profitable at listing prices, but not every card’s buy orders are checked yet — not a confirmed deal. “Check buy orders” or the next scan gets to it.'
+                                                : 'Profitable by the SteamCardExchange estimate only: its cards have not been checked on the Steam Market yet, and buy orders can only be fetched after that. “Check buy orders” does both, shortlisted games first.'}>
+                                                <span className="block text-[10px] text-sky-300/80 whitespace-nowrap">
+                                                    {r.cards ? `awaiting buy orders (${r.buy_orders_checked}/${r.cards.length})` : 'awaiting Market check'}
+                                                </span>
                                             </InfoTip>
                                         )}
+                                        {r.buy_orders_ruled_out && (
+                                            <InfoTip tip={`Checked ${r.buy_orders_checked} of ${r.cards?.length ?? r.card_count} cards: even with every unchecked card at its lowest listing, selling the drops to buy orders cannot pay for the game at any account’s price — as of the last check (re-checked once its order books are 12 hours old). Patient listing may still pay.`}>
+                                                <span className="block text-[10px] text-slate-500 whitespace-nowrap">buy orders can’t pay</span>
+                                            </InfoTip>
+                                        )}
+                                        </div>
                                     </td>
                                 </tr>
                                 {open && (

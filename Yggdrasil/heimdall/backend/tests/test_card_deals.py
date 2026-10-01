@@ -12,6 +12,7 @@ import pytest
 
 import card_deals_service as deals_module
 from card_deals_service import (
+    buy_order_ceiling_cents,
     CardDealsService, RateLimited, capped_card_prices, card_drops, clean_config, fill_net_cents,
     parse_badges_page, parse_orderbook, parse_store_items,
     parse_appdetails_prices, parse_card_exchange_feed, parse_market_cards, parse_store_country,
@@ -558,7 +559,9 @@ def test_request_parameters(tmp_path):
     assert max(len(r['ids']) for r in requests) <= 250
     # appdetails is only the once-a-week currency probe now.
     assert all(c[1]['appids'] == '220' for c in web.calls_to(deals_module.STORE_APPDETAILS_URL))
-    assert web.calls_to(deals_module.MARKET_ORDERBOOK_URL) == []    # listing valuation: no order books
+    # Order books are fetched whatever Settings → Card value says (the page can switch views).
+    books = web.calls_to(deals_module.MARKET_ORDERBOOK_URL)
+    assert books and all(host == 'orderbook' and not with_cookies for _, _, with_cookies, host in books)
     currency_probes = [c for c in web.calls_to(deals_module.STORE_APPDETAILS_URL) if c[1]['appids'] == '220']
     assert sorted(c[1]['cc'] for c in currency_probes) == ['hk', 'md', 'tr']
     for _, params, with_cookies, host in web.calls_to(deals_module.MARKET_SEARCH_URL):
@@ -1036,7 +1039,8 @@ def test_both_counts_a_deal_either_way_and_ranks_sell_now_first(tmp_path):
     rows = service.deals(both_settings().get_settings(), 'sale')['deals']
     by_id = by_app({'deals': rows})
     assert by_id['600']['is_deal'] and by_id['600']['deal_kind'] == 'list'
-    assert by_id['600']['sell_now']['is_profitable'] is False
+    # Worthless bids rule it out before every card is checked: no sell-now figure, flagged instead.
+    assert by_id['600']['sell_now'] is None and by_id['600']['buy_orders_ruled_out'] is True
     assert by_id['100']['deal_kind'] == 'sell_now'
     kinds = [r['deal_kind'] for r in rows]
     assert kinds == sorted(kinds, key=lambda kind: kind != 'sell_now')    # sell-now deals first
@@ -1173,3 +1177,157 @@ def test_account_drops_sums_each_accounts_remaining_drops(tmp_path):
                                   '2': {'drops': {}, 'fetched_at': 200.0},
                                   '3': {'error': 'no fresh web session'}}
     assert service.account_drops() == {'1': (5, 100.0), '2': (0, 200.0), '3': (0, 0)}
+
+
+# ---- buy-order coverage: ceiling, early drop-out, queue order, buy-order-only check ----
+
+def test_buy_order_ceiling_counts_unknown_cards_at_their_ask():
+    assert buy_order_ceiling_cents([], 3) is None
+    assert buy_order_ceiling_cents([(100, None), (100, 20)], 2) == \
+        2 * (seller_receives_cents(100) + seller_receives_cents(20)) / 2
+    assert buy_order_ceiling_cents([(100, 0)], 1) == 0          # known book, no buy orders
+
+
+def orderbook_requests(web):
+    return [json.loads(c[1]['qp'])[1] for c in web.calls_to(deals_module.MARKET_ORDERBOOK_URL)]
+
+
+def test_hopeless_buy_orders_stop_the_game_early_dearest_card_first(tmp_path):
+    saved = dict(BIDS)
+    with_worthless_bids('600')
+    try:
+        web = FakeSteamWeb()
+        service, _ = make_service(tmp_path, web, settings=instant_settings())
+        run_scan(service, include_full_price=False)
+    finally:
+        BIDS.clear()
+        BIDS.update(saved)
+    asked = [name for name in orderbook_requests(web) if name.startswith('600-')]
+    # Asks 60, 55, 50, 50, 40, 45: dearest first, and once even the unchecked cards
+    # at their asks can't pay the 60-cent price, the last two are never requested.
+    assert asked == ['600-Card 0', '600-Card 4', '600-Card 1', '600-Card 2']
+    result = service.deals(instant_settings().get_settings(), 'sale', include_unprofitable=True)
+    row = by_app(result)['600']
+    assert row['buy_orders_ruled_out'] is True and row['awaiting_buy_orders'] is False
+    assert row['buy_orders_checked'] == 4 and row['is_deal'] is False
+    assert result['summary']['ruled_out_at_buy_orders'] == 1
+
+
+def test_unchecked_games_go_best_listing_return_first(tmp_path):
+    web = FakeSteamWeb()
+    service, _ = make_service(tmp_path, web, settings=instant_settings())
+    run_scan(service, include_full_price=False)
+    service._state['orderbooks'].clear()
+    listing = service.deals(FakeSettings().get_settings(), 'sale')['deals']
+    expected = [r['app_id'] for r in sorted(listing, key=lambda r: -(r['best_return_percent'] or 0))
+                if r['verified']]
+    web.calls.clear()
+    service._refresh_orderbooks('sale', instant_settings().get_settings())
+    games = []
+    for name in orderbook_requests(web):
+        game = name.split('-')[0]
+        if game not in games:
+            games.append(game)
+    assert games == expected and len(games) > 1
+
+
+def full_books(app_id, bid_cents):
+    return {f'{app_id}-Card {index}': {
+        'bids': [(bid_cents, 50)], 'asks': [(ask, 500)], 'buy_orders': 50, 'sell_orders': 500,
+        'currency': 1, 'fetched_at': deals_module.time.time() - 24 * 3600}      # old but still trusted
+        for index, ask in enumerate(MARKET[app_id])}
+
+
+def test_old_books_of_confirmed_sell_now_deals_are_refreshed_first(tmp_path):
+    web = FakeSteamWeb()
+    service, _ = make_service(tmp_path, web, settings=instant_settings())
+    run_scan(service, include_full_price=False)
+    listing = [r['app_id'] for r in service.deals(FakeSettings().get_settings(), 'sale')['deals']]
+    assert listing.index('100') < listing.index('600')     # by listing rank alone, 100 would go first
+    # 100: fully checked, worthless bids (not a sell-now deal); 600: fully checked, rich bids (one).
+    service._state['orderbooks'].clear()
+    service._state['orderbooks'].update({**full_books('100', 3), **full_books('600', 55)})
+    rows = by_app(service.deals(instant_settings().get_settings(), 'sale', include_unprofitable=True))
+    assert rows['600']['deal_kind'] == 'sell_now' and rows['100']['is_deal'] is False
+    web.calls.clear()
+    service._refresh_orderbooks('sale', instant_settings().get_settings())
+    asked = [name for name in orderbook_requests(web) if name.split('-')[0] in ('100', '600')]
+    assert asked[:6] and all(name.startswith('600-') for name in asked[:6])
+    assert any(name.startswith('100-') for name in asked[6:])
+
+
+def test_ruled_out_game_refreshes_its_old_books(tmp_path):
+    web = FakeSteamWeb()
+    service, _ = make_service(tmp_path, web, settings=instant_settings())
+    run_scan(service, include_full_price=False)
+    books = full_books('600', 3)
+    del books['600-Card 5']                                # partly checked
+    service._state['orderbooks'] = {n: b for n, b in service._state['orderbooks'].items()
+                                    if not n.startswith('600-')}
+    service._state['orderbooks'].update(books)
+    row = by_app(service.deals(instant_settings().get_settings(), 'sale', include_unprofitable=True))['600']
+    assert row['buy_orders_ruled_out'] is True
+    web.calls.clear()
+    service._refresh_orderbooks('sale', instant_settings().get_settings())
+    asked = [name for name in orderbook_requests(web) if name.startswith('600-')]
+    assert set(asked) == set(books)                        # the old ones, not the never-checked card
+
+
+def test_retries_count_toward_the_request_cap(tmp_path, monkeypatch):
+    web = FakeSteamWeb()
+    service, _ = make_service(tmp_path, web, settings=instant_settings())
+    run_scan(service, include_full_price=False)
+    service._state['orderbooks'].clear()
+    monkeypatch.setitem(deals_module._ORDERBOOK_CAP_PER_SCAN, 'sale', 5)
+    service._fetch = lambda url, params, cookies, host: (web.calls.append((url, params, False, host))
+                                                         or json.dumps({'data': {'success': False}}))
+    web.calls.clear()
+    service._refresh_orderbooks('sale', instant_settings().get_settings())
+    assert len(web.calls) == 5
+
+
+def test_job_kind_tells_a_scan_from_a_buy_order_check(tmp_path):
+    service, _ = make_service(tmp_path)
+    service._start_job('buy_orders', lambda: None)
+    assert service.status()['kind'] == 'buy_orders'
+    assert service.start_scan()['kind'] == 'buy_orders'     # still running: the scan is not started
+
+
+def test_partly_checked_set_shows_the_known_bids(tmp_path):
+    service, _ = make_service(tmp_path, settings=instant_settings())
+    run_scan(service)
+    del service._state['orderbooks']['100-Card 3']
+    row = by_app(service.deals(instant_settings().get_settings(), 'sale', include_unprofitable=True))['100']
+    cards = {c['name']: c for c in row['cards']}
+    assert cards['Card 3']['highest_bid'] is None and cards['Card 3']['buy_orders'] is None
+    assert cards['Card 0']['highest_bid'] == 0.40
+    assert row['buy_orders_checked'] == 5 and row['awaiting_buy_orders'] is True
+    assert row['buy_orders_ruled_out'] is False
+
+
+def test_buy_order_check_asks_for_card_prices_only(tmp_path):
+    web = FakeSteamWeb()
+    service, _ = make_service(tmp_path, web, settings=instant_settings())
+    run_scan(service)
+    last_scan = dict(service._state['last_scan'])
+    service._state['orderbooks'].clear()
+    service._state['verified'].clear()                    # estimates again: Market check first
+    web.calls.clear()
+    service._buy_order_check_safely()
+    kinds = [c[0] for c in web.calls]
+    assert set(kinds) == {deals_module.MARKET_SEARCH_URL, deals_module.MARKET_ORDERBOOK_URL}
+    first_book = kinds.index(deals_module.MARKET_ORDERBOOK_URL)
+    assert deals_module.MARKET_SEARCH_URL in kinds[:first_book]
+    games = {name.split('-')[0] for name in orderbook_requests(web)}
+    assert {'100', '400'} <= games                       # both scanned scopes
+    status = service.status()
+    assert status['error'] is None and status['phase'] == 'done' and not status['running']
+    assert service._state['last_scan'] == last_scan       # the auto-scan schedule is untouched
+    assert by_app(service.deals(instant_settings().get_settings(), 'sale'))['100']['is_deal']
+
+
+def test_buy_order_check_before_any_scan_reports_it(tmp_path):
+    web = FakeSteamWeb()
+    service, _ = make_service(tmp_path, web)
+    service._buy_order_check_safely()
+    assert 'run a scan first' in service.status()['error'] and web.calls == []

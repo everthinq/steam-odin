@@ -118,3 +118,37 @@ def test_ring_parameters_are_clamped(client, fake_ctx):
     assert calls[0] == {'repeats': 5, 'ring_seconds': 45, 'gap_seconds': 60}
     assert calls[1] == {'repeats': 1, 'ring_seconds': 1, 'gap_seconds': 0}
     assert calls[2] == {}                           # unparseable → the caller's default
+
+
+class FakeCardDeals:
+    def __init__(self):
+        self.seen = []
+        self.buy_order_checks = 0
+
+    def deals(self, settings, scope, include_unprofitable):
+        self.seen.append(settings['card_deals_valuation'])
+        return {'deals': []}
+
+    def start_buy_order_check(self):
+        self.buy_order_checks += 1
+        return {'running': True}
+
+
+@pytest.mark.parametrize('query,expected', [
+    ('', 'both'), ('&valuation=instant', 'instant'), ('&valuation=listing', 'listing'),
+    ('&valuation=nonsense', 'both')])
+def test_card_deals_valuation_overrides_the_setting_for_one_request(client, fake_ctx, query, expected):
+    card_deals = FakeCardDeals()
+    settings = FakeSettingsManager({'card_deals_valuation': 'both'})
+    fake_ctx(card_deals_service=card_deals, settings_manager=settings)
+    assert client.get(f'/api/huginn/card-deals?scope=sale{query}').status_code == 200
+    assert card_deals.seen == [expected]
+    assert settings.settings['card_deals_valuation'] == 'both'     # never saved
+
+
+def test_card_deals_buy_order_check_starts_in_the_background(client, fake_ctx):
+    card_deals = FakeCardDeals()
+    fake_ctx(card_deals_service=card_deals)
+    response = client.post('/api/huginn/card-deals/buy-orders')
+    assert response.status_code == 200 and response.get_json() == {'running': True}
+    assert card_deals.buy_order_checks == 1

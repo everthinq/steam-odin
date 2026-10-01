@@ -35,7 +35,12 @@ Data sources, cheapest first, so Steam is asked as little as possible:
    value, a worst case (every drop is the cheapest card), and liquidity. This is
    the rate-limited endpoint (10 cards per request, harsh 429s), so it is
    serial, throttled, cached for a day, and capped per scan.
-5. **Per account** (its own fresh web session): owned games, store country, and
+5. **Steam Market order books** — each card's buy orders, for what the drops
+   sell for right now. Fetched only for games still profitable at listing
+   prices, one request per card, and a game is dropped as soon as even its
+   ceiling (unchecked cards at their lowest ask) can't pay for it. Steps 4 and
+   5 also run on their own ("Check buy orders"), without the rest of the scan.
+6. **Per account** (its own fresh web session): owned games, store country, and
    remaining card drops from the badges page — so a game is never bought twice
    and each account's regional price is used.
 
@@ -160,8 +165,9 @@ _VERIFY_CAP_PER_SCAN = {SCOPE_SALE: 80, SCOPE_FULL: 40}
 # handful of listings is not a price anyone pays — measured live, most sets have
 # exactly such an outlier, and averaging it made fake deals.
 _OUTLIER_CAP_MULTIPLE = 3
-# Cards whose order book is fetched per scan (one request per card, anonymous,
-# own throttle). Measured: 30 requests at a 2-second gap never hit a 429.
+# Order-book requests per run (one per card, anonymous, own throttle; retries
+# count too). Measured: 30 requests at a 2-second gap never hit a 429, and
+# runs of 200 + 120 at the 2.5-second gap logged none either (to 2026-10-02).
 _ORDERBOOK_CAP_PER_SCAN = {SCOPE_SALE: 200, SCOPE_FULL: 120}
 _BADGE_MAX_PAGES = 20
 _ALERTED_MEMORY_SECONDS = 14 * 86400   # don't re-alert the same deal at the same price
@@ -379,6 +385,18 @@ def fill_net_cents(bids, units):
     return total / units
 
 
+def buy_order_ceiling_cents(cards, drops):
+    """The most one copy's drops could fetch at buy orders while some cards'
+    order books are still unknown. `cards` is [(lowest_ask_cents, top_bid_cents
+    or None when the book is unknown)]: an unknown card counts at its lowest ask,
+    because no buy order sits above the lowest listing (it would have filled).
+    A known book without buy orders has a top bid of 0."""
+    if not cards:
+        return None
+    nets = [seller_receives_cents(ask if bid is None else bid) for ask, bid in cards]
+    return drops * sum(nets) / len(nets)
+
+
 def parse_market_cards(payload):
     """Steam market search JSON -> [{name, hash_name, price_cents, listings}]."""
     cards = []
@@ -540,7 +558,7 @@ class CardDealsService:
 
     @staticmethod
     def _idle_job():
-        return {'running': False, 'phase': None, 'scope': None, 'done': 0, 'total': 0,
+        return {'running': False, 'kind': None, 'phase': None, 'scope': None, 'done': 0, 'total': 0,
                 'started_at': None, 'finished_at': None, 'error': None, 'message': None,
                 'include_full_price': None}
 
@@ -557,13 +575,22 @@ class CardDealsService:
         if include_full_price is None:
             include_full_price = bool(self.settings_manager.get_settings()
                                       .get('card_deals_include_full_price'))
+        return self._start_job('scan', self._scan_safely, (force, include_full_price), include_full_price)
+
+    def start_buy_order_check(self):
+        """Kick off a background check of card prices only, for the scopes already
+        scanned: the Market check of shortlisted games not checked in the last
+        day, then their buy orders. No store, regional-price or account
+        requests. Returns the status."""
+        return self._start_job('buy_orders', self._buy_order_check_safely)
+
+    def _start_job(self, kind, target, args=(), include_full_price=None):
         with self._lock:
             if self._job['running']:
                 return dict(self._job)
-            self._job = {**self._idle_job(), 'running': True, 'phase': 'starting',
+            self._job = {**self._idle_job(), 'running': True, 'kind': kind, 'phase': 'starting',
                          'started_at': time.time(), 'include_full_price': include_full_price}
-        threading.Thread(target=self._scan_safely, args=(force, include_full_price),
-                         daemon=True).start()
+        threading.Thread(target=target, args=args, daemon=True).start()
         return self.status()
 
     def start_background(self):
@@ -612,6 +639,8 @@ class CardDealsService:
                 'verified': sum(1 for r in profitable if r['verified']),
                 'sell_now_deals': sum(1 for r in profitable if r['deal_kind'] == DEAL_SELL_NOW),
                 'awaiting_buy_orders': sum(1 for r in rows if r['awaiting_buy_orders']),
+                'ruled_out_at_buy_orders': sum(1 for r in rows
+                                               if r['buy_orders_ruled_out'] and r['list']['is_profitable']),
                 'valuation': settings.get('card_deals_valuation') or VALUATION_BOTH,
                 'total_profit_all_accounts': round(sum(r['total_profit_all_accounts'] for r in profitable), 2),
                 'countries': self._account_countries_from(snapshot['accounts']),
@@ -634,25 +663,46 @@ class CardDealsService:
     # ---- scan ------------------------------------------------------------------
 
     def _scan_safely(self, force, include_full_price):
+        self._run_safely('scan', lambda: self._scan(force, include_full_price),
+                         record_scan={'include_full_price': include_full_price})
+
+    def _buy_order_check_safely(self):
+        # Not recorded as the last scan: the auto-scan schedule keys off full scans.
+        self._run_safely('buy-order check', self._buy_order_check)
+
+    def _run_safely(self, label, work, record_scan=None):
         try:
-            self._scan(force, include_full_price)
+            work()
             with self._lock:
                 self._job.update(phase='done', scope=None)
         except Exception as e:
-            logger.error('[CARD DEALS] scan failed: %s', e)
+            logger.error('[CARD DEALS] %s failed: %s', label, e)
             with self._lock:
                 self._job['error'] = str(e)
         finally:
             with self._lock:
                 self._job['running'] = False
                 self._job['finished_at'] = time.time()
-                self._state['last_scan'] = {
-                    'started_at': self._job['started_at'],
-                    'finished_at': self._job['finished_at'],
-                    'error': self._job['error'],
-                    'include_full_price': include_full_price,
-                }
+                if record_scan is not None:
+                    self._state['last_scan'] = {
+                        'started_at': self._job['started_at'],
+                        'finished_at': self._job['finished_at'],
+                        'error': self._job['error'],
+                        **record_scan,
+                    }
             self._save_cache()
+
+    def _buy_order_check(self):
+        with self._lock:
+            scanned = [scope for scope in (SCOPE_SALE, SCOPE_FULL) if self._state['store'].get(scope)]
+        if not scanned:
+            raise RuntimeError('nothing scanned yet: run a scan first')
+        for scope in scanned:
+            # Order books need each card's Market name: Market-check estimates first.
+            self._verify_shortlist(scope, self.settings_manager.get_settings())
+            self._refresh_orderbooks(scope, self.settings_manager.get_settings())
+            self._save_cache()
+            self._send_alerts(scope, self.settings_manager.get_settings())
 
     def _set_phase(self, phase, scope=None, total=0):
         with self._lock:
@@ -681,8 +731,8 @@ class CardDealsService:
             self._refresh_store(scope, discovery_country, settings, force)
             self._refresh_regional(scope, discovery_country, countries, settings)
             self._verify_shortlist(scope, settings)
-            if (settings.get('card_deals_valuation') or VALUATION_BOTH) != VALUATION_LISTING:
-                self._refresh_orderbooks(scope, settings)
+            # Whatever Settings say: the page's Buy orders / Listings switch shows either.
+            self._refresh_orderbooks(scope, settings)
             self._save_cache()
             self._send_alerts(scope, self.settings_manager.get_settings())
 
@@ -972,53 +1022,121 @@ class CardDealsService:
         return got[1] if got else None
 
     def _refresh_orderbooks(self, scope, settings):
-        """Fetch the buy orders of every card of this scope's Market-checked deals
-        (judged at listing prices, the optimistic side, so no real deal is
-        missed), most promising games first, capped per scan."""
+        """Fetch buy orders for this scope's Market-checked deals (judged at
+        listing prices, the optimistic side, so no real deal is missed), capped
+        at _ORDERBOOK_CAP_PER_SCAN requests. In this order:
+
+        1. Games with cards not checked yet (or too long ago to trust), best
+           listing return first: the likeliest to survive the drop from listing
+           to buy-order prices. Dearest card first, and a game is dropped as soon
+           as its ceiling (buy_order_ceiling_cents) can't pay for the cheapest
+           copy an account would buy — usually after a request or two, not the
+           whole set. Never-checked games first, so a capped run can't keep
+           refreshing the same games while others are never looked at.
+        2. Games whose known books are getting old (_ORDERBOOK_TIME_TO_LIVE):
+           confirmed sell-now deals first, ruled-out games last — refreshing
+           those is what lets a game that was ruled out come back.
+
+        An empty answer (seen live, occasionally) is retried once at the end,
+        within the same cap."""
         listing = {**settings, 'card_deals_valuation': VALUATION_LISTING}
         now = time.time()
         with self._lock:
             books = dict(self._state.get('orderbooks') or {})
             verified = dict(self._state.get('verified') or {})
-        missing, stale = [], []
+        unchecked, stale = [], []
         for row in self.deals(listing, scope)['deals']:
-            for card in self._trusted_cards(verified.get(row['app_id'])):
-                name = card.get('hash_name')
-                if not name or name in missing or name in stale:
-                    continue
-                if name not in books:
-                    missing.append(name)
-                elif now - (books[name].get('fetched_at') or 0) >= _ORDERBOOK_TIME_TO_LIVE:
-                    stale.append(name)
-        # Never-checked cards first, so a capped scan can't keep refreshing the
-        # same top games while others are never looked at.
-        due = (missing + stale)[:_ORDERBOOK_CAP_PER_SCAN[scope]]
-        self._set_phase('buy orders (Steam Market order book)', scope, len(due))
-        retried = set()
-        while due:
-            name = due.pop(0)
-            try:
-                book = parse_orderbook(json.loads(self._fetch(MARKET_ORDERBOOK_URL, {
-                    'q': 'Load', 'qp': json.dumps([753, name])}, None, 'orderbook')))
-            except RateLimited as e:
-                self._note(f'Buy-order check stopped early: {e}')
-                return
-            except Exception as e:
-                logger.warning('[CARD DEALS] order book %s: %s', name, e)
-                self._tick()
+            cards = [c for c in self._trusted_cards(verified.get(row['app_id'])) if c.get('hash_name')]
+            if not cards:
                 continue
-            if book is not None and book.get('currency') not in (None, _USD_MARKET_CURRENCY):
-                book = None          # not in US dollars: can't compare, treat as unknown
-            if book is None and name not in retried:
-                retried.add(name)    # seen live: an occasional empty answer; retry once at the end
-                due.append(name)
-                continue
-            with self._lock:
-                if book is None:
-                    self._state['orderbooks'].pop(name, None)
-                else:
-                    self._state['orderbooks'][name] = {**book, 'fetched_at': time.time()}
+            if not row['buy_orders_ruled_out'] and any(not self._trusted_book(c, books, now) for c in cards):
+                unchecked.append((row, cards))
+            elif any(self._stale_book(c, books, now) for c in cards):
+                stale.append((row, cards))
+        unchecked.sort(key=lambda item: -(item[0]['best_return_percent'] or 0))
+        stale.sort(key=lambda item: (not (item[0]['sell_now'] or {}).get('is_profitable'),
+                                     item[0]['buy_orders_ruled_out'],
+                                     -(item[0]['best_return_percent'] or 0)))
+        needed = (sum(1 for _, cards in unchecked for c in cards if not self._trusted_book(c, books, now))
+                  + sum(1 for _, cards in stale for c in cards if self._stale_book(c, books, now)))
+        budget = [_ORDERBOOK_CAP_PER_SCAN[scope]]
+        self._set_phase('buy orders (Steam Market order book)', scope, min(budget[0], needed))
+        asked, retry = set(), []
+
+        def fetch(name):
+            asked.add(name)
+            budget[0] -= 1
+            book = self._fetch_orderbook(name)
+            if book is False:            # request failed: skip it this run
+                pass
+            elif book is None:
+                retry.append(name)
+            else:
+                books[name] = book
             self._tick()
+
+        try:
+            for row, cards in unchecked:
+                threshold = self._cheapest_buyer_cents(row)
+                for card in sorted(cards, key=lambda c: -c['price_cents']):
+                    if budget[0] <= 0:
+                        break
+                    if card['hash_name'] in asked or self._trusted_book(card, books, now):
+                        continue
+                    fetch(card['hash_name'])
+                    ceiling = buy_order_ceiling_cents(
+                        [(c['price_cents'], self._top_bid(self._trusted_book(c, books, now))) for c in cards],
+                        row['card_drops'])
+                    if ceiling < threshold - 1:      # one cent of slack for rounded prices
+                        # Can't pay for itself at buy orders: next game. Its other
+                        # cards leave the progress total.
+                        skipped = sum(1 for c in cards if c['hash_name'] not in asked
+                                      and not self._trusted_book(c, books, now))
+                        with self._lock:
+                            self._job['total'] = max(self._job['done'], self._job['total'] - skipped)
+                        break
+            for row, cards in stale:
+                for card in sorted(cards, key=lambda c: -c['price_cents']):
+                    if budget[0] <= 0:
+                        break
+                    if card['hash_name'] not in asked and self._stale_book(card, books, now):
+                        fetch(card['hash_name'])
+            for name in retry:
+                if budget[0] <= 0:
+                    break
+                budget[0] -= 1
+                book = self._fetch_orderbook(name)
+                if book is None:
+                    with self._lock:
+                        self._state['orderbooks'].pop(name, None)
+        except RateLimited as e:
+            self._note(f'Buy-order check stopped early: {e}')
+
+    def _fetch_orderbook(self, name):
+        """One card's order book, stored on success. Returns the book, None for
+        an empty or non-US-dollar answer, False when the request failed.
+        RateLimited propagates."""
+        try:
+            book = parse_orderbook(json.loads(self._fetch(MARKET_ORDERBOOK_URL, {
+                'q': 'Load', 'qp': json.dumps([753, name])}, None, 'orderbook')))
+        except RateLimited:
+            raise
+        except Exception as e:
+            logger.warning('[CARD DEALS] order book %s: %s', name, e)
+            return False
+        if book is None or book.get('currency') not in (None, _USD_MARKET_CURRENCY):
+            return None              # not in US dollars: can't compare, treat as unknown
+        book = {**book, 'fetched_at': time.time()}
+        with self._lock:
+            self._state['orderbooks'][name] = book
+        return book
+
+    @staticmethod
+    def _cheapest_buyer_cents(row):
+        """The lowest price (US cents) any account that doesn't own the game
+        pays; the cheapest region when no account data exists yet."""
+        prices = [b['price'] for b in row['buyers'] if b['price'] is not None]
+        return round((min(prices) if prices else row['price_low']) * 100)
 
     # ---- deal math -------------------------------------------------------------
 
@@ -1061,17 +1179,23 @@ class CardDealsService:
         return None
 
     @staticmethod
-    def _card_books(cards, orderbooks):
-        """The trusted order book of every card of the set, or None when any is
-        missing or too old (a partial set can't be valued fairly)."""
-        now = time.time()
-        books = []
-        for card in cards:
-            book = orderbooks.get(card.get('hash_name'))
-            if not book or now - (book.get('fetched_at') or 0) >= _ORDERBOOK_TRUSTED_FOR:
-                return None
-            books.append(book)
-        return books or None
+    def _trusted_book(card, orderbooks, now):
+        """A card's order book if it is recent enough to trust, else None."""
+        book = orderbooks.get(card.get('hash_name'))
+        return book if book and now - (book.get('fetched_at') or 0) < _ORDERBOOK_TRUSTED_FOR else None
+
+    @classmethod
+    def _stale_book(cls, card, orderbooks, now):
+        """True when a card's book is still trusted but due for a refresh."""
+        book = cls._trusted_book(card, orderbooks, now)
+        return bool(book) and now - (book.get('fetched_at') or 0) >= _ORDERBOOK_TIME_TO_LIVE
+
+    @staticmethod
+    def _top_bid(book):
+        """Highest buy order (cents) of a known book, 0 without buy orders, None when unknown."""
+        if book is None:
+            return None
+        return book['bids'][0][0] if book['bids'] else 0
 
     def _rows(self, snapshot, settings):
         rates = (snapshot['exchange_rates'] or {}).get('rates') or {}
@@ -1181,7 +1305,11 @@ class CardDealsService:
             country = (account.get('country') or '').upper()
             candidates.append((name, country or None, regional.get(country), owned is None))
 
-        books = self._card_books(verified_cards, orderbooks or {}) if verified_cards else None
+        now = time.time()
+        # Each card's trusted book; the set is valued at buy orders only once
+        # every card has one (a partial set can't be valued fairly).
+        partial = [self._trusted_book(card, orderbooks or {}, now) for card in verified_cards]
+        books = partial if partial and all(partial) else None
         instant_net = None
         top_bid_nets = []
         if books:
@@ -1207,8 +1335,8 @@ class CardDealsService:
             cards_view = [{
                 'name': c.get('name'), 'lowest_ask': _dollars(c['price_cents']),
                 'valued_at': _dollars(value), 'listings': c['listings'], 'capped': value < c['price_cents'],
-                'highest_bid': _dollars(books[i]['bids'][0][0]) if books and books[i]['bids'] else None,
-                'buy_orders': books[i]['buy_orders'] if books else None,
+                'highest_bid': _dollars(partial[i]['bids'][0][0]) if partial[i] and partial[i]['bids'] else None,
+                'buy_orders': partial[i]['buy_orders'] if partial[i] else None,
             } for i, (c, value) in enumerate(zip(verified_cards, capped))]
         else:
             average_card = feed_entry['set_cents'] / card_count
@@ -1241,6 +1369,13 @@ class CardDealsService:
         list_metrics = measure(listing_net, listing_net, listing_worst_net)
         sell_now_metrics = (measure(instant_net, sell_now_all_net, drops * min(top_bid_nets))
                             if instant_net is not None else None)
+        # Partly checked: can the buy orders still pay for it, even with every
+        # unchecked card at its lowest ask? If not, it is no longer "awaiting".
+        ruled_out = False
+        if verified_cards and books is None:
+            ceiling = buy_order_ceiling_cents(
+                [(c['price_cents'], self._top_bid(book)) for c, book in zip(verified_cards, partial)], drops)
+            ruled_out = not measure(ceiling, ceiling, None)['is_profitable']
 
         # Which metrics lead the row. Instant: buy orders, or (without them yet)
         # listing prices marked as only "awaiting" — measured live, listing prices
@@ -1252,7 +1387,7 @@ class CardDealsService:
             primary, value_source = list_metrics, ('listings' if verified_cards else 'estimate')
         if valuation == VALUATION_INSTANT:
             is_deal = bool(sell_now_metrics and sell_now_metrics['is_profitable'])
-            awaiting_buy_orders = not sell_now_metrics and list_metrics['is_profitable']
+            awaiting_buy_orders = not sell_now_metrics and list_metrics['is_profitable'] and not ruled_out
         elif valuation == VALUATION_LISTING:
             is_deal, awaiting_buy_orders = list_metrics['is_profitable'], False
         else:
@@ -1311,6 +1446,8 @@ class CardDealsService:
             'deal_kind': deal_kind,
             'is_deal': is_deal,
             'awaiting_buy_orders': awaiting_buy_orders,
+            'buy_orders_checked': sum(1 for book in partial if book),
+            'buy_orders_ruled_out': ruled_out,
             'copies_per_card_all_accounts': copies_per_card,
             'verified': bool(verified_cards),
             'verified_at': (verified or {}).get('fetched_at') if verified_cards else None,

@@ -101,7 +101,7 @@ const SettingsPanel = ({ onClose, onSaved }) => {
                                 value={draft.card_deals_max_price ?? ''}
                                 onChange={(e) => set('card_deals_max_price')(e.target.value)} />
                         </Field>
-                        <Field label="Card value" hint="Both: every game shows the sell-now value (buy orders) and the list value (sell price); it is a deal if either is profitable, sell-now deals first. Instant: buy orders only — for the all-accounts total, the order book is walked for every account's copies together. Listing: one cent under the lowest ask only (odd one-off asks capped) — more money, but you wait for buyers.">
+                        <Field label="Card value (alerts)" hint="Which deals the Telegram alerts report. Both: a deal if either value is profitable, sell-now deals first. Instant: buy orders only — the order book is walked for every account's copies together. Listing: one cent under the lowest ask only (odd one-off asks capped). The page has its own Buy orders / Listings switch; this only sets where it starts in a new browser.">
                             <select className={inputClass}
                                 value={draft.card_deals_valuation || 'both'}
                                 onChange={(e) => set('card_deals_valuation')(e.target.value)}>

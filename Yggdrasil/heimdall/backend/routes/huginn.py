@@ -873,10 +873,15 @@ def huginn_tradeon_dmarket_csfloat_autobuy():
 @bp.route('/api/huginn/card-deals', methods=['GET'])
 def card_deals():
     """Ranked card deals from the last scan. ?scope=sale|full|all (default sale),
-    ?include_unprofitable=1 to also list losing games (capped)."""
+    ?include_unprofitable=1 to also list losing games (capped), ?valuation=instant|listing|both
+    to override the saved card value for this request only."""
     settings = ctx.settings_manager.get_settings()
     scope = request.args.get('scope', 'sale')
     include_unprofitable = request.args.get('include_unprofitable') in ('1', 'true')
+    from card_deals_service import VALUATIONS
+    valuation = request.args.get('valuation')
+    if valuation in VALUATIONS:
+        settings = {**settings, 'card_deals_valuation': valuation}
     try:
         return jsonify(ctx.card_deals_service.deals(settings, scope, include_unprofitable))
     except Exception as e:
@@ -893,6 +898,14 @@ def card_deals_scan():
         include_full_price = bool(include_full_price)
     return jsonify(ctx.card_deals_service.start_scan(
         force=bool(body.get('force', True)), include_full_price=include_full_price))
+
+
+@bp.route('/api/huginn/card-deals/buy-orders', methods=['POST'])
+def card_deals_buy_orders():
+    """Check card prices only (Market check of unchecked shortlisted games, then
+    buy orders; no store, regional-price or account requests) for the games
+    already scanned, in the background."""
+    return jsonify(ctx.card_deals_service.start_buy_order_check())
 
 
 @bp.route('/api/huginn/card-deals/status', methods=['GET'])
