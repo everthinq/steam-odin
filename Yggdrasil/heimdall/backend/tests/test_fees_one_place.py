@@ -38,16 +38,17 @@ def test_case_arbitrage_flip_math_uses_them(monkeypatch, tmp_path):
     monkeypatch.setattr(service, '_save_case_history', lambda history: None)
     containers = [{'name': 'Case X'}]
     snaps = {market: {} for market in service._CONTAINER_MARKETS}
-    snaps['csmoney_trade'] = {'Case X': {'price': 1.00, 'count': 50}}    # trade balance: shown only
-    snaps['csmoney_market'] = {'Case X': {'price': 1.20, 'count': 30}}   # cheapest CASH buy
+    snaps['csmoney_trade'] = {'Case X': {'price': 1.00, 'count': 50}}    # trade balance: the cheapest buy
+    snaps['csmoney_market'] = {'Case X': {'price': 1.20, 'count': 30}}
+    snaps['dmarket'] = {'Case X': {'price': 0.50, 'count': 5}}          # unfillable: shown only
     snaps['csfloat'] = {'Case X': {'price': 2.00, 'count': 9}}
     snaps['steam'] = {'Case X': {'price': 2.10, 'count': 900}}           # 2.10 × 0.87 = 1.827
     history = {}
     monkeypatch.setattr(service, '_load_case_history', lambda: history)
     row = service._price_rows_recording_history(containers, snaps, '2026-09-30')[0]
-    assert row['prices']['csmoney_trade'] == 1.0                         # still displayed
-    assert row['cheapest_market'] == 'csmoney_market' and row['cheapest'] == 1.2
-    # the history keeps its original markets: CS.MONEY Market (new) is not its low
+    assert row['prices']['dmarket'] == 0.5                               # still displayed
+    assert row['cheapest_market'] == 'csmoney_trade' and row['cheapest'] == 1.0
+    # the history keeps its original markets: CS.MONEY Trade / Market (new) are not its low
     assert history['Case X']['2026-09-30']['lo'] == 2.0
     # CSFloat 2.00 × (1 − 0.10) = 1.80 < Steam 1.827: Steam wins with the edited CSFloat fee
     assert row['flip']['sell_market'] == 'steam' and row['flip']['net_sell'] == 1.83

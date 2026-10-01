@@ -401,7 +401,7 @@ const CaseArbitrage = () => {
             <div className="shrink-0 flex items-center gap-3 px-4 py-1.5 text-xs text-slate-500 border-b border-white/5 bg-black/5">
                 <span>showing {Math.min(visibleCount, filtered.length)} of {filtered.length}{data ? ` · ${data.priced} priced` : ''}</span>
                 {data?.hot_threshold_pct != null && <span className="text-slate-600">· hot ≥ {data.hot_threshold_pct}% profit</span>}
-                <span className="text-slate-600">· profit is net of seller fee; flips buy with cash and sell on Steam/Buff/CSFloat (fees from the Fees editor); DMarket, CS.MONEY Trade and SkinSwap are shown only (unfillable / trade balance)</span>
+                <span className="text-slate-600">· profit is net of seller fee; flips buy on the cheapest market (CS.MONEY Trade and SkinSwap in trade balance) and sell on Steam/Buff/CSFloat (fees from the Fees editor); DMarket is shown only (unfillable)</span>
             </div>
 
             {(warming || noToken || error) && (

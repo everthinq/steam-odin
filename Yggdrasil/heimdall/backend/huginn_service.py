@@ -2243,10 +2243,9 @@ class HuginnService:
         return {key: self.market_fee(market_id) for key, market_id in self._CONTAINER_SELL_MARKETS.items()}
     # Markets whose pulse price is shown but excluded from the cheapest/dearest/spread
     # math because it's not actionable (DMarket "Sell" prices are often unfillable).
-    # CS.MONEY Trade and SkinSwap price in their own trade balance, not cash: shown,
-    # but kept out of the cheapest / flip / hot / history maths like DMarket.
-    _CONTAINER_BALANCE_MARKETS = frozenset({'csmoney_trade', 'skinswap'})
-    _CONTAINER_NOISE_MARKETS = frozenset({'dmarket'}) | _CONTAINER_BALANCE_MARKETS
+    # CS.MONEY Trade and SkinSwap price in their own trade balance, but they DO count
+    # as places to buy (cheapest, flip): Ivan buys there with balance (2026-10-01).
+    _CONTAINER_NOISE_MARKETS = frozenset({'dmarket'})
     # The long-horizon price history (lo/hi/f, trend, the "hot" baseline, the
     # bottom-call check) keeps the markets it was built from, so a newly added,
     # cheaper source (CS.MONEY Market, 2026-09-30) never shows up as a price drop.
