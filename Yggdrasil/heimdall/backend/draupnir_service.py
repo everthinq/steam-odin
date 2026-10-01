@@ -193,7 +193,7 @@ def _cents_to_usd(v):
     (e.g. $1.58 -> '158'); convert to USD. Empty/'N/A' -> None.
 
     A value that already contains a decimal point is treated as real dollars —
-    Pricempire never writes decimals, but our own export (export_csv) does, so
+    those exports never write decimals, but our own export (export_csv) does, so
     this keeps an exported CSV round-trippable through import. Real dollars keep
     4 decimals (the stored precision) so a sub-cent unit price survives."""
     v = (v or '').strip()

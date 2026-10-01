@@ -87,7 +87,7 @@ realized and unrealized P/L per item and per portfolio.
 
 - **UI:** `/draupnir` (portfolio list, create, CSV import, sort) and
   `/draupnir/:id` (summary tiles, holdings, transaction add/edit/delete).
-- **Import:** upload price-tracker CSV exports (e.g. Pricempire) — **one portfolio
+- **Import:** upload price-tracker CSV exports — **one portfolio
   per file**. Those exports store prices as **integer cents** (no decimal point),
   so every price is divided by 100 on import; mojibake item names are repaired.
 - **Valuation:** switchable reference market (Steam / CSFloat / Buff / lowest),
