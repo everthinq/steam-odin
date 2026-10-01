@@ -155,7 +155,7 @@ def test_http_429_carries_the_retry_time(monkeypatch):
 
 # ---- 3. most valuable first, few-cent items weekly -------------------------
 
-def test_most_valuable_first_and_cheap_recent_items_skipped(monkeypatch, tmp_path):
+def test_every_item_is_swept_most_valuable_first(monkeypatch, tmp_path):
     fresh = datetime.now(timezone.utc).isoformat()
     stale = (datetime.now(timezone.utc) - timedelta(days=8)).isoformat()
     scan = {'Knife': {'count': 1}, 'Case': {'count': 300}, 'Sticker': {'count': 2},
@@ -172,9 +172,10 @@ def test_most_valuable_first_and_cheap_recent_items_skipped(monkeypatch, tmp_pat
     _patch_calls(monkeypatch, calls)
     result = service.fetch_csfloat_buy_orders(token='token', names=sorted(scan))
     swept = [name for kind, name in calls.log if kind == 'find']
-    # value = price × units held: Case 300, Knife 120, Sticker 10, Cheap stale 2.5
-    assert swept == ['Case', 'Knife', 'Sticker', 'Cheap stale']
-    assert result['by_name']['Cheap fresh'] == {'price': 0.04, 'qty': 9}   # kept, no request
+    # value = price × units held: Case 300, Knife 120, Sticker 10, then the two 2.5s
+    # (oldest swept first): cheap items are swept too, every time
+    assert swept == ['Case', 'Knife', 'Sticker', 'Cheap stale', 'Cheap fresh']
+    assert result['by_name']['Cheap fresh'] == {'price': 1.0, 'qty': 1}      # re-read
     assert result['complete'] is True
 
 

@@ -73,14 +73,9 @@ CSFLOAT_KEY_STATE_FILE = os.path.join(os.path.dirname(__file__), 'cache', 'csflo
 _CSFLOAT_LIMIT_WAIT_SECONDS = 60 * 60
 _CSFLOAT_LIMIT_WAIT_MINIMUM_SECONDS = 60
 _CSFLOAT_LIMIT_WAIT_MAXIMUM_SECONDS = 3 * 60 * 60
-# Items whose Buff163 listing is below this (USD) are re-swept only when their last
-# CSFloat price is older than _CSFLOAT_CHEAP_REFRESH_SECONDS: a buy order on a few-cent
-# item is not worth an API request every sweep.
-_CSFLOAT_CHEAP_ITEM_USD = 0.25
 # After this many items in a row whose direct by-name lookup was blocked, the sweep
 # stops trying it (direct access is blocked; listings can still go through the proxy).
 _CSFLOAT_NAME_LOOKUP_BLOCKED_LIMIT = 3
-_CSFLOAT_CHEAP_REFRESH_SECONDS = 7 * 24 * 60 * 60
 # When EVERY key is cooling, the sweep waits out the soonest cooldown and auto-resumes.
 # This caps how many such waits it will sit through before pausing for a manual resume.
 _CSFLOAT_MAX_AUTO_WAITS = 12
@@ -1719,13 +1714,10 @@ class HuginnService:
         time.sleep(_CSFLOAT_REQUEST_DELAY)
         return self._csfloat_top_buy_order(api_key, listing_id, proxy), listing_id
 
-    def _csfloat_sweep_plan(self, todo, token, swept_at):
-        """(ordered names to sweep, cheap names to skip this time).
-
-        Most valuable holdings first (Buff163 listing × units held), then the ones
-        checked longest ago. Items under _CSFLOAT_CHEAP_ITEM_USD are skipped while their
-        last sweep is younger than _CSFLOAT_CHEAP_REFRESH_SECONDS (their price is kept).
-        Without prices (no token / pull failed) the order is simply oldest-swept first."""
+    def _csfloat_sweep_order(self, todo, token, swept_at):
+        """Every item is swept, in this order: most valuable holdings first (Buff163
+        listing × units held), then the ones checked longest ago. Without prices (no
+        token / pull failed) the order is simply oldest-swept first."""
         prices = {}
         if token:
             try:
@@ -1742,16 +1734,8 @@ class HuginnService:
             except (KeyError, TypeError, ValueError):
                 return float('inf')           # never swept: oldest of all
 
-        sweep, skip = [], []
-        for name in todo:
-            price = prices.get(name)
-            if (price is not None and price < _CSFLOAT_CHEAP_ITEM_USD
-                    and age_seconds(name) < _CSFLOAT_CHEAP_REFRESH_SECONDS):
-                skip.append(name)
-            else:
-                sweep.append(name)
-        sweep.sort(key=lambda name: (-(prices.get(name) or 0) * held.get(name, 1), -age_seconds(name), name))
-        return sweep, skip
+        return sorted(todo, key=lambda name: (-(prices.get(name) or 0) * held.get(name, 1),
+                                              -age_seconds(name), name))
 
     def _resumable_state(self, names):
         """Return (processed_set, by_name, started_at) — resuming a recent, unfinished
@@ -1847,12 +1831,7 @@ class HuginnService:
         links = self.load_csfloat_item_links()
         listing_ids = {name: entry.get('listing_id') for name, entry in links.items() if entry.get('listing_id')}
         swept_at = {name: entry.get('checked_at') for name, entry in links.items() if entry.get('checked_at')}
-        todo, cheap_skipped = self._csfloat_sweep_plan(todo, token, swept_at)
-        processed.update(cheap_skipped)     # kept at their recent price, no request
-        if cheap_skipped:
-            logger.info(f'[HUGINN] CSFloat sweep: {len(cheap_skipped)} items under '
-                        f'${_CSFLOAT_CHEAP_ITEM_USD:.2f} skipped (swept within '
-                        f'{_CSFLOAT_CHEAP_REFRESH_SECONDS // 86400} days); {len(todo)} to sweep, most valuable first')
+        todo = self._csfloat_sweep_order(todo, token, swept_at)
 
         def save(complete, reason=None):
             # Only the swept items get a new listing / time, merged into the dictionary
