@@ -142,7 +142,7 @@ def _should_start_background_scheduler():
 if _should_start_background_scheduler():
     scheduler.start()
     # Keep Case Arbitrage container prices warm: pull all markets from pulse hourly,
-    # then fire LisSkins/Buff-cheaper-than-CSFloat alerts on new crossings.
+    # then fire alerts when a buy market is newly cheaper than CSFloat.
     huginn_service.start_container_refresh(
         lambda: settings_manager.get_settings())
     # Draupnir: recurring daily portfolio backups (boot snapshot + daily + prune).

@@ -9,11 +9,14 @@ Telegram supports a live "board" pattern: send once (get message_id), then edit 
 place on later polls (silent, no push), and delete/repost when a genuinely new deal
 should notify. edit/delete are Telegram-only; webhooks just send.
 """
+import html as html_entities
 import json
+import re
 import urllib.request
 import urllib.error
 
-# Hard message-length ceilings: Telegram rejects text over 4096 characters and a
+# Hard message-length ceilings: Telegram rejects text over 4096 characters (counted
+# after HTML parsing: tags and link addresses do not count, only what you see) and a
 # Discord webhook rejects content over 2000 (Slack accepts more; 2000 is safe for
 # both), so an over-long board would silently never arrive. Messages are trimmed at
 # a line break and marked, so the HTML stays balanced (each line closes its tags).
@@ -32,6 +35,23 @@ def trim_message(text, limit):
     if cut <= 0:
         cut = room
     return text[:cut] + _TRIMMED_MARKER
+
+
+def telegram_visible_length(html):
+    """Characters Telegram counts for an HTML message: the text left after its tags
+    (and the link addresses inside them) are parsed away."""
+    return len(html_entities.unescape(re.sub(r'<[^>]*>', '', html)))
+
+
+def trim_telegram_html(html, limit=TELEGRAM_MESSAGE_LIMIT):
+    """*html* cut at a line break so its VISIBLE text fits *limit*, with a trailing
+    marker. Every line closes its own tags, so cutting between lines stays valid."""
+    if html is None or telegram_visible_length(html) <= limit:
+        return html
+    lines = html.split('\n')
+    while len(lines) > 1 and telegram_visible_length('\n'.join(lines) + _TRIMMED_MARKER) > limit:
+        lines.pop()
+    return '\n'.join(lines) + _TRIMMED_MARKER
 
 
 def _post_json(url, payload, timeout=10):
@@ -69,7 +89,7 @@ def _tg(settings, method, payload, timeout=10):
 def _tg_text_payload(text, html):
     p = {'disable_web_page_preview': True}
     if html:
-        p['text'] = trim_message(html, TELEGRAM_MESSAGE_LIMIT)
+        p['text'] = trim_telegram_html(html)
         p['parse_mode'] = 'HTML'
     else:
         p['text'] = trim_message(text, TELEGRAM_MESSAGE_LIMIT)

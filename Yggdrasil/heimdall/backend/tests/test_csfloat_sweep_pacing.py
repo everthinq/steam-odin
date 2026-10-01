@@ -162,9 +162,6 @@ def test_every_item_is_swept_most_valuable_first(monkeypatch, tmp_path):
             'Cheap fresh': {'count': 50}, 'Cheap stale': {'count': 50}}
     prices = {'Knife': 120.0, 'Case': 1.0, 'Sticker': 5.0, 'Cheap fresh': 0.05, 'Cheap stale': 0.05}
     service = _service(monkeypatch, tmp_path, scan=scan, prices=prices)
-    # token given: the sweep first asks pulse which items CSFloat lists (faked here)
-    monkeypatch.setattr(service, '_post_tradeon',
-                        lambda url, token, body=None: [{'itemName': {'marketHashName': name}} for name in scan])
     _write_previous(tmp_path, {'Cheap fresh': {'price': 0.04, 'qty': 9}},
                     swept_at={'Cheap fresh': fresh, 'Cheap stale': stale})
     calls = Calls(listings={name: 'L-' + name for name in scan},
@@ -177,6 +174,21 @@ def test_every_item_is_swept_most_valuable_first(monkeypatch, tmp_path):
     assert swept == ['Case', 'Knife', 'Sticker', 'Cheap stale', 'Cheap fresh']
     assert result['by_name']['Cheap fresh'] == {'price': 1.0, 'qty': 1}      # re-read
     assert result['complete'] is True
+
+
+def test_items_missing_from_the_tradeon_feed_are_still_swept(monkeypatch, tmp_path):
+    # Tradeon's CSFloat feed only has items Tradeon itself lists; Kilowatt Case was
+    # missing from it while CSFloat had 200 wanted at $0.11 (2026-10-01).
+    scan = {'Kilowatt Case': {'count': 5}, 'Listed on Tradeon': {'count': 1}}
+    service = _service(monkeypatch, tmp_path, scan=scan)
+    monkeypatch.setattr(service, '_post_tradeon',
+                        lambda url, token, body=None: [{'itemName': {'marketHashName': 'Listed on Tradeon'}}])
+    service.sync_csfloat_item_links()
+    monkeypatch.setattr(HuginnService, '_csfloat_name_orders',
+                        lambda self, key, name, **options: {'price': 0.11, 'qty': 200, 'depth': [[0.11, 200]]})
+    result = service.fetch_csfloat_buy_orders(token='token', names=sorted(scan))
+    assert set(result['by_name']) == set(scan)
+    assert result['candidates'] == 2
 
 
 # ---- the item dictionary: rebuilt from what you hold ------------------------

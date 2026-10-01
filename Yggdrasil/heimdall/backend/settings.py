@@ -41,7 +41,8 @@ DEFAULT_SETTINGS = {
     "auto_store_accounts": [],    # list of SteamID64 the watcher acts on
     "auto_store_history": [],     # append-only move log (capped), written by the sweep
     # --- Case Arbitrage price alerts ---
-    # Ping a channel when LisSkins or Buff is cheaper than CSFloat for a container by
+    # Ping a channel when a buy market (LisSkins, Buff, Tradeon, CS.MONEY Market,
+    # SkinSwap) is cheaper than CSFloat for a container by
     # at least case_alert_min_pct. Evaluated after each hourly pulse pull. Telegram is
     # preferred (bot token + chat id); if those are empty, notify_webhook_url is used
     # (a Discord or Slack incoming webhook). settings.json is gitignored — keep tokens there.
@@ -51,7 +52,7 @@ DEFAULT_SETTINGS = {
     "notify_webhook_url": "",           # Discord/Slack webhook (fallback if no Telegram)
     "case_alert_min_pct": 0.0,          # alert when cheaper-than-CSFloat by >= this % (0 = any amount, even $0.01)
     "case_alert_categories": ["case"],  # which container types to watch (default: cases)
-    # How often (seconds) to poll CSFloat/LisSkins/Buff for alerts. pulse reprices
+    # How often (seconds) to poll the alert markets. pulse reprices
     # CSFloat ~1min and Steam ~5min, so hourly is too slow to catch cheap-case windows.
     # The full 6-market UI/history refresh still runs hourly regardless.
     "case_poll_interval_sec": 600,      # 10 minutes

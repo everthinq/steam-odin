@@ -12,7 +12,8 @@ import urllib.error
 import urllib.parse
 from datetime import datetime, timezone, timedelta
 from jsonio import atomic_write_json
-from notifications import send_notification, notification_channel, edit_notification, delete_notification
+from notifications import (TELEGRAM_MESSAGE_LIMIT, delete_notification, edit_notification,
+                           notification_channel, send_notification, telegram_visible_length)
 
 logger = logging.getLogger(__name__)  # 'log' is used locally for the auction log
 
@@ -39,7 +40,7 @@ CONTAINERS_FILE = os.path.join(os.path.dirname(__file__), 'cases_containers.json
 # Daily cheapest-price snapshots per container, for trend arrows / sparklines. Cached
 # to disk (cheap to keep) and pruned to the most recent N days on every save.
 CASE_HISTORY_FILE = os.path.join(os.path.dirname(__file__), 'cache', 'case_price_history.json')
-# Which LisSkins/Buff-cheaper-than-CSFloat alerts are currently active, so we only
+# Which buy-market-cheaper-than-CSFloat alerts are currently active, so we only
 # notify on NEW crossings instead of every hourly run.
 CASE_ALERT_STATE_FILE = os.path.join(os.path.dirname(__file__), 'cache', 'case_alert_state.json')
 # LOOT.Farm auction tracker: per-lot trajectory (base, start/last price, bids, a Steam
@@ -1781,10 +1782,12 @@ class HuginnService:
     def fetch_csfloat_buy_orders(self, token=None, names=None, progress=None, key_pairs=None, wait_cb=None):
         """Sweep CSFloat buy orders for owned items and cache the result to disk.
 
-        For each candidate market_hash_name we resolve a listing id then read its
-        buy-order book, keeping the highest bid. Candidates default to the items in
-        the latest inventory scan; if `token` is given we first intersect them with
-        the items CSFloat actually lists (via pulse) so we don't waste searches.
+        For each candidate market_hash_name we read its buy orders (by name, or
+        through a listing) and keep the highest bid. Candidates default to the items
+        in the latest inventory scan, and every one is asked: Tradeon's CSFloat feed is
+        not used as a filter, because it joins Tradeon's own market with CSFloat and so
+        misses items Tradeon does not list even when CSFloat has buy orders for them
+        (64 of 102 such items did, checked 2026-10-01). `token` only orders the sweep.
 
         Requests rotate across the CSFloat key pool; a key that gets rate-limited is
         benched (see CSFloatKeyManager) and the item retries on the next key. The sweep
@@ -1803,16 +1806,6 @@ class HuginnService:
         if names is None:
             scan = self.get_cache()
             names = sorted((scan or {}).get('by_hash', {}).keys())
-
-        if token:
-            try:
-                csfloat_listed = {
-                    (it.get('itemName') or {}).get('marketHashName')
-                    for it in self._post_tradeon(_TRADEON_CSFLOAT_URL, token, _TRADEON_CSFLOAT_BODY)
-                }
-                names = [n for n in names if n in csfloat_listed]
-            except Exception as e:
-                logger.error(f'[HUGINN] CSFloat candidate pre-filter failed, using full owned set: {e}')
 
         total = len(names)
         processed, by_name, started_at = self._resumable_state(names)
@@ -2642,9 +2635,9 @@ class HuginnService:
     _CONTAINER_FULL_REFRESH_SEC = 3600   # full 6-market pull + history cadence
 
     def start_container_refresh(self, settings_provider, default_interval=600):
-        """Background loop with two cadences: a FULL 6-market pull + daily history
+        """Background loop with two cadences: a FULL pull of every market + daily history
         every hour (keeps the UI warm without a page view), and a fast poll of the
-        alert markets (CSFloat/LisSkins/Buff) every `case_poll_interval_sec` (default
+        alert markets (CSFloat and the buy markets) every `case_poll_interval_sec` (default
         10min) that fires price alerts on new crossings. pulse reprices CSFloat ~1min
         / Steam ~5min, so hourly alone is too slow. `settings_provider` returns the
         current settings dict. Idempotent — one loop per service instance."""
@@ -2791,10 +2784,14 @@ class HuginnService:
                 logger.error(f'[HUGINN] container refresh loop error: {e}')
             time.sleep(interval)
 
-    # --- Case Arbitrage price alerts (LisSkins/Buff cheaper than CSFloat) ----
+    # --- Case Arbitrage price alerts (a buy market cheaper than CSFloat) ----
 
-    _ALERT_MARKET_LABEL = {'lisskins': 'LisSkins', 'buff': 'Buff'}
-    _ALERT_MARKETS = ('csfloat', 'lisskins', 'buff')
+    # Where you buy: each one that is cheaper than CSFloat is an alert.
+    _ALERT_BUY_MARKETS = ('lisskins', 'buff', 'tradeon', 'csmoney_market', 'skinswap')
+    # Re-pulled every alert poll, together, so the comparison is near-simultaneous.
+    _ALERT_MARKETS = ('csfloat',) + _ALERT_BUY_MARKETS
+    _ALERT_MARKET_LABEL = {'lisskins': 'LisSkins', 'buff': 'Buff', 'tradeon': 'Tradeon',
+                           'csmoney_market': 'CS.MONEY Market', 'skinswap': 'SkinSwap'}
     # Don't re-PING the same (case,market) more often than this even if it flickers
     # out and back in (the board still edits silently). New deals still ping instantly.
     _ALERT_NOTIFY_COOLDOWN_SEC = 3600
@@ -2828,6 +2825,16 @@ class HuginnService:
             logger.error(f'[HUGINN] alert state save failed: {e}')
 
     def _format_alert_messages(self, alerts, owned_map=None):
+        """(plain, html) for the board, with fewer cases per section until it fits one
+        Telegram message (4096 visible characters; link addresses do not count)."""
+        per_section = 25
+        while True:
+            plain, html = self._render_alert_board(alerts, owned_map, per_section)
+            if telegram_visible_length(html) <= TELEGRAM_MESSAGE_LIMIT or per_section <= 1:
+                return plain, html
+            per_section -= 1
+
+    def _render_alert_board(self, alerts, owned_map, per_section):
         """Return (plain, html). Grouped one block per case (all its cheaper markets
         together), split into 'In your inventory' vs 'Not in your inventory' (from the
         Huginn scan), biggest discount first, a blank line between cases. html has <a>
@@ -2871,10 +2878,13 @@ class HuginnService:
                 return
             plain.extend(['', title])
             html.extend(['', f"<b>{self._esc(title)}</b>"])
-            for g in group[:25]:
+            for g in group[:per_section]:
                 p, h = block(g)
                 plain.append(''); plain.extend(p)
                 html.append(''); html.extend(h)
+            if len(group) > per_section:
+                more = f"+{len(group) - per_section} more in Huginn → Case Arbitrage"
+                plain.extend(['', more]); html.extend(['', f"<i>{self._esc(more)}</i>"])
 
         if owned_map:
             owned = [g for g in cases if g['owned']]
@@ -2882,7 +2892,7 @@ class HuginnService:
             section(f"\U0001F4E6 In your inventory ({len(owned)})", owned)
             section(f"\U0001F195 Not in your inventory ({len(notowned)})", notowned)
         else:
-            for g in cases[:40]:
+            for g in cases[:per_section]:
                 p, h = block(g)
                 plain.append(''); plain.extend(p)
                 html.append(''); html.extend(h)
@@ -2909,7 +2919,7 @@ class HuginnService:
         }
 
     def run_case_alerts(self, settings, force=False, refresh=False):
-        """Evaluate LisSkins/Buff-cheaper-than-CSFloat and notify on NEW crossings.
+        """Evaluate buy markets cheaper than CSFloat and notify on NEW crossings.
         `force=True` re-sends all currently-active alerts (used by "Check now").
         `refresh=True` re-pulls the alert markets (in parallel, near-simultaneous)
         before comparing, so a manual check reflects live prices, not a stale cache.
@@ -2943,9 +2953,9 @@ class HuginnService:
             cf = prices.get('csfloat')
             if not cf:
                 continue
-            for m in ('lisskins', 'buff'):
+            for m in self._ALERT_BUY_MARKETS:
                 p = prices.get(m)
-                if p is None or p >= cf:
+                if not p or p >= cf:
                     continue
                 pct = round((cf - p) / cf * 100, 2)
                 if pct < min_pct:

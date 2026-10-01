@@ -110,7 +110,7 @@ def huginn_cases():
 
 @bp.route('/api/huginn/cases/alerts', methods=['GET'])
 def huginn_cases_alerts_status():
-    """Alert config + currently-active LisSkins/Buff-cheaper-than-CSFloat deals."""
+    """Alert config + currently-active deals (a buy market cheaper than CSFloat)."""
     return jsonify(ctx.huginn_service.case_alert_status(ctx.settings_manager.get_settings()))
 
 @bp.route('/api/huginn/cases/alerts/check', methods=['POST'])

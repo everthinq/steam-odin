@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Bell, Send, RefreshCw, Check, AlertTriangle, Save } from 'lucide-react';
 
-// Config panel for Case Arbitrage price alerts (LisSkins/Buff cheaper than CSFloat).
+// Config panel for Case Arbitrage price alerts (a buy market cheaper than CSFloat).
 // Reads/writes the shared /api/settings and drives the /api/huginn/cases/alerts/* routes.
 const CaseAlertsPanel = () => {
     const [enabled, setEnabled] = useState(false);
@@ -99,7 +99,7 @@ const CaseAlertsPanel = () => {
             <div className="flex items-center gap-2 flex-wrap">
                 <Bell size={14} className="text-amber-300 shrink-0" />
                 <span className="text-xs font-bold tracking-wider text-slate-300 uppercase">Price alerts</span>
-                <span className="text-[11px] text-slate-500">notify when LisSkins or Buff is cheaper than CSFloat</span>
+                <span className="text-[11px] text-slate-500">notify when LisSkins, Buff, Tradeon, CS.MONEY Market or SkinSwap is cheaper than CSFloat</span>
                 <label className="ml-auto flex items-center gap-2 cursor-pointer">
                     <span className="text-xs text-slate-400">enabled</span>
                     <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)}
