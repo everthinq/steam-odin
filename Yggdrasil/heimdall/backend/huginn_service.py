@@ -2787,11 +2787,12 @@ class HuginnService:
     # --- Case Arbitrage price alerts (a buy market cheaper than CSFloat) ----
 
     # Where you buy: each one that is cheaper than CSFloat is an alert.
-    _ALERT_BUY_MARKETS = ('lisskins', 'buff', 'tradeon', 'csmoney_market', 'skinswap')
+    _ALERT_BUY_MARKETS = ('lisskins', 'buff', 'tradeon', 'csmoney_market', 'csmoney_trade', 'skinswap')
     # Re-pulled every alert poll, together, so the comparison is near-simultaneous.
     _ALERT_MARKETS = ('csfloat',) + _ALERT_BUY_MARKETS
     _ALERT_MARKET_LABEL = {'lisskins': 'LisSkins', 'buff': 'Buff', 'tradeon': 'Tradeon',
-                           'csmoney_market': 'CS.MONEY Market', 'skinswap': 'SkinSwap'}
+                           'csmoney_market': 'CS.MONEY Market', 'csmoney_trade': 'CS.MONEY Trade',
+                           'skinswap': 'SkinSwap'}
     # Don't re-PING the same (case,market) more often than this even if it flickers
     # out and back in (the board still edits silently). New deals still ping instantly.
     _ALERT_NOTIFY_COOLDOWN_SEC = 3600

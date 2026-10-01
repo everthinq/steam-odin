@@ -30,11 +30,12 @@ def test_every_buy_market_cheaper_than_csfloat_is_listed(monkeypatch, tmp_path):
     ], held={'Recoil Case': {'count': 8100}})
     sent = _run(monkeypatch, service)
     assert service._load_alert_state()['active'] == [
-        'Recoil Case|csmoney_market', 'Recoil Case|lisskins', 'Recoil Case|skinswap', 'Recoil Case|tradeon']
+        'Recoil Case|csmoney_market', 'Recoil Case|csmoney_trade', 'Recoil Case|lisskins',
+        'Recoil Case|skinswap', 'Recoil Case|tradeon']
     plain = sent[0][0]
     assert '• Recoil Case ×8100' in plain
-    assert ('SkinSwap $0.20 · Tradeon $0.22 · CS.MONEY Market $0.23 · LisSkins $0.24  '
-            'vs CSFloat $0.25  (-$0.05, -20.0%)') in plain
+    assert ('CS.MONEY Trade $0.19 · SkinSwap $0.20 · Tradeon $0.22 · CS.MONEY Market $0.23 · LisSkins $0.24  '
+            'vs CSFloat $0.25  (-$0.06, -24.0%)') in plain
 
 
 def test_a_crowded_board_still_fits_one_telegram_message(monkeypatch, tmp_path):
