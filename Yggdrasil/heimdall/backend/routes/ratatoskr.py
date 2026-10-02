@@ -246,3 +246,49 @@ def trigger_auto_store_sweep():
         target=lambda: ctx.scheduler._auto_store_sweep(settings), daemon=True
     ).start()
     return jsonify({"status": "sweeping"})
+
+
+# ---- Storage shop: buy Counter-Strike 2 Storage Units (storage_shop_service.py) ----
+
+@bp.route('/api/ratatoskr/storage-shop', methods=['GET'])
+def storage_shop_status():
+    """The plan, the running job, the purchase history and statistics."""
+    return jsonify(ctx.storage_shop_service.status())
+
+
+@bp.route('/api/ratatoskr/storage-shop/plan', methods=['POST'])
+def storage_shop_plan():
+    """{"steamids": [...] (optional, default every account)}: read wallets and the price."""
+    body = request.get_json(silent=True) or {}
+    steamids = body.get('steamids')
+    if steamids is not None and not isinstance(steamids, list):
+        return jsonify({'started': False, 'error': 'steamids must be a list'}), 400
+    result = ctx.storage_shop_service.start_plan(steamids)
+    return jsonify(result), (200 if result['started'] else 400)
+
+
+@bp.route('/api/ratatoskr/storage-shop/run', methods=['POST'])
+def storage_shop_run():
+    """{"selection": [{"steamid": ..., "quantity": n}], "dry_run": bool, "plan_created_at":
+    the plan the page showed}: buys only on accounts that plan marks "buy"."""
+    body = request.get_json(silent=True) or {}
+    try:
+        plan_created_at = float(body['plan_created_at']) if body.get('plan_created_at') is not None else None
+    except (TypeError, ValueError):
+        return jsonify({'started': False, 'error': 'plan_created_at must be a number'}), 400
+    result = ctx.storage_shop_service.start_purchase(body.get('selection'), bool(body.get('dry_run')),
+                                                     plan_created_at)
+    return jsonify(result), (200 if result['started'] else 400)
+
+
+@bp.route('/api/ratatoskr/storage-shop/deliver-again', methods=['POST'])
+def storage_shop_deliver_again():
+    """{"at": the history entry's time}: ask the game store again to deliver a purchase
+    left "MAY BE PAID" (it delivers only an approved transaction, so it cannot pay twice)."""
+    body = request.get_json(silent=True) or {}
+    try:
+        at = float(body['at'])
+    except (KeyError, TypeError, ValueError):
+        return jsonify({'started': False, 'error': 'at must be the purchase time'}), 400
+    result = ctx.storage_shop_service.start_deliver_again(at)
+    return jsonify(result), (200 if result['started'] else 400)

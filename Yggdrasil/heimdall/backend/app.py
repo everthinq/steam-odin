@@ -19,6 +19,7 @@ from asf_service import AsfService
 from team_fortress_service import TeamFortressService
 from card_seller_service import CardSellerService
 from store_purchase_service import StorePurchaseService
+from storage_shop_service import StorageShopService
 from morning_routine import MorningRoutine
 from telegram_caller import TelegramCaller
 from logging_setup import setup_logging
@@ -86,6 +87,9 @@ card_seller_service = CardSellerService(settings_manager, steam_service, asf_ser
 # Andvari "Buy games": plan + buy a card-deal game on many accounts (wallet checkout, price-guarded).
 store_purchase_service = StorePurchaseService(steam_service, card_deals_service, asf_service,
                                               settings_provider=settings_manager.get_settings)
+# Ratatoskr "Storage shop": buy Counter-Strike 2 Storage Units on many accounts through the
+# game store (Game Coordinator transaction, approved with the account's web session).
+storage_shop_service = StorageShopService(steam_service, ratatoskr_service, card_deals_service)
 
 # Expose the singletons to the route blueprints (read from context.ctx at
 # request time — see context.py and the routes/ package).
@@ -108,6 +112,7 @@ ctx.asf_service = asf_service
 ctx.team_fortress_service = team_fortress_service
 ctx.card_seller_service = card_seller_service
 ctx.store_purchase_service = store_purchase_service
+ctx.storage_shop_service = storage_shop_service
 register_blueprints(app)
 
 # Morning routine: "Get all items" once a day at 08:00 (or the first minute the Mac

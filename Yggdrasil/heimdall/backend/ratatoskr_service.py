@@ -237,3 +237,36 @@ class RatatoskrService:
         except requests.exceptions.RequestException as e:
             logger.error(f"Ratatoskr Casket Rename Error: {e}")
             return _error_body(e, "Rename failed") or {"error": "Failed to connect to Ratatoskr"}
+
+    # ---- Counter-Strike 2 in-game store (Storage Units) — see Ratatoskr's store.js ----
+
+    def _store_call(self, method, path, payload=None, timeout=35):
+        """A store call; the Game Coordinator itself waits up to 20 s for its answer."""
+        try:
+            response = requests.request(method, f"{self.base_url}{path}", json=payload, timeout=timeout)
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Ratatoskr store call {path} failed: {e}")
+            return _error_body(e, 'Store call failed') or {"error": "Failed to connect to Ratatoskr"}
+
+    def store_user_data(self, steam_id):
+        """The store's price sheet (base64, LZMA-compressed binary KeyValues) and the
+        Storage Unit count of the logged-in account."""
+        return self._store_call('GET', f"/store/user-data/{steam_id}")
+
+    def store_purchase_init(self, steam_id, country, currency, quantity, unit_price):
+        """Open a wallet transaction for *quantity* Storage Units (nothing paid yet)."""
+        return self._store_call('POST', '/store/purchase/init', {
+            "steamID": steam_id, "country": country, "currency": currency,
+            "quantity": quantity, "unitPrice": unit_price})
+
+    def store_purchase_finalize(self, steam_id, transaction_id):
+        """Deliver an approved transaction's Storage Units."""
+        return self._store_call('POST', '/store/purchase/finalize',
+                                {"steamID": steam_id, "transactionId": str(transaction_id)})
+
+    def store_purchase_cancel(self, steam_id, transaction_id):
+        """Drop a transaction that was never approved."""
+        return self._store_call('POST', '/store/purchase/cancel',
+                                {"steamID": steam_id, "transactionId": str(transaction_id)})

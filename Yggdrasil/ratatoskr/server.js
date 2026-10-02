@@ -4,6 +4,7 @@ const SteamTotp = require('steam-totp');
 const GlobalOffensive = require('globaloffensive');
 const bodyParser = require('body-parser');
 const Items = require('./items');
+const Store = require('./store');
 
 const app = express();
 const port = process.env.PORT || 3030;
@@ -698,6 +699,94 @@ app.post('/config/session-idle', (req, res) => {
         });
     } catch (err) {
         res.status(400).json({ error: err.message });
+    }
+});
+
+// ---- Counter-Strike 2 in-game store (Storage Units) — see store.js -------------------
+
+const connectedSession = (steamID, res) => {
+    const session = getSession(String(steamID || ''));
+    if (!session || !session.csgo || !session.csgo.haveGCSession) {
+        res.status(401).json({ error: 'No active GC session' });
+        return null;
+    }
+    session.lastActivity = Date.now();
+    return session;
+};
+
+// The store's price sheet as the Game Coordinator sends it (exploration / parsing).
+app.get('/store/user-data/:steamid', async (req, res) => {
+    const session = connectedSession(req.params.steamid, res);
+    if (!session) return;
+    try {
+        const data = await Store.getUserData(session);
+        const sheet = data.price_sheet || Buffer.alloc(0);
+        res.json({
+            success: true,
+            result: data.result,
+            price_sheet_version: data.price_sheet_version,
+            price_sheet_bytes: sheet.length,
+            price_sheet_base64: sheet.toString('base64'),
+            wallet_currency: session.user.wallet ? session.user.wallet.currency : null,
+            wallet_balance: session.user.wallet ? session.user.wallet.balance : null,
+            storage_units: Store.storageUnitCount(session),
+            account_country: session.user.accountInfo ? session.user.accountInfo.country : null,
+            store_currency: data.currency_deprecated,
+            store_country: data.country_deprecated,
+        });
+    } catch (err) {
+        if (!res.headersSent) res.status(502).json({ error: err.message });
+    }
+});
+
+// Open a wallet transaction for Storage Units. Nothing is paid until Steam approves
+// it (Heimdall does that on checkout.steampowered.com) and it is finalized below.
+app.post('/store/purchase/init', async (req, res) => {
+    const { steamID, country, currency, quantity, unitPrice } = req.body || {};
+    const session = connectedSession(steamID, res);
+    if (!session) return;
+    const count = parseInt(quantity, 10);
+    const price = parseInt(unitPrice, 10);
+    const currencyId = parseInt(currency, 10);
+    if (!(count >= 1 && count <= 50) || !(price > 0) || !(currencyId >= 0 && currencyId <= 63) || !/^[A-Z]{2}$/.test(String(country || ''))) {
+        return res.status(400).json({ error: 'quantity (1-50), unitPrice, currency (the game store 0-based currency, USD = 0) and a two-letter country are required' });
+    }
+    try {
+        const answer = await Store.initPurchase(session, { country, currency: currencyId, quantity: count, unitPrice: price });
+        console.log(`[STORE] Purchase opened for ${steamID}: ${count} Storage Unit(s), result ${answer.result}, transaction ${answer.txn_id}`);
+        res.json({ success: answer.result === 1, result: answer.result, transactionId: answer.txn_id, url: answer.url, storageUnits: Store.storageUnitCount(session) });
+    } catch (err) {
+        if (!res.headersSent) res.status(502).json({ error: err.message });
+    }
+});
+
+// Deliver an approved transaction's items.
+app.post('/store/purchase/finalize', async (req, res) => {
+    const { steamID, transactionId } = req.body || {};
+    const session = connectedSession(steamID, res);
+    if (!session) return;
+    if (!/^\d+$/.test(String(transactionId || ''))) return res.status(400).json({ error: 'transactionId is required' });
+    try {
+        const answer = await Store.finalizePurchase(session, transactionId);
+        console.log(`[STORE] Purchase ${transactionId} finalized for ${steamID}: result ${answer.result}, ${answer.item_ids.length} item(s)`);
+        res.json({ success: answer.result === 1, result: answer.result, itemIds: answer.item_ids, storageUnits: Store.storageUnitCount(session) });
+    } catch (err) {
+        if (!res.headersSent) res.status(502).json({ error: err.message });
+    }
+});
+
+// Drop a transaction that was never approved.
+app.post('/store/purchase/cancel', async (req, res) => {
+    const { steamID, transactionId } = req.body || {};
+    const session = connectedSession(steamID, res);
+    if (!session) return;
+    if (!/^\d+$/.test(String(transactionId || ''))) return res.status(400).json({ error: 'transactionId is required' });
+    try {
+        const answer = await Store.cancelPurchase(session, transactionId);
+        console.log(`[STORE] Purchase ${transactionId} cancelled for ${steamID}: result ${answer.result}`);
+        res.json({ success: answer.result === 1, result: answer.result });
+    } catch (err) {
+        if (!res.headersSent) res.status(502).json({ error: err.message });
     }
 });
 

@@ -46,9 +46,11 @@ def test_ratatoskr_blueprint_registers_all_routes():
     rules = _rules_for(bp)
     for want in ['/api/ratatoskr/login', '/api/ratatoskr/status/<steamid>',
                  '/api/ratatoskr/move/batch', '/api/ratatoskr/auto-store',
-                 '/api/ratatoskr/auto-store/sweep']:
+                 '/api/ratatoskr/auto-store/sweep', '/api/ratatoskr/storage-shop',
+                 '/api/ratatoskr/storage-shop/plan', '/api/ratatoskr/storage-shop/run',
+                 '/api/ratatoskr/storage-shop/deliver-again']:
         assert want in rules, f'missing ratatoskr route: {want}'
-    assert _rule_count(bp, '/api/ratatoskr') == 17
+    assert _rule_count(bp, '/api/ratatoskr') == 21
 
 
 def test_accounts_blueprint_registers_all_routes():

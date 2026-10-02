@@ -29,6 +29,7 @@ class _Context:
     team_fortress_service = None
     card_seller_service = None
     store_purchase_service = None
+    storage_shop_service = None
 
 
 ctx = _Context()
