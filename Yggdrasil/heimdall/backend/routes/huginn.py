@@ -1055,5 +1055,5 @@ def card_deals_buy_run():
     except (TypeError, ValueError):
         return jsonify({'started': False, 'error': 'plan_created_at must be a number'}), 400
     result = ctx.store_purchase_service.start_purchase(body.get('selection'), bool(body.get('dry_run')),
-                                                       plan_created_at)
+                                                       plan_created_at, body.get('empty_cart', True) is not False)
     return jsonify(result), (200 if result['started'] else 400)

@@ -1,5 +1,6 @@
 """Andvari card auto-sell: list dropped trading cards one cent under the lowest
-Market listing (not the buy orders), on every account, and keep the statistics.
+Market listing — never under the highest buy order (where they meet, at the buy
+order, which sells at once) — on every account, and keep the statistics.
 
 Off until switched on (settings ``card_auto_sell_enabled``). In turn, paced,
 each account's Steam inventory (app 753, context 6) is read at most every
@@ -68,17 +69,18 @@ def inventory_cards(pages, apps=(), foil=True):
 
 def sales_statistics(sales):
     """Listings summed per account and per game (per wallet currency)."""
-    accounts, games = {}, {}
+    accounts, games, apps = {}, {}, {}
     for sale in sales:
         if not sale.get('ok'):
             continue
         for table, key in ((accounts, sale.get('account_name') or sale.get('steamid')),
-                           (games, sale.get('game') or sale.get('app_id'))):
+                           (games, sale.get('game') or sale.get('app_id')),
+                           (apps, str(sale.get('app_id') or ''))):
             entry = table.setdefault(key, {'listed': 0, 'receives': {}})
             entry['listed'] += 1
             currency = str(sale.get('currency'))
             entry['receives'][currency] = entry['receives'].get(currency, 0) + int(sale.get('receives') or 0)
-    return {'accounts': accounts, 'games': games,
+    return {'accounts': accounts, 'games': games, 'apps': apps,
             'listed': sum(1 for sale in sales if sale.get('ok')),
             'failed': sum(1 for sale in sales if not sale.get('ok'))}
 
@@ -208,9 +210,9 @@ class CardSellerService:
             for card in cards:
                 price = self.seller.price_for(STEAM_COMMUNITY_APP, card['market_hash_name'], currency, cookies)
                 if price is None:
-                    summary['error'] = f'no usable Market price for {card["market_hash_name"]} yet'
+                    summary['error'] = f'no readable order book for {card["market_hash_name"]} yet'
                     continue             # not a try: asked again next time
-                buyer_pays, receives = price
+                buyer_pays, receives, how = price
                 ok, error = self.seller.sell(steamid, cookies, STEAM_COMMUNITY_APP, CARD_CONTEXT, card['assetid'],
                                              card['market_hash_name'], currency, receives, buyer_pays)
                 with self._lock:
@@ -220,7 +222,7 @@ class CardSellerService:
                         'at': time.time(), 'steamid': steamid, 'account_name': account_name,
                         'assetid': card['assetid'], 'app_id': card['app_id'], 'game': card['game'],
                         'card': card['market_hash_name'], 'foil': card['foil'], 'currency': currency,
-                        'buyer_pays': buyer_pays, 'receives': receives, 'ok': ok, 'error': error})
+                        'buyer_pays': buyer_pays, 'receives': receives, 'how': how, 'ok': ok, 'error': error})
                     self._state['sales'] = self._state['sales'][-SALES_CAP:]
                 if ok:
                     summary['listed'] += 1

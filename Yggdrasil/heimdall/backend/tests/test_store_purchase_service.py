@@ -83,7 +83,7 @@ def test_purchase_statistics_count_only_real_purchases():
     stats = purchase_statistics(history)
     assert stats['purchases'] == 1 and stats['copies'] == 2
     assert stats['accounts'] == {'alpha': {'games': ['Reflex', 'VERGE'], 'spent': {'USD': 90}}}
-    assert stats['games']['Reflex'] == {'copies': 1, 'accounts': ['alpha'], 'spent': {'USD': 45}}
+    assert stats['games']['Reflex'] == {'app_id': None, 'copies': 1, 'accounts': ['alpha'], 'spent': {'USD': 45}}
 
 
 # ---- the service with a fake Steam ---------------------------------------------------------------
@@ -283,14 +283,24 @@ def test_a_different_final_price_cancels(world):
     assert [t['state'] for t in web.transactions.values()] == ['cancelled']
 
 
-def test_a_cart_with_your_own_items_is_never_touched(world):
+def test_a_cart_with_other_items_is_emptied_first_and_logged(world):
     service, web, _ = world
     plan(service)
     web.cart['1'] = [555]
     service.start_purchase([{'steamid': '1', 'app_ids': [REFLEX]}])
     entry = service.status()['history'][0]
+    assert entry['paid'] and entry['removed_from_cart'] == ['package 555'] and entry['charged'] == 45
+    assert web.balance['1'] == 522 and web.cart['1'] == []
+
+
+def test_emptying_can_be_switched_off(world):
+    service, web, _ = world
+    plan(service)
+    web.cart['1'] = [555]
+    service.start_purchase([{'steamid': '1', 'app_ids': [REFLEX]}], empty_cart=False)
+    entry = service.status()['history'][0]
     assert not entry['ok'] and 'cart is not empty' in entry['error']
-    assert web.cart['1'] == [555] and web.posts('AddItemsToCart') == [] and web.posts('DeleteCart') == []
+    assert web.cart['1'] == [555] and web.posts('AddItemsToCart') == []
 
 
 def test_only_planned_games_can_be_bought_and_the_plan_expires(world, monkeypatch):
@@ -432,3 +442,18 @@ def test_the_selection_must_match_the_plan_on_screen_and_be_well_formed(world):
                                                     plan_created_at=created - 5)['error']
     assert 'must be a list' in service.start_purchase({'steamid': '1'})['error']
     assert 'numbers' in service.start_purchase([{'steamid': '1', 'app_ids': ['x']}])['error']
+
+
+def test_a_dry_run_never_empties_the_cart(world):
+    service, web, _ = world
+    plan(service)
+    web.cart['1'] = [555]
+    service.start_purchase([{'steamid': '1', 'app_ids': [REFLEX]}], dry_run=True)
+    entry = service.status()['history'][0]
+    assert 'a real purchase would empty it first' in entry['error'] and entry['removed_from_cart'] == ['package 555']
+    assert web.cart['1'] == [555] and web.posts('DeleteCart') == []
+
+
+def test_cart_lines_name_bundles_and_other_lines():
+    answer = {'response': {'cart': {'line_items': [{'packageid': 1}, {'bundleid': 2}, {'gift': True}]}}}
+    assert store_purchase_service.cart_lines(answer) == ['package 1', 'bundle 2', '{"gift": true}']

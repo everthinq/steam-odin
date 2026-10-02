@@ -40,6 +40,7 @@ const BuyPanel = () => {
     const [picks, setPicks] = useState({ planAt: null, bySteamid: {} });   // edits of one plan's selection
     const [error, setError] = useState(null);
     const [busy, setBusy] = useState(false);
+    const [emptyCart, setEmptyCart] = useState(true);  // remove what is already in a cart first (logged)
     const [loadedAt, setLoadedAt] = useState(0);      // when the status was read (plan age without Date.now in render)
 
     const load = useCallback(() => fetch('/api/huginn/card-deals/buy')
@@ -108,7 +109,7 @@ const BuyPanel = () => {
     const run = (dryRun) => {
         const selectionBody = chosen.map((c) => ({ steamid: c.row.steamid, app_ids: c.games.map((g) => g.app_id) }));
         if (!dryRun && !window.confirm(`Buy ${chosenCopies} games on ${chosen.length} accounts for about $${chosenUsd.toFixed(2)} from their Steam wallets?`)) return;
-        post('/api/huginn/card-deals/buy/run', { selection: selectionBody, dry_run: dryRun, plan_created_at: plan.created_at });
+        post('/api/huginn/card-deals/buy/run', { selection: selectionBody, dry_run: dryRun, plan_created_at: plan.created_at, empty_cart: emptyCart });
     };
 
     const stats = state?.statistics;
@@ -145,7 +146,11 @@ const BuyPanel = () => {
                     <div className="flex flex-wrap items-center gap-3 mb-2 text-xs text-slate-400">
                         <span>Checked {ago(plan.created_at)} · maximum ${plan.max_usd_per_game} per game · planned {plan.totals.copies} copies on {plan.totals.accounts} accounts ≈ ${plan.totals.usd.toFixed(2)}{plan.totals.profit ? ` · Andvari profit ≈ $${plan.totals.profit.toFixed(2)}` : ''}</span>
                         {!planFresh && <span className="text-amber-300">Older than 30 minutes: check again before buying</span>}
-                        <div className="ml-auto flex gap-2">
+                        <div className="ml-auto flex items-center gap-2">
+                            <label className="flex items-center gap-1.5 text-slate-300 cursor-pointer" title="Anything already in an account's cart is removed before buying and listed in the purchase log; off = such an account is skipped">
+                                <input type="checkbox" className="accent-amber-500" checked={emptyCart} onChange={(e) => setEmptyCart(e.target.checked)} />
+                                Empty the cart first
+                            </label>
                             <button type="button" onClick={() => run(true)} disabled={busy || running || !planFresh || !chosenCopies}
                                 title="Goes through the whole checkout on the selected accounts and cancels before paying"
                                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-white/15 text-slate-200 hover:bg-white/5 disabled:opacity-50">
@@ -247,7 +252,10 @@ const BuyPanel = () => {
                                     <tr key={`${h.steamid}-${h.at}`} className="border-t border-white/5">
                                         <td className="py-0.5 text-slate-400">{ago(h.at)}</td>
                                         <td className="text-slate-300">{h.account_name}</td>
-                                        <td className="text-slate-200">{h.games.map((g) => g.name).join(', ')}</td>
+                                        <td className="text-slate-200">
+                                            {h.games.map((g) => g.name).join(', ')}
+                                            {h.removed_from_cart?.length > 0 && <span className="block text-amber-300/80">removed from the cart first: {h.removed_from_cart.join(', ')}</span>}
+                                        </td>
                                         <td className="text-right tabular-nums">{minor(h.expected, h.currency)}</td>
                                         <td className="text-right tabular-nums">{minor(h.charged, h.currency)}</td>
                                         <td className={`pl-3 ${h.state === 'in progress' ? 'text-amber-300' : h.dry_run && h.ok ? 'text-sky-300' : h.paid ? 'text-emerald-300' : 'text-red-400'}`}>

@@ -13,7 +13,7 @@ const STATES = {
     needs_attention: { label: 'Needs you', tone: 'text-red-400' },
     stopped: { label: 'Stopped', tone: 'text-slate-500' },
     off: { label: 'Off: nothing to farm', tone: 'text-slate-500' },
-    queued: { label: 'Queued: 10 already running', tone: 'text-sky-300/70' },
+    queued: { label: 'Queued: the most bots already run', tone: 'text-sky-300/70' },
     not_added: { label: 'Not added yet', tone: 'text-slate-500' },
 };
 
@@ -42,8 +42,8 @@ const FarmingPanel = ({ farming, onAction, busy }) => {
                 <p className="text-red-400 mb-2">All bots switched off: {farming.global_config_unsafe}</p>
             )}
             <p className="text-slate-500 mb-2">
-                {farming.totals?.running ?? 0} of {farming.totals?.max_running ?? 10} bots running. A bot runs only
-                while its account has cards to farm (ASF recommends at most 10). Bought a game? Press
+                {farming.totals?.running ?? 0} of {farming.totals?.max_running ?? 20} bots running. A bot runs only
+                while its account has cards to farm (ASF’s FAQ recommends at most 10; set to 20). Bought a game? Press
                 <Zap size={11} className="inline mx-1 text-amber-300" />on that account so ASF checks it now.
             </p>
             <div className="max-h-64 overflow-auto custom-scrollbar grid gap-1.5 sm:grid-cols-2 lg:grid-cols-3">

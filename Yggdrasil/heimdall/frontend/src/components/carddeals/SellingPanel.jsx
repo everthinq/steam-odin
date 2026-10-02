@@ -1,8 +1,8 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 
 // Andvari card auto-sell. Backend: /api/huginn/card-deals/selling (status) and
 // /api/settings (the switches). Cards are listed one cent under the lowest Market
-// listing (not the buy orders), in each account's wallet currency.
+// listing but never below the highest buy order, in each account's wallet currency.
 
 const CURRENCIES = { 1: ['$', ''], 3: ['', ' €'], 9: ['', ' kr'], 17: ['', ' TL'], 29: ['HK$ ', ''] };
 const amount = (minorUnits, currency) => {
@@ -25,6 +25,11 @@ const SellingPanel = ({ selling, onSaved }) => {
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState(null);
     const [appsText, setAppsText] = useState(null);
+    const [purchases, setPurchases] = useState(null);   // Buy games statistics, to set against the card sales
+    useEffect(() => {
+        fetch('/api/huginn/card-deals/buy').then((r) => (r.ok ? r.json() : null))
+            .then((d) => setPurchases(d?.statistics || null)).catch(() => {});
+    }, []);
 
     if (!selling) return <div className="text-xs text-slate-500 px-3 py-2">Loading card selling…</div>;
 
@@ -61,7 +66,7 @@ const SellingPanel = ({ selling, onSaved }) => {
                     <span>
                         Sell dropped cards automatically
                         <span className="block text-xs text-slate-500">
-                            One cent under the lowest listing (not the buy orders), confirmed automatically
+                            One cent under the lowest listing, never below the highest buy order (where they meet: at the buy order, sells at once), confirmed automatically
                             {selling.enabled_at ? ` · on since ${ago(selling.enabled_at)}` : ''}
                         </span>
                     </span>
@@ -132,6 +137,40 @@ const SellingPanel = ({ selling, onSaved }) => {
                 </div>
             </div>
 
+            {purchases?.purchases > 0 && (
+                <div>
+                    <p className="text-[10px] uppercase tracking-wider text-slate-500 mb-1">Bought with “Buy games” vs. cards listed so far</p>
+                    <table className="w-full">
+                        <thead className="text-slate-500 text-left">
+                            <tr><th>Game</th><th className="text-right">Copies bought</th><th className="text-right">Spent</th><th className="text-right">Cards listed</th><th className="text-right">You receive</th><th className="text-right">So far</th></tr>
+                        </thead>
+                        <tbody>
+                            {Object.entries(purchases.games).map(([name, bought]) => {
+                                const listed = (stats.apps || {})[String(bought.app_id)] || { listed: 0, receives: {} };
+                                const spentUsd = bought.spent.USD;
+                                const receivedUsd = listed.receives['1'] || 0;
+                                const onlyDollars = Object.keys(bought.spent).every((c) => c === 'USD')
+                                    && Object.keys(listed.receives).every((c) => c === '1');
+                                const net = onlyDollars ? receivedUsd - (spentUsd || 0) : null;
+                                return (
+                                    <tr key={name} className="border-t border-white/5">
+                                        <td className="py-0.5 text-slate-300">{name}</td>
+                                        <td className="text-right tabular-nums">{bought.copies}</td>
+                                        <td className="text-right tabular-nums text-amber-200">{Object.entries(bought.spent).map(([c, v]) => (c === 'USD' ? `$${(v / 100).toFixed(2)}` : `${(v / 100).toFixed(2)} ${c}`)).join(' + ')}</td>
+                                        <td className="text-right tabular-nums">{listed.listed}</td>
+                                        <td className="text-right tabular-nums text-emerald-300">{amounts(listed.receives)}</td>
+                                        <td className={`text-right tabular-nums ${net == null ? 'text-slate-500' : net >= 0 ? 'text-emerald-300' : 'text-amber-300'}`}>
+                                            {net == null ? 'mixed currencies' : `${net >= 0 ? '+' : '−'}$${(Math.abs(net) / 100).toFixed(2)}`}
+                                        </td>
+                                    </tr>
+                                );
+                            })}
+                        </tbody>
+                    </table>
+                    <p className="text-slate-500 mt-1">“You receive” counts listed cards (after Steam’s fees); a listing earns once someone buys it.</p>
+                </div>
+            )}
+
             {selling.sales.length > 0 && (
                 <div>
                     <p className="text-[10px] uppercase tracking-wider text-slate-500 mb-1">Latest listings</p>
@@ -148,7 +187,7 @@ const SellingPanel = ({ selling, onSaved }) => {
                                         <td className="text-slate-200">{s.card}{s.foil ? ' (foil)' : ''}</td>
                                         <td className="text-right tabular-nums">{amount(s.buyer_pays, s.currency)}</td>
                                         <td className="text-right tabular-nums text-emerald-300">{amount(s.receives, s.currency)}</td>
-                                        <td className={`pl-3 ${s.ok ? 'text-emerald-300' : 'text-red-400'}`}>{s.ok ? 'Listed' : s.error}</td>
+                                        <td className={`pl-3 ${s.ok ? 'text-emerald-300' : 'text-red-400'}`} title={s.how || ''}>{s.ok ? (s.how?.includes('buy order') ? 'Listed at the buy order' : 'Listed') : s.error}</td>
                                     </tr>
                                 ))}
                             </tbody>

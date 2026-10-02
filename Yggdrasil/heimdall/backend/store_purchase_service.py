@@ -15,8 +15,9 @@ Two steps, both background jobs, one at a time:
    covers it — the game with the best Andvari profit for that account first, so
    a small balance goes to the better game.
 2. **Buy** (``start_purchase``) — for accounts picked from the plan, one at a
-   time: the account's cart must be empty (Heimdall never buys or removes what
-   you put there yourself); the packages go into the cart and the cart must hold
+   time: anything already in the account's cart is removed first and listed in
+   the purchase log (``empty_cart``, Ivan's choice; off = such an account is
+   skipped instead); the packages go into the cart and the cart must hold
    exactly them at the planned total; a wallet checkout starts and Steam's final
    price must equal the plan to the cent, otherwise the transaction is
    cancelled. After paying, ownership is re-read and the account's ASF bot is
@@ -181,6 +182,21 @@ def cart_contents(cart_answer):
     return subtotal, packages
 
 
+def cart_lines(cart_answer):
+    """What a cart holds, for the log: "package 66335", "bundle 1234", or the line's
+    own description for anything else (a gift line, ...)."""
+    cart = ((cart_answer or {}).get('response') or {}).get('cart') or {}
+    lines = []
+    for item in cart.get('line_items') or []:
+        if item.get('packageid'):
+            lines.append(f"package {item['packageid']}")
+        elif item.get('bundleid'):
+            lines.append(f"bundle {item['bundleid']}")
+        else:
+            lines.append(json.dumps(item, sort_keys=True)[:120])
+    return lines
+
+
 def purchase_statistics(history):
     """What was really bought (dry runs and failures left out), per account and per game."""
     accounts, games = {}, {}
@@ -194,7 +210,8 @@ def purchase_statistics(history):
         account['spent'][currency] = account['spent'].get(currency, 0) + int(entry.get('charged') or 0)
         for game in entry.get('games') or []:
             account['games'].append(game['name'])
-            row = games.setdefault(game['name'], {'copies': 0, 'accounts': [], 'spent': {}})
+            row = games.setdefault(game['name'], {'app_id': game.get('app_id'), 'copies': 0, 'accounts': [],
+                                                  'spent': {}})
             row['copies'] += 1
             row['accounts'].append(entry.get('account_name'))
             row['spent'][currency] = row['spent'].get(currency, 0) + int(game.get('price') or 0)
@@ -433,7 +450,7 @@ class StorePurchaseService:
 
     # ---- buy ---------------------------------------------------------------------------------
 
-    def start_purchase(self, selection, dry_run=False, plan_created_at=None):
+    def start_purchase(self, selection, dry_run=False, plan_created_at=None, empty_cart=True):
         """*selection*: [{steamid, app_ids}]; each game must be planned as "buy" in the
         plan the screen showed (*plan_created_at*), younger than PLAN_TIME_TO_LIVE_SECONDS,
         and not bought (or paid for) since that plan was made."""
@@ -474,15 +491,15 @@ class StorePurchaseService:
                            'country': row['country'], 'currency': row['currency'], 'games': games})
         if not orders:
             return {'started': False, 'error': 'nothing selected'}
-        return self._start('purchase', self._buy_all, (orders, dry_run), dry_run=dry_run)
+        return self._start('purchase', self._buy_all, (orders, dry_run, empty_cart), dry_run=dry_run)
 
-    def _buy_all(self, orders, dry_run):
+    def _buy_all(self, orders, dry_run, empty_cart=True):
         self._set_job(total=len(orders), phase='dry run (nothing is paid)' if dry_run else 'buying')
         for index, order in enumerate(orders):
             if index:
                 self._sleep(ACCOUNT_GAP_SECONDS)
             self._set_job(phase=f'{"dry run" if dry_run else "buying"}: {order["account_name"]}')
-            self._buy_account(order, dry_run)
+            self._buy_account(order, dry_run, empty_cart)
             self._set_job(done=index + 1)
 
     def _record(self, result):
@@ -504,14 +521,14 @@ class StorePurchaseService:
                             game['status'] = status
         self._save()
 
-    def _buy_account(self, order, dry_run):
+    def _buy_account(self, order, dry_run, empty_cart=True):
         steamid, country = order['steamid'], order['country']
         expected = sum(game['price'] for game in order['games'])
         packages = sorted(game['packageid'] for game in order['games'])
         result = {'at': time.time(), 'steamid': steamid, 'account_name': order['account_name'],
                   'games': [{'app_id': g['app_id'], 'name': g['name'], 'price': g['price']} for g in order['games']],
                   'currency': order['currency'], 'expected': expected, 'charged': None, 'dry_run': dry_run,
-                  'state': 'in progress', 'payment_attempted': False, 'paid': False,
+                  'state': 'in progress', 'payment_attempted': False, 'paid': False, 'removed_from_cart': [],
                   'ok': False, 'owned_after': None, 'error': None}
         self._record(result)
         cookies, token, transid, added, client = None, None, None, False, None
@@ -525,10 +542,23 @@ class StorePurchaseService:
             _, balance = self._wallet(cookies)
             if balance < expected:
                 raise PurchaseError(f'the wallet holds {balance}, the games cost {expected}: not bought')
-            subtotal, in_cart = cart_contents(self._cart(token, country))
+            cart_answer = self._cart(token, country)
+            subtotal, in_cart = cart_contents(cart_answer)
             if in_cart or subtotal:
-                raise PurchaseError('the cart is not empty: empty it in the Steam store first '
-                                    '(Heimdall never buys or removes what is already there)')
+                if not empty_cart:
+                    raise PurchaseError('the cart is not empty (emptying it first is switched off)')
+                # Whatever was in the cart is removed first and written in the log, so
+                # the checkout can only ever pay for the planned packages.
+                result['removed_from_cart'] = cart_lines(cart_answer)
+                self._record(result)
+                if dry_run:              # a dry run changes nothing, not even the cart
+                    raise PurchaseError('dry run: the cart is not empty; a real purchase would empty it first')
+                self._empty_cart(token)
+                subtotal, in_cart = cart_contents(self._cart(token, country))
+                if in_cart or subtotal:
+                    raise PurchaseError(f'could not empty the cart (it still holds {in_cart})')
+                log.info('[ANDVARI-BUY] emptied the cart of %s first (packages %s)',
+                         order['account_name'], result['removed_from_cart'])
             added = True                 # from here on the cart is ours: emptied at the end
             response = self._post(CART_API + 'AddItemsToCart/v1/', params={'access_token': token}, data={
                 'input_json': json.dumps({'user_country': country,
@@ -624,7 +654,7 @@ class StorePurchaseService:
             log.warning('[ANDVARI-BUY] could not cancel a transaction: %s', e)
 
     def _empty_cart(self, token):
-        """Empty the cart Heimdall filled (it was empty before, so nothing of yours is lost)."""
+        """Empty the account's cart (before buying: what was there is in the log)."""
         try:
             self._post(CART_API + 'DeleteCart/v1/', params={'access_token': token}, data={'input_json': '{}'})
         except Exception as e:

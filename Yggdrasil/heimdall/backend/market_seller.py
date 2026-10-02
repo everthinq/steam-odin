@@ -1,23 +1,25 @@
 """Listing items on the Steam Community Market for an account, in its wallet currency.
 
 Shared by Andvari's card auto-sell (``card_seller_service.py``). One
-``MarketSeller`` paces every steamcommunity.com call it makes, remembers each
-wallet currency's fee rules (``g_rgWalletInfo``: the minimum fee is bigger than
-one cent outside US dollars) and the last price it listed each item at (so our
-own accounts never undercut each other down to the floor), lists one item, and
-accepts only the Market-listing confirmations that name the items it listed.
+``MarketSeller`` paces every steamcommunity.com call it makes, reads each item's
+order book in the account's wallet currency (lowest listing + highest buy order),
+remembers each wallet currency's fee rules (``g_rgWalletInfo``: the minimum fee
+is bigger than one cent outside US dollars) and the last price it listed each
+item at (so our own accounts never undercut each other down to the floor), lists
+one item one cent under the lowest listing but never under the highest buy order,
+and accepts only the Market-listing confirmations that name the items it listed.
 """
 import json
 import logging
 import time
 
 import community_pacer
-from team_fortress_service import (US_DOLLAR_WALLET, listing_price, matching_listing_confirmations,
-                                   parse_price_minor_units, parse_wallet_info)
+from team_fortress_service import (US_DOLLAR_WALLET, MINIMUM_LISTING_MINOR_UNITS, buyer_pays_for,
+                                   matching_listing_confirmations, parse_wallet_info, seller_receives)
 
 log = logging.getLogger(__name__)
 
-PRICE_URL = 'https://steamcommunity.com/market/priceoverview/'
+ORDERBOOK_URL = 'https://steamcommunity.com/market/orderbook'
 SELL_URL = 'https://steamcommunity.com/market/sellitem/'
 MARKET_URL = 'https://steamcommunity.com/market/'
 USER_AGENT = 'Mozilla/5.0 (Heimdall Market seller)'
@@ -26,6 +28,22 @@ COMMUNITY_GAP_SECONDS = 4
 PRICE_TIME_TO_LIVE_SECONDS = 120
 WALLET_INFO_TIME_TO_LIVE_SECONDS = 30 * 86400
 OWN_PRICE_MEMORY_SECONDS = 6 * 3600
+
+
+def target_price(target, wallet, floor=0):
+    """(buyer pays, seller receives) for a listing a buyer pays at most *target* for
+    (Steam shows the buyer price recomputed from what the seller receives), never
+    under Steam's minimum listing. Not every buyer price can be made from the fee
+    formula (in dollars, receiving 19 cents is 21 for the buyer and 20 is 23), so
+    when rounding down lands under *floor* (the highest buy order), the cheapest
+    price at or above the floor is used instead. None when the fees take it all."""
+    target = max(MINIMUM_LISTING_MINOR_UNITS, int(target))
+    receives = seller_receives(target, wallet)
+    if receives <= 0:
+        return None
+    while floor and buyer_pays_for(receives, wallet) < floor:
+        receives += 1
+    return buyer_pays_for(receives, wallet), receives
 
 
 class RateLimited(RuntimeError):
@@ -80,19 +98,32 @@ class MarketSeller:
         self.steam.ensure_fresh_session(steamid)
         return self.steam.web_session_cookie_for(steamid)
 
-    def lowest_price(self, appid, name, currency):
-        """The lowest listing in the wallet currency (minor units), or None. A failed
-        or empty answer is not cached, so it is asked again next time."""
+    def order_spread(self, appid, name, currency, cookies):
+        """(lowest listing, highest buy order) in the wallet currency's minor units, read
+        from the Market order book with the account's own session (it answers in the
+        account's wallet currency; anonymously it is always US dollars). The highest
+        buy order is 0 when nobody wants to buy. None when the book cannot be read or
+        is in another currency — then nothing is listed (asked again next time)."""
         key = (int(appid), name, int(currency))
         cached = self._prices.get(key)
         if cached and time.time() - cached[1] < PRICE_TIME_TO_LIVE_SECONDS:
             return cached[0]
-        response = self.get(PRICE_URL, {'appid': int(appid), 'market_hash_name': name, 'currency': int(currency)})
-        payload = response.json() if response.ok else {}
-        lowest = parse_price_minor_units(payload.get('lowest_price')) if payload.get('success') else None
-        if lowest:
-            self._prices[key] = (lowest, time.time())
-        return lowest
+        response = self.get(ORDERBOOK_URL, {'q': 'Load', 'qp': json.dumps([int(appid), name])}, cookies)
+        try:
+            payload = response.json() if response.ok else {}
+        except ValueError:
+            payload = {}
+        wrapper = payload.get('data') if isinstance(payload.get('data'), dict) and payload['data'].get('success') else payload
+        book = wrapper.get('data') if isinstance(wrapper, dict) and wrapper.get('success') else None
+        if not isinstance(book, dict) or int(book.get('eCurrency') or 0) != int(currency):
+            return None
+        lowest = int(book.get('amtMinSellOrder') or 0)
+        highest_bid = int(book.get('amtMaxBuyOrder') or 0)
+        if lowest <= 0:
+            return None                  # nobody sells it: no price to undercut
+        spread = (lowest, highest_bid)
+        self._prices[key] = (spread, time.time())
+        return spread
 
     def wallet(self, currency, cookies):
         if int(currency) == 1:
@@ -109,15 +140,25 @@ class MarketSeller:
         return info
 
     def price_for(self, appid, name, currency, cookies):
-        """(buyer pays, seller receives) one minor unit under the lowest listing — or
-        at it when that lowest listing is the one we made last — or None (no
-        listing yet, or the fees would take the whole price)."""
-        lowest = self.lowest_price(appid, name, currency)
-        if not lowest:
+        """(buyer pays, seller receives, how) for one item, or None.
+
+        One minor unit under the lowest listing — at it when that listing is the one
+        we made last, so our accounts never undercut each other — but never under
+        the highest buy order: when the two meet (or the cent would cross it) the
+        item is listed at the buy order, which sells it at once ("buy order").
+        None when the order book cannot be read, or the fees would take it all."""
+        spread = self.order_spread(appid, name, currency, cookies)
+        if spread is None:
             return None
+        lowest, highest_bid = spread
         own = self.own_prices.get(f'{int(appid)}|{name}|{int(currency)}') or {}
         ours = own.get('buyer_pays') == lowest and time.time() - own.get('at', 0) < OWN_PRICE_MEMORY_SECONDS
-        return listing_price(lowest, self.wallet(currency, cookies), undercut=not ours)
+        target = lowest if ours else lowest - 1
+        how = 'matched our own listing' if ours else 'one under the lowest listing'
+        if highest_bid and target <= highest_bid:
+            target, how = highest_bid, 'at the highest buy order (sells at once)'
+        price = target_price(target, self.wallet(currency, cookies), floor=highest_bid)
+        return (*price, how) if price else None
 
     def sell(self, steamid, cookies, appid, contextid, assetid, name, currency, receives, buyer_pays):
         """List one item. Returns (ok, error)."""

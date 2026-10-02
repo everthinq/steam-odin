@@ -1,6 +1,8 @@
 """Andvari card auto-sell: only new marketable trading cards, one cent under the
 lowest listing in the wallet currency, never undercutting our own listing, and
 the statistics per account and game."""
+import json
+
 import pytest
 
 import card_seller_service
@@ -64,7 +66,9 @@ class FakeResponse:
 class FakeHttp:
     def __init__(self):
         self.pages = {}
-        self.lowest = {'745740-A': '$0.20', '745740-B': '$0.30', '745740-C': '$1.00', '400740-D': '$0.10'}
+        # {card: (lowest listing, highest buy order)} in US cents; the order book answers in USD
+        self.books = {'745740-A': (20, 5), '745740-B': (30, 10), '745740-C': (100, 50), '400740-D': (10, 2)}
+        self.book_currency = 1
         self.calls = []
         self.sell_answer = {'success': True}
 
@@ -74,9 +78,13 @@ class FakeHttp:
             pages = self.pages.get(url.split('/')[4], [page()])
             start = (params or {}).get('start_assetid')
             return FakeResponse(pages[1] if start and len(pages) > 1 else pages[0])
-        if 'priceoverview' in url:
-            lowest = self.lowest.get(params['market_hash_name'])
-            return FakeResponse({'success': True, 'lowest_price': lowest} if lowest else {'success': False})
+        if 'orderbook' in url:
+            appid, name = json.loads(params['qp'])
+            book = self.books.get(name)
+            if not book:
+                return FakeResponse({'data': {'success': False}})
+            return FakeResponse({'data': {'success': True, 'data': {
+                'eCurrency': self.book_currency, 'amtMinSellOrder': book[0], 'amtMaxBuyOrder': book[1]}}})
         if url.endswith('/market/'):
             return FakeResponse(text='g_rgWalletInfo = {"wallet_currency":1,"wallet_fee_minimum":"1"};')
         raise AssertionError(url)
@@ -168,7 +176,7 @@ def test_our_own_lowest_listing_is_matched_not_undercut(world):
     settings.values['card_auto_sell_include_held'] = True
     http.pages['1'] = [page(card('100', 'A'))]
     service.sell_account('1', 'alpha')                                 # lowest $0.20 -> listed at $0.19
-    http.lowest['745740-A'] = '$0.19'                                  # now our own listing is the lowest
+    http.books['745740-A'] = (19, 5)                                   # now our own listing is the lowest
     service.seller._prices.clear()
     http.pages['2'] = [page(card('200', 'A'))]
     service.sell_account('2', 'bravo')
@@ -179,11 +187,11 @@ def test_no_price_is_not_a_try_and_refusals_stop_after_three(world):
     service, http, _, settings = world
     settings.values['card_auto_sell_include_held'] = True
     http.pages['1'] = [page(card('100', 'A'))]
-    http.lowest['745740-A'] = None
+    del http.books['745740-A']
     for _ in range(5):
         service.sell_account('1', 'alpha')
     assert http.sells() == []
-    http.lowest['745740-A'] = '$0.20'
+    http.books['745740-A'] = (20, 5)
     http.sell_answer = {'success': False, 'message': 'no'}
     service.seller._prices.clear()
     for _ in range(MAX_SELL_TRIES + 2):
@@ -220,6 +228,7 @@ def test_statistics_in_status(world):
     stats = service.status()['statistics']
     assert stats['listed'] == 2 and stats['accounts']['alpha']['listed'] == 2
     assert set(stats['games']) == {'app_745740', 'app_400740'}
+    assert stats['apps']['745740'] == {'listed': 1, 'receives': {'1': 17}}
 
 
 def test_cards_listed_before_a_stop_are_confirmed_on_a_later_pass(world):
@@ -264,3 +273,81 @@ def test_switching_on_reads_every_account_again_at_once(world):
     service._enabled_at(settings.get_settings())
     assert service._state['inventories'] == {}
     assert service.step()['steamid'] in ('1', '2')
+
+
+def test_lowest_listing_equal_to_the_buy_order_sells_at_the_buy_order(world):
+    service, http, _, settings = world
+    settings.values['card_auto_sell_include_held'] = True
+    http.books['745740-A'] = (20, 20)                                  # sell price now == buy order
+    http.pages['1'] = [page(card('100', 'A'))]
+    service.sell_account('1', 'alpha')
+    sale = service.status()['sales'][0]
+    assert sale['buyer_pays'] == 20 and 'buy order' in sale['how']   # not $0.19
+
+
+def test_one_cent_under_would_cross_the_buy_order_so_the_buy_order_wins(world):
+    service, http, _, settings = world
+    settings.values['card_auto_sell_include_held'] = True
+    http.books['745740-A'] = (21, 20)                                  # $0.20 == the buy order
+    http.pages['1'] = [page(card('100', 'A'))]
+    service.sell_account('1', 'alpha')
+    assert service.status()['sales'][0]['buyer_pays'] == 20
+
+
+def test_normal_spread_lists_one_cent_under_the_lowest_listing(world):
+    service, http, _, settings = world
+    settings.values['card_auto_sell_include_held'] = True
+    http.pages['1'] = [page(card('100', 'A'))]                         # $0.20 listing, $0.05 buy order
+    service.sell_account('1', 'alpha')
+    sale = service.status()['sales'][0]
+    assert sale['buyer_pays'] == 19 and sale['how'] == 'one under the lowest listing'
+
+
+def test_no_buy_orders_still_lists_one_cent_under(world):
+    service, http, _, settings = world
+    settings.values['card_auto_sell_include_held'] = True
+    http.books['745740-A'] = (20, 0)
+    http.pages['1'] = [page(card('100', 'A'))]
+    service.sell_account('1', 'alpha')
+    assert service.status()['sales'][0]['buyer_pays'] == 19
+
+
+def test_an_order_book_in_another_currency_is_not_used(world):
+    service, http, _, settings = world
+    settings.values['card_auto_sell_include_held'] = True
+    http.book_currency = 9                                             # kroner, but the wallet is in dollars
+    http.pages['1'] = [page(card('100', 'A'))]
+    summary = service.sell_account('1', 'alpha')
+    assert summary['listed'] == 0 and 'order book' in summary['error'] and http.sells() == []
+
+
+def test_three_cent_cards_are_listed_at_the_minimum():
+    from market_seller import target_price
+    from team_fortress_service import US_DOLLAR_WALLET
+    assert target_price(2, US_DOLLAR_WALLET) == (3, 1)                 # $0.03 lowest - 1 -> the $0.03 minimum
+
+
+def test_the_buy_order_price_is_never_rounded_under_the_buy_order():
+    from market_seller import target_price
+    from team_fortress_service import US_DOLLAR_WALLET, buyer_pays_for
+    kroner = {'fee_minimum': 10, 'fee_base': 0, 'fee_percent': 0.05, 'publisher_percent': 0.10}
+    assert target_price(22, US_DOLLAR_WALLET, floor=22) == (23, 20)    # 22 cannot be made: 23, never 21
+    for wallet in (US_DOLLAR_WALLET, kroner):
+        smallest = buyer_pays_for(1, wallet)                           # $0.03, or 0.21 kr (10 øre fees)
+        for bid in range(3, 400):
+            price = target_price(bid, wallet, floor=bid)
+            if bid < smallest:
+                assert price is None                                    # cannot be listed at all
+                continue
+            buyer, receives = price
+            assert buyer >= bid and buyer_pays_for(receives, wallet) == buyer
+            assert target_price(bid, wallet)[0] <= bid                  # no buy order to respect: never above
+
+
+def test_a_three_cent_card_from_the_service_is_listed(world):
+    service, http, _, settings = world
+    settings.values['card_auto_sell_include_held'] = True
+    http.books['745740-A'] = (3, 0)
+    http.pages['1'] = [page(card('100', 'A'))]
+    assert service.sell_account('1', 'alpha')['listed'] == 1
+    assert service.status()['sales'][0]['buyer_pays'] == 3

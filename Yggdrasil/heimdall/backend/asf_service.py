@@ -23,8 +23,8 @@ HTTP API:
   a Ratatoskr login, the account's bot is paused; once Ratatoskr's session is
   gone the bot resumes. The paused set is persisted, because the backend reloads
   on every save and must never strand a bot paused.
-* **Only accounts with work run** — ASF's FAQ recommends at most 10 bots (after
-  Valve's internal guidelines), and an idle logged-in bot is pure risk. So a bot
+* **Only accounts with work run** — ASF's FAQ recommends at most 10 bots (Ivan
+  chose 20, see ``MAX_RUNNING_BOTS``), and an idle logged-in bot is pure risk. So a bot
   is switched on only while its account has cards to farm (ASF's own queue,
   Andvari's badges scan, or a "farm now" request after buying a game), at most
   ``MAX_RUNNING_BOTS`` at once, and switched off once ASF has looked and found
@@ -87,7 +87,11 @@ PAUSE_SETTLE_SECONDS = 3         # let Steam register "stopped playing" before R
 RATATOSKR_LOGIN_GRACE_SECONDS = 120  # Ratatoskr reports "disconnected" while it is still logging in
 STEAM_LOGIN = re.compile(r'^[A-Za-z0-9_]{1,64}$')   # Steam logins: letters, digits, underscore
 REQUEST_TIMEOUT_SECONDS = 15
-MAX_RUNNING_BOTS = 10            # ASF's recommended ceiling ("based on internal Valve guidelines")
+# Ivan's choice (2026-10-02): 20. ASF's FAQ: "ASF team suggests owning up to 10 Steam
+# accounts in total, and therefore also running up to 10 bots in total. Anything above
+# is not supported and done at your own risk"; technically "up to 100-200 bots with a
+# single IP". ASF only warns above 10.
+MAX_RUNNING_BOTS = 20
 EMPTY_CHECK_SECONDS = 5 * 60     # connected this long with nothing queued = ASF checked the badges
 FARM_NOW_SECONDS = 60 * 60       # a "farm now" request keeps a bot on at most this long
 ACCOUNTS_CACHE_SECONDS = 5 * 60  # status() reuses the account list (reading it decrypts every maFile)
