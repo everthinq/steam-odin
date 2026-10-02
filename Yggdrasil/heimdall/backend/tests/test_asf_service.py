@@ -84,6 +84,8 @@ class FakeAsf:
         self.calls = []
         self.fail_on = None
         self.refuse = set()              # paths ASF answers with Success false
+        self.commands = []               # ASF console commands (/Api/Command)
+        self.license_answer = 'Status: OK | Items: app/440'
         # What asf_setup.py writes (the real /Api/ASF answer carries many more keys)
         self.global_config = {'SteamOwnerID': 0, 's_SteamOwnerID': '0', 'Blacklist': [730],
                               'UpdateChannel': 0, 'UpdatePeriod': 0, 'Headless': True}
@@ -96,6 +98,20 @@ class FakeAsf:
             raise AsfError('refused')
         if method == 'GET' and path == '/Api/Bot/ASF':
             return json.loads(json.dumps(self.bots))
+        if method == 'POST' and path == '/Api/Command':
+            text = body['Command']
+            self.commands.append(text)
+            name = text.split()[1]
+            if text.startswith('addlicense'):
+                return f'<{name}> ID: app/440 | {self.license_answer}'
+            if text.startswith('play'):
+                (self.bots.get(name) or {}).get('CardsFarmer', {})['Paused'] = True   # ASF's manual mode
+                return f'<{name}> Playing selected gameIDs: 440'
+            return f'<{name}> Done!'
+        if method == 'POST' and path.endswith('/Stop'):
+            bot = self.bots.get(path.split('/')[3])
+            if bot is not None:
+                bot['KeepRunning'] = bot['IsConnectedAndLoggedOn'] = False
         if method == 'GET' and path == '/Api/ASF':
             if self.global_config is None:
                 return {'Version': '6.0.0.0'}
@@ -132,6 +148,8 @@ def world(tmp_path):
     service._call = fake
     # Both accounts have drops left (so they are wanted on) unless a test says otherwise.
     service.card_deals = FakeCardDeals({sid: (3, FRESH) for sid in ACCOUNTS})
+    # Both already own Team Fortress 2, so the license sweep stays quiet unless a test says otherwise.
+    service._team_fortress['licensed'] = ['alpha', 'bravo']
     return service, fake, steam, ratatoskr, sleeps
 
 
@@ -667,3 +685,268 @@ def test_disabled_service_does_nothing(tmp_path):
     service.pause_for_ratatoskr('alpha')
     assert service._call.calls == []
     assert service.status()['enabled'] is False
+
+
+# ---- Team Fortress 2: license sweep and play mode ---------------------------------
+
+from asf_service import LICENSE_LOGIN_TIMEOUT_SECONDS, LICENSE_RETRY_SECONDS  # noqa: E402
+
+STOPPED = {'Enabled': False, **HARDENED_BOT_CONFIG}
+
+
+def _unlicensed(service):
+    service._team_fortress['licensed'] = []
+
+
+def test_license_added_at_once_to_a_logged_in_bot(world):
+    service, fake, *_ = world
+    _unlicensed(service)
+    fake.bots = {'alpha': make_bot(to_farm=(1,)), 'bravo': make_bot(to_farm=(1,))}
+    service.tick()
+    assert sorted(fake.commands) == ['addlicense alpha app/440', 'addlicense bravo app/440']
+    assert service._licensed() == {'alpha', 'bravo'}
+    service.tick()
+    assert len(fake.commands) == 2                       # remembered: never asked twice
+
+
+def test_already_owned_counts_as_licensed(world):
+    service, fake, *_ = world
+    _unlicensed(service)
+    fake.license_answer = 'Status: Fail/AlreadyPurchased'
+    fake.bots = {'alpha': make_bot(to_farm=(1,)), 'bravo': make_bot(to_farm=(1,))}
+    service.tick()
+    assert service._licensed() == {'alpha', 'bravo'}
+
+
+def test_stopped_bot_is_started_for_the_license_then_stopped(world, monkeypatch):
+    service, fake, *_ = world
+    service.card_deals = FakeCardDeals()                 # no cards anywhere: both stay switched off
+    service._team_fortress['licensed'] = ['bravo']
+    fake.bots = {'alpha': make_bot(connected=False, running=False, config=dict(STOPPED)),
+                 'bravo': make_bot(connected=False, running=False, config=dict(STOPPED))}
+    clock = [50_000.0]
+    monkeypatch.setattr(asf_service.time, 'time', lambda: clock[0])
+    service.tick()
+    assert fake.posts('/Start') == [('/Api/Bot/alpha/Start', {})]
+    assert enabled_changes(fake) == []                   # started, never switched on for farming
+    fake.bots['alpha'].update(IsConnectedAndLoggedOn=True, KeepRunning=True)
+    clock[0] += 45
+    service.tick()
+    assert fake.commands == ['addlicense alpha app/440']
+    assert fake.posts('/Stop') == [('/Api/Bot/alpha/Stop', {})]
+    assert service._licensed() == {'alpha', 'bravo'} and not service._license_started
+
+
+def test_license_start_waits_for_a_free_login_queue(world):
+    service, fake, *_ = world
+    service.card_deals = FakeCardDeals()
+    _unlicensed(service)
+    fake.bots = {'alpha': make_bot(connected=False, running=True, config=dict(STOPPED)),   # logging in
+                 'bravo': make_bot(connected=False, running=False, config=dict(STOPPED))}
+    service.tick()
+    assert fake.posts('/Start') == []
+
+
+def test_license_login_that_hangs_is_stopped_and_retried_later(world, monkeypatch):
+    service, fake, *_ = world
+    service.card_deals = FakeCardDeals()
+    service._team_fortress['licensed'] = ['bravo']
+    fake.bots = {'alpha': make_bot(connected=False, running=False, config=dict(STOPPED)),
+                 'bravo': make_bot(connected=False, running=False, config=dict(STOPPED))}
+    clock = [50_000.0]
+    monkeypatch.setattr(asf_service.time, 'time', lambda: clock[0])
+    service.tick()
+    fake.bots['alpha'].update(KeepRunning=True, RequiredInput=INPUT_PASSWORD)   # token expired
+    clock[0] += LICENSE_LOGIN_TIMEOUT_SECONDS + 1
+    service.tick()
+    assert fake.posts('/Stop') == [('/Api/Bot/alpha/Stop', {})]
+    assert 'password' in service._license_failures['alpha']['error']
+    fake.bots['alpha'].update(RequiredInput=INPUT_NONE)
+    clock[0] += 60
+    service.tick()
+    assert len(fake.posts('/Start')) == 1                # not before LICENSE_RETRY_SECONDS
+    clock[0] += LICENSE_RETRY_SECONDS
+    service.tick()
+    assert len(fake.posts('/Start')) == 2
+
+
+def test_new_account_gets_the_license(world, tmp_path):
+    service, fake, steam, *_ = world
+    fake.bots = {'alpha': make_bot(to_farm=(1,)), 'bravo': make_bot(to_farm=(1,)),
+                 'charlie': make_bot(to_farm=(1,))}
+    steam.storage.accounts['76561198000000003'] = {'account_name': 'charlie', 'shared_secret': SHARED_SECRET}
+    try:
+        service.tick()
+    finally:
+        del steam.storage.accounts['76561198000000003']
+    assert fake.commands == ['addlicense charlie app/440']
+
+
+def test_team_fortress_mode_switches_every_bot_on_past_the_ceiling_and_plays(world):
+    service, fake, *_ = world
+    service.card_deals = FakeCardDeals()
+    fake.bots = {'alpha': make_bot(connected=False, running=False, config=dict(STOPPED)),
+                 'bravo': make_bot(to_farm=(5,))}
+    service.start_team_fortress()
+    service.tick()
+    assert enabled_changes(fake) == [('alpha', True)]
+    assert fake.commands == ['play bravo 440']           # logged in: plays now, its cards wait
+    fake.bots['alpha'] = make_bot()
+    service.tick()
+    assert fake.commands == ['play bravo 440', 'play alpha 440']
+    service.tick()
+    assert len(fake.commands) == 2                       # playing (manual mode): not told again
+    status = service.team_fortress_status()
+    assert status['active'] and status['all_accounts']
+
+
+def test_team_fortress_mode_ignores_the_card_ceiling(world, monkeypatch):
+    service, fake, *_ = world
+    monkeypatch.setattr(asf_service, 'MAX_RUNNING_BOTS', 1)
+    service.card_deals = FakeCardDeals()
+    fake.bots = {'alpha': make_bot(connected=False, running=False, config=dict(STOPPED)),
+                 'bravo': make_bot(connected=False, running=False, config=dict(STOPPED))}
+    service.start_team_fortress()
+    service.tick()
+    assert sorted(enabled_changes(fake)) == [('alpha', True), ('bravo', True)]
+
+
+def test_team_fortress_mode_for_chosen_accounts_only(world):
+    service, fake, *_ = world
+    service.card_deals = FakeCardDeals()
+    fake.bots = {'alpha': make_bot(), 'bravo': make_bot()}
+    service.start_team_fortress(['76561198000000002'])
+    service.tick()
+    assert fake.commands == ['play bravo 440']
+    with pytest.raises(asf_service.UnknownAccount):
+        service.start_team_fortress(['1'])
+
+
+def test_team_fortress_waits_for_the_license_and_skips_ratatoskr(world):
+    service, fake, _, ratatoskr, _ = world
+    service.card_deals = FakeCardDeals()
+    service._team_fortress['licensed'] = ['bravo']
+    fake.bots = {'alpha': make_bot(), 'bravo': make_bot(to_farm=(1,), farming=True)}
+    service._paused_for_ratatoskr['bravo'] = {'steamid': '76561198000000002', 'since': 1e18}
+    service.start_team_fortress()
+    service.tick()
+    assert fake.commands == ['addlicense alpha app/440', 'play alpha 440']
+
+
+def test_stop_team_fortress_resumes_card_farming(world):
+    service, fake, *_ = world
+    fake.bots = {'alpha': make_bot(to_farm=(1,)), 'bravo': make_bot()}
+    service.start_team_fortress()
+    service.tick()
+    assert all(bot['CardsFarmer']['Paused'] for bot in fake.bots.values())
+    service.stop_team_fortress()
+    assert sorted(path for path, _ in fake.posts('/Resume')) == ['/Api/Bot/alpha/Resume', '/Api/Bot/bravo/Resume']
+    commands = len(fake.commands)
+    service.tick()
+    assert len(fake.commands) == commands                # nobody told to play any more
+    assert not service.team_fortress_status()['active']
+
+
+def test_team_fortress_mode_survives_a_reload(world):
+    service, *_ = world
+    service.start_team_fortress(['76561198000000001'], reason='release: Haunted Hoard Case')
+    reloaded = AsfService(service.steam, service.ratatoskr, ipc_password='ipc', state_path=service.state_path)
+    assert reloaded._team_fortress['active'] and reloaded._team_fortress['names'] == ['alpha']
+    assert reloaded._team_fortress['reason'] == 'release: Haunted Hoard Case'
+
+
+def test_a_new_account_is_logged_in_for_the_license(world, monkeypatch):
+    """A brand-new bot's first login needs the password: the login assist gives it,
+    even though the bot is switched off for farming, then the license is added."""
+    service, fake, steam, *_ = world
+    service.card_deals = FakeCardDeals()
+    service._team_fortress['licensed'] = ['bravo']
+    fake.bots = {'alpha': make_bot(connected=False, running=False, config=dict(STOPPED)),
+                 'bravo': make_bot(connected=False, running=False, config=dict(STOPPED))}
+    clock = [50_000.0]
+    monkeypatch.setattr(asf_service.time, 'time', lambda: clock[0])
+    service.tick()
+    assert fake.posts('/Start') == [('/Api/Bot/alpha/Start', {})]
+    fake.bots['alpha'].update(RequiredInput=INPUT_PASSWORD)          # ASF stopped it: it needs the password
+    clock[0] += 45
+    service.tick()
+    assert [body['Type'] for _, body in fake.posts('/Input')] == [INPUT_PASSWORD, INPUT_TWO_FACTOR]
+    assert len(fake.posts('/Start')) == 2
+    fake.bots['alpha'].update(RequiredInput=INPUT_NONE, IsConnectedAndLoggedOn=True, KeepRunning=True)
+    clock[0] += 45
+    service.tick()
+    assert fake.commands == ['addlicense alpha app/440'] and 'alpha' in service._licensed()
+    assert fake.posts('/Stop') == [('/Api/Bot/alpha/Stop', {})]
+
+
+def test_a_stop_while_asf_is_unreachable_is_finished_by_the_tick(world):
+    service, fake, *_ = world
+    fake.bots = {'alpha': make_bot(), 'bravo': make_bot()}
+    service.start_team_fortress()
+    service.tick()
+    fake.fail_on = '/Api/Bot/ASF'
+    service.stop_team_fortress()                         # mode off, but nobody could be resumed
+    assert fake.posts('/Resume') == []
+    fake.fail_on = None
+    service.tick()
+    assert sorted(path for path, _ in fake.posts('/Resume')) == ['/Api/Bot/alpha/Resume', '/Api/Bot/bravo/Resume']
+    assert service._playing == {}
+
+
+def test_accounts_dropped_from_the_mode_are_resumed(world):
+    service, fake, *_ = world
+    fake.bots = {'alpha': make_bot(), 'bravo': make_bot()}
+    service.start_team_fortress()
+    service.tick()
+    service.start_team_fortress(['76561198000000001'], reason='release: X Case')   # bravo dropped
+    service.tick()
+    assert [path for path, _ in fake.posts('/Resume')] == ['/Api/Bot/bravo/Resume']
+    assert set(service._playing) == {'alpha'}
+
+
+def test_a_bot_that_reconnected_is_told_to_play_again(world, monkeypatch):
+    service, fake, *_ = world
+    clock = [10_000.0]
+    monkeypatch.setattr(asf_service.time, 'time', lambda: clock[0])
+    fake.bots = {'alpha': make_bot(), 'bravo': make_bot()}
+    service.start_team_fortress(['76561198000000001'])
+    service.tick()
+    fake.bots['alpha']['IsConnectedAndLoggedOn'] = False       # reconnecting; the farmer stays paused
+    service.tick()
+    fake.bots['alpha']['IsConnectedAndLoggedOn'] = True
+    service.tick()
+    assert fake.commands == ['play alpha 440', 'play alpha 440']
+    clock[0] += asf_service.PLAY_AGAIN_SECONDS + 1
+    service.tick()
+    assert fake.commands.count('play alpha 440') == 3          # the periodic safety net
+
+
+def test_ratatoskr_login_stops_team_fortress_and_it_plays_again_after(world, monkeypatch):
+    service, fake, _, ratatoskr, _ = world
+    clock = [10_000.0]
+    monkeypatch.setattr(asf_service.time, 'time', lambda: clock[0])
+    fake.bots = {'alpha': make_bot(), 'bravo': make_bot()}
+    service.start_team_fortress(['76561198000000001'])
+    service.tick()
+    ratatoskr.sessions['76561198000000001'] = 'connected'
+    service.pause_for_ratatoskr('alpha')
+    assert fake.commands[-1] == 'reset alpha' and 'alpha' in service._paused_for_ratatoskr
+    service.tick()
+    assert fake.commands[-1] == 'reset alpha'                  # Ratatoskr holds the session: no play
+    del ratatoskr.sessions['76561198000000001']
+    clock[0] += asf_service.RATATOSKR_LOGIN_GRACE_SECONDS + 1
+    service.tick()                                             # resumed (farmer un-paused) ...
+    assert fake.posts('/Resume')
+    service.tick()                                             # ... and told to play again
+    assert fake.commands[-1] == 'play alpha 440'
+
+
+def test_license_retries_back_off_up_to_a_day(world):
+    service, *_ = world
+    now = 1_000_000.0
+    assert service._license_retry_due(None, now)
+    assert not service._license_retry_due({'at': now - 3599, 'count': 1}, now)
+    assert service._license_retry_due({'at': now - 3600, 'count': 1}, now)
+    assert not service._license_retry_due({'at': now - 3 * 3600, 'count': 3}, now)    # waits 4 hours
+    assert not service._license_retry_due({'at': now - 23 * 3600, 'count': 10}, now)
+    assert service._license_retry_due({'at': now - 24 * 3600, 'count': 10}, now)

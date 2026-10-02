@@ -26,6 +26,7 @@ class _Context:
     telegram_caller = None
     card_deals_service = None
     asf_service = None
+    team_fortress_service = None
 
 
 ctx = _Context()

@@ -965,3 +965,54 @@ def card_farming_action(steamid, action):
         return jsonify({'error': str(e)}), 404
     except AsfError as e:
         return jsonify({'error': str(e)}), 502
+
+
+# --- Team Fortress 2 case drops (release watcher, ASF play mode, auto-sell) ---------
+
+@bp.route('/api/huginn/team-fortress', methods=['GET'])
+def team_fortress_status():
+    """Release watcher, Team Fortress 2 mode per account, sell list and recent listings."""
+    return jsonify(ctx.team_fortress_service.status())
+
+
+@bp.route('/api/huginn/team-fortress/play', methods=['POST'])
+def team_fortress_play():
+    """{"action": "start" | "stop"}. Start uses the saved account list (empty = every account)."""
+    from asf_service import AsfError, UnknownAccount
+    if not ctx.asf_service.enabled:
+        return jsonify({'error': 'ASF is not set up'}), 409
+    action = (request.get_json(silent=True) or {}).get('action')
+    try:
+        if action == 'start':
+            accounts = ctx.settings_manager.get_settings().get('team_fortress_accounts') or None
+            return jsonify(ctx.asf_service.start_team_fortress(accounts, reason='manual'))
+        if action == 'stop':
+            return jsonify(ctx.asf_service.stop_team_fortress())
+    except UnknownAccount as e:
+        return jsonify({'error': str(e)}), 404
+    except AsfError as e:
+        return jsonify({'error': str(e)}), 502
+    return jsonify({'error': 'action must be start or stop'}), 400
+
+
+@bp.route('/api/huginn/team-fortress/check-news', methods=['POST'])
+def team_fortress_check_news():
+    """Poll Team Fortress 2's news feed now (a release found here acts like the loop's)."""
+    return jsonify(ctx.team_fortress_service.check_news())
+
+
+@bp.route('/api/huginn/team-fortress/detect', methods=['POST'])
+def team_fortress_detect():
+    """Run the release detector on pasted update text (no action taken)."""
+    from team_fortress_service import detect_new_cases
+    return jsonify({'cases': detect_new_cases((request.get_json(silent=True) or {}).get('text') or '')})
+
+
+@bp.route('/api/huginn/team-fortress/sell-now', methods=['POST'])
+def team_fortress_sell_now():
+    """Read every watched inventory now and list what is on the sell list (in the
+    background). {"force": true} also lists copies held before the mode started, or
+    listed before (a cancelled listing)."""
+    force = bool((request.get_json(silent=True) or {}).get('force'))
+    result = ctx.team_fortress_service.start_sell_now(force)
+    return jsonify(result), (200 if result['started'] else 409)

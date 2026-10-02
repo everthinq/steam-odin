@@ -16,6 +16,7 @@ from cross_arbitrage_service import CrossArbitrageService
 from harvest_service import HarvestService
 from card_deals_service import CardDealsService
 from asf_service import AsfService
+from team_fortress_service import TeamFortressService
 from morning_routine import MorningRoutine
 from telegram_caller import TelegramCaller
 from logging_setup import setup_logging
@@ -75,6 +76,9 @@ card_deals_service = CardDealsService(steam_service, settings_manager)
 asf_service = AsfService(steam_service, ratatoskr_service)
 ratatoskr_service.before_login = asf_service.pause_for_ratatoskr
 asf_service.card_deals = card_deals_service   # drop counts decide which bots run
+# Team Fortress 2 case drops: watch the news for a newly added case, start ASF's
+# Team Fortress 2 mode the same minute, and list the drops on the Market as they land.
+team_fortress_service = TeamFortressService(settings_manager, steam_service, asf_service, telegram_caller)
 
 # Expose the singletons to the route blueprints (read from context.ctx at
 # request time — see context.py and the routes/ package).
@@ -94,6 +98,7 @@ ctx.harvest_service = harvest_service
 ctx.telegram_caller = telegram_caller
 ctx.card_deals_service = card_deals_service
 ctx.asf_service = asf_service
+ctx.team_fortress_service = team_fortress_service
 register_blueprints(app)
 
 # Morning routine: "Get all items" once a day at 08:00 (or the first minute the Mac
@@ -156,6 +161,8 @@ if _should_start_background_scheduler():
     card_deals_service.start_background()
     # ASF: provision bots, assist logins, resume bots after Ratatoskr sessions.
     asf_service.start_background()
+    # Team Fortress 2: release watcher + auto-sell of the new case's drops.
+    team_fortress_service.start()
     # Daily "Get all items" + CSFloat sweep (catches up after the Mac slept).
     morning_routine.start_background()
 

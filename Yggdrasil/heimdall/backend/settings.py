@@ -118,6 +118,23 @@ DEFAULT_SETTINGS = {
     "card_deals_chat_id": "",
     # Store country priced when no account's country is known yet.
     "card_deals_fallback_country": "TR",
+    # --- Team Fortress 2 case drops (Huginn -> Team Fortress 2) ---
+    # Watch Team Fortress 2's news for "Added the <name> Case" and, the minute it
+    # appears: start Team Fortress 2 mode in ASF (every account plays it for item
+    # drops), ring + text (team_fortress_chat_id, falling back to telegram_chat_id),
+    # and add the case to the sell list. Auto-sell lists every item on the sell list
+    # one cent under the lowest Market listing as soon as it drops, and confirms it.
+    "team_fortress_watch_enabled": True,
+    "team_fortress_poll_minutes": 2,
+    "team_fortress_play_on_release": True,
+    "team_fortress_ring_on_release": True,
+    "team_fortress_accounts": [],          # SteamID64s that play; empty = every account
+    "team_fortress_auto_sell_enabled": True,
+    "team_fortress_sell_items": [],        # Market names to sell on drop, e.g. ["Haunted Hoard Case"]
+    "team_fortress_chat_id": "",
+    # Team Fortress 2 mode stops by itself after this many hours (0 = never), so a
+    # release at night does not keep card farming paused on every account for days.
+    "team_fortress_auto_stop_hours": 24,
 }
 
 # How many auto-store move records to keep in the history log.

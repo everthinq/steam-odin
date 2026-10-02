@@ -29,6 +29,20 @@ HTTP API:
   Andvari's badges scan, or a "farm now" request after buying a game), at most
   ``MAX_RUNNING_BOTS`` at once, and switched off once ASF has looked and found
   nothing. Its login token is kept, so switching back on needs no password.
+* **Team Fortress 2 mode** — ``start_team_fortress`` makes the chosen bots
+  play Team Fortress 2 (app 440) so its item drops (a freshly added case is
+  worth the most in its first hours) land on every account. Those bots run
+  outside the ``MAX_RUNNING_BOTS`` ceiling, get the free Team Fortress 2
+  license once, and play it in ASF's manual mode (``play <bot> 440``), which
+  pauses their card farming; ``stop_team_fortress`` resumes it. Drops are
+  weekly-capped, so the mode is meant to start the minute a case is added
+  (``team_fortress_service.py`` watches the news and starts it).
+* **Team Fortress 2 license sweep** — every account should own Team Fortress
+  2 (free), so it can join the mode above at once. Each tick, an account not
+  yet confirmed gets ``addlicense <bot> app/440``: right away when its bot is
+  logged in, otherwise its bot is started for it (one at a time, only while
+  ASF's login queue is empty) and stopped again afterwards. New accounts are
+  picked up the same way. Confirmed accounts are remembered in the state file.
 * **Global config watch** — every tick reads ASF's global config (read only)
   and checks the safety settings ``make asf-setup`` wrote still hold: no
   ``SteamOwnerID`` (an owner could order loot or transfers from Steam chat, and
@@ -78,6 +92,11 @@ EMPTY_CHECK_SECONDS = 5 * 60     # connected this long with nothing queued = ASF
 FARM_NOW_SECONDS = 60 * 60       # a "farm now" request keeps a bot on at most this long
 ACCOUNTS_CACHE_SECONDS = 5 * 60  # status() reuses the account list (reading it decrypts every maFile)
 COUNTER_STRIKE_2 = 730           # blacklisted in ASF.json by scripts/asf_setup.py
+TEAM_FORTRESS_2 = 440            # free to play: ASF adds the license, then plays it for item drops
+LICENSE_LOGIN_TIMEOUT_SECONDS = 4 * 60   # a bot started only to add the license gets this long to log in
+LICENSE_RETRY_SECONDS = 60 * 60          # a failed license attempt is retried after this, doubling
+LICENSE_RETRY_MAX_SECONDS = 24 * 3600    # ... up to once a day
+PLAY_AGAIN_SECONDS = 30 * 60             # a bot in Team Fortress 2 mode is told to play again this often
 
 # The bot config Heimdall writes. Everything not listed stays at ASF's default
 # (card farming on, HoursUntilCardDrops 3, login tokens kept).
@@ -184,6 +203,17 @@ class AsfService:
         self._checked_empty = dict(saved.get('checked_empty') or {})
         # Why ASF's global config is unsafe (None while it is safe): every bot stays off
         self._global_config_unsafe = saved.get('global_config_unsafe')
+        # Team Fortress 2 mode: {active, names (None = every account), since, reason,
+        # stopped_at, licensed: [bot names that hold the free license]}
+        self._team_fortress = dict(saved.get('team_fortress') or {})
+        # {bot_name: {at, error}} — failed license attempts (retried after LICENSE_RETRY_SECONDS)
+        self._license_failures = dict(saved.get('license_failures') or {})
+        # {bot_name: epoch} — bots started only to add the license (stopped once done)
+        self._license_started = dict(saved.get('license_started') or {})
+        # {bot_name: epoch} — bots Heimdall told to play Team Fortress 2 (ASF's manual
+        # mode). Any of them no longer in the mode is resumed by the tick, so a stop
+        # that failed half-way, a shrunk account list or a race never strands one.
+        self._playing = dict(saved.get('team_fortress_playing') or {})
         self._global_config_shape_logged = False
         self._connected_since = {}       # {bot_name: epoch}, in memory only
         self._queued = set()             # wanted on, but over MAX_RUNNING_BOTS
@@ -223,6 +253,10 @@ class AsfService:
 
     def _command(self, bot_name, action, body=None):
         return self._call('POST', f'/Api/Bot/{bot_name}/{action}', body if body is not None else {})
+
+    def _console(self, text):
+        """One ASF console command (what the ASF UI terminal runs); returns ASF's answer."""
+        return str(self._call('POST', '/Api/Command', {'Command': text}) or '')
 
     # ---- accounts --------------------------------------------------------------
 
@@ -266,7 +300,11 @@ class AsfService:
                 state = copy.deepcopy({'paused_for_ratatoskr': self._paused_for_ratatoskr,
                                        'attempts': self._attempts, 'farm_requests': self._farm_requests,
                                        'checked_empty': self._checked_empty,
-                                       'global_config_unsafe': self._global_config_unsafe})
+                                       'global_config_unsafe': self._global_config_unsafe,
+                                       'team_fortress': self._team_fortress,
+                                       'license_failures': self._license_failures,
+                                       'license_started': self._license_started,
+                                       'team_fortress_playing': self._playing})
             try:
                 atomic_write_json(self.state_path, state)
             except Exception as e:
@@ -345,8 +383,10 @@ class AsfService:
                         self._attempts.pop(name, None)
                     self._persist()
                 continue
-            if (bot.get('BotConfig') or {}).get('Enabled') is False:
-                continue                 # switched off: nothing to log in for
+            with self._lock:
+                license_check = name in self._license_started
+            if (bot.get('BotConfig') or {}).get('Enabled') is False and not license_check:
+                continue                 # switched off: nothing to log in for (unless started for the license)
             required = bot.get('RequiredInput') or INPUT_NONE
             if required not in ASSISTABLE_INPUTS or bot.get('KeepRunning'):
                 continue
@@ -393,9 +433,16 @@ class AsfService:
             farmer = bot.get('CardsFarmer') or {}
             with self._lock:
                 already_ours = name in self._paused_for_ratatoskr
-            if farmer.get('Paused') and not already_ours:
+                playing = self._playing.pop(name, None) is not None
+            if playing:
+                # Team Fortress 2 mode: stop playing it (ASF's farmer stays paused);
+                # once Ratatoskr is gone the tick resumes the bot and, still in the
+                # mode, tells it to play again.
+                self._console(f'reset {name}')
+            elif farmer.get('Paused') and not already_ours:
                 return                   # paused by hand: leave it alone, and never resume it
-            self._command(name, 'Pause', {'Permanent': True, 'ResumeInSeconds': 0})
+            else:
+                self._command(name, 'Pause', {'Permanent': True, 'ResumeInSeconds': 0})
             with self._lock:
                 self._paused_for_ratatoskr[name] = {'steamid': self._accounts()[name]['steamid'],
                                                     'since': time.time()}
@@ -438,12 +485,13 @@ class AsfService:
             logger.warning('[ASF] could not read Andvari drop counts: %s', e)
             return {}
 
-    def _note_checks(self, bots, accounts, drops, now):
+    def _note_checks(self, bots, accounts, drops, now, skip=frozenset()):
         """Record which bots ASF has checked and found empty, with Andvari's drop
-        count for the account at that moment (and close their "farm now" requests)."""
+        count for the account at that moment (and close their "farm now" requests).
+        Bots in *skip* (Team Fortress 2 mode, license checks) are not card checks."""
         changed = False
         for name, bot in bots.items():
-            if not bot.get('IsConnectedAndLoggedOn'):
+            if name in skip or not bot.get('IsConnectedAndLoggedOn'):
                 self._connected_since.pop(name, None)
                 continue
             view = bot_view(bot)
@@ -478,15 +526,18 @@ class AsfService:
             return left != check.get('drops')
         return (fetched_at or 0) > check     # older save: only the check time is known
 
-    def _wanted(self, bots, accounts, now, drops=None):
+    def _wanted(self, bots, accounts, now, drops=None, team_fortress=frozenset()):
         """Bots that should run: ASF's own queue first, then "farm now" requests,
-        then accounts Andvari saw with drops left — at most MAX_RUNNING_BOTS."""
+        then accounts Andvari saw with drops left — at most MAX_RUNNING_BOTS —
+        plus every bot in Team Fortress 2 mode, outside that ceiling."""
         drops = self._andvari_drops() if drops is None else drops
         with self._lock:
             requests_, checked = dict(self._farm_requests), dict(self._checked_empty)
             paused = set(self._paused_for_ratatoskr)
         ranked = []
         for name, account in accounts.items():
+            if name in team_fortress:
+                continue
             bot = bots.get(name)
             view = bot_view(bot) if bot else None
             if view and view['enabled'] and (view['now_farming'] or view['games_to_farm']
@@ -499,9 +550,10 @@ class AsfService:
                 if left > 0 and self._drops_changed_since_check(checked.get(name), left, fetched_at):
                     ranked.append((2, -left, name))
         ranked.sort()
-        return {name for _, _, name in ranked[:MAX_RUNNING_BOTS]}, {name for _, _, name in ranked[MAX_RUNNING_BOTS:]}
+        wanted = {name for _, _, name in ranked[:MAX_RUNNING_BOTS]} | set(team_fortress)
+        return wanted, {name for _, _, name in ranked[MAX_RUNNING_BOTS:]}
 
-    def _apply_enabled(self, bots, wanted):
+    def _apply_enabled(self, bots, wanted, team_fortress=frozenset()):
         """Switch bots on/off to match *wanted*; returns the names changed."""
         changed = []
         for name, bot in bots.items():
@@ -520,8 +572,250 @@ class AsfService:
                 logger.warning('[ASF] could not switch %s %s: %s', name, 'on' if name in wanted else 'off', e)
                 continue
             changed.append(name)
-            logger.info('[ASF] switched %s %s', name, 'on (cards to farm)' if name in wanted else 'off (nothing to farm)')
+            reason = ('on (Team Fortress 2)' if name in team_fortress else 'on (cards to farm)'
+                      if name in wanted else 'off (nothing to farm)')
+            logger.info('[ASF] switched %s %s', name, reason)
         return changed
+
+    # ---- Team Fortress 2 ---------------------------------------------------------------
+
+    def _licensed(self):
+        with self._lock:
+            return set(self._team_fortress.get('licensed') or [])
+
+    def _note_license(self, name, answer, now):
+        """Read ASF's addlicense answer: owned (OK or AlreadyPurchased) or a failure."""
+        owned = bool(re.search(r'Status:\s*(OK|Fail/AlreadyPurchased)\b', answer))
+        with self._lock:
+            if owned:
+                licensed = set(self._team_fortress.get('licensed') or [])
+                licensed.add(name)
+                self._team_fortress['licensed'] = sorted(licensed)
+                self._license_failures.pop(name, None)
+            else:
+                self._license_failure(name, now, answer.strip()[:200] or 'no answer')
+        self._persist()
+        if owned:
+            logger.info('[ASF] %s owns Team Fortress 2', name)
+        else:
+            logger.warning('[ASF] could not add Team Fortress 2 to %s: %s', name, answer.strip()[:200])
+        return owned
+
+    def _license_failure(self, name, now, error):
+        """Record a failed license attempt (call with the lock held or not: RLock)."""
+        with self._lock:
+            count = (self._license_failures.get(name) or {}).get('count', 0) + 1
+            self._license_failures[name] = {'at': now, 'error': error, 'count': count}
+
+    @staticmethod
+    def _license_retry_due(failure, now):
+        """Whether a failed license attempt may be tried again: after an hour,
+        doubling with each failure, at most a day."""
+        if not failure:
+            return True
+        wait = min(LICENSE_RETRY_MAX_SECONDS, LICENSE_RETRY_SECONDS * 2 ** max(0, failure.get('count', 1) - 1))
+        return now - failure.get('at', 0) >= wait
+
+    def _license_sweep(self, bots, accounts, now):
+        """Give every account the free Team Fortress 2 license (see the module
+        docstring). Returns the bot started this tick, if any."""
+        licensed = self._licensed()
+        with self._lock:
+            failures, started = dict(self._license_failures), dict(self._license_started)
+        # 1. logged-in bots that are not confirmed yet: ask now (no login needed)
+        for name in accounts:
+            bot = bots.get(name) or {}
+            if name in licensed or not bot.get('IsConnectedAndLoggedOn'):
+                continue
+            if name not in started and not self._license_retry_due(failures.get(name), now):
+                continue
+            try:
+                self._note_license(name, self._console(f'addlicense {name} app/{TEAM_FORTRESS_2}'), now)
+            except AsfError as e:
+                self._note_license(name, f'ASF error: {e}', now)
+        # 2. bots started for the license: stop them once done, or when the login hangs
+        licensed = self._licensed()
+        for name, since in started.items():
+            bot = bots.get(name) or {}
+            done = name in licensed or name in self._license_failures_since(since)
+            timed_out = not bot.get('IsConnectedAndLoggedOn') and now - since >= LICENSE_LOGIN_TIMEOUT_SECONDS
+            if not (done or timed_out or name not in accounts):
+                continue
+            if timed_out and not done:
+                self._license_failure(name, now, 'did not log in (ASF may need the password)')
+            enabled = (bot.get('BotConfig') or {}).get('Enabled', True) is not False
+            if bot.get('KeepRunning') and not enabled:    # switched on meanwhile for farming: leave it
+                try:
+                    self._command(name, 'Stop')
+                except AsfError as e:
+                    logger.warning('[ASF] could not stop %s after the license check: %s', name, e)
+            with self._lock:
+                self._license_started.pop(name, None)
+            self._persist()
+        # 3. start one stopped bot that still needs the license, only while no login is pending
+        with self._lock:
+            if self._license_started:
+                return None
+            failures = dict(self._license_failures)
+        if any(bot.get('KeepRunning') and not bot.get('IsConnectedAndLoggedOn') for bot in bots.values()):
+            return None
+        for name in sorted(accounts):
+            bot = bots.get(name)
+            if not bot or name in licensed or bot.get('KeepRunning'):
+                continue
+            if not self._license_retry_due(failures.get(name), now):
+                continue
+            try:
+                self._command(name, 'Start')
+            except AsfError as e:
+                self._license_failure(name, now, f'could not start: {e}')
+                self._persist()
+                continue
+            with self._lock:
+                self._license_started[name] = now
+            self._persist()
+            logger.info('[ASF] started %s to add Team Fortress 2 to its library', name)
+            return name
+        return None
+
+    def _license_failures_since(self, since):
+        with self._lock:
+            return {name for name, failure in self._license_failures.items() if failure.get('at', 0) >= since}
+
+    def _team_fortress_names(self, accounts):
+        """Bot names in Team Fortress 2 mode right now (empty when it is off)."""
+        with self._lock:
+            mode = dict(self._team_fortress)
+        if not mode.get('active'):
+            return set()
+        names = mode.get('names')
+        return set(accounts) if names is None else {name for name in names if name in accounts}
+
+    def start_team_fortress(self, steamids=None, reason='manual'):
+        """Switch Team Fortress 2 mode on for these accounts (None = every account).
+        The next tick switches their bots on, adds the license and plays it."""
+        accounts = self._accounts()
+        if steamids is None:
+            names = None
+        else:
+            wanted = {str(steamid) for steamid in steamids}
+            names = sorted(name for name, account in accounts.items() if account['steamid'] in wanted)
+            if not names:
+                raise UnknownAccount('none of these accounts is known')
+        with self._lock:
+            self._team_fortress.update({'active': True, 'names': names, 'since': time.time(),
+                                        'reason': reason, 'stopped_at': None})
+        self._persist()
+        logger.info('[ASF] Team Fortress 2 mode on (%s) for %s', reason,
+                    'every account' if names is None else ', '.join(names))
+        return {'success': True, 'accounts': len(accounts) if names is None else len(names)}
+
+    def stop_team_fortress(self):
+        """Switch Team Fortress 2 mode off: every bot told to play is resumed (now,
+        and by every later tick until it is), so card farming continues and bots
+        with nothing to farm switch off on the following ticks."""
+        with self._lock:
+            self._team_fortress.update({'active': False, 'stopped_at': time.time()})
+        self._persist()
+        logger.info('[ASF] Team Fortress 2 mode off')
+        try:
+            self._release_players(self._bots(), set())
+        except AsfError as e:
+            logger.info('[ASF] resuming after Team Fortress 2 continues on the next tick: %s', e)
+        return {'success': True}
+
+    def _release_players(self, bots, team_fortress):
+        """Resume every bot told to play Team Fortress 2 that is no longer in the
+        mode. A bot not logged in right now is resumed once it is (ASF keeps the
+        farmer paused across reconnects)."""
+        with self._lock:
+            playing = dict(self._playing)
+            paused_for_ratatoskr = set(self._paused_for_ratatoskr)
+        for name in sorted(set(playing) - set(team_fortress)):
+            bot = bots.get(name)
+            if bot is not None and not bot.get('KeepRunning'):
+                pass                     # stopped: nothing plays any more
+            elif bot is None or not bot.get('IsConnectedAndLoggedOn'):
+                continue                 # try again once it is logged in
+            elif name not in paused_for_ratatoskr and bot_view(bot)['paused']:
+                try:
+                    self._command(name, 'Resume')
+                    logger.info('[ASF] %s stopped playing Team Fortress 2, card farming resumed', name)
+                except AsfError as e:
+                    logger.warning('[ASF] could not resume %s after Team Fortress 2: %s', name, e)
+                    continue
+            with self._lock:
+                self._playing.pop(name, None)
+            self._persist()
+
+    def _play_team_fortress(self, bots, names, now=None):
+        """Every logged-in bot in Team Fortress 2 mode plays it. A bot is told to
+        play when it was not told yet, when it was seen logged out since (a
+        reconnect may drop the manual game while the farmer stays paused), and
+        again every PLAY_AGAIN_SECONDS as a safety net. Returns the names told."""
+        now = time.time() if now is None else now
+        with self._lock:
+            paused_for_ratatoskr = set(self._paused_for_ratatoskr)
+            playing = dict(self._playing)
+        told = []
+        licensed = self._licensed()
+        for name in sorted(names - paused_for_ratatoskr):
+            bot = bots.get(name) or {}
+            if not bot.get('IsConnectedAndLoggedOn'):
+                if name in playing:
+                    with self._lock:
+                        self._playing.pop(name, None)    # logged out: tell it again once back
+                    self._persist()
+                continue
+            if not bot.get('IsPlayingPossible', True) or name not in licensed:
+                continue                 # played elsewhere, or the license sweep adds it first
+            if name in playing and bot_view(bot)['paused'] and now - playing[name] < PLAY_AGAIN_SECONDS:
+                continue
+            try:
+                answer = self._console(f'play {name} {TEAM_FORTRESS_2}')
+                logger.info('[ASF] %s plays Team Fortress 2: %s', name, answer.strip()[:120])
+                told.append(name)
+                with self._lock:
+                    self._playing[name] = now
+                self._persist()
+            except AsfError as e:
+                logger.warning('[ASF] could not make %s play Team Fortress 2: %s', name, e)
+        return told
+
+    def team_fortress_status(self):
+        with self._lock:
+            mode = copy.deepcopy(self._team_fortress)
+            failures = copy.deepcopy(self._license_failures)
+            started = dict(self._license_started)
+            paused_for_ratatoskr = set(self._paused_for_ratatoskr)
+            playing_told = set(self._playing)
+        accounts = self._cached_accounts()
+        names = self._team_fortress_names(accounts)
+        chosen = set(accounts) if mode.get('names') is None else set(mode.get('names') or [])
+        licensed = set(mode.get('licensed') or [])
+        bots = self._last_bots or {}
+        rows = []
+        for name, account in sorted(accounts.items(), key=lambda item: item[0].lower()):
+            bot = bots.get(name) or {}
+            playing = (name in names and name in playing_told and bool(bot.get('IsConnectedAndLoggedOn'))
+                       and name not in paused_for_ratatoskr)
+            rows.append({'steamid': account['steamid'], 'account_name': name,
+                         'licensed': name in licensed, 'license_error': (failures.get(name) or {}).get('error'),
+                         'license_checking': name in started, 'in_mode': name in names,
+                         'chosen': name in chosen,
+                         'connected': bool(bot.get('IsConnectedAndLoggedOn')), 'playing': playing,
+                         'wallet_currency': bot.get('WalletCurrency')})
+        return {'active': bool(mode.get('active')), 'since': mode.get('since'), 'reason': mode.get('reason'),
+                'stopped_at': mode.get('stopped_at'), 'all_accounts': mode.get('names') is None,
+                'accounts': rows, 'licensed': sum(1 for row in rows if row['licensed']),
+                'playing': sum(1 for row in rows if row['playing'])}
+
+    def wallet_currency(self, steamid):
+        """The account's Steam wallet currency id (1 = US dollar) from ASF, or None."""
+        for name, account in self._cached_accounts().items():
+            if account['steamid'] == str(steamid):
+                return ((self._last_bots or {}).get(name) or {}).get('WalletCurrency') or None
+        return None
 
     # ---- global config watch ---------------------------------------------------------
 
@@ -621,15 +915,22 @@ class AsfService:
             bots = self._bots()
             unsafe = self._check_global_config()
             drops = self._andvari_drops()
-            self._note_checks(bots, accounts, drops, now)
-            wanted, self._queued = self._wanted(bots, accounts, now, drops)
+            team_fortress = set() if unsafe else self._team_fortress_names(accounts)
+            with self._lock:
+                license_checks = set(self._license_started)
+            self._note_checks(bots, accounts, drops, now, skip=team_fortress | license_checks)
+            wanted, self._queued = self._wanted(bots, accounts, now, drops, team_fortress)
             if unsafe:
                 wanted, self._queued = set(), set()   # every bot off until the config is safe
-            if self.provision(bots, wanted) + self._apply_enabled(bots, wanted):
+            if self.provision(bots, wanted) + self._apply_enabled(bots, wanted, team_fortress):
                 bots = self._bots()
             self._resume_after_ratatoskr(bots)
             if not unsafe:
                 self._assist_one(bots, accounts, now)
+                if self._license_sweep(bots, accounts, now):
+                    bots = self._bots()
+                self._play_team_fortress(bots, team_fortress, now)
+            self._release_players(bots, team_fortress)
             self._last_bots, self._last_error = self._bots(), None
         except AsfError as e:
             self._last_error = str(e)
