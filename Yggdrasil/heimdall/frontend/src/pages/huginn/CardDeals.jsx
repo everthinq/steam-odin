@@ -1,9 +1,11 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Link } from 'react-router-dom';
-import { LayoutDashboard, RefreshCw, Layers, Settings, Search, Users, AlertTriangle, Pickaxe, ExternalLink, BadgeCheck } from 'lucide-react';
+import { LayoutDashboard, RefreshCw, Layers, Settings, Search, Users, AlertTriangle, Pickaxe, ExternalLink, BadgeCheck, Coins } from 'lucide-react';
 import DealsTable from '../../components/carddeals/DealsTable';
 import SettingsPanel from '../../components/carddeals/SettingsPanel';
 import FarmingPanel from '../../components/carddeals/FarmingPanel';
+import SellingPanel from '../../components/carddeals/SellingPanel';
+import BuyPanel from '../../components/carddeals/BuyPanel';
 import InfoTip from '../../components/gjallarhorn/InfoTip';
 
 // Andvari — games whose Steam trading-card drops resell for more than the game
@@ -77,6 +79,10 @@ const CardDeals = () => {
     const [showFarming, setShowFarming] = useState(false);
     const [farming, setFarming] = useState(null);
     const [farmingBusy, setFarmingBusy] = useState(false);
+    const [showSelling, setShowSelling] = useState(false);
+    // 'deals' | 'buy'; /huginn/card-deals#buy opens the Buy games tab directly.
+    const [tab, setTab] = useState(() => (window.location.hash === '#buy' ? 'buy' : 'deals'));
+    const [selling, setSelling] = useState(null);
     const pollRef = useRef(null);
 
     // ASF card farming status: refreshed every 30 seconds (cheap: Heimdall answers
@@ -105,6 +111,17 @@ const CardDeals = () => {
             .finally(() => { setFarmingBusy(false); fetchFarming(); });
     };
     const farmingTotals = farming?.totals;
+
+    // Card auto-sell status: refreshed every 30 seconds.
+    const fetchSelling = useCallback(() => fetch('/api/huginn/card-deals/selling')
+        .then((r) => (r.ok ? r.json() : null))
+        .then((d) => { if (d) setSelling(d); })
+        .catch(() => {}), []);
+    useEffect(() => {
+        fetchSelling();
+        const timer = setInterval(fetchSelling, 30000);
+        return () => clearInterval(timer);
+    }, [fetchSelling]);
 
     const fetchDeals = useCallback(() => {
         if (!valuation) return Promise.resolve();
@@ -195,6 +212,14 @@ const CardDeals = () => {
                 <InfoTip tip={HOW_IT_WORKS}>
                     <span className="text-xs text-slate-500 border border-white/10 rounded-lg px-2 py-1 cursor-help">How it works</span>
                 </InfoTip>
+                <div className="flex rounded-lg border border-white/10 overflow-hidden text-sm">
+                    {[['deals', 'Deals'], ['buy', 'Buy games']].map(([id, label]) => (
+                        <button key={id} type="button" onClick={() => setTab(id)}
+                            className={`px-3 py-1.5 ${tab === id ? 'bg-amber-500/20 text-amber-200' : 'text-slate-400 hover:bg-white/5'}`}>
+                            {label}
+                        </button>
+                    ))}
+                </div>
 
                 <div className="ml-auto flex items-center gap-2 flex-wrap">
                     <InfoTip tip="Quick scan: discounted games only (about a minute of store pages, then the Market check of the shortlist).">
@@ -231,6 +256,7 @@ const CardDeals = () => {
             </div>
 
             <div className="flex-1 flex flex-col gap-3 p-6 overflow-hidden max-w-[96rem] w-full mx-auto">
+                {tab === 'buy' ? <BuyPanel /> : (<>
                 {showSettings && (
                     <div className="shrink-0">
                         <SettingsPanel onClose={() => setShowSettings(false)} onSaved={fetchDeals} />
@@ -302,11 +328,25 @@ const CardDeals = () => {
                             {farmingTotals?.needs_attention ? ` (${farmingTotals.needs_attention} need you)` : ''}
                         </p>
                     </button>
+                    <button type="button" onClick={() => setShowSelling((v) => !v)}
+                        title="List dropped trading cards one cent under the lowest Market listing, on every account."
+                        className="px-4 py-2.5 rounded-xl bg-odin-blue/40 border border-white/10 text-left hover:border-white/20">
+                        <p className="text-[10px] uppercase tracking-wider text-slate-500 flex items-center gap-1"><Coins size={10} /> Card selling</p>
+                        <p className={`text-lg font-bold tabular-nums ${selling?.enabled ? 'text-emerald-300' : 'text-slate-400'}`}>
+                            {!selling ? '—' : selling.enabled ? `on · ${selling.statistics?.listed ?? 0} listed` : 'off'}
+                        </p>
+                    </button>
                 </div>
 
                 {showFarming && (
                     <div className="shrink-0">
                         <FarmingPanel farming={farming} onAction={farmingAction} busy={farmingBusy} />
+                    </div>
+                )}
+
+                {showSelling && (
+                    <div className="shrink-0">
+                        <SellingPanel selling={selling} onSaved={fetchSelling} />
                     </div>
                 )}
 
@@ -384,6 +424,7 @@ const CardDeals = () => {
                                 ? 'No profitable games in this view right now. At buy-order prices (what cards sell for instantly) deals are rare; switch to Listings to see what patient selling could make.'
                                 : 'No profitable games in this view right now, even at listing prices.'}
                 />
+                </>)}
             </div>
         </div>
     );

@@ -41,7 +41,7 @@ not a separate deployable):
 | **Mímir** | Encrypted credential vault (login / password / email), shares the maFile key | `mimir_service.py` | `pages/mimir/` |
 | **Ratatoskr** | Moves items between Storage Units and inventory | `ratatoskr_service.py` → Node service | `pages/ratatoskr/` |
 | **Harvest** (in Huginn) | Every purchase lot you still hold, at the price you paid (no averaging, oldest sold first), vs what an autobuy market pays now; account → market profiles like Arbitrage | `harvest_service.py` | `components/Harvest.jsx` (Arbitrage page tab) |
-| **Andvari** (in Huginn) | Games whose card drops pay for them + ASF card farming status | `card_deals_service.py`, `asf_service.py` → ASF container | `pages/huginn/CardDeals.jsx` |
+| **Andvari** (in Huginn) | Games whose card drops pay for them + ASF card farming status; "Buy games" tab (buy a deal on many accounts from their wallets, price-guarded); card auto-sell | `card_deals_service.py`, `asf_service.py` → ASF container, `store_purchase_service.py`, `card_seller_service.py` | `pages/huginn/CardDeals.jsx`, `components/carddeals/BuyPanel.jsx`, `SellingPanel.jsx` |
 | **Team Fortress 2** (in Huginn) | New Team Fortress 2 case drops: news watcher rings + starts ASF playing Team Fortress 2 on every account the minute a case is added, drops listed on the Market as they land; every account gets the free game | `team_fortress_service.py`, `asf_service.py` (Team Fortress 2 mode + license sweep) | `pages/huginn/TeamFortress.jsx` |
 
 ## Architecture in one breath

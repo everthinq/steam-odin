@@ -789,6 +789,18 @@ class CardDealsService:
                 'owned': owned, 'drops': {app: n for app, n in drops.items() if n > 0},
                 'error': None}
 
+    def account_countries(self):
+        """{steamid: store country} from the last account refresh (Andvari "Buy games")."""
+        with self._lock:
+            accounts = dict(self._state.get('accounts') or {})
+        return {steamid: (entry.get('country') or '').upper() for steamid, entry in accounts.items()
+                if entry.get('country')}
+
+    def exchange_rates(self):
+        """{currency: units per US dollar} as last fetched."""
+        with self._lock:
+            return dict(self._rates())
+
     def account_drops(self):
         """{steamid: (card drops left, fetched_at)} from the last account refresh
         (the ASF service switches farming bots on from it)."""

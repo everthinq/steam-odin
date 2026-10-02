@@ -33,6 +33,7 @@ import time
 
 import requests
 
+import community_pacer
 from gjallarhorn_news_service import _bbcode_to_lines
 from jsonio import atomic_write_json, read_json
 from notifications import send_notification
@@ -215,12 +216,29 @@ def sellable_items(inventory, names):
     return [(assetid, name) for assetid, name, marketable in sell_list_items(inventory, names) if marketable]
 
 
-def confirmation_names(confirmation):
-    """Every text field of a mobile confirmation that could name the item."""
-    parts = [confirmation.get('headline'), confirmation.get('type_name')]
+def is_market_listing_confirmation(confirmation):
+    """Type 3 is a Market listing; Steam has also sent them as the undocumented
+    type 12, recognisable by its type name (the scheduler's rule)."""
+    kind = int(confirmation.get('type') or 0)
+    return kind == 3 or (kind == 12 and 'market' in str(confirmation.get('type_name') or '').lower())
+
+
+def confirmation_item_names(confirmation):
+    """The item names a Market-listing confirmation shows: its summary lines
+    ("Selling for $0.23 USD" is the headline, the item is the summary)."""
     summary = confirmation.get('summary')
-    parts += summary if isinstance(summary, list) else [summary]
-    return ' '.join(str(part) for part in parts if part)
+    lines = summary if isinstance(summary, list) else [summary]
+    return {str(line).strip().lower() for line in lines if line}
+
+
+def matching_listing_confirmations(confirmations, names):
+    """[(id, nonce)] of the Market-listing confirmations whose item is exactly one
+    of *names* (case-insensitive): a short name like "Scout" never matches
+    another listing that merely contains it."""
+    wanted = {name.strip().lower() for name in names if name}
+    return [(str(confirmation.get('id')), str(confirmation.get('nonce') or confirmation.get('key')))
+            for confirmation in confirmations or []
+            if is_market_listing_confirmation(confirmation) and confirmation_item_names(confirmation) & wanted]
 
 
 class RateLimited(RuntimeError):
@@ -240,7 +258,6 @@ class TeamFortressService:
         self._lock = threading.RLock()
         self._news_lock = threading.Lock()
         self._sell_lock = threading.Lock()
-        self._last_community_call = 0.0
         self._prices = {}                # {(name, currency): (minor units, fetched_at)}
         saved = read_json(state_path, default={}) or {}
         self._state = {
@@ -413,10 +430,7 @@ class TeamFortressService:
                               headers={'User-Agent': USER_AGENT})
 
     def _pace(self):
-        wait = COMMUNITY_GAP_SECONDS - (time.time() - self._last_community_call)
-        if wait > 0:
-            self._sleep(wait)
-        self._last_community_call = time.time()
+        community_pacer.pace(self._sleep, COMMUNITY_GAP_SECONDS)   # shared with the card seller
 
     def _cookies(self, steamid):
         cookies = self.steam.web_session_cookie_for(steamid)
@@ -480,15 +494,7 @@ class TeamFortressService:
         result = self.steam.get_confirmations(steamid)
         if not result.get('success'):
             raise RuntimeError(result.get('message') or 'could not read confirmations')
-        lowered = [name.lower() for name in names]
-        chosen = []
-        for confirmation in result.get('confirmations') or []:
-            if int(confirmation.get('type') or 0) != 3:      # 3 = Market listing
-                continue
-            text = confirmation_names(confirmation).lower()
-            if any(name in text for name in lowered):
-                chosen.append((str(confirmation.get('id')),
-                               str(confirmation.get('nonce') or confirmation.get('key'))))
+        chosen = matching_listing_confirmations(result.get('confirmations'), names)
         if not chosen:
             return 0
         outcome = self.steam.act_on_confirmations_batch(steamid, chosen, 'allow')

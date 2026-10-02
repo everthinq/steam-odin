@@ -1016,3 +1016,44 @@ def team_fortress_sell_now():
     force = bool((request.get_json(silent=True) or {}).get('force'))
     result = ctx.team_fortress_service.start_sell_now(force)
     return jsonify(result), (200 if result['started'] else 409)
+
+
+# --- Andvari card auto-sell ----------------------------------------------------------
+
+@bp.route('/api/huginn/card-deals/selling', methods=['GET'])
+def card_selling_status():
+    """Card auto-sell: switch, per-account inventory reads, listings and their totals."""
+    return jsonify(ctx.card_seller_service.status())
+
+
+# --- Andvari "Buy games" ----------------------------------------------------------------
+
+@bp.route('/api/huginn/card-deals/buy', methods=['GET'])
+def card_deals_buy_status():
+    """The last plan (accounts, wallets, owned games, regional prices), the running job,
+    the purchase history and its statistics."""
+    return jsonify(ctx.store_purchase_service.status())
+
+
+@bp.route('/api/huginn/card-deals/buy/plan', methods=['POST'])
+def card_deals_buy_plan():
+    """{"apps": "store links or app ids", "max_usd_per_game": 0.45, "steamids": [...] (optional)}."""
+    body = request.get_json(silent=True) or {}
+    result = ctx.store_purchase_service.start_plan(body.get('apps'), body.get('max_usd_per_game', 0.45),
+                                                   body.get('steamids'))
+    return jsonify(result), (200 if result['started'] else 400)
+
+
+@bp.route('/api/huginn/card-deals/buy/run', methods=['POST'])
+def card_deals_buy_run():
+    """{"selection": [{"steamid": ..., "app_ids": [...]}], "dry_run": bool, "plan_created_at":
+    the plan the page showed}: buys only games that plan marks "buy"; every purchase is
+    price-guarded."""
+    body = request.get_json(silent=True) or {}
+    try:
+        plan_created_at = float(body['plan_created_at']) if body.get('plan_created_at') is not None else None
+    except (TypeError, ValueError):
+        return jsonify({'started': False, 'error': 'plan_created_at must be a number'}), 400
+    result = ctx.store_purchase_service.start_purchase(body.get('selection'), bool(body.get('dry_run')),
+                                                       plan_created_at)
+    return jsonify(result), (200 if result['started'] else 400)

@@ -118,6 +118,14 @@ DEFAULT_SETTINGS = {
     "card_deals_chat_id": "",
     # Store country priced when no account's country is known yet.
     "card_deals_fallback_country": "TR",
+    # Card auto-sell: list dropped trading cards one cent under the lowest Market
+    # listing (not the buy orders) on every account, confirmed automatically.
+    # Cards an account already held when it was switched on are left alone unless
+    # card_auto_sell_include_held. card_auto_sell_apps: app ids (empty = every game).
+    "card_auto_sell_enabled": False,
+    "card_auto_sell_include_held": False,
+    "card_auto_sell_foil": True,
+    "card_auto_sell_apps": [],
     # --- Team Fortress 2 case drops (Huginn -> Team Fortress 2) ---
     # Watch Team Fortress 2's news for "Added the <name> Case" and, the minute it
     # appears: start Team Fortress 2 mode in ASF (every account plays it for item

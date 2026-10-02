@@ -91,15 +91,17 @@ def test_huginn_blueprint_registers_all_routes():
                  '/api/huginn/card-deals/alerts/test', '/api/huginn/card-deals/buy-orders',
                  '/api/huginn/team-fortress', '/api/huginn/team-fortress/play',
                  '/api/huginn/team-fortress/check-news', '/api/huginn/team-fortress/detect',
-                 '/api/huginn/team-fortress/sell-now']:
+                 '/api/huginn/team-fortress/sell-now', '/api/huginn/card-deals/selling',
+                 '/api/huginn/card-deals/buy', '/api/huginn/card-deals/buy/plan', '/api/huginn/card-deals/buy/run']:
         assert want in rules, f'missing huginn route: {want}'
     # +9 gjallarhorn rules: rotation, accounts, readiness, holds (GET+POST),
     # targets (GET+POST), ring, ring/status; +3 news rules: news/status,
     # news/check, news/test; +1 cross-profile arbitrage; +2 cross-profile config
     # (GET+POST); +1 csfloat/connectivity.
     # +7 Andvari card-deals rules: deals, scan, buy-orders, status, config (GET+POST), alerts/test.
-    # +5 Team Fortress 2 rules: status, play, check-news, detect, sell-now.
-    assert _rule_count(bp, "/api/huginn") == 71
+    # +5 Team Fortress 2 rules: status, play, check-news, detect, sell-now; +1 card auto-sell status;
+    # +3 Buy games: status, plan, run.
+    assert _rule_count(bp, "/api/huginn") == 75
 
 
 def test_register_blueprints_wires_onto_app():

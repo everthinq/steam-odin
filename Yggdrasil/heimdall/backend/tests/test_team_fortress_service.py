@@ -271,10 +271,10 @@ def test_sells_each_case_one_cent_under_and_confirms_only_those_listings(world):
     service, http, steam, *_, sent = world
     http.inventories['1'] = inventory(('11', 'Haunted Hoard Case', 1), ('12', 'Haunted Hoard Case', 1),
                                       ('13', 'Mann Co. Cap', 1))
-    steam.confirmations = [
-        {'id': 'a', 'nonce': 'n1', 'type': 3, 'headline': 'Haunted Hoard Case', 'summary': ['Sell - $0.04']},
-        {'id': 'b', 'nonce': 'n2', 'type': 3, 'headline': 'AK-47 | Redline'},        # someone else's listing
-        {'id': 'c', 'nonce': 'n3', 'type': 2, 'headline': 'Haunted Hoard Case'},     # a trade: never
+    steam.confirmations = [   # Steam's shape: the price is the headline, the item the summary
+        {'id': 'a', 'nonce': 'n1', 'type': 3, 'headline': 'Selling for $0.04 USD', 'summary': ['Haunted Hoard Case']},
+        {'id': 'b', 'nonce': 'n2', 'type': 3, 'headline': 'Selling for $9.00 USD', 'summary': ['AK-47 | Redline']},
+        {'id': 'c', 'nonce': 'n3', 'type': 2, 'headline': 'Trade', 'summary': ['Haunted Hoard Case']},  # a trade
     ]
     summary = service.sell_account('1', 'alpha')
     assert summary['listed'] == 2 and summary['confirmed'] == 1 and summary['error'] is None
@@ -471,3 +471,14 @@ def test_mode_stops_by_itself_after_the_configured_hours(world):
     assert service._auto_stop() is True and stopped and 'stopped playing after 24 hours' in sent[-1]
     settings.values['team_fortress_auto_stop_hours'] = 0
     assert service._auto_stop() is False
+
+
+def test_confirmation_matching_is_exact_and_knows_type_twelve():
+    confirmations = [
+        {'id': '1', 'nonce': 'a', 'type': 3, 'headline': 'Selling for $0.10 USD', 'summary': ['Scout']},
+        {'id': '2', 'nonce': 'b', 'type': 3, 'headline': 'Selling for $5.00 USD', 'summary': ['Scout Hat']},
+        {'id': '3', 'nonce': 'c', 'type': 12, 'type_name': 'Market Listing', 'summary': [' scout ']},
+        {'id': '4', 'nonce': 'd', 'type': 12, 'type_name': 'Something else', 'summary': ['Scout']},
+        {'id': '5', 'nonce': 'e', 'type': 2, 'summary': ['Scout']},
+    ]
+    assert team_fortress_service.matching_listing_confirmations(confirmations, ['Scout']) == [('1', 'a'), ('3', 'c')]

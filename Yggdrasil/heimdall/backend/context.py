@@ -27,6 +27,8 @@ class _Context:
     card_deals_service = None
     asf_service = None
     team_fortress_service = None
+    card_seller_service = None
+    store_purchase_service = None
 
 
 ctx = _Context()
