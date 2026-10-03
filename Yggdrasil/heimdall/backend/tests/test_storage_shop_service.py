@@ -150,6 +150,9 @@ def test_approval_form_accepts_a_relative_action():
     ('20 items in your cart', 2000, 'USD', False),
     ('$3.98\n1 item', 39800, 'USD', False),                  # no number across a line break
     ('<script>var total = 398;</script>Total: $9.99', 398, 'USD', False),
+    ('$0.99 USD', 99, 'USD', True),                          # a sticker capsule (seen live)
+    ('$0.99 USD', 990, 'USD', False),
+    ('$0.09 USD', 99, 'USD', False),
 ])
 def test_amount_shown(text, minor_units, currency, shown):
     assert amount_shown(text, minor_units, currency) is shown
@@ -228,6 +231,7 @@ class FakeRatatoskr:
         self.account_country, self.refused_countries = account_country, set(refused_countries)
         self.status, self.pending_moves, self.finalize_errors = status, 0, 0
         self.request_changes, self.no_request = {}, False
+        self.item_definitions = []
 
     def get_status(self, steamid):
         return {'status': 'connected' if self.connected else self.status}
@@ -248,13 +252,14 @@ class FakeRatatoskr:
         return {'result': 1, 'price_sheet_base64': self.sheet, 'price_sheet_version': 7, 'storage_units': self.units,
                 'account_country': self.account_country}
 
-    def store_purchase_init(self, steamid, country, currency, quantity, unit_price):
+    def store_purchase_init(self, steamid, country, currency, quantity, unit_price, item_definition_index=1201):
         self.calls.append(('init', country, currency, quantity, unit_price))
+        self.item_definitions.append(item_definition_index)
         if country in self.refused_countries:
             return {'success': False, 'result': 8, 'transactionId': '0'}
         if self.init_result != 1:
             return {'success': False, 'result': self.init_result, 'transactionId': '0', 'url': ''}
-        message = {'lineitems': {'0': {'description': 'Storage Unit', 'gameitemid': 1201,
+        message = {'lineitems': {'0': {'description': 'Storage Unit', 'gameitemid': item_definition_index,
                                        'amount': unit_price * quantity, 'quantity': quantity}},
                    'transid': int(TRANSACTION), 'orderid': int(GAME_COORDINATOR_TRANSACTION), 'appid': 730,
                    'currency': 1, 'total': unit_price * quantity, 'BillingTotal': unit_price * quantity}
@@ -575,7 +580,8 @@ def test_a_page_for_another_account_is_refused(tmp_path):
 
 
 def test_the_live_approval_page_is_accepted():
-    """The page saved by the everthinklol dry run (2026-10-03), when present locally."""
+    """The page saved by the last dry run, when present locally: a Storage Unit ($1.99,
+    2026-10-03) or a 10 Year Birthday Sticker Capsule ($0.99, the same day)."""
     import os
     path = os.path.join(os.path.dirname(__file__), '..', 'cache', 'storage_shop_approval_page.html')
     if not os.path.exists(path) or 'form_authtxn' not in open(path, encoding='utf-8').read():
@@ -584,7 +590,7 @@ def test_the_live_approval_page_is_accepted():
     identifier = re.search(r'name="transaction_id" value="(\d+)"', page).group(1)
     action, fields = approval_form(page, identifier)
     assert action.endswith('/checkout/approvetxnsubmit') and fields['approved'] == '1'
-    assert amount_shown(page, 199, 'USD')
+    assert amount_shown(page, 199, 'USD') or amount_shown(page, 99, 'USD')
 
 
 def test_a_closed_store_is_logged_in_afresh_for_delivery(tmp_path):
@@ -757,3 +763,99 @@ def test_price_sheet_job_reports_an_unreadable_sheet(tmp_path):
     with pytest.raises(ShopError, match='No active GC session'):
         service._refresh_price_sheet()
     assert ratatoskr.calls == ['login', 'disconnect']
+
+
+# ---- any other store item (the Store Catalogue's Buy button) ----------------------------------
+
+NAME_TAG = 'Name Tag'       # $1.99 like the Storage Unit, so the approval page fixture fits
+
+
+class FakeStoreRatatoskr(FakeRatatoskr):
+    """A price sheet with a Name Tag next to the Storage Unit, and Ratatoskr's item names."""
+
+    def __init__(self, **changes):
+        super().__init__(**changes)
+        self.sheet = base64.b64encode(_valve_lzma(_key_values({'store': {'entries': {
+            'casket': {'prices': {'USD': 199}}, NAME_TAG: {'prices': {'USD': 199}},
+            'XpShopTicket1': {'prices': {'USD': 1599}}}}}))).decode()
+
+    def store_item_names(self, names):
+        known = {NAME_TAG: {'defIndex': 1200, 'name': 'Name Tag', 'prefab': 'valve csgo_tool'}}
+        return {'success': True, 'definitions': {name: known[name] for name in names if name in known}}
+
+
+def _name_tag_plan(service):
+    service._build_plan(None, NAME_TAG)
+    return service.status(NAME_TAG)['plan']
+
+
+def test_a_plan_for_another_item_carries_it_and_counts_no_storage_units(tmp_path):
+    http = FakeHttp()
+    service = _service(tmp_path, http, FakeStoreRatatoskr())
+    plan = _name_tag_plan(service)
+    assert (plan['entry'], plan['item_name'], plan['definition_index']) == (NAME_TAG, 'Name Tag', 1200)
+    assert plan['max_usd_per_unit'] == 2.49            # $1.99 × 1.25
+    assert plan['accounts'][0]['status'] == 'buy'
+    assert not any('/inventory/' in url for url in http.gets)       # no Storage Unit count for a Name Tag
+    status = service.status(NAME_TAG)
+    assert status['item']['name'] == 'Name Tag' and status['accounts'][0]['unit_price'] == 199
+
+
+def test_buying_another_item_opens_it_and_checks_it_in_the_approval_request(tmp_path):
+    http, ratatoskr = FakeHttp(), FakeStoreRatatoskr()
+    service = _service(tmp_path, http, ratatoskr)
+    created = _name_tag_plan(service)['created_at']
+    order = service.start_purchase([{'steamid': STEAMID, 'quantity': 2}], plan_created_at=created, item='casket')
+    assert 'another item' in order['error']            # the screen shows another item than the plan
+    row = service.status(NAME_TAG)['plan']['accounts'][0]
+    result = service._buy_account({**row, 'quantity': 2, 'entry': NAME_TAG, 'item_name': 'Name Tag',
+                                   'definition_index': 1200}, dry_run=False)
+    assert result['ok'] and result['paid'] and result['item_ids'] == ['11', '12']
+    assert ratatoskr.item_definitions == [1200]
+    assert (result['entry'], result['storage_units_before'], result['storage_units_after']) == (NAME_TAG, None, None)
+    assert service.status(NAME_TAG)['statistics']['units'] == 2
+    assert service.status()['statistics']['units'] == 0          # Storage Units bought: none
+
+
+def test_an_approval_request_for_another_item_is_refused(tmp_path):
+    ratatoskr = FakeStoreRatatoskr()
+    service = _service(tmp_path, ratatoskr=ratatoskr)
+    row = _name_tag_plan(service)['accounts'][0]
+    ratatoskr.request_changes = {'lineitems': {'0': {'gameitemid': 1201, 'quantity': 1, 'amount': 199}}}
+    result = service._buy_account({**row, 'quantity': 1, 'entry': NAME_TAG, 'item_name': 'Name Tag',
+                                   'definition_index': 1200}, dry_run=False)
+    assert not result['ok'] and not result['payment_attempted'] and 'does not match' in result['error']
+    assert ('cancel', GAME_COORDINATOR_TRANSACTION) in ratatoskr.calls
+
+
+def test_passes_and_unknown_items_are_not_sold(tmp_path):
+    service = _service(tmp_path, ratatoskr=FakeStoreRatatoskr())
+    assert 'not sold here' in service.start_plan(None, 'XpShopTicket1')['error']
+    assert 'not sold here' in service.start_plan(None, 'Game License')['error']
+    assert not service.status('XpShopTicket1')['item']['for_sale']
+    with pytest.raises(ShopError, match='not in Ratatoskr'):
+        service._build_plan(None, 'coupon - unknown')
+    assert service.status('coupon - unknown')['item']['error']
+
+
+def test_older_purchases_without_an_item_count_as_storage_units():
+    history = [{'paid': True, 'account_name': 'a', 'quantity': 1, 'currency': 'USD', 'expected': 199},
+               {'paid': True, 'account_name': 'a', 'quantity': 3, 'currency': 'USD', 'expected': 597, 'entry': NAME_TAG}]
+    assert shop_statistics(history)['units'] == 1
+    assert shop_statistics(history, NAME_TAG)['units'] == 3
+
+
+# Steam's approval request for a sticker capsule, as seen live 2026-10-03 (dry run): the order
+# id is spelled "OrderID", not "orderid" as for a Storage Unit.
+CAPSULE_REQUEST = {'BillingCurrency': 1, 'BillingTotal': 99, 'OrderID': 2663192793, 'Refundable': 1, 'appid': 730,
+                   'currency': 1, 'language': 0, 'total': 99, 'transid': 129072073187068990,
+                   'lineitems': {'0': {'amount': 99, 'description': '10 Year Birthday Sticker Capsule',
+                                       'gameitemid': 20188, 'quantity': 1}}}
+
+
+def test_approval_request_names_are_read_in_any_case():
+    assert check_auth_request(CAPSULE_REQUEST, '2663192793', 1, 99, 1, 20188) == '129072073187068990'
+    with pytest.raises(ShopError, match='items'):
+        check_auth_request(CAPSULE_REQUEST, '2663192793', 1, 99, 1)       # a Storage Unit was ordered
+    with pytest.raises(ShopError, match='appears twice'):
+        check_auth_request({**CAPSULE_REQUEST, 'orderid': 1}, '2663192793', 1, 99, 1, 20188)

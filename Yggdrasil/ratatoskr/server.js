@@ -766,21 +766,25 @@ app.post('/items/store-names', (req, res) => {
     res.json({ success: true, definitions });
 });
 
-// Open a wallet transaction for Storage Units. Nothing is paid until Steam approves
+// Open a wallet transaction for an item (Storage Units by default). Nothing is paid until Steam approves
 // it (Heimdall does that on checkout.steampowered.com) and it is finalized below.
 app.post('/store/purchase/init', async (req, res) => {
-    const { steamID, country, currency, quantity, unitPrice } = req.body || {};
+    const { steamID, country, currency, quantity, unitPrice, itemDefinitionIndex } = req.body || {};
     const session = connectedSession(steamID, res);
     if (!session) return;
     const count = parseInt(quantity, 10);
     const price = parseInt(unitPrice, 10);
     const currencyId = parseInt(currency, 10);
-    if (!(count >= 1 && count <= 50) || !(price > 0) || !(currencyId >= 0 && currencyId <= 63) || !/^[A-Z]{2}$/.test(String(country || ''))) {
-        return res.status(400).json({ error: 'quantity (1-50), unitPrice, currency (the game store 0-based currency, USD = 0) and a two-letter country are required' });
+    // The item's definition index (Storage Unit 1201 when none is given).
+    const definition = itemDefinitionIndex === undefined || itemDefinitionIndex === null
+        ? Store.STORAGE_UNIT_DEFINITION_INDEX : Number(itemDefinitionIndex);
+    if (!(count >= 1 && count <= 50) || !(price > 0) || !(currencyId >= 0 && currencyId <= 63) || !/^[A-Z]{2}$/.test(String(country || ''))
+        || !(Number.isInteger(definition) && definition > 0 && definition < 1000000)) {
+        return res.status(400).json({ error: 'quantity (1-50), unitPrice, currency (the game store 0-based currency, USD = 0), a two-letter country and a whole itemDefinitionIndex are required' });
     }
     try {
-        const answer = await Store.initPurchase(session, { country, currency: currencyId, quantity: count, unitPrice: price });
-        console.log(`[STORE] Purchase opened for ${steamID}: ${count} Storage Unit(s), result ${answer.result}, transaction ${answer.txn_id}`);
+        const answer = await Store.initPurchase(session, { country, currency: currencyId, quantity: count, unitPrice: price, itemDefinitionIndex: definition });
+        console.log(`[STORE] Purchase opened for ${steamID}: ${count} × item ${definition}, result ${answer.result}, transaction ${answer.txn_id}`);
         if (answer.authRequest) {
             console.log(`[STORE] Steam approval request received for ${answer.txn_id} (${answer.authRequest.hex.length / 2} bytes)`);
         }

@@ -1,20 +1,22 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { Link } from 'react-router-dom';
+import { Link, useParams } from 'react-router-dom';
 import {
     Archive, LayoutDashboard, Search, RefreshCw, Minus, Plus, ShoppingCart, FlaskConical, X,
-    CheckCircle2, AlertTriangle, Loader2, Circle, Wallet, History,
+    CheckCircle2, AlertTriangle, Loader2, Circle, Wallet, History, Tags,
 } from 'lucide-react';
 import { useColumnSort, sortRows } from '../../components/draupnir/columnSort';
 import SortHeader from '../../components/ratatoskr/SortHeader';
 
-// Ratatoskr "Buy Storage Units": pick any account from the dashboard, choose how many Storage
-// Units (1,000 items each), review the order with freshly read wallets, pay. Backend:
-// /api/ratatoskr/storage-shop*. The account list shows what is last known (nothing is read
+// Ratatoskr "Buy Storage Units" — and any other in-game store item (/store-catalogue/buy/<entry>,
+// the Store Catalogue's Buy button): pick any account from the dashboard, choose how many,
+// review the order with freshly read wallets, pay. Backend: /api/ratatoskr/storage-shop*
+// with the price sheet entry as "item" (the Storage Unit is "casket"). The account list shows what is last known (nothing is read
 // from Steam until "Review & buy" or "Check wallets"); every purchase is re-checked
 // against Steam's own approval request before anything is paid.
 
 const MAX_PER_ACCOUNT = 20;
+const STORAGE_UNIT = 'casket';          // the price sheet's name for the Storage Unit
 const STEPS = [
     ['wallet', 'Checking the wallet'],
     ['login', 'Logging in'],
@@ -59,6 +61,9 @@ const sumByCurrency = (lines) => lines.reduce((totals, line) => {
 }, {});
 const moneyList = (byCurrency) => Object.entries(byCurrency).map(([c, v]) => money(v, c)).join(' + ') || '—';
 const payableLines = (lines) => (lines || []).filter((l) => l.quantity > 0 && l.total != null);
+// "3 Storage Units", or "3 × Name Tag" for any other item.
+const unitsOf = (count, item) => (item.entry === STORAGE_UNIT
+    ? `${count} Storage Unit${count === 1 ? '' : 's'}` : `${count} × ${item.name}`);
 
 const post = (path, body) => fetch(path, {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}),
@@ -118,7 +123,9 @@ const reviewLines = (wanted, plan, byId) => {
 
 // ---- the page ------------------------------------------------------------------------------
 
-const StorageShop = () => {
+const StorageShop = ({ item }) => {
+    const query = `item=${encodeURIComponent(item)}`;
+    const isStorageUnit = item === STORAGE_UNIT;
     const [state, setState] = useState(null);
     const [error, setError] = useState(null);
     const [search, setSearch] = useState('');
@@ -135,11 +142,11 @@ const StorageShop = () => {
 
     const load = useCallback(() => {
         const number = ++loads.current;
-        return fetch('/api/ratatoskr/storage-shop')
+        return fetch(`/api/ratatoskr/storage-shop?${query}`)
             .then((r) => r.json())
             .then((d) => { if (number === loads.current) setState(d); })
             .catch(() => setError('Could not reach the backend.'));
-    }, []);
+    }, [query]);
     const running = Boolean(state?.job?.running);
     useEffect(() => {
         load();
@@ -172,7 +179,7 @@ const StorageShop = () => {
             if (!ours) return { stage: 'stale' };
             if (job.running) return { stage: 'checking' };
             const plan = state.plan;
-            if (job.error || !plan || plan.created_at < shown.jobStartedAt) {
+            if (job.error || !plan || plan.created_at < shown.jobStartedAt || (plan.entry || STORAGE_UNIT) !== item) {
                 return { stage: 'failed', message: job.error || 'The wallets could not be checked.' };
             }
             return { stage: 'review', planCreatedAt: plan.created_at, lines: reviewLines(shown.wanted, plan, byId) };
@@ -180,7 +187,7 @@ const StorageShop = () => {
         const results = (state.history || []).filter((h) => h.at >= shown.purchaseStartedAt
             && shown.paying.some((l) => l.steamid === h.steamid));
         return { stage: ours && job.running ? 'running' : 'results', results, jobError: ours ? job.error : null };
-    }, [shown, state, byId]);
+    }, [shown, state, byId, item]);
 
     const visible = useMemo(() => {
         const needle = search.trim().toLowerCase();
@@ -213,14 +220,14 @@ const StorageShop = () => {
         const a = byId[steamid];
         return { steamid, account_name: a.account_name, quantity, currency: a.currency,
                  total: a.unit_price ? a.unit_price * quantity : null,
-                 usd: a.usd_per_unit ? a.usd_per_unit * quantity : 1.99 * quantity };
+                 usd: (a.usd_per_unit || state?.item?.usd_list_price || 0) * quantity };
     });
     const cartUnits = cartLines.reduce((n, l) => n + l.quantity, 0);
     const cartUnknown = cartLines.some((l) => l.total == null);
 
     const checkWallets = () => {
         setError(null);
-        post('/api/ratatoskr/storage-shop/plan', {})
+        post('/api/ratatoskr/storage-shop/plan', { item })
             .then((d) => { if (!d.started) setError(d.error); })
             .catch(() => setError('Could not reach the backend.'))
             .finally(load);
@@ -228,7 +235,7 @@ const StorageShop = () => {
     const review = () => {
         setError(null);
         setOrder({ stage: 'checking', jobStartedAt: null, wanted: { ...cart } });
-        post('/api/ratatoskr/storage-shop/plan', { steamids: Object.keys(cart) })
+        post('/api/ratatoskr/storage-shop/plan', { steamids: Object.keys(cart), item })
             .then((d) => {
                 if (d.started) setOrder((o) => (o ? { ...o, jobStartedAt: d.started_at } : o));
                 else { setOrder(null); setError(d.error); }
@@ -244,7 +251,7 @@ const StorageShop = () => {
         setOrder({ stage: 'running', jobStartedAt: null, purchaseStartedAt: null, dryRun, paying: lines });
         post('/api/ratatoskr/storage-shop/run', {
             selection: lines.map((l) => ({ steamid: l.steamid, quantity: l.quantity })),
-            dry_run: dryRun, plan_created_at: view.planCreatedAt,
+            dry_run: dryRun, plan_created_at: view.planCreatedAt, item,
         })
             .then((d) => {
                 if (d.started) {
@@ -275,8 +282,11 @@ const StorageShop = () => {
         .finally(load);
 
     if (!state) {
-        return <div className="min-h-screen flex items-center justify-center text-slate-400"><Loader2 className="animate-spin mr-2" size={18} /> Loading Buy Storage Units…</div>;
+        return <div className="min-h-screen flex items-center justify-center text-slate-400"><Loader2 className="animate-spin mr-2" size={18} /> Loading…</div>;
     }
+    const itemInfo = state.item || { entry: item, name: item, for_sale: true };
+    // Not buyable from this page: the game license / Armory Pass, or an item Ratatoskr cannot name.
+    const blockedItem = !itemInfo.for_sale ? 'The game license and the Armory Pass are not sold here.' : itemInfo.error;
     const stats = state.statistics || { units: 0, spent: {}, accounts: {} };
     const unclear = (state.history || []).filter((h) => h.payment_attempted && !h.paid && h.state === 'done');
     const checkingAll = running && state.job.kind === 'plan' && !shown;
@@ -288,18 +298,30 @@ const StorageShop = () => {
             <header className="flex flex-wrap items-center gap-3 mb-6">
                 <div className="p-2 bg-amber-900/30 rounded-lg border border-amber-600/30"><Archive size={22} className="text-amber-500" /></div>
                 <div className="mr-auto rounded-lg">
-                    <h1 className="text-2xl font-bold text-amber-100 font-serif">Buy Storage Units</h1>
-                    <p className="text-xs text-slate-300 [text-shadow:0_1px_3px_rgb(0_0_0)]">Buy Counter-Strike 2 Storage Units ({state.storage_unit_capacity || 1000} items each) from each account&apos;s Steam wallet</p>
+                    <h1 className="text-2xl font-bold text-amber-100 font-serif">{isStorageUnit ? 'Buy Storage Units' : `Buy ${itemInfo.name}`}</h1>
+                    <p className="text-xs text-slate-300 [text-shadow:0_1px_3px_rgb(0_0_0)]">
+                        {isStorageUnit
+                            ? `Buy Counter-Strike 2 Storage Units (${state.storage_unit_capacity || 1000} items each) from each account's Steam wallet`
+                            : `From the Counter-Strike 2 in-game store, with each account's Steam wallet${itemInfo.usd_list_price ? ` · $${itemInfo.usd_list_price.toFixed(2)} each` : ''}${itemInfo.max_usd_per_unit ? ` · refused above $${itemInfo.max_usd_per_unit.toFixed(2)} in any currency` : ''}`}
+                    </p>
                 </div>
                 {stats.units > 0 && (
                     <span className="text-xs text-slate-400 rounded-lg border border-white/10 px-3 py-1.5">
                         Bought so far: <span className="text-emerald-300 font-medium">{stats.units}</span> for {moneyList(stats.spent)}
                     </span>
                 )}
+                <Link to="/store-catalogue" className="flex items-center gap-2 px-3 py-2 rounded-lg text-slate-400 hover:text-white hover:bg-white/5">
+                    <Tags size={14} /> Store Catalogue
+                </Link>
                 <Link to="/" className="flex items-center gap-2 px-3 py-2 rounded-lg text-slate-400 hover:text-white hover:bg-white/5">
                     <LayoutDashboard size={14} /> Dashboard
                 </Link>
             </header>
+            {blockedItem && (
+                <div className="mb-4 flex items-start gap-2 rounded-lg border border-red-500/30 bg-red-950/80 px-3 py-2 text-red-300" role="alert">
+                    <AlertTriangle size={15} className="mt-0.5 shrink-0" /> <span>{blockedItem}</span>
+                </div>
+            )}
 
             {error && (
                 <div className="mb-4 flex items-start gap-2 rounded-lg border border-red-500/30 bg-red-950/80 px-3 py-2 text-red-300" role="alert">
@@ -312,7 +334,7 @@ const StorageShop = () => {
                     <p className="font-medium flex items-center gap-2"><AlertTriangle size={15} /> A purchase was approved but not delivered</p>
                     {unclear.map((h) => (
                         <div key={h.at} className="flex flex-wrap items-center gap-2 mt-1 text-xs">
-                            <span>{h.account_name}: {h.quantity} × {money(h.unit_price, h.currency)} ({ago(h.at)})</span>
+                            <span>{h.account_name}: {h.quantity} × {h.item_name || 'Storage Unit'} at {money(h.unit_price, h.currency)} ({ago(h.at)})</span>
                             <button type="button" disabled={running} onClick={() => deliverAgain(h.at)}
                                 className="px-2 py-0.5 rounded border border-amber-400/40 hover:bg-amber-500/10 disabled:opacity-50">
                                 Deliver again
@@ -341,12 +363,13 @@ const StorageShop = () => {
                                 </button>
                             ))}
                         </div>
-                        <button type="button" onClick={checkWallets} disabled={running}
-                            title="Reads every account's wallet and counts its Storage Units (about 8 seconds per account); nothing is bought"
+                        <button type="button" onClick={checkWallets} disabled={running || Boolean(blockedItem)}
+                            title={isStorageUnit ? "Reads every account's wallet and counts its Storage Units (about 8 seconds per account); nothing is bought"
+                                : "Reads every account's wallet (about 4 seconds per account); nothing is bought"}
                             className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-white/15 text-slate-300 hover:bg-white/5 disabled:opacity-50 text-xs">
                             <RefreshCw size={13} className={checkingAll || readingPrices ? 'animate-spin' : ''} />
                             {checkingAll ? `Checking ${Math.max(0, state.job.done - 1)}/${Math.max(0, state.job.total - 1)}`
-                                : readingPrices ? 'Reading the store prices…' : 'Check wallets & Storage Units'}
+                                : readingPrices ? 'Reading the store prices…' : isStorageUnit ? 'Check wallets & Storage Units' : 'Check wallets'}
                         </button>
                     </div>
 
@@ -361,15 +384,15 @@ const StorageShop = () => {
                                     <SortHeader resetLabel="the dashboard order" column="account" label="Account" sort={sort} />
                                     <SortHeader resetLabel="the dashboard order" column="wallet" label="Wallet" sort={sort} align="right"
                                         title="Wallets in other currencies are compared in US dollars" />
-                                    <SortHeader resetLabel="the dashboard order" column="storage_units" label="Storage Units" sort={sort} align="right"
-                                        title="Storage Units the account holds now (each holds 1,000 items), from its Counter-Strike 2 inventory" />
+                                    {isStorageUnit && <SortHeader resetLabel="the dashboard order" column="storage_units" label="Storage Units" sort={sort} align="right"
+                                        title="Storage Units the account holds now (each holds 1,000 items), from its Counter-Strike 2 inventory" />}
                                     <SortHeader resetLabel="the dashboard order" column="can_buy" label="Can buy" sort={sort} align="right" />
                                     <th className="font-medium text-right pr-3">Quantity</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 {visible.length === 0 && (
-                                    <tr><td colSpan={6} className="py-8 text-center text-slate-500">No account matches.</td></tr>
+                                    <tr><td colSpan={isStorageUnit ? 6 : 5} className="py-8 text-center text-slate-500">No account matches.</td></tr>
                                 )}
                                 {visible.map((a) => {
                                     const selected = Boolean(cart[a.steamid]);
@@ -393,14 +416,14 @@ const StorageShop = () => {
                                                     </>
                                                 ) : <span className="text-slate-500 text-xs">not checked</span>}
                                             </td>
-                                            <td className="text-right tabular-nums">
+                                            {isStorageUnit && <td className="text-right tabular-nums">
                                                 {a.storage_units != null ? (
                                                     <span title={`Room for ${(a.storage_units * (state.storage_unit_capacity || 1000)).toLocaleString()} items · counted ${ago(a.storage_units_at)}`}>
                                                         <span className={a.storage_units ? 'text-slate-200' : 'text-slate-400'}>{a.storage_units}</span>
                                                         <span className="block text-[10px] text-slate-500">{ago(a.storage_units_at)}</span>
                                                     </span>
                                                 ) : <span className="text-slate-500 text-xs" title="Counted by “Check wallets & Storage Units”">not counted</span>}
-                                            </td>
+                                            </td>}
                                             <td className="text-right text-xs">
                                                 {!a.sold_in_currency ? <span className="text-amber-300">currency not sold</span>
                                                     : a.affordable == null ? <span className="text-slate-500" title="Checked when you review the order">?</span>
@@ -425,7 +448,7 @@ const StorageShop = () => {
                 <aside className="lg:sticky lg:top-4 self-start rounded-xl border border-amber-500/25 bg-slate-900/90 backdrop-blur-md shadow-xl p-4" aria-label="Order">
                     <h2 className="flex items-center gap-2 text-amber-100 font-serif font-bold text-base mb-3"><ShoppingCart size={16} /> Order</h2>
                     {cartLines.length === 0 ? (
-                        <p className="text-slate-400 text-xs leading-relaxed">Tick the accounts to buy for. Each starts at 1 Storage Unit; change the quantity in its row.</p>
+                        <p className="text-slate-400 text-xs leading-relaxed">Tick the accounts to buy for. Each starts at {isStorageUnit ? '1 Storage Unit' : `1 × ${itemInfo.name}`}; change the quantity in its row.</p>
                     ) : (
                         <>
                             <ul className="space-y-1.5 mb-3 max-h-64 overflow-auto custom-scrollbar">
@@ -440,13 +463,13 @@ const StorageShop = () => {
                                 ))}
                             </ul>
                             <div className="border-t border-white/10 pt-2 mb-3 space-y-0.5">
-                                <div className="flex justify-between text-slate-400"><span>Storage Units</span><span className="tabular-nums text-slate-200">{cartUnits}</span></div>
+                                <div className="flex justify-between text-slate-400"><span>{isStorageUnit ? 'Storage Units' : itemInfo.name}</span><span className="tabular-nums text-slate-200">{cartUnits}</span></div>
                                 <div className="flex justify-between text-slate-300 font-medium">
                                     <span>Total</span>
                                     <span className="tabular-nums text-amber-100">{cartUnknown ? `≈ $${cartLines.reduce((s, l) => s + l.usd, 0).toFixed(2)}` : moneyList(sumByCurrency(cartLines))}</span>
                                 </div>
                             </div>
-                            <button type="button" onClick={review} disabled={running}
+                            <button type="button" onClick={review} disabled={running || Boolean(blockedItem)}
                                 className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-lg bg-amber-600 hover:bg-amber-500 text-white font-medium disabled:opacity-50">
                                 <Wallet size={15} /> Review &amp; buy
                             </button>
@@ -464,15 +487,16 @@ const StorageShop = () => {
                     <summary className="cursor-pointer text-slate-300 inline-flex items-center gap-2"><History size={14} /> Purchase log ({state.history.length})</summary>
                     <div className="overflow-auto custom-scrollbar">
                         <table className="w-full text-xs mt-2">
-                            <thead className="text-slate-500 text-left"><tr><th className="py-1">When</th><th>Account</th><th className="text-right">Units</th><th className="text-right">Total</th><th className="text-right">Before → after</th><th className="pl-3">Result</th></tr></thead>
+                            <thead className="text-slate-500 text-left"><tr><th className="py-1">When</th><th>Account</th><th>Item</th><th className="text-right">Quantity</th><th className="text-right">Total</th><th className="text-right" title="Storage Units on the account before and after a Storage Unit purchase">Storage Units</th><th className="pl-3">Result</th></tr></thead>
                             <tbody>
                                 {state.history.map((h) => (
                                     <tr key={`${h.steamid}-${h.at}`} className="border-t border-white/5">
                                         <td className="py-1 text-slate-400">{ago(h.at)}</td>
                                         <td className="text-slate-300">{h.account_name}</td>
+                                        <td className="text-slate-400">{h.item_name || 'Storage Unit'}</td>
                                         <td className="text-right tabular-nums">{h.quantity}</td>
                                         <td className="text-right tabular-nums">{money(h.expected, h.currency)}</td>
-                                        <td className="text-right tabular-nums text-slate-400">{h.storage_units_before ?? '—'} → {h.storage_units_after ?? '—'}</td>
+                                        <td className="text-right tabular-nums text-slate-400">{(h.entry || STORAGE_UNIT) === STORAGE_UNIT ? `${h.storage_units_before ?? '—'} → ${h.storage_units_after ?? '—'}` : ''}</td>
                                         <td className={`pl-3 ${h.paid ? 'text-emerald-300' : h.dry_run && h.ok ? 'text-sky-300' : h.state === 'in progress' ? 'text-amber-300' : 'text-red-400'}`}>
                                             {h.paid ? 'Bought' : h.dry_run && h.ok ? 'Test passed (nothing paid)' : h.state === 'in progress' ? 'In progress…' : h.error}
                                         </td>
@@ -484,7 +508,7 @@ const StorageShop = () => {
                 </details>
             )}
 
-            {view && <OrderDialog order={shown} view={view} job={state.job || {}} onPay={pay} onClose={closeOrder}
+            {view && <OrderDialog order={shown} view={view} job={state.job || {}} item={itemInfo} onPay={pay} onClose={closeOrder}
                 onDeliverAgain={deliverAgain} onReviewAgain={() => { setOrder(null); review(); }} />}
         </div>
     );
@@ -492,7 +516,7 @@ const StorageShop = () => {
 
 // ---- the order dialog: checking → review → running → results ------------------------------
 
-const OrderDialog = ({ order, view, job, onPay, onClose, onDeliverAgain, onReviewAgain }) => {
+const OrderDialog = ({ order, view, job, item, onPay, onClose, onDeliverAgain, onReviewAgain }) => {
     if (view.stage === 'stale') {
         return (
             <Modal title="The wallets were checked again elsewhere" onClose={onClose}>
@@ -565,7 +589,7 @@ const OrderDialog = ({ order, view, job, onPay, onClose, onDeliverAgain, onRevie
                     <p className="text-red-300 mb-3">Nothing can be bought with these wallets.</p>
                 ) : (
                     <div className="rounded-lg border border-amber-500/30 bg-amber-500/[0.06] px-3 py-2 mb-4 text-slate-200">
-                        <span className="font-medium">{units} Storage Unit{units > 1 ? 's' : ''}</span> on {payable.length} account{payable.length > 1 ? 's' : ''} for{' '}
+                        <span className="font-medium">{unitsOf(units, item)}</span> on {payable.length} account{payable.length > 1 ? 's' : ''} for{' '}
                         <span className="font-medium text-amber-100">{moneyList(totals)}</span>
                         {Object.keys(totals).some((c) => c !== 'USD') && usd > 0 && <span className="text-slate-400"> (≈ ${usd.toFixed(2)})</span>}
                         {skipped > 0 && <span className="block text-xs text-slate-400 mt-0.5">{skipped} account{skipped > 1 ? 's' : ''} skipped.</span>}
@@ -590,6 +614,8 @@ const OrderDialog = ({ order, view, job, onPay, onClose, onDeliverAgain, onRevie
     // running / results: one row per account with its live step or its outcome
     const done = view.stage === 'results';
     const paidUnits = view.results.filter((h) => h.paid).reduce((n, h) => n + h.quantity, 0);
+    // The purchase's own item: one started elsewhere may be for another item than this page's.
+    const bought = view.results[0] ? { entry: view.results[0].entry || STORAGE_UNIT, name: view.results[0].item_name || 'Storage Unit' } : item;
     return (
         <Modal title={done ? (order.dryRun ? 'Test finished' : 'Purchase finished') : (order.dryRun ? 'Testing (nothing is paid)' : 'Buying…')}
             onClose={onClose} closable={done}>
@@ -597,7 +623,7 @@ const OrderDialog = ({ order, view, job, onPay, onClose, onDeliverAgain, onRevie
             {done && !order.dryRun && (
                 <p className={`mb-3 flex items-center gap-2 ${paidUnits ? 'text-emerald-300' : 'text-amber-300'}`}>
                     {paidUnits ? <CheckCircle2 size={16} /> : <AlertTriangle size={16} />}
-                    {paidUnits ? `Bought ${paidUnits} Storage Unit${paidUnits > 1 ? 's' : ''}.` : 'Nothing was bought.'}
+                    {paidUnits ? `Bought ${unitsOf(paidUnits, bought)}.` : 'Nothing was bought.'}
                 </p>
             )}
             {done && view.jobError && <p className="mb-3 text-red-300">{view.jobError}</p>}
@@ -633,7 +659,7 @@ const OrderDialog = ({ order, view, job, onPay, onClose, onDeliverAgain, onRevie
                             {finished && (
                                 <p className={`mt-1 ml-6 text-xs ${result.paid ? 'text-emerald-300' : good ? 'text-sky-300' : 'text-red-300'}`}>
                                     {result.paid
-                                        ? `Bought · Storage Units ${result.storage_units_before ?? '?'} → ${result.storage_units_after ?? '?'}${result.error ? ` · ${result.error.replace(/^paid; /, '')}` : ''}`
+                                        ? `Bought${(result.entry || STORAGE_UNIT) === STORAGE_UNIT ? ` · Storage Units ${result.storage_units_before ?? '?'} → ${result.storage_units_after ?? '?'}` : ` · ${result.item_ids?.length ?? 0} item${result.item_ids?.length === 1 ? '' : 's'} delivered`}${result.error ? ` · ${result.error.replace(/^paid; /, '')}` : ''}`
                                         : good ? 'Every check passed; cancelled before approving (nothing paid)' : result.error}
                                 </p>
                             )}
@@ -656,4 +682,11 @@ const OrderDialog = ({ order, view, job, onPay, onClose, onDeliverAgain, onRevie
     );
 };
 
-export default StorageShop;
+// The item comes from the address (/store-catalogue/buy/<entry>); /buy-storage-units has none.
+// Keyed by it, so another item starts with a fresh page.
+const StorePurchasePage = () => {
+    const { item = STORAGE_UNIT } = useParams();
+    return <StorageShop key={item} item={item} />;
+};
+
+export default StorePurchasePage;

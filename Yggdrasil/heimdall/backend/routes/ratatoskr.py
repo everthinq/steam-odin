@@ -248,36 +248,37 @@ def trigger_auto_store_sweep():
     return jsonify({"status": "sweeping"})
 
 
-# ---- Storage shop: buy Counter-Strike 2 Storage Units (storage_shop_service.py) ----
+# ---- Buy Storage Units, or any in-game store item (storage_shop_service.py) ----
+# "item" is a price sheet entry ("casket" — the Storage Unit — when none is given).
 
 @bp.route('/api/ratatoskr/storage-shop', methods=['GET'])
 def storage_shop_status():
-    """The plan, the running job, the purchase history and statistics."""
-    return jsonify(ctx.storage_shop_service.status())
+    """?item=<entry>: the plan, the running job, the purchase history and statistics."""
+    return jsonify(ctx.storage_shop_service.status(request.args.get('item') or 'casket'))
 
 
 @bp.route('/api/ratatoskr/storage-shop/plan', methods=['POST'])
 def storage_shop_plan():
-    """{"steamids": [...] (optional, default every account)}: read wallets and the price."""
+    """{"steamids": [...] (optional, default every account), "item": entry}: read wallets and the price."""
     body = request.get_json(silent=True) or {}
     steamids = body.get('steamids')
     if steamids is not None and not isinstance(steamids, list):
         return jsonify({'started': False, 'error': 'steamids must be a list'}), 400
-    result = ctx.storage_shop_service.start_plan(steamids)
+    result = ctx.storage_shop_service.start_plan(steamids, body.get('item') or 'casket')
     return jsonify(result), (200 if result['started'] else 400)
 
 
 @bp.route('/api/ratatoskr/storage-shop/run', methods=['POST'])
 def storage_shop_run():
     """{"selection": [{"steamid": ..., "quantity": n}], "dry_run": bool, "plan_created_at":
-    the plan the page showed}: buys only on accounts that plan marks "buy"."""
+    the plan the page showed, "item": its entry}: buys only on accounts that plan marks "buy"."""
     body = request.get_json(silent=True) or {}
     try:
         plan_created_at = float(body['plan_created_at']) if body.get('plan_created_at') is not None else None
     except (TypeError, ValueError):
         return jsonify({'started': False, 'error': 'plan_created_at must be a number'}), 400
     result = ctx.storage_shop_service.start_purchase(body.get('selection'), bool(body.get('dry_run')),
-                                                     plan_created_at)
+                                                     plan_created_at, body.get('item') or 'casket')
     return jsonify(result), (200 if result['started'] else 400)
 
 

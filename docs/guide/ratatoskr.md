@@ -90,7 +90,7 @@ Ratatoskr sidebar). Every item the Counter-Strike 2 in-game store sells — abou
 250: tools such as the Storage Unit and Name Tag, case keys, sticker capsules,
 stickers, music kits and music kit boxes, graffiti boxes, pins, patch packs, the
 game license and the Armory Pass — with the game store's price in US dollars.
-**Nothing is bought here.**
+Nothing is bought on the list itself.
 
 - Search by name, pick a category, or tick **Store front only** to see just
   what the in-game store front shows (case keys, the game license and the
@@ -106,4 +106,20 @@ game license and the Armory Pass — with the game store's price in US dollars.
   wallets or buying.
 - An item marked **new** is missing from Ratatoskr's item list, so its name is
   made from the store's internal name. Refreshing the item list fixes it (see
-  [Ratatoskr's agent guide](../../Yggdrasil/ratatoskr/CLAUDE.md)).
+  [Ratatoskr's agent guide](../../Yggdrasil/ratatoskr/CLAUDE.md)). It cannot be
+  bought until then.
+
+### Buying any store item
+
+Every item except the game license and the Armory Pass has a **Buy** button.
+It opens that item's own buy page (`/store-catalogue/buy/<item>`), which works
+exactly like [Buy Storage Units](#buy-storage-units): tick accounts, set the
+quantity (1–20 each), **Review & buy**, **Test without paying** first, then
+**Pay**. The same checks apply, with the item's own price limit: a unit is
+refused above its US dollar price × 1.25 in any currency (the header shows the
+limit), and Steam's approval request must name exactly this item. There is no
+Storage Unit column; a finished purchase reports how many items the store
+delivered. The purchase log on every buy page lists every item bought.
+
+> **This spends real wallet money**, like Buy Storage Units. A purchase from the
+> game store is final.

@@ -1,4 +1,7 @@
-"""Ratatoskr "Storage shop": buy Counter-Strike 2 Storage Units on many accounts.
+"""Ratatoskr "Buy Storage Units" (the "storage shop" in the code): buy any Counter-Strike 2
+in-game store item on many accounts — Storage Units by default, any other entry of the price
+sheet from the Store Catalogue (its Buy button). Every guard below holds for every item; the
+item is fixed by the plan (entry name, definition index, price per currency).
 
 A Storage Unit holds 1,000 items; Gjallarhorn's rotation needs empty space on every
 account the moment Valve limits a case. Storage Units are sold only in the game's
@@ -68,6 +71,11 @@ STORAGE_UNIT_ENTRY = 'casket'          # the price sheet's name for the Storage 
 STORAGE_UNIT_CAPACITY = 1000
 MAX_QUANTITY_PER_ACCOUNT = 20          # per purchase; the Game Coordinator caps one line too
 MAX_USD_PER_UNIT = 2.50                # $1.99 list price; anything above is refused
+# Any other item: refused above its US dollar list price times this (regional prices sit near it).
+PRICE_TOLERANCE = 1.25
+# Never sold here: the game license and the Armory Pass unlock rather than arrive as an item
+# (and Ivan does not buy them).
+NOT_FOR_SALE_ENTRIES = {'Game License', 'XpShopTicket1'}
 PLAN_TIME_TO_LIVE_SECONDS = 30 * 60
 PRICE_SHEET_TIME_TO_LIVE_SECONDS = 6 * 60 * 60
 HISTORY_CAP = 500
@@ -152,16 +160,29 @@ def _read_key_values(data, index):
     return section, index
 
 
+def sheet_prices(sheet):
+    """{entry: {ISO currency: price in minor units}} for every entry of a decoded price sheet."""
+    entries = ((sheet or {}).get('store') or {}).get('entries') or {}
+    return {name: {currency: int(price) for currency, price in (entry.get('prices') or {}).items()
+                   if isinstance(price, int) and price > 0}
+            for name, entry in entries.items() if isinstance(entry, dict)}
+
+
 def storage_unit_prices(sheet):
     """{ISO currency: Storage Unit price in minor units} from a decoded price sheet."""
-    entry = (((sheet or {}).get('store') or {}).get('entries') or {}).get(STORAGE_UNIT_ENTRY) or {}
-    return {currency: int(price) for currency, price in (entry.get('prices') or {}).items()
-            if isinstance(price, int) and price > 0}
+    return sheet_prices(sheet).get(STORAGE_UNIT_ENTRY) or {}
 
 
-def plan_account(account, prices, rates):
+def max_usd_per_unit(entry, usd_list_price):
+    """The highest US dollar price a unit of *entry* may cost in any currency, or None."""
+    if entry == STORAGE_UNIT_ENTRY:
+        return MAX_USD_PER_UNIT
+    return round(usd_list_price * PRICE_TOLERANCE, 2) if usd_list_price else None
+
+
+def plan_account(account, prices, rates, max_usd=MAX_USD_PER_UNIT):
     """One account's plan row. *account*: {steamid, account_name, country, currency_id,
-    balance}; *prices*: {ISO: minor units}."""
+    balance}; *prices*: {ISO: minor units}; *max_usd*: the item's price cap."""
     currency = CURRENCY_CODES.get(account.get('currency_id'))
     price = prices.get(currency) if currency else None
     usd = to_usd(price, currency, rates) if price else None
@@ -176,7 +197,7 @@ def plan_account(account, prices, rates):
         row['status'] = STATUS_PRICE
     elif not price or currency not in GAME_STORE_CURRENCIES:
         row['status'] = STATUS_CURRENCY
-    elif usd is None or usd > MAX_USD_PER_UNIT + 1e-9:
+    elif usd is None or max_usd is None or usd > max_usd + 1e-9:
         row['status'] = STATUS_PRICE
     elif row['affordable'] < 1:
         row['status'] = STATUS_BALANCE
@@ -247,24 +268,27 @@ def _unsigned(value):
     return value + 2 ** 32 if isinstance(value, int) and value < 0 else value
 
 
-def check_auth_request(message, transaction_id, quantity, expected, wallet_currency_id):
+def check_auth_request(message, transaction_id, quantity, expected, wallet_currency_id,
+                       definition_index=STORAGE_UNIT_DEFINITION_INDEX):
     """Steam's transaction id, once Steam's approval request is exactly this purchase:
-    the Game Coordinator's transaction (orderid), Counter-Strike 2, only Storage Units
-    in the quantity ordered, the planned total in the wallet's currency. Otherwise
-    ShopError (nothing is approved)."""
+    the Game Coordinator's transaction (orderid), Counter-Strike 2, only the item ordered
+    (*definition_index*) in the quantity ordered, the planned total in the wallet's
+    currency. Otherwise ShopError (nothing is approved)."""
     if not message:
         raise ShopError('Steam sent no approval request for the transaction: not bought')
-    items = list((message.get('lineitems') or {}).values())
     problems = []
+    message = _case_insensitive(message, problems)
+    items = [_case_insensitive(item, problems) for item in (message.get('lineitems') or {}).values()
+             if isinstance(item, dict)]
     if str(_unsigned(message.get('orderid'))) != str(transaction_id):
         problems.append(f'order {_unsigned(message.get("orderid"))} is not transaction {transaction_id}')
     if message.get('appid') != 730:
         problems.append(f'app {message.get("appid")}')
-    if len(items) != 1 or items[0].get('gameitemid') != STORAGE_UNIT_DEFINITION_INDEX \
+    if len(items) != 1 or items[0].get('gameitemid') != definition_index \
             or items[0].get('quantity') != quantity:
         problems.append(f'items {items}')
-    if message.get('total') != expected or message.get('BillingTotal', expected) != expected:
-        problems.append(f'total {message.get("total")} / billing {message.get("BillingTotal")}, planned {expected}')
+    if message.get('total') != expected or message.get('billingtotal', expected) != expected:
+        problems.append(f'total {message.get("total")} / billing {message.get("billingtotal")}, planned {expected}')
     if message.get('currency') != wallet_currency_id:
         problems.append(f'currency {message.get("currency")}, wallet {wallet_currency_id}')
     if not message.get('transid'):
@@ -272,6 +296,19 @@ def check_auth_request(message, transaction_id, quantity, expected, wallet_curre
     if problems:
         raise ShopError('Steam\'s approval request does not match the order (' + '; '.join(problems) + '): not bought')
     return str(message['transid'])
+
+
+def _case_insensitive(fields, problems):
+    """*fields* with lower-case keys: Steam spells them either way ("orderid" for a Storage
+    Unit, "OrderID" for a sticker capsule, seen live 2026-10-03). The same name twice with
+    different values is a problem, never a pick."""
+    lowered = {}
+    for key, value in fields.items():
+        name = str(key).lower()
+        if name in lowered and lowered[name] != value:
+            problems.append(f'"{name}" appears twice with different values')
+        lowered[name] = value
+    return lowered
 
 
 def steam_error(page):
@@ -293,16 +330,18 @@ def amount_shown(page, minor_units, currency=None):
     if currency in WHOLE_UNIT_CURRENCIES and minor_units % 100 == 0:
         digits_wanted.add(str(minor_units // 100))
     for match in re.finditer(r'\d(?:[\d.,]|[ \u00a0\u202f](?=\d))*\d|\d', text):
-        if re.sub(r'\D', '', match.group(0)) in digits_wanted:
+        # Leading zeros do not count: "$0.99" is 99 (seen live on a sticker capsule's page).
+        if (re.sub(r'\D', '', match.group(0)).lstrip('0') or '0') in digits_wanted:
             return True
     return False
 
 
-def shop_statistics(history):
-    """Storage Units bought (paid) per account, and spent per currency."""
+def shop_statistics(history, item=STORAGE_UNIT_ENTRY):
+    """Units of *item* bought (paid) per account, and spent per currency. Purchases from
+    before other items were sold carry no "entry": they are Storage Units."""
     accounts, spent, units = {}, {}, 0
     for entry in history:
-        if not entry.get('paid') or entry.get('dry_run'):
+        if not entry.get('paid') or entry.get('dry_run') or (entry.get('entry') or STORAGE_UNIT_ENTRY) != item:
             continue
         row = accounts.setdefault(entry['account_name'], {'units': 0, 'spent': {}})
         row['units'] += entry['quantity']
@@ -331,7 +370,9 @@ class StorageShopService:
         self.on_price_sheet = None
         saved = read_json(state_path, default={}) or {}
         self._plan = saved.get('plan')
-        self._prices = saved.get('prices') or {}      # {'prices': {ISO: minor}, 'version', 'fetched_at'}
+        # {'prices': Storage Unit {ISO: minor}, 'entries': {entry: {ISO: minor}}, 'version', 'fetched_at'}
+        self._prices = saved.get('prices') or {}
+        self._item_names = {STORAGE_UNIT_ENTRY: (STORAGE_UNIT_DEFINITION_INDEX, 'Storage Unit')}
         # Last known per account (the page lists every account without reading Steam):
         # {steamid: {currency_id, balance, checked_at, storage_units, storage_units_at}}
         self._known = saved.get('known') or {}
@@ -503,8 +544,8 @@ class StorageShopService:
             log.info('[STORAGE-SHOP] could not log out of Ratatoskr for %s: %s', steamid, e)
 
     def _read_prices(self, steamid):
-        """(prices {ISO: minor units}, Ratatoskr's answer: storage_units, account_country).
-        The whole sheet goes to ``on_price_sheet`` first (the Store Catalogue)."""
+        """(prices {entry: {ISO: minor units}}, Ratatoskr's answer: storage_units,
+        account_country). The whole sheet goes to ``on_price_sheet`` first (the Store Catalogue)."""
         answer = self.ratatoskr.store_user_data(steamid) or {}
         if answer.get('error') or answer.get('result') != GAME_COORDINATOR_OK:
             raise ShopError(f'the game store did not send its price sheet ({answer.get("error") or answer.get("result")})')
@@ -514,16 +555,36 @@ class StorageShopService:
                 self.on_price_sheet(sheet, answer.get('price_sheet_version'), time.time())
             except Exception:
                 log.exception('[STORAGE-SHOP] the price sheet listener failed')
-        prices = storage_unit_prices(sheet)
-        if not prices:
-            raise ShopError('the game store price sheet has no Storage Unit price')
+        entries = sheet_prices(sheet)
+        if not any(entries.values()):
+            raise ShopError('the game store price sheet has no prices')
         with self._lock:
-            self._prices = {'prices': prices, 'version': answer.get('price_sheet_version'), 'fetched_at': time.time()}
+            self._prices = {'prices': entries.get(STORAGE_UNIT_ENTRY) or {}, 'entries': entries,
+                            'version': answer.get('price_sheet_version'), 'fetched_at': time.time()}
         self._save()
-        return prices, answer
+        return entries, answer
+
+    def _cached_prices(self, item):
+        """(the last read prices of *item* {ISO: minor}, read at)."""
+        with self._lock:
+            cached = dict(self._prices)
+        entries = cached.get('entries') or {STORAGE_UNIT_ENTRY: cached.get('prices') or {}}
+        return entries.get(item) or {}, cached.get('fetched_at')
+
+    def _item(self, item):
+        """(definition index, English name) of a price sheet entry, from Ratatoskr's item list."""
+        if item not in self._item_names:
+            answer = self.ratatoskr.store_item_names([item]) or {}
+            if answer.get('error'):
+                raise ShopError(f'Ratatoskr could not name the item ({answer["error"]})')
+            known = (answer.get('definitions') or {}).get(item) or {}
+            if not isinstance(known.get('defIndex'), int) or known['defIndex'] <= 0:
+                raise ShopError(f'"{item}" is not in Ratatoskr\'s item list: refresh it before buying')
+            self._item_names[item] = (known['defIndex'], known.get('name') or item)
+        return self._item_names[item]
 
     def _fetch_price_sheet(self, accounts):
-        """(Storage Unit prices or None, error or None) through one account's login (the sheet
+        """(prices {entry: {ISO: minor}} or None, error or None) through one account's login (the sheet
         is the same for everyone). The next account is tried only when a login fails, never
         because the sheet itself is unreadable."""
         error = 'no account could log in to Ratatoskr'
@@ -557,20 +618,28 @@ class StorageShopService:
 
     # ---- plan ----------------------------------------------------------------------------------
 
-    def start_plan(self, steamids=None):
+    def start_plan(self, steamids=None, item=STORAGE_UNIT_ENTRY):
+        """Read the wallets of *steamids* (default every account) for buying *item* (a price
+        sheet entry; default the Storage Unit)."""
+        if not isinstance(item, str) or not item:
+            return {'started': False, 'error': 'item must be a price sheet entry'}
+        if item in NOT_FOR_SALE_ENTRIES:
+            return {'started': False, 'error': 'the game license and the Armory Pass are not sold here'}
         wanted = {str(s) for s in steamids} if steamids else None
-        return self._start('plan', self._build_plan, (wanted,))
+        return self._start('plan', self._build_plan, (wanted, item))
 
-    def _build_plan(self, wanted):
+    def _build_plan(self, wanted, item=STORAGE_UNIT_ENTRY):
         accounts = [row for row in self._accounts() if wanted is None or row[0] in wanted]
+        definition_index, item_name = self._item(item)
         self._set_job(total=len(accounts) + 1, phase='reading the game store price sheet')
-        with self._lock:
-            cached = dict(self._prices)
-        prices = cached.get('prices') or {}
-        if not prices or time.time() - (cached.get('fetched_at') or 0) > PRICE_SHEET_TIME_TO_LIVE_SECONDS:
-            prices = self._fetch_price_sheet(accounts)[0] or prices
+        prices, fetched_at = self._cached_prices(item)
+        if not prices or time.time() - (fetched_at or 0) > PRICE_SHEET_TIME_TO_LIVE_SECONDS:
+            fetched = self._fetch_price_sheet(accounts)[0]
+            if fetched is not None:
+                prices = fetched.get(item) or {}
         self._set_job(done=1)
         rates = self._rates()
+        max_usd = max_usd_per_unit(item, (prices.get('USD') or 0) / 100)
         rows = []
         for index, (steamid, name, country) in enumerate(accounts):
             self._set_job(phase=f'reading {name}')
@@ -583,24 +652,27 @@ class StorageShopService:
                                checked_at=time.time())
             except Exception as e:
                 account['error'] = str(e)
-            if not account['error']:
+            if not account['error'] and item == STORAGE_UNIT_ENTRY:
                 try:        # a count that fails (HTTP 429 …) keeps the last one; the wallet row stays good
                     units = self._count_storage_units(steamid, cookies)
                     if units is not None:
                         self._remember(steamid, storage_units=units, storage_units_at=time.time())
                 except Exception as e:
                     log.info('[STORAGE-SHOP] could not count the Storage Units of %s: %s', name, e)
-            rows.append(plan_account(account, prices, rates))
+            rows.append(plan_account(account, prices, rates, max_usd))
             self._set_job(done=index + 2)
         with self._lock:
             self._plan = {'created_at': time.time(), 'accounts': rows,
-                          'price_sheet_fetched_at': (self._prices or {}).get('fetched_at')}
+                          'price_sheet_fetched_at': (self._prices or {}).get('fetched_at'),
+                          'entry': item, 'item_name': item_name, 'definition_index': definition_index,
+                          'usd_list_price': (prices.get('USD') or 0) / 100 or None, 'max_usd_per_unit': max_usd}
         self._save()
 
     # ---- purchase ------------------------------------------------------------------------------
 
-    def start_purchase(self, selection, dry_run=False, plan_created_at=None):
-        """*selection*: [{steamid, quantity}] from the plan the screen showed."""
+    def start_purchase(self, selection, dry_run=False, plan_created_at=None, item=None):
+        """*selection*: [{steamid, quantity}] from the plan the screen showed; *item*: the
+        price sheet entry the screen shows (it must be the plan's)."""
         if not isinstance(selection, list) or not all(isinstance(item, dict) for item in selection):
             return {'started': False, 'error': 'selection must be a list of {steamid, quantity}'}
         with self._lock:
@@ -612,6 +684,13 @@ class StorageShopService:
             return {'started': False, 'error': 'the plan changed since this page loaded: look at it again'}
         if time.time() - plan['created_at'] > PLAN_TIME_TO_LIVE_SECONDS:
             return {'started': False, 'error': 'the plan is older than 30 minutes: check the accounts again'}
+        planned_item = plan.get('entry') or STORAGE_UNIT_ENTRY
+        if (item or STORAGE_UNIT_ENTRY) != planned_item:
+            return {'started': False, 'error': 'the plan is for another item: look at it again'}
+        if planned_item in NOT_FOR_SALE_ENTRIES:
+            return {'started': False, 'error': 'the game license and the Armory Pass are not sold here'}
+        item_fields = {'entry': planned_item, 'item_name': plan.get('item_name') or 'Storage Unit',
+                       'definition_index': plan.get('definition_index') or STORAGE_UNIT_DEFINITION_INDEX}
         already = {entry['steamid'] for entry in history
                    if entry.get('at', 0) >= plan['created_at'] and entry.get('payment_attempted')}
         by_account = {row['steamid']: row for row in plan['accounts']}
@@ -630,10 +709,11 @@ class StorageShopService:
             if row['status'] != STATUS_BUY:
                 return {'started': False, 'error': f'{row["account_name"]}: not buyable in this plan ({row["status"]})'}
             if not 1 <= quantity <= min(MAX_QUANTITY_PER_ACCOUNT, row['affordable']):
-                return {'started': False, 'error': f'{row["account_name"]}: 1 to {min(MAX_QUANTITY_PER_ACCOUNT, row["affordable"])} Storage Units'}
+                return {'started': False, 'error': f'{row["account_name"]}: 1 to {min(MAX_QUANTITY_PER_ACCOUNT, row["affordable"])} '
+                                                   f'of {item_fields["item_name"]}'}
             if row['steamid'] in already:
                 return {'started': False, 'error': f'{row["account_name"]}: already bought (or paid for) since this plan'}
-            orders.append({**row, 'quantity': quantity})
+            orders.append({**row, **item_fields, 'quantity': quantity})
         if not orders:
             return {'started': False, 'error': 'nothing selected'}
         return self._start('purchase', self._buy_all, (orders, dry_run), dry_run=dry_run)
@@ -663,8 +743,13 @@ class StorageShopService:
 
     def _buy_account(self, order, dry_run):
         steamid, quantity, unit_price = order['steamid'], order['quantity'], order['unit_price']
+        item = order.get('entry') or STORAGE_UNIT_ENTRY
+        definition_index = order.get('definition_index') or STORAGE_UNIT_DEFINITION_INDEX
+        item_name = order.get('item_name') or 'Storage Unit'
+        storage_units = item == STORAGE_UNIT_ENTRY      # only then the Storage Unit count is checked
         expected = unit_price * quantity
         result = {'at': time.time(), 'steamid': steamid, 'account_name': order['account_name'],
+                  'entry': item, 'item_name': item_name, 'definition_index': definition_index,
                   'quantity': quantity, 'unit_price': unit_price, 'currency': order['currency'],
                   'expected': expected, 'transaction_id': None, 'dry_run': dry_run, 'state': 'in progress',
                   'payment_attempted': False, 'paid': False, 'ok': False, 'item_ids': [],
@@ -681,11 +766,12 @@ class StorageShopService:
             if currency_id != order['currency_id']:
                 raise ShopError('the wallet currency changed since the plan: not bought')
             if balance < expected:
-                raise ShopError(f'the wallet holds {balance}, {quantity} Storage Units cost {expected}: not bought')
+                raise ShopError(f'the wallet holds {balance}, {quantity} × {item_name} cost {expected}: not bought')
             self._step(steamid, 'login')
             opened = self._session(steamid)
             prices, store_answer = self._read_prices(steamid)
-            before = store_answer.get('storage_units')
+            prices = prices.get(item) or {}
+            before = store_answer.get('storage_units') if storage_units else None
             result['storage_units_before'] = before
             if before is not None:
                 self._remember(steamid, storage_units=before, storage_units_at=time.time())
@@ -701,7 +787,8 @@ class StorageShopService:
             answer = {}
             for country in countries:
                 answer = self.ratatoskr.store_purchase_init(steamid, country, GAME_STORE_CURRENCIES[order['currency']],
-                                                            quantity, unit_price) or {}
+                                                            quantity, unit_price,
+                                                            item_definition_index=definition_index) or {}
                 result['country'] = country
                 if answer.get('result') != GAME_COORDINATOR_INVALID_PARAMETER:
                     break
@@ -715,7 +802,8 @@ class StorageShopService:
             # this order, and its transaction id is the one the approval page takes.
             message = decode_auth_request(answer.get('authRequest'))
             result['approval_request'] = message
-            steam_transaction_id = check_auth_request(message, transaction_id, quantity, expected, currency_id)
+            steam_transaction_id = check_auth_request(message, transaction_id, quantity, expected, currency_id,
+                                                      definition_index)
             approval_url = APPROVAL_URL.format(transaction_id=steam_transaction_id)
             result['steam_transaction_id'] = steam_transaction_id
             self._step(steamid, 'approving')
@@ -765,7 +853,7 @@ class StorageShopService:
             result['paid'] = True
             result['item_ids'] = [str(item) for item in finalized.get('itemIds') or []]
             self._mark_plan(steamid, 'bought')
-            after = finalized.get('storageUnits')
+            after = finalized.get('storageUnits') if storage_units else None
             for attempt in range(COUNT_TRIES):
                 if before is None or (after is not None and after >= before + quantity):
                     break
@@ -780,7 +868,7 @@ class StorageShopService:
                 result['error'] = f'paid; the game store answered with {len(result["item_ids"])} item ids for {quantity}'
             elif before is not None and (after is None or after < before + quantity):
                 result['error'] = 'paid; the inventory does not show every new Storage Unit yet'
-            log.info('[STORAGE-SHOP] bought %s Storage Units on %s for %s %s', quantity,
+            log.info('[STORAGE-SHOP] bought %s × %s on %s for %s %s', quantity, item_name,
                      order['account_name'], expected, order['currency'])
         except Exception as e:
             message = str(e)
@@ -845,10 +933,11 @@ class StorageShopService:
         try:
             finalized, opened = self._finalize(entry['steamid'], entry['transaction_id'], False)
             if finalized.get('result') == GAME_COORDINATOR_OK:
+                storage_units = (entry.get('entry') or STORAGE_UNIT_ENTRY) == STORAGE_UNIT_ENTRY
                 entry.update(paid=True, ok=True, item_ids=[str(i) for i in finalized.get('itemIds') or []],
-                             storage_units_after=finalized.get('storageUnits'),
+                             storage_units_after=finalized.get('storageUnits') if storage_units else None,
                              error='delivered on the second request')
-                if finalized.get('storageUnits') is not None:
+                if storage_units and finalized.get('storageUnits') is not None:
                     self._remember(entry['steamid'], storage_units=finalized['storageUnits'], storage_units_at=time.time())
                 self._mark_plan(entry['steamid'], 'bought')
             else:
@@ -892,14 +981,29 @@ class StorageShopService:
         with self._lock:
             return dict(self._job)
 
-    def status(self):
+    def item_view(self, item):
+        """What the page shows about *item*: its name, list price and whether it can be bought."""
+        prices, _ = self._cached_prices(item)
+        view = {'entry': item, 'name': item, 'definition_index': None, 'usd_list_price': (prices.get('USD') or 0) / 100 or None,
+                'max_usd_per_unit': max_usd_per_unit(item, (prices.get('USD') or 0) / 100),
+                'for_sale': item not in NOT_FOR_SALE_ENTRIES, 'error': None}
+        try:
+            view['definition_index'], view['name'] = self._item(item)
+        except Exception as e:
+            view['error'] = str(e)
+        return view
+
+    def status(self, item=STORAGE_UNIT_ENTRY):
+        """The page's state for buying *item* (a price sheet entry; default the Storage Unit)."""
         with self._lock:
             state = json.loads(json.dumps({'job': self._job, 'plan': self._plan, 'history': self._history,
-                                           'prices': self._prices, 'known': self._known}))
-        accounts = self.accounts_view(state['known'], (state['prices'] or {}).get('prices') or {}, self._rates())
+                                           'known': self._known}))
+        prices, fetched_at = self._cached_prices(item)
+        accounts = self.accounts_view(state['known'], prices, self._rates())
         return {'job': state['job'], 'plan': state['plan'], 'history': state['history'][-100:][::-1],
-                'accounts': accounts,
-                'statistics': shop_statistics(state['history']), 'price_sheet': state['prices'],
+                'accounts': accounts, 'item': self.item_view(item),
+                'statistics': shop_statistics(state['history'], item),
+                'price_sheet': {'prices': prices, 'fetched_at': fetched_at},
                 'plan_time_to_live_seconds': PLAN_TIME_TO_LIVE_SECONDS,
                 'max_quantity_per_account': MAX_QUANTITY_PER_ACCOUNT,
                 'storage_unit_capacity': STORAGE_UNIT_CAPACITY}

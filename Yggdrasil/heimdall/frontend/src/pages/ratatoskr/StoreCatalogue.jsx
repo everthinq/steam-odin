@@ -1,14 +1,19 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Link } from 'react-router-dom';
-import { Tags, LayoutDashboard, Search, RefreshCw, AlertTriangle, Loader2, X, Archive } from 'lucide-react';
+import { Tags, LayoutDashboard, Search, RefreshCw, AlertTriangle, Loader2, X, Archive, ShoppingCart } from 'lucide-react';
 import { useColumnSort, sortRows } from '../../components/draupnir/columnSort';
 import SortHeader from '../../components/ratatoskr/SortHeader';
 import SteamMarketLink from '../../components/SteamMarketLink';
 
 // Ratatoskr "Store Catalogue": every item the Counter-Strike 2 in-game store sells, with its
-// US dollar price, from the game store's own price sheet. Read-only: nothing is bought here.
+// US dollar price, from the game store's own price sheet. Nothing is bought on this page: an
+// item's Buy button opens its buy page (/store-catalogue/buy/<entry>, the guarded purchase of
+// Buy Storage Units for that item).
 // Backend: /api/ratatoskr/store-catalogue. The sheet is refreshed whenever Buy Storage Units
 // reads it; "Read prices again" reads it now (one account logs in to Ratatoskr and out again).
+
+// Sold here: everything but the game license and the Armory Pass (storage_shop_service.py).
+const NOT_FOR_SALE = new Set(['Game License', 'XpShopTicket1']);
 
 const SORT_VALUES = {
     item: (i) => i.name,
@@ -94,7 +99,7 @@ const StoreCatalogue = () => {
                 <div className="p-2 bg-amber-900/30 rounded-lg border border-amber-600/30"><Tags size={22} className="text-amber-500" /></div>
                 <div className="mr-auto">
                     <h1 className="text-2xl font-bold text-amber-100 font-serif">Store Catalogue</h1>
-                    <p className="text-xs text-slate-300 [text-shadow:0_1px_3px_rgb(0_0_0)]">Every item the Counter-Strike 2 in-game store sells, with its US dollar price. Nothing is bought here.</p>
+                    <p className="text-xs text-slate-300 [text-shadow:0_1px_3px_rgb(0_0_0)]">Every item the Counter-Strike 2 in-game store sells, with its US dollar price. Buy opens the item&apos;s own buy page for any of your accounts.</p>
                 </div>
                 <Link to="/buy-storage-units" className="flex items-center gap-2 px-3 py-2 rounded-lg text-slate-400 hover:text-white hover:bg-white/5">
                     <Archive size={14} /> Buy Storage Units
@@ -156,7 +161,7 @@ const StoreCatalogue = () => {
                                     title="Whether the in-game store front shows the item" />
                                 <SortHeader column="price" label="Price" sort={sort} align="right" resetLabel="the category order"
                                     title="The game store's price in US dollars" />
-                                <th className="font-medium text-right pr-3 w-16"><span className="sr-only">Market</span></th>
+                                <th className="font-medium text-right pr-3 w-28"><span className="sr-only">Market and buy</span></th>
                             </tr>
                         </thead>
                         <tbody>
@@ -174,7 +179,15 @@ const StoreCatalogue = () => {
                                     <td className="text-slate-400 text-xs">{i.category}</td>
                                     <td className="text-xs">{i.on_store_front ? <span className="text-emerald-300">shown</span> : <span className="text-slate-500">not shown</span>}</td>
                                     <td className="text-right tabular-nums text-slate-100">{dollars(i.usd)}</td>
-                                    <td className="text-right pr-3">{i.market_url && <SteamMarketLink itemName={i.name} />}</td>
+                                    <td className="text-right pr-3 whitespace-nowrap">
+                                        {i.market_url && <SteamMarketLink itemName={i.name} className="mr-2 align-middle" />}
+                                        {!NOT_FOR_SALE.has(i.entry) && i.definition_index != null && (
+                                            <Link to={`/store-catalogue/buy/${encodeURIComponent(i.entry)}`} title={`Buy ${i.name} on any of your accounts`}
+                                                className="inline-flex items-center gap-1 px-2 py-0.5 rounded border border-amber-500/30 text-amber-200 text-xs hover:bg-amber-500/10">
+                                                <ShoppingCart size={11} /> Buy
+                                            </Link>
+                                        )}
+                                    </td>
                                 </tr>
                             ))}
                         </tbody>

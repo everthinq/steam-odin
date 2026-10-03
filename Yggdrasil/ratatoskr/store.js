@@ -1,4 +1,4 @@
-// Counter-Strike 2 in-game store over the Game Coordinator (Storage Units for now).
+// Counter-Strike 2 in-game store over the Game Coordinator (any item; Storage Units by default).
 //
 // A purchase has three steps, the same ones the game client takes:
 //   1. StorePurchaseInit     — the Game Coordinator opens a Steam wallet transaction

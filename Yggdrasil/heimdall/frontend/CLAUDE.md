@@ -46,7 +46,8 @@ real Pay / Buy / Sell / Approve button while testing; use the dry-run paths.
 | `/draupnir`, `/draupnir/:portfolioId` | `pages/draupnir/` | |
 | `/mimir` | `pages/mimir/Vault.jsx` | |
 | `/buy-storage-units` | `pages/ratatoskr/StorageShop.jsx` | Buy Storage Units, every account; outside the Ratatoskr layout; `/storage-shop` redirects here |
-| `/store-catalogue` | `pages/ratatoskr/StoreCatalogue.jsx` | Every in-game store item with its US dollar price (read-only) |
+| `/store-catalogue` | `pages/ratatoskr/StoreCatalogue.jsx` | Every in-game store item with its US dollar price; a Buy button per item |
+| `/store-catalogue/buy/:item` | `pages/ratatoskr/StorageShop.jsx` | The Buy Storage Units page for any price sheet entry (keyed by it) |
 | `/ratatoskr/:steamid/{inventory,transfer,auto-store}` | `pages/RatatoskrLayout.jsx` + `pages/ratatoskr/` | Layout passes `{steamid, account}` via `<Outlet context>` |
 
 Every page except the Dashboard is `React.lazy`; all routes sit in a

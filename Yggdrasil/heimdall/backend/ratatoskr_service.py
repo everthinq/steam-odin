@@ -260,14 +260,15 @@ class RatatoskrService:
         Ratatoskr's item definitions (local, no Steam call)."""
         return self._store_call('POST', '/items/store-names', {"names": list(names)})
 
-    def store_purchase_init(self, steam_id, country, currency, quantity, unit_price):
-        """Open a wallet transaction for *quantity* Storage Units (nothing paid yet)."""
+    def store_purchase_init(self, steam_id, country, currency, quantity, unit_price, item_definition_index=1201):
+        """Open a wallet transaction for *quantity* of an item (Storage Unit 1201 by default;
+        nothing paid yet)."""
         return self._store_call('POST', '/store/purchase/init', {
             "steamID": steam_id, "country": country, "currency": currency,
-            "quantity": quantity, "unitPrice": unit_price})
+            "quantity": quantity, "unitPrice": unit_price, "itemDefinitionIndex": item_definition_index})
 
     def store_purchase_finalize(self, steam_id, transaction_id):
-        """Deliver an approved transaction's Storage Units."""
+        """Deliver an approved transaction's items."""
         return self._store_call('POST', '/store/purchase/finalize',
                                 {"steamID": steam_id, "transactionId": str(transaction_id)},
                                 timeout=75)   # Ratatoskr waits up to 60 s for the delivery

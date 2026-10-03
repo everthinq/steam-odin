@@ -152,9 +152,16 @@ Its body is the byte `0x01` followed by binary KeyValues, section
 | `total`, `BillingTotal` | The total in minor units |
 
 `check_auth_request` refuses anything but exactly this order: `orderid` equal
-to the opened transaction, app 730, a single line of definition 1201 in the
-planned quantity, `total` and `BillingTotal` equal to the planned total, and
-the wallet's currency.
+to the opened transaction, app 730, a single line of the ordered item's
+definition (1201 for a Storage Unit) in the planned quantity, `total` and
+`BillingTotal` equal to the planned total, and the wallet's currency.
+
+**Key names come in either case.** For a sticker capsule (2026-10-03, dry run)
+Steam sent `OrderID` instead of `orderid`, plus `BillingCurrency`, `Refundable`,
+`SteamRealm`, `Tax`, `VAT`, `RequiresCachedPmtMethod`, `sandbox`. The check reads
+every key case-insensitively; the same key twice with different values is a
+mismatch. A coupon's line item carries the coupon's own definition (20188 for
+the 10 Year Birthday Sticker Capsule) and its English name as `description`.
 
 ### 3.4 Approval — the web page
 
@@ -202,7 +209,8 @@ Drops a transaction that was never approved. The dry run ends here.
 | Guard | Where |
 |-------|-------|
 | Plan expires after 30 minutes; Pay needs the plan's `created_at` | `start_purchase` |
-| At most 20 per account per purchase; never above **$2.50** a unit (list price $1.99) | `MAX_QUANTITY_PER_ACCOUNT`, `MAX_USD_PER_UNIT` |
+| At most 20 per account per purchase; a Storage Unit never above **$2.50** (list price $1.99), any other item never above its US dollar list price × 1.25, in any currency | `MAX_QUANTITY_PER_ACCOUNT`, `MAX_USD_PER_UNIT`, `PRICE_TOLERANCE` |
+| The plan fixes the item (entry, definition index from Ratatoskr's item list); Pay is refused when the page shows another item; the game license and the Armory Pass are never sold | `start_plan`, `start_purchase`, `NOT_FOR_SALE_ENTRIES` |
 | Wallet currency unchanged and balance covers the total — re-read just before buying | `_buy_account` |
 | Fresh price sheet must equal the planned unit price | `_buy_account` |
 | Steam's approval request must be exactly this order | `check_auth_request` |
@@ -244,6 +252,30 @@ without reading Steam.
 
 After the job fix, **Deliver again** delivered the purchase that had been left
 unclear: one Storage Unit, one charge of $1.99 in the purchase history.
+
+Other items (2026-10-03, dry runs of a $0.99 sticker capsule — nothing paid):
+
+| Symptom | Cause | Fix |
+|---------|-------|-----|
+| "approval request does not match (order None …)" | Steam spelled the key `OrderID` | Keys read case-insensitively |
+| "approval page does not show the planned total 99" | "$0.99" compared as the digits "099" | Leading zeros ignored |
+
+The third dry run passed every check. A real purchase of an item other than a
+Storage Unit has not been made yet: delivery is judged by the item ids the
+store returns (no inventory count), so check the first one in the account's
+inventory.
+
+## 6a. Any store item
+
+`StorageShopService` sells any price sheet entry; `casket` stays the default
+everywhere, so Buy Storage Units is unchanged. The item travels as `item` (the
+entry name) on `GET /api/ratatoskr/storage-shop?item=`, `POST …/plan` and
+`POST …/run`; the plan stores `entry`, `item_name`, `definition_index`,
+`usd_list_price` and `max_usd_per_unit`, and every history entry carries
+`entry`, `item_name` and `definition_index` (older entries without them are
+Storage Units). Ratatoskr's `/store/purchase/init` takes `itemDefinitionIndex`
+(default 1201). Storage Units are counted only when buying Storage Units. The
+page is the same component (`StorageShop.jsx`) at `/store-catalogue/buy/:item`.
 
 ## 7. Rules for agents (binding)
 
