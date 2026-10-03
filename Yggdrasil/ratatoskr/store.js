@@ -15,10 +15,20 @@
 // Valve's econ_store.h), not Steam's wallet currency code (USD 1): the wallet code
 // makes the Game Coordinator answer result 8, "invalid parameter".
 
+const SteamUser = require('steam-user');
 const Language = require('globaloffensive/language.js');
 const Protos = require('globaloffensive/protobufs/generated/_load.js');
 
 const COUNTER_STRIKE_APP_ID = 730;
+// Steam's own approval request for a wallet transaction (what makes the game open the
+// Steam overlay at checkout/approvetxn/<Steam transaction id>). steam-user does not
+// handle it, so it is caught here and re-emitted on the client as 'microTxnAuthRequest'.
+const CLIENT_MICRO_TRANSACTION_AUTH_REQUEST = SteamUser.EMsg.ClientMicroTxnAuthRequest;   // 5504
+const AUTH_REQUEST_WAIT_MS = 10000;
+SteamUser.prototype._handlerManager.add(CLIENT_MICRO_TRANSACTION_AUTH_REQUEST, function onMicroTransactionAuthRequest(body, header) {
+    const raw = body && typeof body.toBuffer === 'function' ? body.toBuffer() : Buffer.from(body || []);
+    this.emit('microTxnAuthRequest', raw, header);
+});
 const STORAGE_UNIT_DEFINITION_INDEX = 1201;
 const GAME_COORDINATOR_TIMEOUT_MS = 20000;
 
@@ -77,7 +87,25 @@ const getUserData = (session) => serial(session, () => request(
     Language.StoreGetUserDataResponse, Protos.CMsgStoreGetUserDataResponse,
 ));
 
-const initPurchase = (session, { country, currency, quantity, unitPrice, itemDefinitionIndex = STORAGE_UNIT_DEFINITION_INDEX }) => serial(session, () => request(
+// Steam's approval request that follows an opened transaction, or null when none came
+// in time. Its body is binary KeyValues ("MessageObject": transid — Steam's transaction
+// id for the approval page —, orderid — the Game Coordinator's —, appid, line items,
+// total, currency); Heimdall decodes and checks it.
+const waitForAuthRequest = (session) => new Promise((resolve) => {
+    const onRequest = (raw, header) => {
+        clearTimeout(timer);
+        resolve({ protobuf: Boolean(header && header.proto), hex: raw.toString('hex') });
+    };
+    const timer = setTimeout(() => {
+        session.user.removeListener('microTxnAuthRequest', onRequest);
+        resolve(null);
+    }, AUTH_REQUEST_WAIT_MS);
+    session.user.once('microTxnAuthRequest', onRequest);
+});
+
+const initPurchase = (session, { country, currency, quantity, unitPrice, itemDefinitionIndex = STORAGE_UNIT_DEFINITION_INDEX }) => serial(session, async () => {
+    const authRequest = waitForAuthRequest(session);
+    const answer = await request(
     session, Language.StorePurchaseInit, Protos.CMsgGCStorePurchaseInit,
     {
         country,
@@ -91,7 +119,10 @@ const initPurchase = (session, { country, currency, quantity, unitPrice, itemDef
         }],
     },
     Language.StorePurchaseInitResponse, Protos.CMsgGCStorePurchaseInitResponse,
-));
+    );
+    answer.authRequest = answer.result === 1 ? await authRequest : null;
+    return answer;
+});
 
 const finalizePurchase = (session, transactionId) => serial(session, () => request(
     session, Language.StorePurchaseFinalize, Protos.CMsgGCStorePurchaseFinalize, { txn_id: String(transactionId) },

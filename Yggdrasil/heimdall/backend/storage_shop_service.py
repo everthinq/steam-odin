@@ -58,6 +58,7 @@ MARKET_URL = 'https://steamcommunity.com/market/'
 APPROVAL_URL = 'https://checkout.steampowered.com/checkout/approvetxn/{transaction_id}/'
 HTTP_TIMEOUT_SECONDS = 30
 
+STORAGE_UNIT_DEFINITION_INDEX = 1201
 STORAGE_UNIT_ENTRY = 'casket'          # the price sheet's name for the Storage Unit
 STORAGE_UNIT_CAPACITY = 1000
 MAX_QUANTITY_PER_ACCOUNT = 20          # per purchase; the Game Coordinator caps one line too
@@ -195,8 +196,12 @@ class _FormReader(HTMLParser):
 
 
 def approval_form(page, transaction_id):
-    """(absolute action URL, fields) of the approval form for *transaction_id*, or
-    None. The form must post and carry this transaction's id."""
+    """(absolute action URL, fields to send) of the approval form for *transaction_id*,
+    or None. Steam's page (seen live 2026-10-03): <form id="form_authtxn" action=
+    ".../checkout/approvetxnsubmit" method="POST"> with transaction_id, returnurl,
+    sessionid and approved=0; its Authorize button runs AuthorizeTransaction(true),
+    which sets approved to 1 and submits. So the form must post, carry this
+    transaction's id and have the "approved" field, which is sent as 1."""
     reader = _FormReader()
     reader.feed(page or '')
     wanted = str(transaction_id)
@@ -210,8 +215,64 @@ def approval_form(page, transaction_id):
             if not action.startswith('https://checkout.steampowered.com/') and \
                     not action.startswith('https://store.steampowered.com/'):
                 return None
-            return action, fields
+            if 'approved' not in fields:
+                return None
+            return action, {**fields, 'approved': '1'}
     return None
+
+
+def decode_auth_request(auth_request):
+    """Steam's approval request (Ratatoskr's capture of ClientMicroTxnAuthRequest, hex
+    of binary KeyValues) as its "MessageObject" dict, or None."""
+    try:
+        raw = bytes.fromhex((auth_request or {}).get('hex') or '')
+        start = raw.find(b'\x00MessageObject\x00')
+        if start < 0:
+            return None
+        value, _ = _read_key_values(raw, start)
+        return value.get('MessageObject')
+    except (ValueError, IndexError, struct.error):
+        return None
+
+
+def _unsigned(value):
+    """Binary KeyValues int32 fields are signed; ids above 2**31 come back negative."""
+    return value + 2 ** 32 if isinstance(value, int) and value < 0 else value
+
+
+def check_auth_request(message, transaction_id, quantity, expected, wallet_currency_id):
+    """Steam's transaction id, once Steam's approval request is exactly this purchase:
+    the Game Coordinator's transaction (orderid), Counter-Strike 2, only Storage Units
+    in the quantity ordered, the planned total in the wallet's currency. Otherwise
+    ShopError (nothing is approved)."""
+    if not message:
+        raise ShopError('Steam sent no approval request for the transaction: not bought')
+    items = list((message.get('lineitems') or {}).values())
+    problems = []
+    if str(_unsigned(message.get('orderid'))) != str(transaction_id):
+        problems.append(f'order {_unsigned(message.get("orderid"))} is not transaction {transaction_id}')
+    if message.get('appid') != 730:
+        problems.append(f'app {message.get("appid")}')
+    if len(items) != 1 or items[0].get('gameitemid') != STORAGE_UNIT_DEFINITION_INDEX \
+            or items[0].get('quantity') != quantity:
+        problems.append(f'items {items}')
+    if message.get('total') != expected or message.get('BillingTotal', expected) != expected:
+        problems.append(f'total {message.get("total")} / billing {message.get("BillingTotal")}, planned {expected}')
+    if message.get('currency') != wallet_currency_id:
+        problems.append(f'currency {message.get("currency")}, wallet {wallet_currency_id}')
+    if not message.get('transid'):
+        problems.append('no Steam transaction id')
+    if problems:
+        raise ShopError('Steam\'s approval request does not match the order (' + '; '.join(problems) + '): not bought')
+    return str(message['transid'])
+
+
+def steam_error(page):
+    """Steam's own error text from an error page ("Oops, sorry! …"), or None."""
+    text = re.sub(r'<(script|style)\b.*?</\1>', ' ', page or '', flags=re.S | re.I)
+    text = html_module.unescape(re.sub(r'\s+', ' ', re.sub(r'<[^>]+>', ' ', text)))
+    match = re.search(r'An error was encountered while processing your request:\s*(.{1,300}?(?:try again\.|$))', text)
+    return match.group(1).strip() if match else None
 
 
 def amount_shown(page, minor_units, currency=None):
@@ -522,6 +583,7 @@ class StorageShopService:
                   'expected': expected, 'transaction_id': None, 'dry_run': dry_run, 'state': 'in progress',
                   'payment_attempted': False, 'paid': False, 'ok': False, 'item_ids': [],
                   'storage_units_before': None, 'storage_units_after': None, 'country': None,
+                  'steam_transaction_id': None, 'approval_request': None,
                   'approval_answer': None, 'error': None}
         self._record(result)
         transaction_id, opened = None, False
@@ -538,10 +600,12 @@ class StorageShopService:
             result['storage_units_before'] = before
             if prices.get(order['currency']) != unit_price:
                 raise ShopError(f'the game store price is now {prices.get(order["currency"])}, planned {unit_price}: not bought')
-            # The country Steam has for the account first (what the game client uses), then
-            # the store country; a refused open opens nothing, so trying the next is safe.
-            countries = [c for c in dict.fromkeys([(store_answer.get('account_country') or '').upper(),
-                                                   (order.get('country') or '').upper()]) if len(c) == 2]
+            # The store country first: Steam's checkout authorizes the transaction in it (seen
+            # live: opened with the login's country TR, a store-country MD account's approval
+            # page answered "An unexpected error occurred while authorizing your transaction").
+            # Then the country Steam reports for the login; a refused open opens nothing.
+            countries = [c for c in dict.fromkeys([(order.get('country') or '').upper(),
+                                                   (store_answer.get('account_country') or '').upper()]) if len(c) == 2]
             answer = {}
             for country in countries:
                 answer = self.ratatoskr.store_purchase_init(steamid, country, GAME_STORE_CURRENCIES[order['currency']],
@@ -555,17 +619,28 @@ class StorageShopService:
                 raise ShopError(f'the game store did not open the purchase (result {answer.get("error") or answer.get("result")})')
             result['transaction_id'] = transaction_id
             self._record(result)
+            # Steam's own approval request names the purchase in full: it must be exactly
+            # this order, and its transaction id is the one the approval page takes.
+            message = decode_auth_request(answer.get('authRequest'))
+            result['approval_request'] = message
+            steam_transaction_id = check_auth_request(message, transaction_id, quantity, expected, currency_id)
+            approval_url = APPROVAL_URL.format(transaction_id=steam_transaction_id)
+            result['steam_transaction_id'] = steam_transaction_id
+            self._record(result)
             client = self._client(cookies)
-            response = self._get(APPROVAL_URL.format(transaction_id=transaction_id), client=client,
-                                 cookies=cookies, params={'returnurl': 'steam'})
+            response = self._get(approval_url, client=client, cookies=cookies, params={'returnurl': 'steam'})
             page = response.text if response.ok else ''
             self._keep_page(page)
             if not response.ok:
                 raise ShopError(f'the approval page answered HTTP {response.status_code}')
-            form = approval_form(page, transaction_id)
+            if steam_error(page):
+                raise ShopError(f'Steam\'s approval page answered: {steam_error(page)}')
+            form = approval_form(page, steam_transaction_id)
             if not form:
                 raise ShopError('the approval page has no approval form for this transaction '
                                 '(its layout is kept in cache/storage_shop_approval_page.html): not bought')
+            if f'Steam account: {order["account_name"]}' not in re.sub(r'<[^>]+>', ' ', page):
+                raise ShopError(f'the approval page is not for the account {order["account_name"]}: not bought')
             if not amount_shown(page, expected, order['currency']):
                 raise ShopError(f'the approval page does not show the planned total {expected}: not bought')
             if dry_run:
@@ -582,7 +657,7 @@ class StorageShopService:
             response = client.post(action, data=fields, cookies=cookies, timeout=HTTP_TIMEOUT_SECONDS,
                                    allow_redirects=False,
                                    headers={'User-Agent': USER_AGENT, 'Origin': 'https://checkout.steampowered.com',
-                                            'Referer': APPROVAL_URL.format(transaction_id=approved_id) + '?returnurl=steam'})
+                                            'Referer': approval_url + '?returnurl=steam'})
             # Whatever Steam answered is kept; whether it was approved is the game store's
             # word below (Finalize delivers only an approved transaction).
             result['approval_answer'] = {'status': response.status_code,

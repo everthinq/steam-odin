@@ -754,7 +754,10 @@ app.post('/store/purchase/init', async (req, res) => {
     try {
         const answer = await Store.initPurchase(session, { country, currency: currencyId, quantity: count, unitPrice: price });
         console.log(`[STORE] Purchase opened for ${steamID}: ${count} Storage Unit(s), result ${answer.result}, transaction ${answer.txn_id}`);
-        res.json({ success: answer.result === 1, result: answer.result, transactionId: answer.txn_id, url: answer.url, storageUnits: Store.storageUnitCount(session) });
+        if (answer.authRequest) {
+            console.log(`[STORE] Steam approval request received for ${answer.txn_id} (${answer.authRequest.hex.length / 2} bytes)`);
+        }
+        res.json({ success: answer.result === 1, result: answer.result, transactionId: answer.txn_id, url: answer.url, authRequest: answer.authRequest, storageUnits: Store.storageUnitCount(session) });
     } catch (err) {
         if (!res.headersSent) res.status(502).json({ error: err.message });
     }

@@ -18,7 +18,8 @@ Heimdall's Ratatoskr routes and pages.
 - `fetch_items.js` — helper for pulling item catalog data.
 - `store.js` — Counter-Strike 2 in-game store over the Game Coordinator: price sheet
   (`StoreGetUserData`), `StorePurchaseInit` / `Finalize` / `Cancel`, one request per
-  session at a time. Endpoints `/store/user-data/:steamid`, `/store/purchase/{init,finalize,cancel}`;
+  session at a time; catches Steam's `ClientMicroTxnAuthRequest` (EMsg 5504, not handled by
+  steam-user) after an opened transaction and returns its raw bytes. Endpoints `/store/user-data/:steamid`, `/store/purchase/{init,finalize,cancel}`;
   Heimdall's `storage_shop_service.py` does the approval on checkout.steampowered.com.
 
 Scripts: `npm start` (= `node server.js`), `npm run dev` (nodemon).

@@ -2,17 +2,20 @@
 guarded purchase (fake Steam, fake Ratatoskr, fake web)."""
 import base64
 import lzma
+import re
 import struct
 import time
 
 import pytest
 
 import storage_shop_service as shop
-from storage_shop_service import (StorageShopService, amount_shown, approval_form, decode_price_sheet,
-                                  plan_account, shop_statistics, storage_unit_prices)
+from storage_shop_service import (ShopError, StorageShopService, amount_shown, approval_form,
+                                  check_auth_request, decode_auth_request, decode_price_sheet, plan_account, shop_statistics, steam_error,
+                                  storage_unit_prices)
 
 STEAMID = '76561198760595820'
-TRANSACTION = '324965973906164367'
+TRANSACTION = '324965973906164367'               # Steam's transaction id (the approval page)
+GAME_COORDINATOR_TRANSACTION = '2662912291'      # the Game Coordinator's (StorePurchaseInit)
 
 
 # ---- price sheet -------------------------------------------------------------------------------
@@ -23,6 +26,8 @@ def _key_values(section):
         name = key.encode() + b'\x00'
         if isinstance(value, dict):
             out += b'\x00' + name + _key_values(value)
+        elif isinstance(value, int) and not -2 ** 31 <= value < 2 ** 31:
+            out += b'\x07' + name + struct.pack('<Q', value)
         elif isinstance(value, int):
             out += b'\x02' + name + struct.pack('<i', value)
         else:
@@ -34,6 +39,11 @@ def _valve_lzma(data):
     alone = lzma.compress(data, format=lzma.FORMAT_ALONE)
     properties, body = alone[:5], alone[13:]
     return b'LZMA' + struct.pack('<II', len(data), len(body)) + properties + body
+
+
+def _approval_request(message):
+    """Steam's ClientMicroTxnAuthRequest body as captured live: 0x01, then binary KeyValues."""
+    return b'\x01' + _key_values({'MessageObject': message})[:-1]
 
 
 SHEET = {'store': {'entries': {
@@ -91,21 +101,30 @@ def test_plan_without_a_price_sheet_or_with_an_odd_price_is_not_buyable():
 
 # ---- approval page -----------------------------------------------------------------------------
 
-PAGE = f"""<html><body>
-<div class="total">Total: $3.98 USD</div>
-<form id="search" action="/search" method="get"><input name="q"></form>
-<form id="approve_form" action="https://checkout.steampowered.com/checkout/approvetxnsubmit" method="POST">
-  <input type="hidden" name="transid" value="{TRANSACTION}">
+# The layout Steam served live (2026-10-03), trimmed.
+PAGE = f"""<html><head><title>Purchase</title><script language="JavaScript">
+function AuthorizeTransaction( approved ) {{ $('input_approved').value = approved ? 1 : 0; $('form_authtxn').submit(); }}
+</script></head><body>
+<form id="form_updateaddress" action="https://checkout.steampowered.com/checkout/?purchasetype=updatebillinginfo&microtxn={TRANSACTION}" method="POST"></form>
+<form id="form_authtxn" action="https://checkout.steampowered.com/checkout/approvetxnsubmit" method="POST">
+  <input type="hidden" name="transaction_id" value="{TRANSACTION}">
   <input type="hidden" name="returnurl" value="steam">
-  <input type="hidden" name="approved" value="1">
-  <input type="submit" name="go" value="Authorize">
-</form></body></html>"""
+  <input type="hidden" name="sessionid" value="abc">
+  <input type="hidden" id="input_approved" name="approved" value="0">
+</form>
+<div class="review_steam_account_name">Steam account: mer_tols</div>
+<div>QTY PRICE NAME</div><div>2</div><div>$3.98 USD</div><div>Storage Unit</div>
+<div class="total">Total: $3.98 USD</div>
+<a id="purchase_button_bottom" href="javascript:AuthorizeTransaction( true );"><span>Authorize</span></a>
+</body></html>"""
 
 
 def test_approval_form_is_found_for_this_transaction():
     action, fields = approval_form(PAGE, TRANSACTION)
     assert action == 'https://checkout.steampowered.com/checkout/approvetxnsubmit'
-    assert fields == {'transid': TRANSACTION, 'returnurl': 'steam', 'approved': '1'}
+    # "approved" is 0 in the page; Authorize sets it to 1
+    assert fields == {'transaction_id': TRANSACTION, 'returnurl': 'steam', 'sessionid': 'abc', 'approved': '1'}
+    assert approval_form(PAGE.replace('name="approved"', 'name="other"'), TRANSACTION) is None
 
 
 def test_approval_form_refuses_another_transaction_or_a_foreign_action():
@@ -204,6 +223,7 @@ class FakeRatatoskr:
         self.connected = False
         self.account_country, self.refused_countries = account_country, set(refused_countries)
         self.status, self.pending_moves, self.finalize_errors = status, 0, 0
+        self.request_changes, self.no_request = {}, False
 
     def get_status(self, steamid):
         return {'status': 'connected' if self.connected else self.status}
@@ -228,8 +248,15 @@ class FakeRatatoskr:
         self.calls.append(('init', country, currency, quantity, unit_price))
         if country in self.refused_countries:
             return {'success': False, 'result': 8, 'transactionId': '0'}
-        return {'success': self.init_result == 1, 'result': self.init_result,
-                'transactionId': TRANSACTION if self.init_result == 1 else '0'}
+        if self.init_result != 1:
+            return {'success': False, 'result': self.init_result, 'transactionId': '0', 'url': ''}
+        message = {'lineitems': {'0': {'description': 'Storage Unit', 'gameitemid': 1201,
+                                       'amount': unit_price * quantity, 'quantity': quantity}},
+                   'transid': int(TRANSACTION), 'orderid': int(GAME_COORDINATOR_TRANSACTION), 'appid': 730,
+                   'currency': 1, 'total': unit_price * quantity, 'BillingTotal': unit_price * quantity}
+        message.update(self.request_changes)
+        return {'success': True, 'result': 1, 'transactionId': GAME_COORDINATOR_TRANSACTION, 'url': '',
+                'authRequest': None if self.no_request else {'hex': _approval_request(message).hex()}}
 
     def store_purchase_finalize(self, steamid, transaction_id):
         self.calls.append(('finalize', transaction_id))
@@ -287,7 +314,7 @@ def test_dry_run_reads_the_approval_page_and_cancels(tmp_path):
     result = service._buy_account(_order(service), dry_run=True)
     assert result['ok'] and not result['payment_attempted'] and not result['paid']
     assert ('init', 'US', 0, 2, 199) in ratatoskr.calls      # the game store's currency: USD = 0
-    assert ('cancel', TRANSACTION) in ratatoskr.calls
+    assert ('cancel', GAME_COORDINATOR_TRANSACTION) in ratatoskr.calls
     assert not any(isinstance(call, tuple) and call[0] == 'finalize' for call in ratatoskr.calls)
     assert http.posts == []
     assert (tmp_path / 'page.html').read_text() == PAGE
@@ -302,7 +329,7 @@ def test_purchase_approves_finalizes_and_counts(tmp_path):
     assert result['item_ids'] == ['11', '12']
     assert (result['storage_units_before'], result['storage_units_after']) == (2, 4)
     assert http.posts == [('https://checkout.steampowered.com/checkout/approvetxnsubmit',
-                           {'transid': TRANSACTION, 'returnurl': 'steam', 'approved': '1'})]
+                           {'transaction_id': TRANSACTION, 'returnurl': 'steam', 'sessionid': 'abc', 'approved': '1'})]
     assert not any(isinstance(call, tuple) and call[0] == 'cancel' for call in ratatoskr.calls)
     assert service.status()['statistics'] == {'units': 2, 'spent': {'USD': 398},
                                               'accounts': {'mer_tols': {'units': 2, 'spent': {'USD': 398}}}}
@@ -325,7 +352,7 @@ def test_a_page_without_the_total_or_the_form_cancels(tmp_path):
         service = _service(tmp_path, http, ratatoskr)
         result = service._buy_account(_order(service), dry_run=False)
         assert not result['ok'] and not result['payment_attempted']
-        assert ('cancel', TRANSACTION) in ratatoskr.calls
+        assert ('cancel', GAME_COORDINATOR_TRANSACTION) in ratatoskr.calls
         assert http.posts == []
 
 
@@ -401,13 +428,13 @@ def test_statistics_skip_dry_runs_and_unpaid():
                                         'accounts': {'a': {'units': 2, 'spent': {'USD': 398}}}}
 
 
-def test_the_account_country_goes_first_and_the_store_country_follows_an_invalid_parameter(tmp_path):
-    ratatoskr = FakeRatatoskr(account_country='tr', refused_countries={'TR'})
+def test_the_store_country_goes_first_and_the_login_country_follows_an_invalid_parameter(tmp_path):
+    ratatoskr = FakeRatatoskr(account_country='tr', refused_countries={'US'})
     service = _service(tmp_path, ratatoskr=ratatoskr)
     result = service._buy_account(_order(service), dry_run=True)
     inits = [call for call in ratatoskr.calls if isinstance(call, tuple) and call[0] == 'init']
-    assert inits == [('init', 'TR', 0, 2, 199), ('init', 'US', 0, 2, 199)]
-    assert result['ok'] and result['country'] == 'US'
+    assert inits == [('init', 'US', 0, 2, 199), ('init', 'TR', 0, 2, 199)]
+    assert result['ok'] and result['country'] == 'TR'
 
 
 def test_currencies_the_game_store_does_not_know_are_not_planned():
@@ -468,3 +495,89 @@ def test_an_unreadable_price_sheet_does_not_log_in_every_account(tmp_path):
     service.steam.storage = TwoAccounts()
     service._build_plan(None)
     assert ratatoskr.calls == ['login', 'disconnect']
+
+
+
+def test_steams_error_page_is_reported_and_cancelled(tmp_path):
+    page = ('<title>Site Error</title><h2>Oops, sorry!</h2><div>An error was encountered while processing your request:'
+            '<br><br>An unexpected error occurred while authorizing your transaction. Please try again.</div>')
+    assert steam_error(page).startswith('An unexpected error occurred while authorizing')
+    http, ratatoskr = FakeHttp(page=page), FakeRatatoskr()
+    service = _service(tmp_path, http, ratatoskr)
+    result = service._buy_account(_order(service), dry_run=False)
+    assert 'An unexpected error occurred' in result['error'] and not result['payment_attempted']
+    assert ('cancel', GAME_COORDINATOR_TRANSACTION) in ratatoskr.calls
+
+
+
+
+LIVE_REQUEST = ('01004d6573736167654f626a65637400006c696e656974656d7300003000016465736372697074696f6e0053746f'
+                '7261676520556e6974000767616d656974656d696400b1040000000000000a616d6f756e7400c7000000000000000271'
+                '75616e7469747900010000000808077472616e736964004f7f61e05d8ec602076f726465726964009bd6b89e00000000'
+                '02617070696400da0200000263757272656e637900010000000276617400010000000a746f74616c00c7000000000000'
+                '000a546178000000000000000000026c616e677561676500000000000273616e64626f7800000000000242696c6c696e'
+                '6743757272656e637900010000000a42696c6c696e67546f74616c00c7000000000000000808')
+
+
+def test_the_live_approval_request_decodes_and_matches_its_order():
+    """Captured 2026-10-03 on everthinklol: one Storage Unit, Game Coordinator transaction 2662913691."""
+    message = decode_auth_request({'hex': LIVE_REQUEST})
+    assert message['lineitems']['0'] == {'description': 'Storage Unit', 'gameitemid': 1201, 'amount': 199, 'quantity': 1}
+    assert check_auth_request(message, '2662913691', 1, 199, 1) == '200003767312154447'
+
+
+@pytest.mark.parametrize('transaction, quantity, expected, currency', [
+    ('2662913692', 1, 199, 1),     # another order
+    ('2662913691', 2, 199, 1),     # another quantity
+    ('2662913691', 1, 198, 1),     # another total
+    ('2662913691', 1, 199, 3),     # another currency
+])
+def test_an_approval_request_for_anything_else_is_refused(transaction, quantity, expected, currency):
+    with pytest.raises(ShopError):
+        check_auth_request(decode_auth_request({'hex': LIVE_REQUEST}), transaction, quantity, expected, currency)
+    with pytest.raises(ShopError):
+        check_auth_request(None, transaction, quantity, expected, currency)
+
+
+def test_the_approval_page_is_steams_transaction_and_delivery_the_game_coordinators(tmp_path):
+    http, ratatoskr = FakeHttp(), FakeRatatoskr()
+    service = _service(tmp_path, http, ratatoskr)
+    result = service._buy_account(_order(service), dry_run=False)
+    assert result['paid'] and result['steam_transaction_id'] == TRANSACTION
+    assert any(f'approvetxn/{TRANSACTION}/' in url for url in http.gets)
+    assert ('finalize', GAME_COORDINATOR_TRANSACTION) in ratatoskr.calls
+
+
+@pytest.mark.parametrize('changes', [{'appid': 440}, {'total': 999}, {'orderid': 1}])
+def test_a_mismatching_or_missing_approval_request_cancels(tmp_path, changes):
+    http, ratatoskr = FakeHttp(), FakeRatatoskr()
+    ratatoskr.request_changes = changes
+    service = _service(tmp_path, http, ratatoskr)
+    result = service._buy_account(_order(service), dry_run=False)
+    assert 'does not match the order' in result['error'] and not result['payment_attempted']
+    assert ('cancel', GAME_COORDINATOR_TRANSACTION) in ratatoskr.calls and http.posts == []
+    ratatoskr = FakeRatatoskr()
+    ratatoskr.no_request = True
+    service = _service(tmp_path, http, ratatoskr)
+    assert 'no approval request' in service._buy_account(_order(service), dry_run=False)['error']
+
+
+def test_a_page_for_another_account_is_refused(tmp_path):
+    http, ratatoskr = FakeHttp(page=PAGE.replace('Steam account: mer_tols', 'Steam account: someone_else')), FakeRatatoskr()
+    service = _service(tmp_path, http, ratatoskr)
+    result = service._buy_account(_order(service), dry_run=False)
+    assert 'not for the account mer_tols' in result['error'] and http.posts == []
+    assert ('cancel', GAME_COORDINATOR_TRANSACTION) in ratatoskr.calls
+
+
+def test_the_live_approval_page_is_accepted():
+    """The page saved by the everthinklol dry run (2026-10-03), when present locally."""
+    import os
+    path = os.path.join(os.path.dirname(__file__), '..', 'cache', 'storage_shop_approval_page.html')
+    if not os.path.exists(path) or 'form_authtxn' not in open(path, encoding='utf-8').read():
+        pytest.skip('no saved approval page')
+    page = open(path, encoding='utf-8').read()
+    identifier = re.search(r'name="transaction_id" value="(\d+)"', page).group(1)
+    action, fields = approval_form(page, identifier)
+    assert action.endswith('/checkout/approvetxnsubmit') and fields['approved'] == '1'
+    assert amount_shown(page, 199, 'USD')
