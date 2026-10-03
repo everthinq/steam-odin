@@ -853,6 +853,8 @@ class StorageShopService:
             balance = entry.get('balance')
             rows.append({'steamid': steamid, 'account_name': name, 'country': country, 'currency': currency,
                          'balance': balance, 'checked_at': entry.get('checked_at'),
+                         # The wallet in US dollars, so wallets in different currencies sort together.
+                         'balance_usd': to_usd(balance, currency, rates),
                          'storage_units': entry.get('storage_units'), 'storage_units_at': entry.get('storage_units_at'),
                          'unit_price': price, 'usd_per_unit': to_usd(price, currency, rates) if price else None,
                          'affordable': min(balance // price, MAX_QUANTITY_PER_ACCOUNT) if price and balance is not None else None,

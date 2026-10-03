@@ -54,7 +54,10 @@ on as many accounts as you like, **without connecting anything first**.
 
 1. **Check wallets & Storage Units** reads every account's wallet, country and
    how many Storage Units it already has (about 8 seconds per account; nothing
-   is bought). The table shows each with its age; **0** means none.
+   is bought). The table shows each with its age; **0** means none. Click a
+   column header (Account, Wallet, Storage Units, Can buy) to sort by it —
+   again to reverse, a third time for the dashboard order. Wallets in different
+   currencies are compared in US dollars; unknown values sort last.
 2. Tick accounts (row click toggles; **Can buy** filter shows only those whose
    wallet covers at least one) and set the quantity (1–20 each).
 3. **Review & buy** re-reads the chosen wallets and shows the order: per account

@@ -3,8 +3,9 @@ import { createPortal } from 'react-dom';
 import { Link } from 'react-router-dom';
 import {
     Archive, LayoutDashboard, Search, RefreshCw, Minus, Plus, ShoppingCart, FlaskConical, X,
-    CheckCircle2, AlertTriangle, Loader2, Circle, Wallet, History,
+    CheckCircle2, AlertTriangle, Loader2, Circle, Wallet, History, ArrowUp, ArrowDown, ArrowUpDown,
 } from 'lucide-react';
+import { useColumnSort, sortRows } from '../../components/draupnir/columnSort';
 
 // Ratatoskr "Storage shop": pick any account from the dashboard, choose how many Storage
 // Units (1,000 items each), review the order with freshly read wallets, pay. Backend:
@@ -28,6 +29,15 @@ const PLAN_PROBLEMS = {
     wallet: 'Wallet could not be read',
     bought: 'Already bought in this check',
     check: 'A purchase is unclear: check the account first',
+};
+
+// What each sortable column sorts on. Wallets are compared in US dollars (they are in
+// different currencies); an unknown value (never checked, currency not sold) sorts last.
+const SORT_VALUES = {
+    account: (a) => a.account_name,
+    wallet: (a) => a.balance_usd,
+    storage_units: (a) => a.storage_units,
+    can_buy: (a) => (a.sold_in_currency ? a.affordable : null),
 };
 
 const money = (minorUnits, currency) => {
@@ -54,6 +64,23 @@ const post = (path, body) => fetch(path, {
 }).then((r) => r.json());
 
 // ---- small parts ---------------------------------------------------------------------------
+
+// A column header that sorts: ascending, then descending, then back to the dashboard's order.
+const SortHeader = ({ column, label, sort, align = 'left', className = '', title }) => {
+    const active = sort.sortKey === column;
+    const Icon = !active ? ArrowUpDown : sort.sortDir === 'asc' ? ArrowUp : ArrowDown;
+    const next = !active ? 'sort ascending' : sort.sortDir === 'asc' ? 'sort descending' : 'go back to the dashboard order';
+    return (
+        <th className={`font-medium ${align === 'right' ? 'text-right' : 'text-left'} ${className}`}
+            aria-sort={active ? (sort.sortDir === 'asc' ? 'ascending' : 'descending') : 'none'}>
+            <button type="button" onClick={() => sort.toggle(column)} title={`${title ? `${title}. ` : ''}Click to ${next}.`}
+                className={`inline-flex items-center gap-1 hover:text-slate-200 ${active ? 'text-amber-300' : ''}`}>
+                {label}
+                <Icon size={11} className={active ? '' : 'opacity-40'} aria-hidden="true" />
+            </button>
+        </th>
+    );
+};
 
 const Stepper = ({ value, max, onChange, label }) => (
     <div className="inline-flex items-center rounded-lg border border-white/15 bg-black/30" role="group" aria-label={label}>
@@ -113,6 +140,7 @@ const StorageShop = () => {
     const [search, setSearch] = useState('');
     const [filter, setFilter] = useState('all');          // all | buyable | selected
     const [cart, setCart] = useState({});                 // {steamid: quantity}
+    const sort = useColumnSort();                         // {sortKey, sortDir, toggle}
     // The order dialog as started here: {stage: 'checking', jobStartedAt, wanted} or
     // {stage: 'running', jobStartedAt, purchaseStartedAt, dryRun, paying}. The job is
     // followed by the server's start time (null until the server answered), never by the
@@ -172,9 +200,10 @@ const StorageShop = () => {
 
     const visible = useMemo(() => {
         const needle = search.trim().toLowerCase();
-        return accounts.filter((a) => (!needle || a.account_name.toLowerCase().includes(needle))
+        const matching = accounts.filter((a) => (!needle || a.account_name.toLowerCase().includes(needle))
             && (filter === 'all' || (filter === 'selected' ? cart[a.steamid] : a.affordable !== 0 && a.sold_in_currency)));
-    }, [accounts, search, filter, cart]);
+        return sortRows(matching, sort.sortKey, sort.sortDir, SORT_VALUES);
+    }, [accounts, search, filter, cart, sort.sortKey, sort.sortDir]);
 
     const selectable = (a) => a.affordable !== 0 && a.sold_in_currency;
     const maxFor = (a) => (a?.affordable ? Math.min(a.affordable, MAX_PER_ACCOUNT) : MAX_PER_ACCOUNT);
@@ -342,10 +371,12 @@ const StorageShop = () => {
                                         <input type="checkbox" className="accent-amber-500" checked={allVisibleSelected} onChange={toggleAllVisible}
                                             disabled={!visibleSelectable.length} aria-label="Select every account shown" />
                                     </th>
-                                    <th className="font-medium">Account</th>
-                                    <th className="font-medium text-right">Wallet</th>
-                                    <th className="font-medium text-right" title="Storage Units the account holds now (each holds 1,000 items), from its Counter-Strike 2 inventory">Storage Units</th>
-                                    <th className="font-medium text-right">Can buy</th>
+                                    <SortHeader column="account" label="Account" sort={sort} />
+                                    <SortHeader column="wallet" label="Wallet" sort={sort} align="right"
+                                        title="Wallets in other currencies are compared in US dollars" />
+                                    <SortHeader column="storage_units" label="Storage Units" sort={sort} align="right"
+                                        title="Storage Units the account holds now (each holds 1,000 items), from its Counter-Strike 2 inventory" />
+                                    <SortHeader column="can_buy" label="Can buy" sort={sort} align="right" />
                                     <th className="font-medium text-right pr-3">Quantity</th>
                                 </tr>
                             </thead>

@@ -614,9 +614,11 @@ def test_every_account_is_listed_with_what_is_last_known(tmp_path):
     service = _service(tmp_path, ratatoskr=ratatoskr)
     row = service.status()['accounts'][0]
     assert (row['account_name'], row['balance'], row['affordable']) == ('mer_tols', None, None)   # never read
+    assert row['balance_usd'] is None
     service._build_plan(None)
     row = service.status()['accounts'][0]
     assert (row['balance'], row['currency'], row['unit_price'], row['affordable']) == (759, 'USD', 199, 3)
+    assert row['balance_usd'] == 7.59                                  # what the Wallet column sorts on
     service._buy_account(_order(service, quantity=2), dry_run=False)
     row = service.status()['accounts'][0]
     assert (row['balance'], row['storage_units']) == (361, 4)        # paid 398; 2 + 2 delivered
@@ -715,3 +717,12 @@ def test_jobs_report_their_server_start_time(tmp_path):
     service = _service(tmp_path)
     answer = service.start_plan()
     assert answer['started'] and answer['kind'] == 'plan' and answer['started_at'] > 0
+
+
+def test_wallets_in_other_currencies_are_valued_in_dollars():
+    service = StorageShopService.__new__(StorageShopService)
+    service._accounts = lambda: [('1', 'euro_account', 'DE'), ('2', 'unknown_account', 'DE')]
+    known = {'1': {'currency_id': 3, 'balance': 1000}}                 # 10.00 EUR
+    rows = service.accounts_view(known, {'EUR': 175}, {'EUR': 0.8})
+    assert rows[0]['balance_usd'] == 12.5
+    assert rows[1]['balance_usd'] is None                              # sorts last, never as 0
