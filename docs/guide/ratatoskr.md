@@ -1,8 +1,9 @@
 # Ratatoskr — Storage Units
 
 Ratatoskr logs an account into Counter-Strike 2's Game Coordinator (as if the
-game were running) so items can be moved in and out of **Storage Units**, and
-so Storage Units can be bought from the game's own store.
+game were running) so items can be moved in and out of **Storage Units**, so
+Storage Units can be bought from the game's own store, and so the store's price
+list can be read.
 
 ## One account: inventory, transfer, auto-store
 
@@ -43,10 +44,10 @@ case you collect) from the inventory into a Storage Unit with room, every
 confirmation-check cycle. Switch the watcher on, switch "Act on this account"
 on, add item names, **Sweep now** to run it once. The history shows every move.
 
-## Storage shop
+## Buy Storage Units
 
-http://localhost:3000/storage-shop (Dashboard tile **Storage shop**, or the
-Ratatoskr sidebar). Buys Counter-Strike 2 Storage Units from the Steam wallet,
+http://localhost:3000/buy-storage-units (Dashboard tile **Buy Storage Units**,
+or the Ratatoskr sidebar; the old address `/storage-shop` still leads here). Buys Counter-Strike 2 Storage Units from the Steam wallet,
 on as many accounts as you like, **without connecting anything first**.
 
 > **This spends real wallet money.** A Storage Unit costs $1.99 (or the local
@@ -81,3 +82,28 @@ shows this total. If any check fails, nothing is paid and the opened purchase
 is cancelled.
 
 How it works inside: [docs/internals/storage-shop.md](../internals/storage-shop.md).
+
+## Store Catalogue
+
+http://localhost:3000/store-catalogue (Dashboard tile **Store Catalogue**, or the
+Ratatoskr sidebar). Every item the Counter-Strike 2 in-game store sells — about
+250: tools such as the Storage Unit and Name Tag, case keys, sticker capsules,
+stickers, music kits and music kit boxes, graffiti boxes, pins, patch packs, the
+game license and the Armory Pass — with the game store's price in US dollars.
+**Nothing is bought here.**
+
+- Search by name, pick a category, or tick **Store front only** to see just
+  what the in-game store front shows (case keys, the game license and the
+  Armory Pass are sold but not shown there; cases shown there only link to the
+  Steam Market).
+- Click a column header (Item, Category, Store front, Price) to sort; again to
+  reverse, a third time for the category order.
+- The Steam icon opens the item's Steam Market page, to compare with the
+  store price.
+- The prices are refreshed every time **Buy Storage Units** reads the store.
+  **Read prices again** reads them now: one account logs in to Ratatoskr for
+  about 15 seconds and out again. It waits while Buy Storage Units is checking
+  wallets or buying.
+- An item marked **new** is missing from Ratatoskr's item list, so its name is
+  made from the store's internal name. Refreshing the item list fixes it (see
+  [Ratatoskr's agent guide](../../Yggdrasil/ratatoskr/CLAUDE.md)).

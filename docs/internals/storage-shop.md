@@ -1,4 +1,4 @@
-# Storage shop — how buying a Storage Unit works
+# Buy Storage Units — how buying a Storage Unit works
 
 How Heimdall buys Counter-Strike 2 **Storage Units** on many accounts, written
 from the live runs that made it work (October 2026). Read this before touching
@@ -6,8 +6,9 @@ from the live runs that made it work (October 2026). Read this before touching
 `Yggdrasil/heimdall/backend/storage_shop_service.py` — almost every line there
 exists because something failed live without it.
 
-- **Users:** the page is http://localhost:3000/storage-shop; see
-  [the user guide](../guide/ratatoskr.md#storage-shop).
+- **Users:** the page is http://localhost:3000/buy-storage-units (called the
+  "Storage shop" in the code: `storage_shop_service.py`, `/api/ratatoskr/storage-shop`,
+  `StorageShop.jsx`); see [the user guide](../guide/ratatoskr.md#buy-storage-units).
 - **Agents:** the rules at the end of this page are binding.
 
 ---
@@ -30,7 +31,7 @@ below were confirmed against Valve's own client code (`econ_store.h`,
 
 ```mermaid
 sequenceDiagram
-    participant UI as Storage shop page
+    participant UI as Buy Storage Units page
     participant H as Heimdall<br/>storage_shop_service.py
     participant R as Ratatoskr<br/>store.js
     participant GC as Game Coordinator
@@ -70,6 +71,7 @@ sequenceDiagram
 | Service | `backend/storage_shop_service.py` | Plan, every guard, approval on the web, history |
 | Client | `backend/ratatoskr_service.py` | `store_user_data`, `store_purchase_init`, `store_purchase_finalize` (75 s timeout), `store_purchase_cancel` |
 | Courier | `ratatoskr/store.js` + endpoints in `server.js` | Game Coordinator messages, catching Steam's approval request |
+| Store Catalogue | `store_catalogue_service.py`, `pages/ratatoskr/StoreCatalogue.jsx`, `GET /api/ratatoskr/store-catalogue`, `POST …/refresh` | Read-only list of every store item from the same sheet (section 3.1) |
 
 ## 3. The protocol, step by step
 
@@ -86,6 +88,31 @@ value; types 0 section, 1 string, 2 int32, 3 float, 4 pointer, 6 wide string,
 The Storage Unit is the entry **`casket`** under `store.entries`, with
 `prices` in minor units per currency (for example USD 199, EUR 175). A
 currency missing from the sheet (Turkish lira, for one) cannot buy.
+
+**The rest of the sheet** (read live 2026-10-03, about 5,900 bytes, 251 entries,
+37 currencies) is what the **Store Catalogue** page shows
+(`store_catalogue_service.py`):
+
+- `store.entries` is keyed by the item's **internal name** from `items_game`
+  (`casket`, `Name Tag`, `community_35_key`, `coupon - noisia_01`), each with
+  `item_link`, `category_tags` and `prices`. A **coupon** is how the store
+  sells something that turns into another item when bought (a sticker, a music
+  kit, a capsule). Ratatoskr's `POST /items/store-names` turns internal names
+  into definition indexes and English names; two are named by hand
+  (`sticker_display_case` is the Sticker Slab, `Weapon Case Key` — definition
+  1203 — is the CS:GO Case Key).
+- `store.store_banner_layout` is the **store front**, keyed by definition
+  index (`custom_format` single / double / coupon / new). Case keys, the game
+  license and the Armory Pass are sold but not on it. Cases appear on it with
+  `market_link: 1`: they only link to the Market and are not in `entries`.
+- `store.currencies` holds one number per currency (USD 88888, EUR 76474 …),
+  not a price; the catalogue ignores it.
+
+Every read of the sheet goes to `StorageShopService.on_price_sheet`, which the
+catalogue sets at boot, so a wallet check refreshes it for free. The
+catalogue's **Read prices again** is this service's `price sheet` job
+(`start_price_sheet`): one login, read, log out — never beside a plan or a
+purchase, because it shares the job lock.
 
 ### 3.2 Opening — `StorePurchaseInit` (2510 → 2511)
 

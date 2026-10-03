@@ -44,9 +44,9 @@ Steam is rate-limiting this connection. The app already spaces its calls; wait
   press ↺ **Retry login** in Andvari → Card farming.
 - "ASF down": `make asf` starts it (after `make asf-setup` once).
 
-## Storage shop: "MAY BE PAID"
+## Buy Storage Units: "MAY BE PAID"
 
-See [ratatoskr.md](ratatoskr.md#storage-shop): check the account's purchase
+See [ratatoskr.md](ratatoskr.md#buy-storage-units): check the account's purchase
 history on Steam, then press **Deliver again** (it cannot charge twice).
 
 ## The page is blank or says "Loading…" forever

@@ -41,7 +41,7 @@ not a separate deployable):
 | **Draupnir** | Portfolio tracker (buy/sell, moving-average profit/loss, canonical platform names, live valuation, point-in-time backups) | `draupnir_service.py`, `draupnir_backup_service.py` | `pages/draupnir/` |
 | **Huginn** | Cross-market price scout / arbitrage (Tradeon pulse feed, case arbitrage) | `huginn_service.py` | `pages/huginn/` |
 | **Mímir** | Encrypted credential vault (login / password / email), shares the maFile key | `mimir_service.py` | `pages/mimir/` |
-| **Ratatoskr** | Moves items between Storage Units and inventory; **Storage shop** buys Storage Units on many accounts through the game store (Game Coordinator transaction, approved with the account's web session, price-guarded, dry run cancels) | `ratatoskr_service.py` → Node service (`store.js`), `storage_shop_service.py` | `pages/ratatoskr/` (`StorageShop.jsx` at `/storage-shop`) |
+| **Ratatoskr** | Moves items between Storage Units and inventory; **Buy Storage Units** ("Storage shop" in the code) buys Storage Units on many accounts through the game store (Game Coordinator transaction, approved with the account's web session, price-guarded, dry run cancels); **Store Catalogue** lists every in-game store item with its US dollar price from the same price sheet (read-only) | `ratatoskr_service.py` → Node service (`store.js`), `storage_shop_service.py`, `store_catalogue_service.py` | `pages/ratatoskr/` (`StorageShop.jsx` at `/buy-storage-units`, `StoreCatalogue.jsx` at `/store-catalogue`) |
 | **Gjallarhorn** (in Huginn) | Event rotation: when Valve limits a case, sell deflated holdings and rotate into it; Counter-Strike 2 news watcher that texts + rings the phone; read-only, never trades | `gjallarhorn_service.py`, `gjallarhorn_news_service.py`, `steam_market_service.py`, `telegram_caller.py` | `pages/huginn/Gjallarhorn.jsx`, `components/gjallarhorn/` |
 | **Cross-Profile** (in Huginn) | Best buy-minimum → autobuy route per held item across every account, plus user-defined market chains | `cross_arbitrage_service.py` | `components/CrossProfileArbitrage.jsx` (Arbitrage page view) |
 | **Harvest** (in Huginn) | Every purchase lot you still hold, at the price you paid (no averaging, oldest sold first), vs what an autobuy market pays now; account → market profiles like Arbitrage | `harvest_service.py` | `components/Harvest.jsx` (Arbitrage page tab) |
@@ -196,7 +196,7 @@ ruff + `pip-audit`, and frontend lint + build, on every push and pull request.
   preserved before deleting anything.
 
 - **Money is spent only through the guarded routes** (Andvari "Buy games",
-  Ratatoskr "Storage shop"), dry run first, and a real purchase only on Ivan's
+  Ratatoskr "Buy Storage Units"), dry run first, and a real purchase only on Ivan's
   explicit word for the accounts and quantity he named. Never call Ratatoskr's
   raw `/store/purchase/*` endpoints or Steam checkout yourself.
 - **Automatic selling handles items that arrive after it is switched on**;
@@ -217,7 +217,7 @@ ruff + `pip-audit`, and frontend lint + build, on every push and pull request.
 - ASF safety model and operations: [Yggdrasil/asf/README.md](Yggdrasil/asf/README.md)
 - What every screen does (human guide): [docs/guide/](docs/guide/README.md)
 - Feature deep dives: [docs/internals/](docs/internals/) — start with
-  [storage-shop.md](docs/internals/storage-shop.md) before touching the Storage shop
+  [storage-shop.md](docs/internals/storage-shop.md) before touching Buy Storage Units or the Store Catalogue
 - Known drift between code, config and docs: [docs/internals/known-issues.md](docs/internals/known-issues.md)
 - Human architecture tour: [ARCHITECTURE.md](ARCHITECTURE.md)
 - Trading domain knowledge: [docs/steam-trading/](docs/steam-trading/) — local only: the

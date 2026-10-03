@@ -63,7 +63,7 @@ a backend service + a set of frontend pages; none is a separate deployable.
 | **Draupnir** | The Hoard | Portfolio tracker: buy/sell, moving-average profit/loss, live valuation, point-in-time backups | `draupnir_service.py`, `draupnir_backup_service.py` | `pages/draupnir/` |
 | **Huginn** | The Scout | Cross-market price scouting + case arbitrage, off the Tradeon pulse feed | `huginn_service.py` | `pages/huginn/` |
 | **Mímir** | The Well of Wisdom | Encrypted credential vault (login / password / email) | `mimir_service.py` | `pages/mimir/` |
-| **Ratatoskr** | The Courier | Moves items between Storage Units and inventory, auto-store; **Storage shop** buys Storage Units on many accounts | `ratatoskr_service.py` → Node, `storage_shop_service.py` | `pages/ratatoskr/` |
+| **Ratatoskr** | The Courier | Moves items between Storage Units and inventory, auto-store; **Buy Storage Units** on many accounts; **Store Catalogue** of every in-game store item with its price | `ratatoskr_service.py` → Node, `storage_shop_service.py`, `store_catalogue_service.py` | `pages/ratatoskr/` |
 | **Gjallarhorn** (in Huginn) | The Horn | Event rotation when Valve limits a case; news watcher that texts and rings | `gjallarhorn_service.py`, `gjallarhorn_news_service.py`, `steam_market_service.py`, `telegram_caller.py` | `pages/huginn/Gjallarhorn.jsx` |
 | **Cross-Profile, Harvest** (in Huginn) | — | Best routes across accounts; holdings at purchase price vs autobuy offers | `cross_arbitrage_service.py`, `harvest_service.py` | Arbitrage page views |
 | **Andvari** (in Huginn) | The Pike | Card-drop deals, "Buy games" on many accounts, ASF farming, card auto-sell | `card_deals_service.py`, `store_purchase_service.py`, `asf_service.py`, `card_seller_service.py` | `pages/huginn/CardDeals.jsx` |
@@ -139,7 +139,7 @@ through every check and cancels before paying, then **pay** with every price
 re-checked to the minor unit:
 
 - **Andvari "Buy games"** — the Steam web cart and checkout.
-- **Storage shop** — the Counter-Strike 2 in-game store: a Game Coordinator
+- **Buy Storage Units** ("Storage shop" in the code) — the Counter-Strike 2 in-game store: a Game Coordinator
   transaction through Ratatoskr, approved on Steam's checkout page with the
   account's web session, delivered by the Game Coordinator. See
   [docs/internals/storage-shop.md](docs/internals/storage-shop.md).

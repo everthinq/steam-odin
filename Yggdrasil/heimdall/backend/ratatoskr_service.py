@@ -255,6 +255,11 @@ class RatatoskrService:
         Storage Unit count of the logged-in account."""
         return self._store_call('GET', f"/store/user-data/{steam_id}")
 
+    def store_item_names(self, names):
+        """{internal name: {defIndex, name, prefab}} for the price sheet's entries, from
+        Ratatoskr's item definitions (local, no Steam call)."""
+        return self._store_call('POST', '/items/store-names', {"names": list(names)})
+
     def store_purchase_init(self, steam_id, country, currency, quantity, unit_price):
         """Open a wallet transaction for *quantity* Storage Units (nothing paid yet)."""
         return self._store_call('POST', '/store/purchase/init', {

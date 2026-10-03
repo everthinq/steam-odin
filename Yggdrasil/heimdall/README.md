@@ -60,7 +60,7 @@ All routes are under `/api/` and grouped by blueprint in `backend/routes/`:
 | `/api/settings` | `settings.py` | Settings (known keys only) |
 | `/api/draupnir/portfolios` | `draupnir.py` | Portfolios, transactions, CSV, backups |
 | `/api/huginn` | `huginn.py` | Prices, arbitrage, Case Arbitrage, Harvest, Gjallarhorn, Andvari, Team Fortress 2 |
-| `/api/ratatoskr` | `ratatoskr.py` | Sessions, moves, Storage Units, auto-store, Storage shop |
+| `/api/ratatoskr` | `ratatoskr.py` | Sessions, moves, Storage Units, auto-store, Buy Storage Units (`storage-shop`), Store Catalogue (`store-catalogue`) |
 | `/api/mimir` | `mimir.py` | Credential vault |
 
 `GET /health` reports the backend and its scheduler.

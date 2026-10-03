@@ -34,8 +34,9 @@ Deep dives on single features live in [docs/internals/](../../../docs/internals/
 | 17 | `TeamFortressService(settings, steam, asf, telegram_caller)` | |
 | 18 | `CardSellerService(settings, steam, asf)` | |
 | 19 | `StorePurchaseService(steam, card_deals, asf, settings_provider)` | Andvari "Buy games" |
-| 20 | `StorageShopService(steam, ratatoskr, card_deals)` | Ratatoskr Storage shop |
-| 21 | `MorningRoutine(...)` | wired to `routes.huginn` scan + CSFloat sweep |
+| 20 | `StorageShopService(steam, ratatoskr, card_deals)` | Ratatoskr Buy Storage Units ("Storage shop" in the code) |
+| 21 | `StoreCatalogueService(ratatoskr, storage_shop)` | Store Catalogue; sets `storage_shop.on_price_sheet` |
+| 22 | `MorningRoutine(...)` | wired to `routes.huginn` scan + CSFloat sweep |
 
 4. hangs the singletons on `context.ctx` and registers the blueprints
    (`routes/__init__.py`: accounts, settings, draupnir, ratatoskr, huginn, mimir);
@@ -70,7 +71,7 @@ Deep dives on single features live in [docs/internals/](../../../docs/internals/
 
 On-demand threads: CSFloat sweep, trade-alert sender, market/cross-arbitrage/
 Harvest warmers, card-deals scans, `andvari-{kind}` store-purchase jobs,
-`storage-shop-{kind}` jobs, `team-fortress-sell-now`.
+`storage-shop-{kind}` jobs (`plan`, `purchase`, `delivery`, `price sheet`), `team-fortress-sell-now`.
 
 **Every one of these restarts when any `.py` file is saved** (see below).
 
@@ -100,8 +101,9 @@ Harvest warmers, card-deals scans, `andvari-{kind}` store-purchase jobs,
 | `asf_service.py` | ArchiSteamFarm driver: hardened bot per account, switched on only while it has cards to farm (max 20, Ivan's choice; ASF's FAQ recommends 10), password + Steam Guard code only when ASF asks (paced, three tries), pause while Ratatoskr plays, farming status; Team Fortress 2 mode (chosen bots play app 440 outside the 10-bot ceiling) and the license sweep (every account, new ones included, gets the free Team Fortress 2 license; stopped bots started one at a time for it); off until `ASF_IPC_PASSWORD` is set |
 | `team_fortress_service.py` | Team Fortress 2 case drops: polls the app 440 news feed for "Added the … Case" → starts Team Fortress 2 mode, adds the case to the sell list, texts + rings; auto-sell reads each playing account's inventory (paced) and lists sell-list items one minor unit under the lowest Market listing in the wallet currency (fee rules from `g_rgWalletInfo`), confirming only those listings; state in `cache/team_fortress.json` |
 | `store_purchase_service.py` | Andvari "Buy games" tab: plan (per account: store country, wallet currency + balance from `g_rgWalletInfo`, owned games from the store's `dynamicstore/userdata`, regional price of the cheapest default package from `appdetails`, US dollar conversion, maximum price, balance, best Andvari profit first) and guarded wallet purchases (empty cart only, cart and Steam's final price must equal the plan to the cent, checkout on `checkout.steampowered.com`, dry run cancels before paying, then ASF farm now); history + statistics in `cache/store_purchases.json` |
-| `storage_shop_service.py` | Ratatoskr Storage shop — Counter-Strike 2 Storage Units through the game store over the Game Coordinator. Full protocol, guards and live findings: [docs/internals/storage-shop.md](../../../docs/internals/storage-shop.md). Plan (wallet, store country, price sheet entry "casket", web-inventory Storage Unit count), guarded purchase (Init with the game store's 0-based currency → Steam's `ClientMicroTxnAuthRequest` must be exactly this order → approval page `approvetxn/<transid>` with `approved=1` → Finalize as a Game Coordinator job, which is when the wallet is charged); dry run cancels; after approval failures read "MAY BE PAID" and "Deliver again" re-sends Finalize; state in `cache/storage_shop.json` |
-| `card_seller_service.py`, `market_seller.py`, `community_pacer.py` | Andvari card auto-sell (off by default): new trading cards listed one cent under the lowest Market listing in the wallet currency, never under the highest buy order, only cards that arrived after it was switched on, only their confirmations accepted (exact item name, type 3 or market type 12), retried until confirmed; statistics per account and game in `cache/card_sales.json`. `community_pacer` keeps one 4 s steamcommunity.com gap shared by the card seller, the Team Fortress 2 seller and the Storage shop |
+| `storage_shop_service.py` | Ratatoskr Buy Storage Units ("Storage shop" in the code) — Counter-Strike 2 Storage Units through the game store over the Game Coordinator. Full protocol, guards and live findings: [docs/internals/storage-shop.md](../../../docs/internals/storage-shop.md). Plan (wallet, store country, price sheet entry "casket", web-inventory Storage Unit count), guarded purchase (Init with the game store's 0-based currency → Steam's `ClientMicroTxnAuthRequest` must be exactly this order → approval page `approvetxn/<transid>` with `approved=1` → Finalize as a Game Coordinator job, which is when the wallet is charged); dry run cancels; after approval failures read "MAY BE PAID" and "Deliver again" re-sends Finalize; every sheet read goes to `on_price_sheet`, and the `price sheet` job only reads it; state in `cache/storage_shop.json` |
+| `store_catalogue_service.py` | Store Catalogue (read-only): every entry of the game store's price sheet with its US dollar price, category and store-front flag; English names from Ratatoskr's `POST /items/store-names` (the last names known are kept when Ratatoskr is down; two named by hand). Takes every sheet `StorageShopService` reads (`on_price_sheet`); "Read prices again" is that service's `price sheet` job, so it never overlaps a purchase; state in `cache/store_catalogue.json` |
+| `card_seller_service.py`, `market_seller.py`, `community_pacer.py` | Andvari card auto-sell (off by default): new trading cards listed one cent under the lowest Market listing in the wallet currency, never under the highest buy order, only cards that arrived after it was switched on, only their confirmations accepted (exact item name, type 3 or market type 12), retried until confirmed; statistics per account and game in `cache/card_sales.json`. `community_pacer` keeps one 4 s steamcommunity.com gap shared by the card seller, the Team Fortress 2 seller and Buy Storage Units |
 | `jsonio.py` | Crash-safe atomic JSON read/write (`.tmp-*.json` then rename) |
 | `validation.py` | Request-body validation for writes |
 | `settings.py` | `settings.json` load with safe defaults; a corrupt file is copied aside and writes are refused until it loads |
@@ -120,7 +122,7 @@ Harvest warmers, card-deals scans, `andvari-{kind}` store-purchase jobs,
 | **Andvari** deal alerts and card-sale summaries | **Only its own bot** (`card_deals_bot_token`) | `card_deals_chat_id` — silent without them |
 | Phone rings (Gjallarhorn news, Team Fortress 2 release, manual ring) | `TelegramCaller` burner user account | `telegram_caller.json` target |
 
-Storage shop, Buy games, ASF and Harvest send nothing. **Never route Andvari
+Buy Storage Units, the Store Catalogue, Buy games, ASF and Harvest send nothing. **Never route Andvari
 through the shared bot**, and never add a fallback to it (Ivan's rule).
 
 ## Data files (all gitignored except `portfolios.json`)
@@ -143,7 +145,7 @@ through the shared bot**, and never add a fallback to it (Ivan's rule).
 `case_alert_state.json`, `huginn_container_snapshots.json`,
 `lootfarm_auction_log.json`, `gjallarhorn_liquidity.json.gz`,
 `card_deals.json.gz`, `asf_state.json`, `team_fortress.json`,
-`card_sales.json`, `store_purchases.json`, `storage_shop.json`,
+`card_sales.json`, `store_purchases.json`, `storage_shop.json`, `store_catalogue.json`,
 `storage_shop_approval_page.html`, `morning_routine.json`. Cache files are not
 watched: `docker restart steam-odin-heimdall-backend-1` after editing one by hand.
 
@@ -176,7 +178,7 @@ docker exec steam-odin-heimdall-backend-1 sh -c \
 docker exec steam-odin-heimdall-backend-1 sh -c 'cd /app && ruff check .'
 ```
 
-About 590 tests in 34 files (`tests/`); `conftest.py` stubs CSFloat so no test
+About 745 tests in 36 files (`tests/`); `conftest.py` stubs CSFloat so no test
 reaches the network. Every feature that spends money or sells has pure helpers
 with tests — extend them, including with bytes captured live.
 Dev dependencies: `requirements-dev.txt` (pytest, ruff, pip-audit). The image
@@ -185,7 +187,7 @@ runs Python 3.9; CI runs 3.11 — write code that works on both.
 ## Backend-specific traps
 
 - **Money paths are guarded, never bypassed.** Buy games
-  (`store_purchase_service.py`) and the Storage shop (`storage_shop_service.py`)
+  (`store_purchase_service.py`) and Buy Storage Units (`storage_shop_service.py`)
   re-check currency, price and balance to the minor unit, and support a dry
   run that cancels before paying. Test with dry run; spend only on Ivan's
   explicit word, through the guarded routes.

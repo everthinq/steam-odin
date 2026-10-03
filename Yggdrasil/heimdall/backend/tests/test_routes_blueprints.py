@@ -48,9 +48,10 @@ def test_ratatoskr_blueprint_registers_all_routes():
                  '/api/ratatoskr/move/batch', '/api/ratatoskr/auto-store',
                  '/api/ratatoskr/auto-store/sweep', '/api/ratatoskr/storage-shop',
                  '/api/ratatoskr/storage-shop/plan', '/api/ratatoskr/storage-shop/run',
-                 '/api/ratatoskr/storage-shop/deliver-again']:
+                 '/api/ratatoskr/storage-shop/deliver-again', '/api/ratatoskr/store-catalogue',
+                 '/api/ratatoskr/store-catalogue/refresh']:
         assert want in rules, f'missing ratatoskr route: {want}'
-    assert _rule_count(bp, '/api/ratatoskr') == 21
+    assert _rule_count(bp, '/api/ratatoskr') == 23
 
 
 def test_accounts_blueprint_registers_all_routes():

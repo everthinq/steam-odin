@@ -39,7 +39,7 @@ Tools inside Heimdall:
 | **Team Fortress 2** | New case drops: play on release, sell the drops |
 | **Draupnir** | Portfolio tracker with profit/loss and automatic backups |
 | **Mímir** | Encrypted vault for logins, passwords and emails |
-| **Ratatoskr** | Move items in and out of Storage Units; buy Storage Units on many accounts |
+| **Ratatoskr** | Move items in and out of Storage Units; buy Storage Units on many accounts; Store Catalogue of every in-game store item with its price |
 
 ## ⚔️ Commands of Power
 

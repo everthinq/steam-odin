@@ -2,7 +2,7 @@
 
 Agent notes for the Node service that holds live Counter-Strike 2 sessions:
 it moves items between Storage Units ("caskets") and the inventory, renames
-Storage Units, and talks to the game's own store (Storage shop). The root
+Storage Units, and talks to the game's own store (Buy Storage Units, Store Catalogue). The root
 [CLAUDE.md](../../CLAUDE.md) has the fleet-wide rules; this file is
 Ratatoskr's map and its rate-limit contract.
 
@@ -19,7 +19,7 @@ is refused with 403 (only server-to-server calls are accepted).
 | `server.js` | Express app, session store, login, move queue, idle sweep, every endpoint |
 | `store.js` | Counter-Strike 2 in-game store over the Game Coordinator: price sheet (`StoreGetUserData`), `StorePurchaseInit` / `Finalize` / `Cancel`, one request per session at a time, each sent as a Game Coordinator **job** (Finalize is answered only to a job); catches Steam's `ClientMicroTxnAuthRequest` (EMsg 5504, not handled by steam-user). Protocol and live findings: [docs/internals/storage-shop.md](../../docs/internals/storage-shop.md) |
 | `items.js` | Converts Game Coordinator inventory into display items (names, images, stickers, wear, collections); logic derived from Casemove. Loads `csgo_english.json` and `items_game.json` once at start |
-| `fetch_items.js` | Manual one-off: downloads fresh `items_game` / `csgo_english` from SteamDatabase's GameTracking-CS2 and writes the two JSON files (`node fetch_items.js`). Run it after a game update adds items |
+| `fetch_items.js` | Manual one-off: downloads fresh `items_game` / `csgo_english` from SteamDatabase's GameTracking-CS2 and writes the two JSON files (`node fetch_items.js`, on the Mac in this folder: the container's copy is read-only). Run it after a game update adds items (the Store Catalogue then marks fewer items "new"), then `docker restart steam-odin-ratatoskr-1`; last refreshed 2026-10-03 |
 
 Scripts: `npm start` (= `node server.js`), `npm run dev` (nodemon). Image
 `node:22-alpine`, runs as user `node`, all capabilities dropped, source mounted
@@ -67,12 +67,13 @@ read-only. Container port 3000, published on host **127.0.0.1:3001**.
 | `GET/POST /config/session-idle` | Idle timeout + presets |
 | `GET/POST /config/protected-accounts` | Accounts exempt from the idle sweep |
 | `GET /store/user-data/:steamid` | Price sheet (base64), wallet, Storage Unit count, countries |
+| `POST /items/store-names` | `{names: [...]}` → definition index, English name and prefab per price sheet entry (local item files, no Steam call; unknown names left out) — the Store Catalogue's names |
 | `POST /store/purchase/init` | Open a transaction (currency 0–63, two-letter country, quantity 1–50); returns `transactionId` + Steam's raw approval request |
 | `POST /store/purchase/finalize` | Deliver (and charge) an approved transaction |
 | `POST /store/purchase/cancel` | Drop an unapproved transaction |
 
 **The `/store/purchase/*` endpoints spend real money. Never call them
-directly** — only Heimdall's guarded Storage shop does, after its checks.
+directly** — only Heimdall's guarded Buy Storage Units does, after its checks.
 
 ## Rate limits are the whole game — do not undo these
 

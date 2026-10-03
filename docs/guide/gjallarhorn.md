@@ -48,5 +48,5 @@ and a **score**: high = sell first (deflated, liquid, tradable).
 
 Free Storage Unit space and how full the loose inventory is for the chosen
 account (needs it connected in Ratatoskr). Running out of space during a rush
-is the classic mistake — buy Storage Units beforehand in the
-[Storage shop](ratatoskr.md#storage-shop).
+is the classic mistake — buy Storage Units beforehand with
+[Buy Storage Units](ratatoskr.md#buy-storage-units).

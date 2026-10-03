@@ -20,6 +20,7 @@ from team_fortress_service import TeamFortressService
 from card_seller_service import CardSellerService
 from store_purchase_service import StorePurchaseService
 from storage_shop_service import StorageShopService
+from store_catalogue_service import StoreCatalogueService
 from morning_routine import MorningRoutine
 from telegram_caller import TelegramCaller
 from logging_setup import setup_logging
@@ -90,6 +91,9 @@ store_purchase_service = StorePurchaseService(steam_service, card_deals_service,
 # Ratatoskr "Storage shop": buy Counter-Strike 2 Storage Units on many accounts through the
 # game store (Game Coordinator transaction, approved with the account's web session).
 storage_shop_service = StorageShopService(steam_service, ratatoskr_service, card_deals_service)
+# Store Catalogue: every item the game store sells, with its price (read-only). It takes
+# every price sheet the storage shop reads.
+store_catalogue_service = StoreCatalogueService(ratatoskr_service, storage_shop_service)
 
 # Expose the singletons to the route blueprints (read from context.ctx at
 # request time — see context.py and the routes/ package).
@@ -113,6 +117,7 @@ ctx.team_fortress_service = team_fortress_service
 ctx.card_seller_service = card_seller_service
 ctx.store_purchase_service = store_purchase_service
 ctx.storage_shop_service = storage_shop_service
+ctx.store_catalogue_service = store_catalogue_service
 register_blueprints(app)
 
 # Morning routine: "Get all items" once a day at 08:00 (or the first minute the Mac

@@ -327,6 +327,8 @@ class StorageShopService:
         self._lock = threading.RLock()
         self._job_lock = threading.Lock()
         self._last_call = {'steam': 0.0, 'community': 0.0}
+        # Called with (decoded sheet, version, read at) every time the price sheet is read.
+        self.on_price_sheet = None
         saved = read_json(state_path, default={}) or {}
         self._plan = saved.get('plan')
         self._prices = saved.get('prices') or {}      # {'prices': {ISO: minor}, 'version', 'fetched_at'}
@@ -501,17 +503,57 @@ class StorageShopService:
             log.info('[STORAGE-SHOP] could not log out of Ratatoskr for %s: %s', steamid, e)
 
     def _read_prices(self, steamid):
-        """(prices {ISO: minor units}, Ratatoskr's answer: storage_units, account_country)."""
+        """(prices {ISO: minor units}, Ratatoskr's answer: storage_units, account_country).
+        The whole sheet goes to ``on_price_sheet`` first (the Store Catalogue)."""
         answer = self.ratatoskr.store_user_data(steamid) or {}
         if answer.get('error') or answer.get('result') != GAME_COORDINATOR_OK:
             raise ShopError(f'the game store did not send its price sheet ({answer.get("error") or answer.get("result")})')
-        prices = storage_unit_prices(decode_price_sheet(base64.b64decode(answer.get('price_sheet_base64') or '')))
+        sheet = decode_price_sheet(base64.b64decode(answer.get('price_sheet_base64') or ''))
+        if self.on_price_sheet:
+            try:
+                self.on_price_sheet(sheet, answer.get('price_sheet_version'), time.time())
+            except Exception:
+                log.exception('[STORAGE-SHOP] the price sheet listener failed')
+        prices = storage_unit_prices(sheet)
         if not prices:
             raise ShopError('the game store price sheet has no Storage Unit price')
         with self._lock:
             self._prices = {'prices': prices, 'version': answer.get('price_sheet_version'), 'fetched_at': time.time()}
         self._save()
         return prices, answer
+
+    def _fetch_price_sheet(self, accounts):
+        """(Storage Unit prices or None, error or None) through one account's login (the sheet
+        is the same for everyone). The next account is tried only when a login fails, never
+        because the sheet itself is unreadable."""
+        error = 'no account could log in to Ratatoskr'
+        for steamid, name, _ in accounts:
+            try:
+                opened = self._session(steamid)
+            except Exception as e:
+                log.info('[STORAGE-SHOP] price sheet: %s could not log in: %s', name, e)
+                continue
+            try:
+                return self._read_prices(steamid)[0], None
+            except Exception as e:
+                log.warning('[STORAGE-SHOP] price sheet through %s failed: %s', name, e)
+                return None, str(e)
+            finally:
+                if opened:
+                    self._close(steamid)
+        return None, error
+
+    def start_price_sheet(self):
+        """Read the game store's price sheet now (the Store Catalogue's "Read prices again").
+        A job of this service, so it never runs beside a purchase."""
+        return self._start('price sheet', self._refresh_price_sheet, ())
+
+    def _refresh_price_sheet(self):
+        self._set_job(total=1, phase='reading the game store price sheet')
+        _, error = self._fetch_price_sheet(self._accounts())
+        if error:
+            raise ShopError(error)
+        self._set_job(done=1)
 
     # ---- plan ----------------------------------------------------------------------------------
 
@@ -526,22 +568,7 @@ class StorageShopService:
             cached = dict(self._prices)
         prices = cached.get('prices') or {}
         if not prices or time.time() - (cached.get('fetched_at') or 0) > PRICE_SHEET_TIME_TO_LIVE_SECONDS:
-            # One login reads the sheet (it is the same for everyone). The next account is
-            # tried only when a login fails, never because the sheet itself is unreadable.
-            for steamid, name, _ in accounts:
-                try:
-                    opened = self._session(steamid)
-                except Exception as e:
-                    log.info('[STORAGE-SHOP] price sheet: %s could not log in: %s', name, e)
-                    continue
-                try:
-                    prices, _ = self._read_prices(steamid)
-                except Exception as e:
-                    log.warning('[STORAGE-SHOP] price sheet through %s failed: %s', name, e)
-                finally:
-                    if opened:
-                        self._close(steamid)
-                break
+            prices = self._fetch_price_sheet(accounts)[0] or prices
         self._set_job(done=1)
         rates = self._rates()
         rows = []
@@ -860,6 +887,10 @@ class StorageShopService:
                          'affordable': min(balance // price, MAX_QUANTITY_PER_ACCOUNT) if price and balance is not None else None,
                          'sold_in_currency': bool(currency is None or (price and currency in GAME_STORE_CURRENCIES))})
         return rows
+
+    def job_status(self):
+        with self._lock:
+            return dict(self._job)
 
     def status(self):
         with self._lock:

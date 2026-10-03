@@ -726,3 +726,34 @@ def test_wallets_in_other_currencies_are_valued_in_dollars():
     rows = service.accounts_view(known, {'EUR': 175}, {'EUR': 0.8})
     assert rows[0]['balance_usd'] == 12.5
     assert rows[1]['balance_usd'] is None                              # sorts last, never as 0
+
+
+def test_every_price_sheet_read_goes_to_the_listener(tmp_path):
+    service = _service(tmp_path)
+    seen = []
+    service.on_price_sheet = lambda sheet, version, read_at: seen.append((sheet['store']['entries'], version))
+    _planned(service)
+    assert seen == [({'casket': {'prices': {'USD': 199}}}, 7)]
+
+
+def test_a_failing_listener_does_not_stop_the_plan(tmp_path):
+    service = _service(tmp_path)
+    service.on_price_sheet = lambda *arguments: 1 / 0
+    assert _planned(service)['accounts'][0]['status'] == 'buy'
+
+
+def test_price_sheet_job_reads_once_and_logs_out(tmp_path):
+    ratatoskr = FakeRatatoskr()
+    service = _service(tmp_path, ratatoskr=ratatoskr)
+    service._refresh_price_sheet()
+    assert ratatoskr.calls == ['login', 'disconnect']
+    assert service.status()['price_sheet']['prices'] == {'USD': 199}
+
+
+def test_price_sheet_job_reports_an_unreadable_sheet(tmp_path):
+    ratatoskr = FakeRatatoskr()
+    ratatoskr.store_user_data = lambda steamid: {'error': 'No active GC session'}
+    service = _service(tmp_path, ratatoskr=ratatoskr)
+    with pytest.raises(ShopError, match='No active GC session'):
+        service._refresh_price_sheet()
+    assert ratatoskr.calls == ['login', 'disconnect']

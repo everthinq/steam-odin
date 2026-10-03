@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Outlet, Link, useParams, useLocation, useNavigate } from 'react-router-dom';
-import { Package, ArrowRightLeft, Database, LayoutDashboard, Plug, Unplug, Timer, Boxes, Archive } from 'lucide-react';
+import { Package, ArrowRightLeft, Database, LayoutDashboard, Plug, Unplug, Timer, Boxes, Archive, Tags } from 'lucide-react';
 
 const STATUS_POLL_MS = 90 * 1000;
 
@@ -321,11 +321,18 @@ const RatatoskrLayout = () => {
                 <div className="p-4 border-t border-white/5 space-y-1">
                     {/* Every account at once, not only this one: its own page, no connection needed. */}
                     <Link
-                        to="/storage-shop"
+                        to="/buy-storage-units"
                         className="flex items-center gap-3 px-4 py-3 rounded-xl text-slate-400 hover:text-white hover:bg-white/5 w-full transition-all"
                     >
                         <Archive size={18} />
-                        <span className="font-medium">Storage shop</span>
+                        <span className="font-medium">Buy Storage Units</span>
+                    </Link>
+                    <Link
+                        to="/store-catalogue"
+                        className="flex items-center gap-3 px-4 py-3 rounded-xl text-slate-400 hover:text-white hover:bg-white/5 w-full transition-all"
+                    >
+                        <Tags size={18} />
+                        <span className="font-medium">Store Catalogue</span>
                     </Link>
                     <button
                         type="button"

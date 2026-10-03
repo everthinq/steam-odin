@@ -14,6 +14,7 @@ const RatatoskrInventory = lazy(() => import('./pages/ratatoskr/Inventory'));
 const RatatoskrTransfer = lazy(() => import('./pages/ratatoskr/Transfer'));
 const RatatoskrAutoStore = lazy(() => import('./pages/ratatoskr/AutoStore'));
 const RatatoskrStorageShop = lazy(() => import('./pages/ratatoskr/StorageShop'));
+const RatatoskrStoreCatalogue = lazy(() => import('./pages/ratatoskr/StoreCatalogue'));
 const HuginnArbitrage = lazy(() => import('./pages/huginn/Arbitrage'));
 const HuginnGjallarhorn = lazy(() => import('./pages/huginn/Gjallarhorn'));
 const HuginnCardDeals = lazy(() => import('./pages/huginn/CardDeals'));
@@ -29,7 +30,8 @@ function TitleManager() {
   useEffect(() => {
     let title = 'Heimdall';
     if (pathname.startsWith('/ratatoskr')) title = 'Ratatoskr';
-    else if (pathname.startsWith('/storage-shop')) title = 'Storage shop';
+    else if (pathname.startsWith('/buy-storage-units')) title = 'Buy Storage Units';
+    else if (pathname.startsWith('/store-catalogue')) title = 'Store Catalogue';
     else if (pathname.startsWith('/huginn/gjallarhorn')) title = 'Gjallarhorn';
     else if (pathname.startsWith('/huginn/card-deals')) title = 'Andvari';
     else if (pathname.startsWith('/huginn/team-fortress')) title = 'Team Fortress 2';
@@ -89,7 +91,9 @@ function App() {
           <Route path="/mimir" element={<MimirVault />} />
 
           {/* Ratatoskr Routes */}
-          <Route path="/storage-shop" element={<RatatoskrStorageShop />} />
+          <Route path="/buy-storage-units" element={<RatatoskrStorageShop />} />
+          <Route path="/storage-shop" element={<Navigate to="/buy-storage-units" replace />} />
+          <Route path="/store-catalogue" element={<RatatoskrStoreCatalogue />} />
           <Route path="/ratatoskr/:steamid" element={<RatatoskrLayout />}>
             <Route index element={<Navigate to="inventory" replace />} />
             <Route path="inventory" element={<RatatoskrInventory />} />

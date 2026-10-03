@@ -45,7 +45,8 @@ real Pay / Buy / Sell / Approve button while testing; use the dry-run paths.
 | `/huginn/team-fortress` | `pages/huginn/TeamFortress.jsx` | |
 | `/draupnir`, `/draupnir/:portfolioId` | `pages/draupnir/` | |
 | `/mimir` | `pages/mimir/Vault.jsx` | |
-| `/storage-shop` | `pages/ratatoskr/StorageShop.jsx` | Every account; outside the Ratatoskr layout |
+| `/buy-storage-units` | `pages/ratatoskr/StorageShop.jsx` | Buy Storage Units, every account; outside the Ratatoskr layout; `/storage-shop` redirects here |
+| `/store-catalogue` | `pages/ratatoskr/StoreCatalogue.jsx` | Every in-game store item with its US dollar price (read-only) |
 | `/ratatoskr/:steamid/{inventory,transfer,auto-store}` | `pages/RatatoskrLayout.jsx` + `pages/ratatoskr/` | Layout passes `{steamid, account}` via `<Outlet context>` |
 
 Every page except the Dashboard is `React.lazy`; all routes sit in a
@@ -69,14 +70,14 @@ path prefix — add your page there. No catch-all route, no Settings page.
   posting the whole object overwrites other screens' settings.
 - **Dangerous actions** get a real confirmation: `TypedConfirmDialog` (type a
   phrase), `ConfirmDialog` / `PromptDialog` in `components/DraupnirDialog.jsx`,
-  or a review step with a dry run (Storage shop, Buy games). Guard double
+  or a review step with a dry run (Buy Storage Units, Buy games). Guard double
   clicks on anything that spends money with a ref, not only state.
 - **localStorage** is for per-browser conveniences only (layout, filters),
   every access wrapped in `try`/`catch`. Keys in use: `heimdall-dashboard-layout`,
   `draupnir-portfolio-layout`, `huginn.harvest`, `andvari.valuation`,
   `andvari.buy.apps`, `lf_balance_pct`, `lf_unlocked`.
 - **Shared pieces:** `components/gjallarhorn/InfoTip.jsx` (prop `tip`) for
-  tooltips; `components/draupnir/columnSort.js` (`useColumnSort`, `sortRows`);
+  tooltips; `components/draupnir/columnSort.js` (`useColumnSort`, `sortRows`) with the header `components/ratatoskr/SortHeader.jsx`;
   `utils/transferItems.js` (`matchesSearchQuery`, wear shorthand fn/mw/ft/ww/bs);
   per-market link builders in `utils/*Market.js` + `*MarketLink.jsx`;
   `utils/tradeonShortLink.js`. Item images: `api.steamapis.com/image/item/730/<name>`.

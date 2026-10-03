@@ -292,3 +292,18 @@ def storage_shop_deliver_again():
         return jsonify({'started': False, 'error': 'at must be the purchase time'}), 400
     result = ctx.storage_shop_service.start_deliver_again(at)
     return jsonify(result), (200 if result['started'] else 400)
+
+
+# ---- Store Catalogue: every item the game store sells (store_catalogue_service.py) ----
+
+@bp.route('/api/ratatoskr/store-catalogue', methods=['GET'])
+def store_catalogue_status():
+    """Every item in the Counter-Strike 2 in-game store with its price, and the price sheet job."""
+    return jsonify(ctx.store_catalogue_service.status())
+
+
+@bp.route('/api/ratatoskr/store-catalogue/refresh', methods=['POST'])
+def store_catalogue_refresh():
+    """Read the game store's price sheet again (one Ratatoskr login; buys nothing)."""
+    result = ctx.store_catalogue_service.start_refresh()
+    return jsonify(result), (200 if result['started'] else 400)

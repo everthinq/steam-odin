@@ -739,6 +739,33 @@ app.get('/store/user-data/:steamid', async (req, res) => {
     }
 });
 
+// The price sheet names items by their internal name ("casket", "coupon - noisia_01"):
+// their definition index, English name and prefab from items_game, for the Store Catalogue.
+// Read-only and local (no Steam call). Unknown names are left out.
+let definitionsByName = null;
+app.post('/items/store-names', (req, res) => {
+    const names = (req.body || {}).names;
+    if (!Array.isArray(names) || names.length > 2000) return res.status(400).json({ error: 'names must be a list (at most 2000)' });
+    if (!definitionsByName) {
+        definitionsByName = new Map();
+        for (const [defIndex, item] of Object.entries(itemsProcessor.csgoItems.items || {})) {
+            if (item && item.name) definitionsByName.set(item.name, [defIndex, item]);
+        }
+    }
+    const english = (token) => {
+        const value = token ? itemsProcessor.translation[String(token).replace(/^#/, '').toLowerCase()] : null;
+        return typeof value === 'string' ? value.replace(/^"|"$/g, '') : null;
+    };
+    const definitions = {};
+    for (const name of names) {
+        const found = definitionsByName.get(String(name));
+        if (!found) continue;
+        const [defIndex, item] = found;
+        definitions[name] = { defIndex: Number(defIndex), name: english(item.item_name), prefab: item.prefab || null };
+    }
+    res.json({ success: true, definitions });
+});
+
 // Open a wallet transaction for Storage Units. Nothing is paid until Steam approves
 // it (Heimdall does that on checkout.steampowered.com) and it is finalized below.
 app.post('/store/purchase/init', async (req, res) => {

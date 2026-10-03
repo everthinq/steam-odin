@@ -3,11 +3,12 @@ import { createPortal } from 'react-dom';
 import { Link } from 'react-router-dom';
 import {
     Archive, LayoutDashboard, Search, RefreshCw, Minus, Plus, ShoppingCart, FlaskConical, X,
-    CheckCircle2, AlertTriangle, Loader2, Circle, Wallet, History, ArrowUp, ArrowDown, ArrowUpDown,
+    CheckCircle2, AlertTriangle, Loader2, Circle, Wallet, History,
 } from 'lucide-react';
 import { useColumnSort, sortRows } from '../../components/draupnir/columnSort';
+import SortHeader from '../../components/ratatoskr/SortHeader';
 
-// Ratatoskr "Storage shop": pick any account from the dashboard, choose how many Storage
+// Ratatoskr "Buy Storage Units": pick any account from the dashboard, choose how many Storage
 // Units (1,000 items each), review the order with freshly read wallets, pay. Backend:
 // /api/ratatoskr/storage-shop*. The account list shows what is last known (nothing is read
 // from Steam until "Review & buy" or "Check wallets"); every purchase is re-checked
@@ -64,23 +65,6 @@ const post = (path, body) => fetch(path, {
 }).then((r) => r.json());
 
 // ---- small parts ---------------------------------------------------------------------------
-
-// A column header that sorts: ascending, then descending, then back to the dashboard's order.
-const SortHeader = ({ column, label, sort, align = 'left', className = '', title }) => {
-    const active = sort.sortKey === column;
-    const Icon = !active ? ArrowUpDown : sort.sortDir === 'asc' ? ArrowUp : ArrowDown;
-    const next = !active ? 'sort ascending' : sort.sortDir === 'asc' ? 'sort descending' : 'go back to the dashboard order';
-    return (
-        <th className={`font-medium ${align === 'right' ? 'text-right' : 'text-left'} ${className}`}
-            aria-sort={active ? (sort.sortDir === 'asc' ? 'ascending' : 'descending') : 'none'}>
-            <button type="button" onClick={() => sort.toggle(column)} title={`${title ? `${title}. ` : ''}Click to ${next}.`}
-                className={`inline-flex items-center gap-1 hover:text-slate-200 ${active ? 'text-amber-300' : ''}`}>
-                {label}
-                <Icon size={11} className={active ? '' : 'opacity-40'} aria-hidden="true" />
-            </button>
-        </th>
-    );
-};
 
 const Stepper = ({ value, max, onChange, label }) => (
     <div className="inline-flex items-center rounded-lg border border-white/15 bg-black/30" role="group" aria-label={label}>
@@ -291,18 +275,20 @@ const StorageShop = () => {
         .finally(load);
 
     if (!state) {
-        return <div className="min-h-screen flex items-center justify-center text-slate-400"><Loader2 className="animate-spin mr-2" size={18} /> Loading the Storage shop…</div>;
+        return <div className="min-h-screen flex items-center justify-center text-slate-400"><Loader2 className="animate-spin mr-2" size={18} /> Loading Buy Storage Units…</div>;
     }
     const stats = state.statistics || { units: 0, spent: {}, accounts: {} };
     const unclear = (state.history || []).filter((h) => h.payment_attempted && !h.paid && h.state === 'done');
     const checkingAll = running && state.job.kind === 'plan' && !shown;
+    // The Store Catalogue's "Read prices again" shares this page's job: nothing can start meanwhile.
+    const readingPrices = running && state.job.kind === 'price sheet';
 
     return (
         <div className="min-h-screen p-4 md:p-8 text-sm">
             <header className="flex flex-wrap items-center gap-3 mb-6">
                 <div className="p-2 bg-amber-900/30 rounded-lg border border-amber-600/30"><Archive size={22} className="text-amber-500" /></div>
                 <div className="mr-auto rounded-lg">
-                    <h1 className="text-2xl font-bold text-amber-100 font-serif">Storage shop</h1>
+                    <h1 className="text-2xl font-bold text-amber-100 font-serif">Buy Storage Units</h1>
                     <p className="text-xs text-slate-300 [text-shadow:0_1px_3px_rgb(0_0_0)]">Buy Counter-Strike 2 Storage Units ({state.storage_unit_capacity || 1000} items each) from each account&apos;s Steam wallet</p>
                 </div>
                 {stats.units > 0 && (
@@ -358,8 +344,9 @@ const StorageShop = () => {
                         <button type="button" onClick={checkWallets} disabled={running}
                             title="Reads every account's wallet and counts its Storage Units (about 8 seconds per account); nothing is bought"
                             className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-white/15 text-slate-300 hover:bg-white/5 disabled:opacity-50 text-xs">
-                            <RefreshCw size={13} className={checkingAll ? 'animate-spin' : ''} />
-                            {checkingAll ? `Checking ${Math.max(0, state.job.done - 1)}/${Math.max(0, state.job.total - 1)}` : 'Check wallets & Storage Units'}
+                            <RefreshCw size={13} className={checkingAll || readingPrices ? 'animate-spin' : ''} />
+                            {checkingAll ? `Checking ${Math.max(0, state.job.done - 1)}/${Math.max(0, state.job.total - 1)}`
+                                : readingPrices ? 'Reading the store prices…' : 'Check wallets & Storage Units'}
                         </button>
                     </div>
 
@@ -371,12 +358,12 @@ const StorageShop = () => {
                                         <input type="checkbox" className="accent-amber-500" checked={allVisibleSelected} onChange={toggleAllVisible}
                                             disabled={!visibleSelectable.length} aria-label="Select every account shown" />
                                     </th>
-                                    <SortHeader column="account" label="Account" sort={sort} />
-                                    <SortHeader column="wallet" label="Wallet" sort={sort} align="right"
+                                    <SortHeader resetLabel="the dashboard order" column="account" label="Account" sort={sort} />
+                                    <SortHeader resetLabel="the dashboard order" column="wallet" label="Wallet" sort={sort} align="right"
                                         title="Wallets in other currencies are compared in US dollars" />
-                                    <SortHeader column="storage_units" label="Storage Units" sort={sort} align="right"
+                                    <SortHeader resetLabel="the dashboard order" column="storage_units" label="Storage Units" sort={sort} align="right"
                                         title="Storage Units the account holds now (each holds 1,000 items), from its Counter-Strike 2 inventory" />
-                                    <SortHeader column="can_buy" label="Can buy" sort={sort} align="right" />
+                                    <SortHeader resetLabel="the dashboard order" column="can_buy" label="Can buy" sort={sort} align="right" />
                                     <th className="font-medium text-right pr-3">Quantity</th>
                                 </tr>
                             </thead>
