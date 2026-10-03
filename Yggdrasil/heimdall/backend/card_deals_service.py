@@ -67,7 +67,7 @@ import urllib.parse
 import urllib.request
 from collections import Counter
 
-from notifications import send_notification
+from notifications import NO_OWN_BOT, own_bot_settings, send_notification
 
 logger = logging.getLogger(__name__)
 
@@ -468,7 +468,7 @@ CONFIG_KEYS = (
     'card_deals_auto_scan_enabled', 'card_deals_scan_interval_hours',
     'card_deals_include_full_price', 'card_deals_max_price', 'card_deals_min_discount',
     'card_deals_alerts_enabled', 'card_deals_alert_min_return_percent',
-    'card_deals_alert_min_profit', 'card_deals_chat_id', 'card_deals_fallback_country',
+    'card_deals_alert_min_profit', 'card_deals_bot_token', 'card_deals_chat_id', 'card_deals_fallback_country',
     'card_deals_valuation',
 )
 
@@ -500,6 +500,11 @@ def clean_config(body):
         out['card_deals_alert_min_return_percent'] = number('card_deals_alert_min_return_percent', 0, 100000, int)
     if 'card_deals_alert_min_profit' in body:
         out['card_deals_alert_min_profit'] = round(number('card_deals_alert_min_profit', 0, 1000), 2)
+    if 'card_deals_bot_token' in body:
+        token = str(body['card_deals_bot_token'] or '').strip()
+        if token and not re.fullmatch(r'\d{5,20}:[A-Za-z0-9_-]{20,64}', token):
+            raise ValueError('card_deals_bot_token must be a Telegram bot token (from @BotFather: 123456:ABC…)')
+        out['card_deals_bot_token'] = token
     if 'card_deals_chat_id' in body:
         chat = str(body['card_deals_chat_id'] or '').strip()
         if chat and not re.fullmatch(r'-?\d{1,20}|@[A-Za-z0-9_]{4,64}', chat):
@@ -656,7 +661,10 @@ class CardDealsService:
         }
 
     def send_test_alert(self, settings):
-        return self._notify(self._alert_settings(settings),
+        own = self._alert_settings(settings)
+        if own is None:
+            return dict(NO_OWN_BOT)
+        return self._notify(own,
                             'Andvari card deals: test message. Alerts will land here.',
                             '🃏 <b>Andvari card deals</b>: test message. Alerts will land here.')
 
@@ -1496,11 +1504,11 @@ class CardDealsService:
 
     @staticmethod
     def _alert_settings(settings):
-        chat = str(settings.get('card_deals_chat_id') or '').strip()
-        return {**settings, 'telegram_chat_id': chat} if chat else settings
+        """Andvari's own Telegram bot, or None: never the Huginn arbitrage bot (Ivan's choice)."""
+        return own_bot_settings(settings, 'card_deals')
 
     def _send_alerts(self, scope, settings):
-        if not settings.get('card_deals_alerts_enabled'):
+        if not settings.get('card_deals_alerts_enabled') or self._alert_settings(settings) is None:
             return
         try:
             min_return = float(settings.get('card_deals_alert_min_return_percent') or 0)

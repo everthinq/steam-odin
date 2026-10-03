@@ -110,11 +110,13 @@ DEFAULT_SETTINGS = {
     # every account's copies); "listing" = one cent under the lowest ask only.
     "card_deals_valuation": "both",
     # Telegram alert after each scan for NEW deals (same game at the same price is
-    # not re-sent for 14 days). Uses telegram_bot_token; card_deals_chat_id routes
-    # them to their own chat, falling back to the shared telegram_chat_id.
+    # not re-sent for 14 days), and the card auto-sell summaries. Only through
+    # Andvari's OWN bot (card_deals_bot_token + card_deals_chat_id): never the shared
+    # Huginn arbitrage bot (Ivan's choice). Without its own bot, Andvari is silent.
     "card_deals_alerts_enabled": True,
     "card_deals_alert_min_return_percent": 50,
     "card_deals_alert_min_profit": 0.25,   # dollars per copy
+    "card_deals_bot_token": "",
     "card_deals_chat_id": "",
     # Store country priced when no account's country is known yet.
     "card_deals_fallback_country": "TR",

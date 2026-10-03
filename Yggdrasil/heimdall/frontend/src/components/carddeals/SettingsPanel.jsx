@@ -141,7 +141,16 @@ const SettingsPanel = ({ onClose, onSaved }) => {
                                     onChange={(e) => set('card_deals_alert_min_profit')(e.target.value)} />
                             </Field>
                         </div>
-                        <Field label="Chat id (optional)" hint="Send card deals to their own chat. Empty = the shared Telegram chat.">
+                        <p className="text-xs text-slate-400">
+                            Andvari (deal alerts and card sales) sends only through its own Telegram bot, never the Huginn
+                            arbitrage bot. Without a bot token and chat id here, Andvari sends nothing.
+                        </p>
+                        <Field label="Andvari bot token" hint="A separate bot: create it with @BotFather, then send it /start from your Telegram.">
+                            <input type="password" autoComplete="off" className={inputClass} placeholder="123456:ABC…"
+                                value={draft.card_deals_bot_token ?? ''}
+                                onChange={(e) => set('card_deals_bot_token')(e.target.value)} />
+                        </Field>
+                        <Field label="Chat id" hint="Your chat with that bot (the same number as your Huginn chat works).">
                             <input type="text" className={inputClass}
                                 value={draft.card_deals_chat_id ?? ''}
                                 onChange={(e) => set('card_deals_chat_id')(e.target.value)} />

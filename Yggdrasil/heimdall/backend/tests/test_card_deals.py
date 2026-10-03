@@ -249,6 +249,7 @@ def test_clean_config_coerces_and_keeps_only_supplied_keys():
     {'card_deals_min_discount': 101},
     {'card_deals_fallback_country': 'Turkey'},
     {'card_deals_chat_id': 'drop table'},
+    {'card_deals_bot_token': 'not a token'},
     {'card_deals_valuation': 'optimistic'},
 ])
 def test_clean_config_rejects_bad_values(body):
@@ -292,7 +293,7 @@ class FakeSettings:
             'card_deals_include_full_price': True, 'card_deals_max_price': 20.0,
             'card_deals_min_discount': 0, 'card_deals_alerts_enabled': True,
             'card_deals_alert_min_return_percent': 50, 'card_deals_alert_min_profit': 0.25,
-            'card_deals_chat_id': '', 'card_deals_fallback_country': 'TR',
+            'card_deals_bot_token': 'andvari-bot', 'card_deals_chat_id': '222', 'card_deals_fallback_country': 'TR',
             # The older tests pin the listing-price model; buy-order ("instant")
             # valuation — the production default — has its own tests below.
             'card_deals_valuation': 'listing',
@@ -482,7 +483,8 @@ def make_service(tmp_path, web=None, settings=None, sessions=('A', 'B', 'C', 'D'
     sent = []
 
     def fake_notify(settings, text, html=None):
-        sent.append({'chat': settings.get('telegram_chat_id'), 'text': text, 'html': html})
+        sent.append({'chat': settings.get('telegram_chat_id'), 'bot': settings.get('telegram_bot_token'),
+                     'text': text, 'html': html})
         return {'ok': True}
     service = CardDealsService(
         FakeSteam(ACCOUNTS, set(sessions)), settings or FakeSettings(),
@@ -761,6 +763,7 @@ def test_alerts_once_per_price_per_scope_with_chat_override(tmp_path):
     service, sent = make_service(tmp_path, settings=settings)
     run_scan(service)
     assert [m['chat'] for m in sent] == ['-100999', '-100999']
+    assert {m['bot'] for m in sent} == {'andvari-bot'}          # never the shared arbitrage bot
     assert 'on sale' in sent[0]['text'] and 'full price' in sent[1]['text']
     assert 'Sale Winner' in sent[0]['text'] and 'Full Price Winner' in sent[1]['text']
     assert '<a href="https://store.steampowered.com/app/100/">Sale Winner</a>' in sent[0]['html']
@@ -1331,3 +1334,28 @@ def test_buy_order_check_before_any_scan_reports_it(tmp_path):
     service, _ = make_service(tmp_path, web)
     service._buy_order_check_safely()
     assert 'run a scan first' in service.status()['error'] and web.calls == []
+
+
+def test_andvari_without_its_own_bot_is_silent_and_never_uses_the_arbitrage_bot(tmp_path):
+    for index, overrides in enumerate(({'card_deals_bot_token': ''}, {'card_deals_chat_id': ''})):
+        (tmp_path / str(index)).mkdir()
+        service, sent = make_service(tmp_path / str(index), settings=FakeSettings(**overrides))
+        run_scan(service)
+        assert sent == []
+        assert 'no Telegram bot of its own' in service.send_test_alert(FakeSettings(**overrides).get_settings())['error']
+
+
+def test_clean_config_takes_andvaris_own_bot_token():
+    token = '1234567890:AAH' + 'x' * 32
+    assert clean_config({'card_deals_bot_token': f' {token} '}) == {'card_deals_bot_token': token}
+    assert clean_config({'card_deals_bot_token': ''}) == {'card_deals_bot_token': ''}
+
+
+def test_deals_held_back_without_a_bot_are_sent_once_a_bot_is_added(tmp_path):
+    settings = FakeSettings(card_deals_bot_token='')
+    service, sent = make_service(tmp_path, settings=settings)
+    run_scan(service)
+    assert sent == []
+    settings.settings['card_deals_bot_token'] = 'andvari-bot'
+    run_scan(service)
+    assert sent and {m['bot'] for m in sent} == {'andvari-bot'} and 'Sale Winner' in sent[0]['text']

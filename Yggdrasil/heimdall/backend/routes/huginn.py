@@ -937,8 +937,12 @@ def card_deals_config_set():
 
 @bp.route('/api/huginn/card-deals/alerts/test', methods=['POST'])
 def card_deals_alert_test():
-    """Send a test message to the card-deals Telegram chat."""
-    return jsonify(ctx.card_deals_service.send_test_alert(ctx.settings_manager.get_settings()))
+    """Send a test message through Andvari's own Telegram bot: 400 without one, 502 when
+    Telegram refuses (the panel reads the body either way)."""
+    result = ctx.card_deals_service.send_test_alert(ctx.settings_manager.get_settings())
+    if result.get('ok'):
+        return jsonify(result)
+    return jsonify(result), (400 if result.get('channel') is None else 502)
 
 
 # --- ASF card farming (ArchiSteamFarm drives the card drops) --------------------

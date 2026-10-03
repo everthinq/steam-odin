@@ -75,6 +75,21 @@ def notification_channel(settings):
     return None
 
 
+def own_bot_settings(settings, prefix):
+    """*settings* pointed at a tool's own Telegram bot ({prefix}_bot_token and
+    {prefix}_chat_id), or None when the tool has no bot of its own. No fallback to the
+    shared bot, chat or webhook: a tool without its own bot stays silent."""
+    token = str(settings.get(f'{prefix}_bot_token') or '').strip()
+    chat = str(settings.get(f'{prefix}_chat_id') or '').strip()
+    if not token or not chat:
+        return None
+    return {**settings, 'telegram_bot_token': token, 'telegram_chat_id': chat, 'notify_webhook_url': ''}
+
+
+NO_OWN_BOT = {'ok': False, 'channel': None, 'message_id': None,
+              'error': 'no Telegram bot of its own (bot token and chat id in its settings): messages are off'}
+
+
 def _tg(settings, method, payload, timeout=10):
     tok = settings['telegram_bot_token'].strip()
     payload = {'chat_id': str(settings['telegram_chat_id']).strip(), **payload}

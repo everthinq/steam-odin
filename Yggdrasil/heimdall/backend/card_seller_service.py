@@ -25,7 +25,7 @@ import requests
 
 from jsonio import atomic_write_json, read_json
 from market_seller import MarketSeller, RateLimited
-from notifications import send_notification
+from notifications import own_bot_settings, send_notification
 
 log = logging.getLogger(__name__)
 
@@ -274,10 +274,12 @@ class CardSellerService:
                 self._state['unconfirmed'].pop(steamid, None)
 
     def _notify(self, text):
-        settings = self._settings()
-        chat = str(settings.get('card_deals_chat_id') or '').strip()
+        # Andvari's own Telegram bot only, never the Huginn arbitrage bot (Ivan's choice).
+        own = own_bot_settings(self._settings(), 'card_deals')
+        if own is None:
+            return
         try:
-            send_notification({**settings, 'telegram_chat_id': chat} if chat else settings, text)
+            send_notification(own, text)
         except Exception as e:
             log.info('[ANDVARI-SELL] Telegram message failed: %s', e)
 

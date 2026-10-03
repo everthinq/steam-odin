@@ -351,3 +351,17 @@ def test_a_three_cent_card_from_the_service_is_listed(world):
     http.pages['1'] = [page(card('100', 'A'))]
     assert service.sell_account('1', 'alpha')['listed'] == 1
     assert service.status()['sales'][0]['buyer_pays'] == 3
+
+
+def test_card_sale_messages_go_only_to_andvaris_own_bot(world, monkeypatch):
+    service, _, _, settings = world
+    sent = []
+    monkeypatch.setattr(card_seller_service, 'send_notification', lambda chosen, text: sent.append(chosen))
+    settings.values.update(telegram_bot_token='arbitrage-bot', telegram_chat_id='111', notify_webhook_url='https://hook',
+                           card_deals_bot_token='', card_deals_chat_id='')
+    service._notify('listed 3 cards')
+    assert sent == []                                   # no bot of its own: silent, never the arbitrage bot
+    settings.values.update(card_deals_bot_token='andvari-bot', card_deals_chat_id='222')
+    service._notify('listed 3 cards')
+    assert [(s['telegram_bot_token'], s['telegram_chat_id'], s['notify_webhook_url']) for s in sent] == [
+        ('andvari-bot', '222', '')]
