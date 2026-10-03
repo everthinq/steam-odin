@@ -18,7 +18,7 @@ like `123456789:AA…`). To find a chat id, message your bot once and open
 Andvari never uses the Huginn bot: without its own bot it stays silent. Give
 it a separate bot so card news does not drown the arbitrage alerts.
 
-Buy Storage Units, the Store Catalogue, Buy games and card farming send no messages.
+Buy Storage Units, the Store Catalogue (and its Arbitrage tab), Buy games and card farming send no messages.
 
 ## Phone rings
 

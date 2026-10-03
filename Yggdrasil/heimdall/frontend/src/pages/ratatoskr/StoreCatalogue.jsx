@@ -1,9 +1,10 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Link } from 'react-router-dom';
-import { Tags, LayoutDashboard, Search, RefreshCw, AlertTriangle, Loader2, X, Archive, ShoppingCart } from 'lucide-react';
+import { Tags, LayoutDashboard, Search, RefreshCw, AlertTriangle, Loader2, X, Archive, ShoppingCart, TrendingUp, List } from 'lucide-react';
 import { useColumnSort, sortRows } from '../../components/draupnir/columnSort';
 import SortHeader from '../../components/ratatoskr/SortHeader';
 import SteamMarketLink from '../../components/SteamMarketLink';
+import StoreArbitrage from '../../components/ratatoskr/StoreArbitrage';
 
 // Ratatoskr "Store Catalogue": every item the Counter-Strike 2 in-game store sells, with its
 // US dollar price, from the game store's own price sheet. Nothing is bought on this page: an
@@ -11,6 +12,8 @@ import SteamMarketLink from '../../components/SteamMarketLink';
 // Buy Storage Units for that item).
 // Backend: /api/ratatoskr/store-catalogue. The sheet is refreshed whenever Buy Storage Units
 // reads it; "Read prices again" reads it now (one account logs in to Ratatoskr and out again).
+// Two tabs: the catalogue (/store-catalogue) and Arbitrage (/store-catalogue/arbitrage), which
+// prices every tradable store item against what the markets pay (components/ratatoskr/StoreArbitrage).
 
 // Sold here: everything but the game license and the Armory Pass (storage_shop_service.py).
 const NOT_FOR_SALE = new Set(['Game License', 'XpShopTicket1']);
@@ -34,7 +37,7 @@ const ago = (epochSeconds) => {
 // What the shared job is doing when it is not this page's price sheet read.
 const BUSY = { plan: 'checking wallets', purchase: 'buying Storage Units', delivery: 'delivering Storage Units' };
 
-const StoreCatalogue = () => {
+const StoreCatalogue = ({ tab = 'catalogue' }) => {
     const [state, setState] = useState(null);
     const [error, setError] = useState(null);
     const [search, setSearch] = useState('');
@@ -99,7 +102,11 @@ const StoreCatalogue = () => {
                 <div className="p-2 bg-amber-900/30 rounded-lg border border-amber-600/30"><Tags size={22} className="text-amber-500" /></div>
                 <div className="mr-auto">
                     <h1 className="text-2xl font-bold text-amber-100 font-serif">Store Catalogue</h1>
-                    <p className="text-xs text-slate-300 [text-shadow:0_1px_3px_rgb(0_0_0)]">Every item the Counter-Strike 2 in-game store sells, with its US dollar price. Buy opens the item&apos;s own buy page for any of your accounts.</p>
+                    <p className="text-xs text-slate-300 [text-shadow:0_1px_3px_rgb(0_0_0)]">
+                        {tab === 'arbitrage'
+                            ? 'Which store items resell for more than the store charges, market by market, after fees. A recommendation only: Buy opens the item’s guarded buy page.'
+                            : <>Every item the Counter-Strike 2 in-game store sells, with its US dollar price. Buy opens the item&apos;s own buy page for any of your accounts.</>}
+                    </p>
                 </div>
                 <Link to="/buy-storage-units" className="flex items-center gap-2 px-3 py-2 rounded-lg text-slate-400 hover:text-white hover:bg-white/5">
                     <Archive size={14} /> Buy Storage Units
@@ -117,6 +124,21 @@ const StoreCatalogue = () => {
                 </div>
             )}
 
+            <nav className="flex gap-1 mb-3 text-sm" aria-label="Store Catalogue tabs">
+                {[{ id: 'catalogue', to: '/store-catalogue', label: 'Catalogue', Icon: List },
+                    { id: 'arbitrage', to: '/store-catalogue/arbitrage', label: 'Arbitrage', Icon: TrendingUp }].map(({ id, to, label, Icon }) => (
+                    <Link key={id} to={to} aria-current={tab === id ? 'page' : undefined}
+                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border ${tab === id ? 'border-amber-500/40 bg-amber-600/20 text-amber-200' : 'border-white/10 bg-slate-950/70 text-slate-400 hover:text-white'}`}>
+                        <Icon size={14} /> {label}
+                    </Link>
+                ))}
+            </nav>
+
+            {tab === 'arbitrage' ? (
+                <section className="rounded-xl border border-white/10 bg-slate-950/85 backdrop-blur-md shadow-xl min-w-0" aria-label="Store arbitrage">
+                    <StoreArbitrage />
+                </section>
+            ) : (
             <section className="rounded-xl border border-white/10 bg-slate-950/85 backdrop-blur-md shadow-xl min-w-0" aria-label="Store items">
                 <div className="flex flex-wrap items-center gap-2 p-3 border-b border-white/10">
                     <label className="relative flex-1 min-w-[12rem]">
@@ -198,6 +220,7 @@ const StoreCatalogue = () => {
                     Cases on the store front only link to the Steam Market: the store does not sell them.
                 </p>
             </section>
+            )}
         </div>
     );
 };

@@ -67,7 +67,7 @@ read-only. Container port 3000, published on host **127.0.0.1:3001**.
 | `GET/POST /config/session-idle` | Idle timeout + presets |
 | `GET/POST /config/protected-accounts` | Accounts exempt from the idle sweep |
 | `GET /store/user-data/:steamid` | Price sheet (base64), wallet, Storage Unit count, countries |
-| `POST /items/store-names` | `{names: [...]}` → definition index, English name and prefab per price sheet entry (local item files, no Steam call; unknown names left out) — the Store Catalogue's names |
+| `POST /items/store-names` | `{names: [...]}` → definition index, English name, prefab and `cannotTrade` (the item's own "cannot trade" attribute, not its prefab's) per price sheet entry (local item files, no Steam call; unknown names left out) — the Store Catalogue's names |
 | `POST /store/purchase/init` | Open a transaction (currency 0–63, two-letter country, quantity 1–50, `itemDefinitionIndex` default 1201 = Storage Unit); returns `transactionId` + Steam's raw approval request |
 | `POST /store/purchase/finalize` | Deliver (and charge) an approved transaction |
 | `POST /store/purchase/cancel` | Drop an unapproved transaction |

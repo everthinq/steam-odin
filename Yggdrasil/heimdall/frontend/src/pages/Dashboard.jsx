@@ -290,7 +290,7 @@ const Dashboard = () => {
                             </div>
                             <div>
                                 <p className="text-sm font-semibold text-amber-100 font-serif">Store Catalogue</p>
-                                <p className="text-xs text-slate-500">Every in-game store item, in US dollars</p>
+                                <p className="text-xs text-slate-500">Every in-game store item, in US dollars, and which resell above it</p>
                             </div>
                         </Link>
                         <Link

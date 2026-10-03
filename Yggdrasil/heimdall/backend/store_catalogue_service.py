@@ -31,6 +31,9 @@ COUPON_PREFIX = 'coupon - '
 NAME_OVERRIDES = {'sticker_display_case': 'Sticker Slab', 'Weapon Case Key': 'CS:GO Case Key'}
 # Not on the Steam Community Market: no Market link.
 NOT_ON_MARKET = {'casket', 'Game License', 'XpShopTicket1'}
+# Entries whose own item definition says "cannot trade", for item names read before Ratatoskr
+# reported that flag (``cannotTrade``); the game license is not an item at all.
+CANNOT_TRADE = {'casket', 'Remove Keychain Tool Pack', 'XpShopTicket1', 'Game License'}
 
 CATEGORY_TOOLS = 'Tools'
 CATEGORY_KEYS = 'Case keys'
@@ -100,6 +103,7 @@ def catalogue_items(sheet, definitions):
         name = NAME_OVERRIDES.get(entry) or known.get('name') or readable_name(entry)
         definition_index = known.get('defIndex')
         usd = prices.get('USD')
+        cannot_trade = known.get('cannotTrade') if 'cannotTrade' in known else entry in CANNOT_TRADE
         rows.append({
             'entry': entry,
             'definition_index': definition_index,
@@ -110,6 +114,10 @@ def catalogue_items(sheet, definitions):
             'usd': round(usd / 100, 2) if usd else None,
             'currencies': len(prices),
             'on_store_front': definition_index is not None and str(definition_index) in front,
+            # The item itself cannot be traded (its own "cannot trade"). Keys are not flagged: they
+            # are tradable items, only the store's copies are not (since 2019), so the Arbitrage
+            # tab leaves keys out by category.
+            'cannot_trade': bool(cannot_trade or entry == 'Game License'),
             'market_url': (MARKET_LISTING_URL + urllib.parse.quote(name)
                            if entry not in NOT_ON_MARKET and (known.get('name') or entry in NAME_OVERRIDES)
                            else None),

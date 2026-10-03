@@ -123,3 +123,48 @@ delivered. The purchase log on every buy page lists every item bought.
 
 > **This spends real wallet money**, like Buy Storage Units. A purchase from the
 > game store is final.
+
+### Arbitrage tab
+
+http://localhost:3000/store-catalogue/arbitrage (the **Arbitrage** tab on the
+Store Catalogue page). Which store items resell for more than the store
+charges. A recommendation only: nothing is bought or sold here, and **Buy**
+opens the item's guarded buy page.
+
+- **Sell on**: pick the markets to compare (default Buff163, Steam, CSFloat,
+  LisSkins, AvanMarket and Market.CSGO). Each item gets two prices, both after
+  the market's fee (Huginn's Fees editor):
+  - **Sell instantly** is the best buy order (money right away);
+  - **List at** is the best lowest listing (you list at that price and wait).
+- **Profit** is the better of the two against the store's US dollar price. A
+  blue line under the store price means one of your wallet currencies is
+  cheaper (at today's exchange rate) and names the accounts.
+- **Steam pays into the Steam wallet**, which buys more store items, so a Steam
+  profit is a wallet-to-wallet loop, not cash. Tick **Cash only** to judge
+  every item by money-paying markets alone.
+- A price far above Buff163's lowest listing is **crossed out**: it is one
+  pattern's buy order, or one seller on a thin market asking what nobody pays.
+- **unconfirmed**: markets ask at least 1.5 times the store price now, and did
+  on most days tracked (or there is little history yet). These items are
+  listed after all the others. If store copies could be resold, traders would
+  have closed that gap, so they probably cannot be (today: the Name Tag and the
+  StatTrak Swap Tool). One purchase settles it. In the web inventory, "Tradable
+  After …" means the normal hold and "Not Tradable" means never.
+- **resold before**: you sold this item before (from Draupnir), so store copies
+  can be resold. **Your record** shows how many you bought and sold, and the
+  average sale after fees.
+- **30 days**: on how many tracked days the best price (crossed-out prices left
+  out) beat the store price,
+  with a small line of the best price per day (dashes: the store price). The
+  history is read every hour, even while the page is closed, so a spike (like
+  Flickshot in January) shows apart from a gap that lasts.
+- Click a row to see every market and side: price, fee, what you get, profit,
+  how many listings or buy orders there are, and how it pays.
+- **N left out** lists what is not on the board and why:
+  - case keys (keys bought from the store cannot be traded or sold since 2019);
+  - the game license and the Armory Pass;
+  - items that cannot be traded (Storage Unit, Charm Detachment Pack);
+  - items no chosen market prices.
+
+> Store purchases cannot be traded for **7 days**, so a price has to hold for a
+> week. The board recommends; it does not know the price next week.

@@ -20,6 +20,7 @@ from team_fortress_service import TeamFortressService
 from card_seller_service import CardSellerService
 from store_purchase_service import StorePurchaseService
 from storage_shop_service import StorageShopService
+from store_arbitrage_service import StoreArbitrageService
 from store_catalogue_service import StoreCatalogueService
 from morning_routine import MorningRoutine
 from telegram_caller import TelegramCaller
@@ -94,6 +95,9 @@ storage_shop_service = StorageShopService(steam_service, ratatoskr_service, card
 # Store Catalogue: every item the game store sells, with its price (read-only). It takes
 # every price sheet the storage shop reads.
 store_catalogue_service = StoreCatalogueService(ratatoskr_service, storage_shop_service)
+# Store Catalogue Arbitrage (the catalogue's Arbitrage tab): store items against what markets pay.
+store_arbitrage_service = StoreArbitrageService(huginn_service, store_catalogue_service,
+                                                storage_shop_service, draupnir_service)
 
 # Expose the singletons to the route blueprints (read from context.ctx at
 # request time — see context.py and the routes/ package).
@@ -118,6 +122,7 @@ ctx.card_seller_service = card_seller_service
 ctx.store_purchase_service = store_purchase_service
 ctx.storage_shop_service = storage_shop_service
 ctx.store_catalogue_service = store_catalogue_service
+ctx.store_arbitrage_service = store_arbitrage_service
 register_blueprints(app)
 
 # Morning routine: "Get all items" once a day at 08:00 (or the first minute the Mac
@@ -186,6 +191,8 @@ if _should_start_background_scheduler():
     card_seller_service.start()
     # Daily "Get all items" + CSFloat sweep (catches up after the Mac slept).
     morning_routine.start_background()
+    # Store Catalogue Arbitrage: warm the default markets hourly so the price history grows.
+    store_arbitrage_service.start_background(lambda: settings_manager.get_settings())
 
 # Ensure all errors return JSON, not HTML
 @app.errorhandler(404)

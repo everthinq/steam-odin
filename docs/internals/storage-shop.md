@@ -277,6 +277,45 @@ Storage Units). Ratatoskr's `/store/purchase/init` takes `itemDefinitionIndex`
 (default 1201). Storage Units are counted only when buying Storage Units. The
 page is the same component (`StorageShop.jsx`) at `/store-catalogue/buy/:item`.
 
+## 6b. Store Catalogue Arbitrage (read-only)
+
+`store_arbitrage_service.py` (the catalogue's Arbitrage tab,
+`GET /api/ratatoskr/store-arbitrage?markets=…` and `…/options`) prices every
+tradable catalogue item against the chosen markets. Nothing in it buys anything.
+
+- **Tradability.** Ratatoskr's `POST /items/store-names` reports `cannotTrade`
+  from the item's **own** `attributes."cannot trade"`. It never reads the
+  prefab's: `coupon_prefab` carries "cannot trade", but a coupon becomes a
+  tradable sticker or music kit when bought. Flagged on 2026-10-04: `casket`,
+  `Remove Keychain Tool Pack`, `XpShopTicket1`. Keys are left out by category
+  (store keys are untradable since 2019, a server rule not in the item files),
+  and so are passes.
+- **Prices.** Pulse pulls through Huginn (`market_buy_index` = lowest listing,
+  `market_autobuy_index` = buy orders; CSFloat's buy orders come from the sweep
+  cache). They are taken one market and side at a time in one thread, filtered
+  to catalogue names and cached 10 minutes. Every cash price above 1.3 times
+  Buff163's lowest listing is "suspicious". Live, a $0.99 sticker was listed
+  at $8.37 on LisSkins while it sold under $1 everywhere else. Balance markets
+  (Steam wallet, CSMoney Trade, LOOT.Farm, TradeIt Trade) are not checked.
+- **Unconfirmed.** The cheapest listing is at least 1.5 times the store price,
+  and the history shows the gap open on 80% or more of the tracked days (or
+  there are fewer than 3 days). It is never set when Draupnir shows you resold
+  the item.
+- **History.** `cache/store_arbitrage_history.json.gz`, shaped
+  `{date: {item name: {"<market>:<instant|listing>": best price that day,
+  "store": US dollar price}}}`, 180 days. It is written after each warm, and the
+  `store-arbitrage-watch` thread warms the default markets hourly (first run 5
+  minutes after boot). Every pull goes through one worker thread fed by a queue,
+  and every write holds a save lock. The 30-day statistics and the unconfirmed
+  rule drop each day's suspicious cash prices (`usable_prices`, same 1.3 rule
+  against that day's Buff163 listing). An unreadable file is moved aside
+  (`.unreadable-<time>`), not overwritten.
+- **Live picture, 2026-10-04.** No item sold above the store price instantly.
+  The only profits were Steam Market listings (wallet money). Store copies
+  that can be resold trade at or below the store price on cash markets; spikes
+  like Flickshot's (sold for $1.34–$1.57 in January 2026, store $0.99) are the
+  opportunity the history is there to catch.
+
 ## 7. Rules for agents (binding)
 
 1. **Money is spent only through the guarded Heimdall routes**

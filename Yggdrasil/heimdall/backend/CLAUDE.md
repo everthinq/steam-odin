@@ -36,7 +36,8 @@ Deep dives on single features live in [docs/internals/](../../../docs/internals/
 | 19 | `StorePurchaseService(steam, card_deals, asf, settings_provider)` | Andvari "Buy games" |
 | 20 | `StorageShopService(steam, ratatoskr, card_deals)` | Ratatoskr Buy Storage Units ("Storage shop" in the code) |
 | 21 | `StoreCatalogueService(ratatoskr, storage_shop)` | Store Catalogue; sets `storage_shop.on_price_sheet` |
-| 22 | `MorningRoutine(...)` | wired to `routes.huginn` scan + CSFloat sweep |
+| 22 | `StoreArbitrageService(huginn, store_catalogue, storage_shop, draupnir)` | Store Catalogue Arbitrage (the Arbitrage tab) |
+| 23 | `MorningRoutine(...)` | wired to `routes.huginn` scan + CSFloat sweep |
 
 4. hangs the singletons on `context.ctx` and registers the blueprints
    (`routes/__init__.py`: accounts, settings, draupnir, ratatoskr, huginn, mimir);
@@ -67,11 +68,12 @@ Deep dives on single features live in [docs/internals/](../../../docs/internals/
 | `team-fortress-news` | `team_fortress_poll_minutes` (2) | Team Fortress 2 news → case added → play + ring | `team_fortress_watch_enabled` |
 | `team-fortress-sell` | 15 s | Auto-stop after `team_fortress_auto_stop_hours`; sell step (inventory at most every 5 min) | `team_fortress_auto_sell_enabled` |
 | `andvari-card-sell` | 20 s | Card auto-sell step (each inventory at most every 30 min) | `card_auto_sell_enabled` (off by default) |
+| `store-arbitrage-watch` | 1 h (5 min first wait) | Warms the Store Catalogue Arbitrage default markets, which records the daily price history | needs `tradeon_token` |
 | `morning-routine` | 60 s tick | 08:00 local: "Get all items" scan, then the CSFloat buy-order sweep (unless < 12 h old); catches up after the Mac sleeps | always |
 
 On-demand threads: CSFloat sweep, trade-alert sender, market/cross-arbitrage/
 Harvest warmers, card-deals scans, `andvari-{kind}` store-purchase jobs,
-`storage-shop-{kind}` jobs (`plan`, `purchase`, `delivery`, `price sheet`), `team-fortress-sell-now`.
+`storage-shop-{kind}` jobs (`plan`, `purchase`, `delivery`, `price sheet`), `store-arbitrage-warm`, `team-fortress-sell-now`.
 
 **Every one of these restarts when any `.py` file is saved** (see below).
 
@@ -102,7 +104,8 @@ Harvest warmers, card-deals scans, `andvari-{kind}` store-purchase jobs,
 | `team_fortress_service.py` | Team Fortress 2 case drops: polls the app 440 news feed for "Added the … Case" → starts Team Fortress 2 mode, adds the case to the sell list, texts + rings; auto-sell reads each playing account's inventory (paced) and lists sell-list items one minor unit under the lowest Market listing in the wallet currency (fee rules from `g_rgWalletInfo`), confirming only those listings; state in `cache/team_fortress.json` |
 | `store_purchase_service.py` | Andvari "Buy games" tab: plan (per account: store country, wallet currency + balance from `g_rgWalletInfo`, owned games from the store's `dynamicstore/userdata`, regional price of the cheapest default package from `appdetails`, US dollar conversion, maximum price, balance, best Andvari profit first) and guarded wallet purchases (empty cart only, cart and Steam's final price must equal the plan to the cent, checkout on `checkout.steampowered.com`, dry run cancels before paying, then ASF farm now); history + statistics in `cache/store_purchases.json` |
 | `storage_shop_service.py` | Ratatoskr Buy Storage Units ("Storage shop" in the code) — Counter-Strike 2 Storage Units, or any other price sheet entry (`item`, default `casket`; per-item price cap list × 1.25; game license and Armory Pass never), through the game store over the Game Coordinator. Full protocol, guards and live findings: [docs/internals/storage-shop.md](../../../docs/internals/storage-shop.md). Plan (wallet, store country, price sheet entry "casket", web-inventory Storage Unit count), guarded purchase (Init with the game store's 0-based currency → Steam's `ClientMicroTxnAuthRequest` must be exactly this order → approval page `approvetxn/<transid>` with `approved=1` → Finalize as a Game Coordinator job, which is when the wallet is charged); dry run cancels; after approval failures read "MAY BE PAID" and "Deliver again" re-sends Finalize; every sheet read goes to `on_price_sheet`, and the `price sheet` job only reads it; state in `cache/storage_shop.json` |
-| `store_catalogue_service.py` | Store Catalogue (read-only): every entry of the game store's price sheet with its US dollar price, category and store-front flag; English names from Ratatoskr's `POST /items/store-names` (the last names known are kept when Ratatoskr is down; two named by hand). Takes every sheet `StorageShopService` reads (`on_price_sheet`); "Read prices again" is that service's `price sheet` job, so it never overlaps a purchase; state in `cache/store_catalogue.json` |
+| `store_catalogue_service.py` | Store Catalogue (read-only): every entry of the game store's price sheet with its US dollar price, category and store-front flag; English names from Ratatoskr's `POST /items/store-names` (the last names known are kept when Ratatoskr is down; two named by hand). Takes every sheet `StorageShopService` reads (`on_price_sheet`); "Read prices again" is that service's `price sheet` job, so it never overlaps a purchase; state in `cache/store_catalogue.json`. Each row has `cannot_trade` (the item's own "cannot trade" from Ratatoskr, or the known list for older names) |
+| `store_arbitrage_service.py` | Store Catalogue Arbitrage (read-only, recommendations only): every tradable catalogue item (keys, passes and "cannot trade" items left out) against the chosen markets' buy orders and lowest listings after `market_fee`, the cheapest wallet currency among the accounts, your Draupnir record (`DraupnirService.item_trades`) and a 180-day daily history (`cache/store_arbitrage_history.json.gz`); cash prices above 1.3× Buff163's listing are suspicious, a wide gap that stays open is "unconfirmed". Deep dive §6b of [storage-shop.md](../../../docs/internals/storage-shop.md) |
 | `card_seller_service.py`, `market_seller.py`, `community_pacer.py` | Andvari card auto-sell (off by default): new trading cards listed one cent under the lowest Market listing in the wallet currency, never under the highest buy order, only cards that arrived after it was switched on, only their confirmations accepted (exact item name, type 3 or market type 12), retried until confirmed; statistics per account and game in `cache/card_sales.json`. `community_pacer` keeps one 4 s steamcommunity.com gap shared by the card seller, the Team Fortress 2 seller and Buy Storage Units |
 | `jsonio.py` | Crash-safe atomic JSON read/write (`.tmp-*.json` then rename) |
 | `validation.py` | Request-body validation for writes |
@@ -122,7 +125,7 @@ Harvest warmers, card-deals scans, `andvari-{kind}` store-purchase jobs,
 | **Andvari** deal alerts and card-sale summaries | **Only its own bot** (`card_deals_bot_token`) | `card_deals_chat_id` — silent without them |
 | Phone rings (Gjallarhorn news, Team Fortress 2 release, manual ring) | `TelegramCaller` burner user account | `telegram_caller.json` target |
 
-Buy Storage Units, the Store Catalogue, Buy games, ASF and Harvest send nothing. **Never route Andvari
+Buy Storage Units, the Store Catalogue (and its Arbitrage tab), Buy games, ASF and Harvest send nothing. **Never route Andvari
 through the shared bot**, and never add a fallback to it (Ivan's rule).
 
 ## Data files (all gitignored except `portfolios.json`)
@@ -145,7 +148,7 @@ through the shared bot**, and never add a fallback to it (Ivan's rule).
 `case_alert_state.json`, `huginn_container_snapshots.json`,
 `lootfarm_auction_log.json`, `gjallarhorn_liquidity.json.gz`,
 `card_deals.json.gz`, `asf_state.json`, `team_fortress.json`,
-`card_sales.json`, `store_purchases.json`, `storage_shop.json`, `store_catalogue.json`,
+`card_sales.json`, `store_purchases.json`, `storage_shop.json`, `store_catalogue.json`, `store_arbitrage_history.json.gz`,
 `storage_shop_approval_page.html`, `morning_routine.json`. Cache files are not
 watched: `docker restart steam-odin-heimdall-backend-1` after editing one by hand.
 
@@ -178,7 +181,7 @@ docker exec steam-odin-heimdall-backend-1 sh -c \
 docker exec steam-odin-heimdall-backend-1 sh -c 'cd /app && ruff check .'
 ```
 
-About 745 tests in 36 files (`tests/`); `conftest.py` stubs CSFloat so no test
+About 775 tests in 36 files (`tests/`); `conftest.py` stubs CSFloat so no test
 reaches the network. Every feature that spends money or sells has pure helpers
 with tests — extend them, including with bytes captured live.
 Dev dependencies: `requirements-dev.txt` (pytest, ruff, pip-audit). The image
@@ -195,7 +198,7 @@ runs Python 3.9; CI runs 3.11 — write code that works on both.
   the defaults, and the Fees editor on the Arbitrage page (settings
   `huginn_market_fees`) overrides them. Every profit calculation reads them through
   `HuginnService.market_fee(market_id)`. That covers the Arbitrage profiles, Case
-  Arbitrage, Cross-Profile, Harvest, LOOT.Farm and the auctions. Never add a
+  Arbitrage, Cross-Profile, Harvest, Store Catalogue Arbitrage, LOOT.Farm and the auctions. Never add a
   per-feature fee constant.
 - **Automatic selling only touches items that arrive after it is switched on**,
   unless an explicit opt-in says otherwise (`card_auto_sell_include_held`).

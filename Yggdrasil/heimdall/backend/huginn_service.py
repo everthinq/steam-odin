@@ -1362,7 +1362,9 @@ class HuginnService:
             if name and price:
                 out[name] = {'price': price,
                              'count': mk.get('totalOffersCount') or mk.get('count'),
-                             'image': it.get('imageUrl')}
+                             'image': it.get('imageUrl'),
+                             # pulse's own trend marks for this market's price
+                             'rising': bool(mk.get('isRaising')), 'falling': bool(mk.get('isFalling'))}
         return out
 
     def market_buy_index(self, token, market_id):

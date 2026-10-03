@@ -308,3 +308,22 @@ def store_catalogue_refresh():
     """Read the game store's price sheet again (one Ratatoskr login; buys nothing)."""
     result = ctx.store_catalogue_service.start_refresh()
     return jsonify(result), (200 if result['started'] else 400)
+
+
+@bp.route('/api/ratatoskr/store-arbitrage', methods=['GET'])
+def store_arbitrage_board():
+    """Store Catalogue Arbitrage: every tradable store item against what the chosen markets pay
+    (?markets=Buff,Steam; default markets otherwise). Read-only and non-blocking: serves cached
+    prices and warms missing markets in the background (status 'warming' until they arrive)."""
+    settings = ctx.settings_manager.get_settings()
+    markets = [m for m in (request.args.get('markets') or '').split(',') if m]
+    try:
+        return jsonify(ctx.store_arbitrage_service.board(settings.get('tradeon_token', ''), markets, settings))
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@bp.route('/api/ratatoskr/store-arbitrage/options', methods=['GET'])
+def store_arbitrage_options():
+    """The markets the Arbitrage tab can price against, and its default choice."""
+    return jsonify(ctx.store_arbitrage_service.options(ctx.settings_manager.get_settings()))

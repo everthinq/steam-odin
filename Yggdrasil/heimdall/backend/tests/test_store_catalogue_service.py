@@ -123,3 +123,15 @@ def test_without_ratatoskr_names_the_last_known_names_are_kept(tmp_path):
     service = StoreCatalogueService(FakeRatatoskr({'error': 'Failed to connect to Ratatoskr'}), shop, state_path=path)
     service.take_sheet(SHEET, 2, 2.0)
     assert _by_entry(service.status()['items'])['casket']['name'] == 'Storage Unit'
+
+
+def test_items_say_whether_they_cannot_be_traded():
+    definitions = {**DEFINITIONS, 'casket': {**DEFINITIONS['casket'], 'cannotTrade': True},
+                   'coupon - csgo10_sticker_capsule': {**DEFINITIONS['coupon - csgo10_sticker_capsule'],
+                                                       'cannotTrade': False}}
+    items = _by_entry(catalogue_items(SHEET, definitions))
+    assert items['casket']['cannot_trade'] and not items['coupon - csgo10_sticker_capsule']['cannot_trade']
+    # Names read before Ratatoskr sent the flag: the known untradable entries are still marked.
+    old = _by_entry(catalogue_items(SHEET, DEFINITIONS))
+    assert old['casket']['cannot_trade'] and old['XpShopTicket1']['cannot_trade']
+    assert not old['community_35_key']['cannot_trade']        # keys: left out by category instead

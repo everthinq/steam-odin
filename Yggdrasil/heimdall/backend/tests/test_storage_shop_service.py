@@ -859,3 +859,13 @@ def test_approval_request_names_are_read_in_any_case():
         check_auth_request(CAPSULE_REQUEST, '2663192793', 1, 99, 1)       # a Storage Unit was ordered
     with pytest.raises(ShopError, match='appears twice'):
         check_auth_request({**CAPSULE_REQUEST, 'orderid': 1}, '2663192793', 1, 99, 1, 20188)
+
+
+def test_wallets_and_sheet_entries_need_no_steam_call(tmp_path):
+    service = _service(tmp_path)
+    assert service.wallets() == [] and service.sheet_entries() == {}
+    _planned(service)
+    wallets = service.wallets()
+    assert len(wallets) == 1 and wallets[0]['currency'] == 'USD'
+    assert service.sheet_entries()['casket']['USD'] == 199
+    assert service.exchange_rates() == RATES

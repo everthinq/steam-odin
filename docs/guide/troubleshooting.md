@@ -49,6 +49,20 @@ Steam is rate-limiting this connection. The app already spaces its calls; wait
 See [ratatoskr.md](ratatoskr.md#buy-storage-units): check the account's purchase
 history on Steam, then press **Deliver again** (it cannot charge twice).
 
+## Store Catalogue Arbitrage shows nothing
+
+- "Reading market prices…": each market is read one after another (about 5
+  seconds each); wait a minute. After a backend restart the prices are read
+  again.
+- "No store prices yet": open the Catalogue tab and press **Read prices again**.
+- "No market prices": the Tradeon token (`tradeon_token` in
+  `backend/settings.json`) is missing or expired. Huginn's Arbitrage page needs
+  it too.
+- "Price pull failed for …": that market's feed failed; it is retried after
+  about two minutes. The other markets still show.
+- An empty table with "Nothing sells above the store price" is a real answer:
+  tick **Show items that lose money** to see every item.
+
 ## The page is blank or says "Loading…" forever
 
 Reload the page (an old tab after an update can miss new code). If it stays

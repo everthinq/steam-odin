@@ -981,6 +981,25 @@ class StorageShopService:
         with self._lock:
             return dict(self._job)
 
+    def sheet_entries(self):
+        """{entry: {ISO currency: minor units}} of the last price sheet read (a copy; no Steam call)."""
+        with self._lock:
+            return json.loads(json.dumps((self._prices or {}).get('entries') or {}))
+
+    def exchange_rates(self):
+        """{currency: units per US dollar} (Andvari's last fetch)."""
+        return self._rates()
+
+    def wallets(self):
+        """[{steamid, account_name, currency}] for every account whose wallet currency is known
+        from an earlier wallet check (no Steam call)."""
+        with self._lock:
+            known = json.loads(json.dumps(self._known))
+        return [{'steamid': steamid, 'account_name': name,
+                 'currency': CURRENCY_CODES.get((known.get(steamid) or {}).get('currency_id'))}
+                for steamid, name, _ in self._accounts()
+                if CURRENCY_CODES.get((known.get(steamid) or {}).get('currency_id'))]
+
     def item_view(self, item):
         """What the page shows about *item*: its name, list price and whether it can be bought."""
         prices, _ = self._cached_prices(item)

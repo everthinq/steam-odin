@@ -1101,6 +1101,36 @@ class DraupnirService:
                 lots_out.extend(sorted(grouped.values(), key=lambda lot: lot['price']))
         return lots_out
 
+    def item_trades(self, names):
+        """Your own record with each of *names*, over every account (arbitrage legs left out):
+        {name: {bought, spent, sold, received, sold_on {platform: units}, last_buy, last_sell}}.
+        `received` is after each sale's fee. Items you never traded are left out. Read-only."""
+        wanted = set(names or ())
+        with self._lock:
+            portfolios = json.loads(json.dumps(list(self._data['portfolios'].values())))
+        out = {}
+        for portfolio in portfolios:
+            for txn in self._non_arb(portfolio.get('transactions') or []):
+                name = txn.get('item_name')
+                if name not in wanted:
+                    continue
+                row = out.setdefault(name, {'bought': 0, 'spent': 0.0, 'sold': 0, 'received': 0.0,
+                                            'sold_on': {}, 'last_buy': '', 'last_sell': ''})
+                qty, price, date = txn.get('qty') or 0, txn.get('price') or 0, txn.get('date') or ''
+                if txn.get('type') == 'sell':
+                    row['sold'] += qty
+                    row['received'] += price * qty * (1 - (txn.get('fee_percent') or 0) / 100)
+                    platform = (txn.get('platform') or '').strip() or 'unknown'
+                    row['sold_on'][platform] = row['sold_on'].get(platform, 0) + qty
+                    row['last_sell'] = max(row['last_sell'], date)
+                else:
+                    row['bought'] += qty
+                    row['spent'] += price * qty
+                    row['last_buy'] = max(row['last_buy'], date)
+        for row in out.values():
+            row['spent'], row['received'] = round(row['spent'], 2), round(row['received'], 2)
+        return out
+
     @staticmethod
     def _is_steam(platform):
         """True if a platform is Steam. Steam balance is locked wallet money, not

@@ -27,7 +27,7 @@ written for the person running the app, not for programmers (they start at
 | **Team Fortress 2** | New Team Fortress 2 case drops: play, then sell the drops | [team-fortress-2.md](team-fortress-2.md) |
 | **Draupnir** | Portfolio tracker: buys, sells, profit and loss, backups | [draupnir.md](draupnir.md) |
 | **Mímir** | Encrypted vault for account logins, passwords and emails | [mimir.md](mimir.md) |
-| **Ratatoskr** | Move items in and out of Storage Units; buy Storage Units on many accounts; Store Catalogue of every in-game store item with its price | [ratatoskr.md](ratatoskr.md) |
+| **Ratatoskr** | Move items in and out of Storage Units; buy Storage Units on many accounts; Store Catalogue of every in-game store item with its price, and which ones resell above it | [ratatoskr.md](ratatoskr.md) |
 
 Plus: [Telegram alerts and phone rings](telegram.md) and
 [Troubleshooting](troubleshooting.md).

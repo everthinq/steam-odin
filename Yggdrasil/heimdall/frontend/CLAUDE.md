@@ -47,6 +47,7 @@ real Pay / Buy / Sell / Approve button while testing; use the dry-run paths.
 | `/mimir` | `pages/mimir/Vault.jsx` | |
 | `/buy-storage-units` | `pages/ratatoskr/StorageShop.jsx` | Buy Storage Units, every account; outside the Ratatoskr layout; `/storage-shop` redirects here |
 | `/store-catalogue` | `pages/ratatoskr/StoreCatalogue.jsx` | Every in-game store item with its US dollar price; a Buy button per item |
+| `/store-catalogue/arbitrage` | `pages/ratatoskr/StoreCatalogue.jsx` (`tab="arbitrage"`) → `components/ratatoskr/StoreArbitrage.jsx` | Store Catalogue Arbitrage: store items against market prices after fees (read-only) |
 | `/store-catalogue/buy/:item` | `pages/ratatoskr/StorageShop.jsx` | The Buy Storage Units page for any price sheet entry (keyed by it) |
 | `/ratatoskr/:steamid/{inventory,transfer,auto-store}` | `pages/RatatoskrLayout.jsx` + `pages/ratatoskr/` | Layout passes `{steamid, account}` via `<Outlet context>` |
 
@@ -76,7 +77,7 @@ path prefix — add your page there. No catch-all route, no Settings page.
 - **localStorage** is for per-browser conveniences only (layout, filters),
   every access wrapped in `try`/`catch`. Keys in use: `heimdall-dashboard-layout`,
   `draupnir-portfolio-layout`, `huginn.harvest`, `andvari.valuation`,
-  `andvari.buy.apps`, `lf_balance_pct`, `lf_unlocked`.
+  `andvari.buy.apps`, `ratatoskr.storeArbitrage`, `lf_balance_pct`, `lf_unlocked`.
 - **Shared pieces:** `components/gjallarhorn/InfoTip.jsx` (prop `tip`) for
   tooltips; `components/draupnir/columnSort.js` (`useColumnSort`, `sortRows`) with the header `components/ratatoskr/SortHeader.jsx`;
   `utils/transferItems.js` (`matchesSearchQuery`, wear shorthand fn/mw/ft/ww/bs);

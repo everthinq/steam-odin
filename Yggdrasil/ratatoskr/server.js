@@ -761,7 +761,10 @@ app.post('/items/store-names', (req, res) => {
         const found = definitionsByName.get(String(name));
         if (!found) continue;
         const [defIndex, item] = found;
-        definitions[name] = { defIndex: Number(defIndex), name: english(item.item_name), prefab: item.prefab || null };
+        // The item's own "cannot trade" (Storage Unit, Charm Detachment Pack, Armory Pass). Not the
+        // prefab's: every store coupon inherits it, yet becomes a tradable sticker or music kit when bought.
+        const cannotTrade = Boolean(item.attributes && Number(item.attributes['cannot trade']) === 1);
+        definitions[name] = { defIndex: Number(defIndex), name: english(item.item_name), prefab: item.prefab || null, cannotTrade };
     }
     res.json({ success: true, definitions });
 });
