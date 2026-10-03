@@ -1,114 +1,74 @@
-# 🛡️ HEIMDALL (Authenticator)
+# 🛡️ HEIMDALL
 
-**Heimdall** is the Watchman of the **steam-odin** ecosystem. It handles Steam login sessions, 2FA code generation, and manages the user's local inventory cache.
+**Heimdall** is the main app of steam-odin: a Flask backend (`backend/`) and a
+React + Vite frontend (`frontend/`). It started as a Steam Guard authenticator
+and now hosts every tool — Huginn, Gjallarhorn, Andvari, Team Fortress 2,
+Draupnir, Mímir and the Ratatoskr pages.
 
-## Tech Stack
-- **Frontend**: React (Vite)
-- **Backend**: Python (Flask)
-- **Database**: *(Coming Soon)*
+- **Using it:** [the user guide](../../docs/guide/README.md).
+- **Changing it:** [backend/CLAUDE.md](backend/CLAUDE.md) and
+  [frontend/CLAUDE.md](frontend/CLAUDE.md) (written for AI agents, useful for
+  anyone), and [ARCHITECTURE.md](../../ARCHITECTURE.md).
 
-## Development Setup
+## Running
 
-The easiest way to run this service is via the root `docker-compose.yml`, but you can run it standalone for deeper debugging.
+The normal way is Docker from the repository root (`make odin`): frontend on
+http://localhost:3000, backend on http://localhost:5001, both bound to
+127.0.0.1. In Docker the backend runs `python app.py` with
+`FLASK_ENV=development`, so it **reloads on every `.py` save**.
 
-### Prerequisites
-- Python 3.9+
-- Node.js 22+
+Running outside Docker is possible but not the supported path: the frontend's
+Vite proxy points at the Docker host name `heimdall-backend`, and the backend
+expects Ratatoskr at `RATATOSKR_URL`.
 
-### Running Backend (Flask)
+## Environment variables
+
+Docker Compose reads these from the **root** `.env` (next to
+`docker-compose.yml`); `backend/.env.example` lists them for reference.
+
+| Variable | Meaning | Default |
+|----------|---------|---------|
+| `HEIMDALL_SECRET_KEY` | Encrypts maFiles and the Mímir vault | Unset → a key is generated in `backend/maFiles/.heimdall_key` |
+| `ASF_IPC_PASSWORD` | ArchiSteamFarm API password (`make asf-setup` writes it) | Empty → ASF integration off |
+| `RATATOSKR_URL` | Ratatoskr address | `http://ratatoskr:3000` in compose |
+| `ASF_URL` | ASF address | `http://asf:1242` |
+| `HEIMDALL_ALLOWED_HOSTS` | Extra `Host` names the API accepts (comma-separated) | none |
+| `HEIMDALL_LOG_LEVEL` | Log level | `INFO` |
+| `HTTP_PROXY`, `HTTPS_PROXY`, `SOCKS_PROXY` | Outbound proxy for Steam calls | none |
+
+## Configuration (`backend/settings.json`)
+
+Gitignored (it holds tokens). Copy `backend/settings.example.json` to start.
+Every key and its default is in `backend/settings.py`; most are changed from
+the app's screens. The ones you set by hand:
+
+| Key | Meaning |
+|-----|---------|
+| `tradeon_token` | Bearer token for pulse.tradeon.space — prices for Huginn and Draupnir ([how to get it](../../docs/guide/getting-started.md#4-prices-huginn-and-draupnir)) |
+
+CSFloat API keys go in `backend/csfloat_keys.json`; the Telegram phone-ring
+account in `backend/telegram_caller.json` (created by
+`telegram_caller_login.py`).
+
+## API
+
+All routes are under `/api/` and grouped by blueprint in `backend/routes/`:
+
+| Prefix | Blueprint | Covers |
+|--------|-----------|--------|
+| `/api/accounts`, `/api/confirmations` | `accounts.py` | Accounts, maFile import, codes, confirmations |
+| `/api/settings` | `settings.py` | Settings (known keys only) |
+| `/api/draupnir/portfolios` | `draupnir.py` | Portfolios, transactions, CSV, backups |
+| `/api/huginn` | `huginn.py` | Prices, arbitrage, Case Arbitrage, Harvest, Gjallarhorn, Andvari, Team Fortress 2 |
+| `/api/ratatoskr` | `ratatoskr.py` | Sessions, moves, Storage Units, auto-store, Storage shop |
+| `/api/mimir` | `mimir.py` | Credential vault |
+
+`GET /health` reports the backend and its scheduler.
+
+## Tests
+
 ```bash
-cd backend
-python -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
-export FLASK_APP=app.py
-export FLASK_ENV=development
-flask run
+docker exec steam-odin-heimdall-backend-1 sh -c \
+  'pip install -q pytest 2>/dev/null; cd /app && python -m pytest -q'
+cd frontend && npm run lint && npm run build
 ```
-*Runs on [http://localhost:5000](http://localhost:5000)*
-
-### Running Frontend (React)
-```bash
-cd frontend
-npm install
-npm run dev
-```
-*Runs on [http://localhost:5173](http://localhost:5173)*
-
-## Environment Variables
-Create a `.env` file in `Yggdrasil/heimdall/backend/.env`:
-
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `FLASK_ENV` | App environment | `production` |
-| `SECRET_KEY` | Flask session secret | *Random* |
-| `STEAM_API_KEY` | Your Steam Web API Key | *Required* |
-
-## Configuration (`settings.json`)
-
-App settings live in `backend/settings.json`. **This file is gitignored** because
-it holds the Tradeon token — copy the template to create your own:
-
-```bash
-cp backend/settings.example.json backend/settings.json
-```
-
-| Key | Type | Description |
-|-----|------|-------------|
-| `check_interval` | int (seconds) | How often the auto-confirm scheduler polls. |
-| `auto_check_enabled` | bool | Master switch for the background confirmation checker. |
-| `auto_confirm_market` | bool | Auto-accept Steam **market** confirmations (types 3 & 12). |
-| `auto_confirm_trades` | bool | Auto-accept Steam **trade** confirmations (type 2). |
-| `tradeon_token` | string | **Required for Huginn.** Bearer token for `pulse.tradeon.space`. Without it, price fetching is disabled. |
-
-If `settings.json` is missing, the backend boots with safe defaults (all
-auto-confirm off, no Tradeon token).
-
-### Getting the `tradeon_token`
-
-Huginn (the arbitrage tool) proxies price data from `pulse.tradeon.space`, which
-requires your account's bearer token:
-
-1. Log into <https://pulse.tradeon.space> in your browser.
-2. Open **DevTools → Network**, trigger any price table load.
-3. Find a request to `api-pulse.tradeon.space` → **Headers** → copy the value of
-   `authorization: Bearer <token>` (just the `<token>` part).
-4. Paste it into `settings.json` as `tradeon_token`.
-
-The token is a JWT and expires eventually; when Huginn starts returning auth
-errors, repeat these steps to refresh it.
-
-## Draupnir (Portfolio Tracker)
-
-Draupnir ("The Hoard") tracks your skin **buy/sell transactions** across multiple
-portfolios and values current holdings **live** using Huginn's pulse price feed —
-so it reuses the same `tradeon_token` (no separate config). Shows cost basis,
-realized and unrealized P/L per item and per portfolio.
-
-- **UI:** `/draupnir` (portfolio list, create, CSV import, sort) and
-  `/draupnir/:id` (summary tiles, holdings, transaction add/edit/delete).
-- **Import:** upload price-tracker CSV exports — **one portfolio
-  per file**. Those exports store prices as **integer cents** (no decimal point),
-  so every price is divided by 100 on import; mojibake item names are repaired.
-- **Valuation:** switchable reference market (Steam / CSFloat / Buff / lowest),
-  cached ~1h and warmed in the background so pages never block on pulse.
-- **Data:** stored in `backend/portfolios.json` — **gitignored** (personal holdings).
-
-## API Reference
-
-### Health Check
-`GET /health`
-```json
-{ "status": "healthy" }
-```
-
-### Draupnir (portfolios)
-| Method | Route | Purpose |
-|--------|-------|---------|
-| `GET` | `/api/portfolios?market=` | List portfolios with valuation summary |
-| `POST` | `/api/portfolios` | Create a portfolio |
-| `GET/PATCH/DELETE` | `/api/portfolios/<id>` | Detail / rename / delete |
-| `POST` | `/api/portfolios/import` | Import a CSV as a new portfolio |
-| `POST/PATCH/DELETE` | `/api/portfolios/<id>/transactions[/<tid>]` | Add / edit / remove a transaction |
-| `GET` | `/api/portfolios/item-search?q=` | Item-name autocomplete |
-| `POST` | `/api/portfolios/validate-item` | Check a name is a real CS item |

@@ -1,8 +1,9 @@
 # AGENTS.md
 
 This repository's agent guidance lives in **[CLAUDE.md](CLAUDE.md)** (and the
-per-component `CLAUDE.md` files under `Yggdrasil/heimdall/backend/` and
-`Yggdrasil/ratatoskr/`). This file exists so agent tools that look for
+per-component `CLAUDE.md` files under `Yggdrasil/heimdall/backend/`,
+`Yggdrasil/heimdall/frontend/` and `Yggdrasil/ratatoskr/`). Feature deep dives
+are in `docs/internals/`; what each screen does is in `docs/guide/`. This file exists so agent tools that look for
 `AGENTS.md` are pointed at it.
 
 **Read [CLAUDE.md](CLAUDE.md) first** — it is the map, the fleet commands, the

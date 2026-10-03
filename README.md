@@ -1,89 +1,87 @@
 # ⚡ STEAM-ODIN
 
-**Steam-Odin** is a comprehensive suite of tools for the Steam ecosystem, forged in the fires of Asgard.
+**steam-odin** is a self-hosted toolset for running many Steam accounts that
+trade Counter-Strike 2 items: a Steam Guard authenticator with automatic
+confirmations, a portfolio tracker, cross-market price scouts, a card-farming
+deal finder, a Storage Unit mover and a Storage Unit shop — one web app on your
+own computer, at http://localhost:3000.
 
-## 🗺️ The Realms (Project Structure)
+Everything is named after Norse figures. The names are flavour; the folder
+layout is the truth.
 
-This monorepo contains two deployable realms, plus several tools that live
-inside Heimdall — each named after a figure from Norse mythology:
+## 📚 Documentation
 
-- **`Yggdrasil/heimdall`** — The Watchman. The main suite (Flask backend + React
-  frontend). Started as the Steam authenticator (TOTP codes, session tokens,
-  confirmations) and now hosts the tools below.
-    - *Tech:* Flask + React/Vite.
-- **`Yggdrasil/ratatoskr`** — The Courier. Node service that moves items between
-  Storage Units and inventory via the Steam-user & Global Offensive libraries.
-  Driven from Heimdall's Ratatoskr pages.
+| You are… | Read |
+|----------|------|
+| Using the app | **[User guide](docs/guide/README.md)** — setup, every screen, Telegram, backups, troubleshooting |
+| Reading the code | **[ARCHITECTURE.md](ARCHITECTURE.md)** — how the pieces fit together |
+| An AI coding agent | **[CLAUDE.md](CLAUDE.md)** (also [AGENTS.md](AGENTS.md)) and the per-component `CLAUDE.md` files |
+| Curious how a feature works inside | [docs/internals/](docs/internals/) |
+| Publishing or forking | [SECURITY.md](SECURITY.md) |
 
-Tools **within Heimdall** (frontend pages under `heimdall/frontend/src/pages/`):
+## 🗺️ The realms
 
-- **Draupnir** (Portfolio Tracker): The Hoard. Tracks buy/sell transactions per
-  portfolio with avg-cost P/L and live valuation; point-in-time backups; CSV import.
-- **Huginn** (Arbitrage / Skins Scout): The Scout. Cross-market price scouting &
-  arbitrage profiles (Tradeon/LisSkins/Buff/CSFloat/DMarket) using live pulse
-  prices; Case Arbitrage tracker and price alerts.
+```
+Yggdrasil/
+├── heimdall/      The Watchman — the main app (Flask backend + React frontend)
+├── ratatoskr/     The Courier — Node service holding Counter-Strike 2 sessions
+└── asf/           ArchiSteamFarm (pinned upstream image) for card farming
+```
 
-> [!NOTE]
-> The `apps` directory has been renamed to **`Yggdrasil`** (The World Tree), which contains the individual realms (applications).
+Tools inside Heimdall:
 
-> [!TIP]
-> New to the codebase? Read **[ARCHITECTURE.md](ARCHITECTURE.md)** for how the
-> pieces fit together (topology, request flow, the Steam token lifecycle, the
-> data model). AI coding agents should start with **[CLAUDE.md](CLAUDE.md)**.
+| Tool | Does |
+|------|------|
+| **Authenticator** | Steam Guard codes, trade and Market confirmations, auto-confirm, session keep-alive |
+| **Huginn** | Price scout: market-to-market arbitrage, Case Arbitrage, Cross-Profile routes, Harvest, LOOT.Farm |
+| **Gjallarhorn** | When Valve limits a case: rotation cockpit + news alarm that rings your phone |
+| **Andvari** | Games whose trading cards pay for them; buys them on many accounts; ASF farming; card auto-sell |
+| **Team Fortress 2** | New case drops: play on release, sell the drops |
+| **Draupnir** | Portfolio tracker with profit/loss and automatic backups |
+| **Mímir** | Encrypted vault for logins, passwords and emails |
+| **Ratatoskr** | Move items in and out of Storage Units; buy Storage Units on many accounts |
 
 ## ⚔️ Commands of Power
 
-We use `make` to command the fleet. Speaking the old names (`build`, `up`) will still work, but the true commands are:
-
 ```bash
-# Speak the wisdom (List all commands)
-make help
-
-# The All-Father commands everything (Build + Start)
-make odin
-
-# Forge the containers
-make forge
-
-# Launch the longships (Start background)
-make raid
-
-# Open the Bifrost (Start interactive/logs)
-make bifrost
-
-# Rest the warriors (Stop)
-make sleep
-
-# Destruction and Renewal (Clean up orphans)
-make ragnarok
+make help       # list every command
+make odin       # build + start everything
+make raid       # start (detached)
+make bifrost    # start with attached logs
+make saga       # follow the logs
+make sleep      # stop
+make ragnarok   # stop + remove orphans + prune images
+make asf-setup  # once: ArchiSteamFarm password + hardened config
+make asf        # start ArchiSteamFarm and reconnect Heimdall
 ```
+
+| Address | Service |
+|---------|---------|
+| http://localhost:3000 | The app (frontend) |
+| http://localhost:5001 | Backend API |
+| http://localhost:3001 | Ratatoskr (backend use only) |
+| http://localhost:1242 | ArchiSteamFarm UI |
+
+All are bound to **127.0.0.1 only** — the app has no login; never expose it.
 
 ## 🛠️ Development
 
-The `docker-compose.yml` orchestrates all services.
-- **Heimdall Frontend**: http://localhost:3000
-- **Heimdall Backend**: http://localhost:5001
+- **Backend tests** (the real safety net, about 590 tests):
 
-### Tests
+  ```bash
+  docker exec steam-odin-heimdall-backend-1 sh -c \
+    'pip install -q pytest 2>/dev/null; cd /app && python -m pytest -q'
+  ```
 
-Backend tests (avg-cost math, crash-safe JSON I/O, maFile encryption/migration,
-write validation) run with pytest:
+- **Frontend:** `npm run lint` and `npm run build` in `Yggdrasil/heimdall/frontend`.
+- **CI** (`.github/workflows/ci.yml`) runs backend pytest + ruff + `pip-audit`
+  and frontend lint + build on every push and pull request.
+- The backend reloads itself on every `.py` save; Ratatoskr needs
+  `docker restart steam-odin-ratatoskr-1` after a change.
 
-```bash
-cd Yggdrasil/heimdall/backend
-pip install -r requirements-dev.txt
-pytest
-```
+## 🔒 Security
 
-CI (`.github/workflows/ci.yml`) runs the backend tests + ruff + `pip-audit`, and
-the frontend lint + build, on every push and pull request.
-
-## 🔒 Security (open source)
-
-This project uses **local-only** Steam Guard `maFile` storage. Those files are **not** in git.
-
-1. Copy `Yggdrasil/heimdall/backend/.env.example` → `.env` and set `HEIMDALL_SECRET_KEY`.
-2. Import your `.maFile` via the UI (saved under `Yggdrasil/heimdall/backend/maFiles/`).
-3. Read [SECURITY.md](SECURITY.md) before publishing or forking.
-
-**Do not commit** `*.maFile`, `.env`, or `backend/logs/`.
+Steam Guard maFiles, the encryption key, the credential vault, settings with
+tokens, and ASF's configuration live **only on your machine** and are
+gitignored. Back them up off-machine yourself — see
+[backups and safety](docs/guide/backups-and-safety.md) and [SECURITY.md](SECURITY.md).

@@ -23,11 +23,13 @@ or rename folders to make the mythology more accurate.
 Yggdrasil/                      The World Tree — holds the deployable realms
 ├── heimdall/                   The Watchman — the main suite
 │   ├── backend/                Flask API (Python). See backend/CLAUDE.md.
-│   └── frontend/               React + Vite single-page app
+│   └── frontend/               React + Vite single-page app. See frontend/CLAUDE.md.
 ├── ratatoskr/                  The Courier — Node service. See ratatoskr/CLAUDE.md.
 └── asf/                        ArchiSteamFarm (pinned upstream image) — card farming. See asf/README.md.
+docs/guide/                     User guide for humans: setup, every screen, Telegram, troubleshooting
+docs/internals/                 Deep dives on single features (protocols, live findings)
 docs/steam-trading/             Trading knowledge base + glossary + baselines (local only, gitignored)
-scripts/                        Host-side helpers (portfolio backup launchd job)
+scripts/                        Host-side helpers (ASF setup, portfolio backup launchd job)
 ```
 
 **Tools that live *inside* Heimdall** (each is frontend pages + backend service,
@@ -40,6 +42,8 @@ not a separate deployable):
 | **Huginn** | Cross-market price scout / arbitrage (Tradeon pulse feed, case arbitrage) | `huginn_service.py` | `pages/huginn/` |
 | **Mímir** | Encrypted credential vault (login / password / email), shares the maFile key | `mimir_service.py` | `pages/mimir/` |
 | **Ratatoskr** | Moves items between Storage Units and inventory; **Storage shop** buys Storage Units on many accounts through the game store (Game Coordinator transaction, approved with the account's web session, price-guarded, dry run cancels) | `ratatoskr_service.py` → Node service (`store.js`), `storage_shop_service.py` | `pages/ratatoskr/` (`StorageShop.jsx` at `/storage-shop`) |
+| **Gjallarhorn** (in Huginn) | Event rotation: when Valve limits a case, sell deflated holdings and rotate into it; Counter-Strike 2 news watcher that texts + rings the phone; read-only, never trades | `gjallarhorn_service.py`, `gjallarhorn_news_service.py`, `steam_market_service.py`, `telegram_caller.py` | `pages/huginn/Gjallarhorn.jsx`, `components/gjallarhorn/` |
+| **Cross-Profile** (in Huginn) | Best buy-minimum → autobuy route per held item across every account, plus user-defined market chains | `cross_arbitrage_service.py` | `components/CrossProfileArbitrage.jsx` (Arbitrage page view) |
 | **Harvest** (in Huginn) | Every purchase lot you still hold, at the price you paid (no averaging, oldest sold first), vs what an autobuy market pays now; account → market profiles like Arbitrage | `harvest_service.py` | `components/Harvest.jsx` (Arbitrage page tab) |
 | **Andvari** (in Huginn) | Games whose card drops pay for them + ASF card farming status; "Buy games" tab (buy a deal on many accounts from their wallets, price-guarded); card auto-sell | `card_deals_service.py`, `asf_service.py` → ASF container, `store_purchase_service.py`, `card_seller_service.py` | `pages/huginn/CardDeals.jsx`, `components/carddeals/BuyPanel.jsx`, `SellingPanel.jsx` |
 | **Team Fortress 2** (in Huginn) | New Team Fortress 2 case drops: news watcher rings + starts ASF playing Team Fortress 2 on every account the minute a case is added, drops listed on the Market as they land; every account gets the free game | `team_fortress_service.py`, `asf_service.py` (Team Fortress 2 mode + license sweep) | `pages/huginn/TeamFortress.jsx` |
@@ -191,10 +195,30 @@ ruff + `pip-audit`, and frontend lint + build, on every push and pull request.
   data for a real trader. When touching backups or portfolios, verify data is
   preserved before deleting anything.
 
+- **Money is spent only through the guarded routes** (Andvari "Buy games",
+  Ratatoskr "Storage shop"), dry run first, and a real purchase only on Ivan's
+  explicit word for the accounts and quantity he named. Never call Ratatoskr's
+  raw `/store/purchase/*` endpoints or Steam checkout yourself.
+- **Automatic selling handles items that arrive after it is switched on**;
+  existing holdings only with an explicit opt-in.
+- **Andvari never sends through the Huginn arbitrage Telegram bot** — only its
+  own bot (`card_deals_bot_token` + `card_deals_chat_id`), or nothing.
+- **The repository is public.** Never push tags (the local `checkpoint/*` tags
+  stay local). Never stage `portfolios.json` unless Ivan asks for it. No account
+  logins, balances, chat ids or holdings in documentation.
+- **Never edit permission settings** (`.claude/settings*.json`) on your own.
+
 ## Where to read more
 
 - Setup, environment variables, `tradeon_token`: [Yggdrasil/heimdall/README.md](Yggdrasil/heimdall/README.md)
 - Backend internals, service wiring, per-file map: [Yggdrasil/heimdall/backend/CLAUDE.md](Yggdrasil/heimdall/backend/CLAUDE.md)
-- Ratatoskr rate-limit rules: [Yggdrasil/ratatoskr/CLAUDE.md](Yggdrasil/ratatoskr/CLAUDE.md)
+- Frontend conventions, lint traps, known gaps: [Yggdrasil/heimdall/frontend/CLAUDE.md](Yggdrasil/heimdall/frontend/CLAUDE.md)
+- Ratatoskr endpoints + rate-limit rules: [Yggdrasil/ratatoskr/CLAUDE.md](Yggdrasil/ratatoskr/CLAUDE.md)
+- ASF safety model and operations: [Yggdrasil/asf/README.md](Yggdrasil/asf/README.md)
+- What every screen does (human guide): [docs/guide/](docs/guide/README.md)
+- Feature deep dives: [docs/internals/](docs/internals/) — start with
+  [storage-shop.md](docs/internals/storage-shop.md) before touching the Storage shop
+- Known drift between code, config and docs: [docs/internals/known-issues.md](docs/internals/known-issues.md)
+- Human architecture tour: [ARCHITECTURE.md](ARCHITECTURE.md)
 - Trading domain knowledge: [docs/steam-trading/](docs/steam-trading/) — local only: the
   repository is public and it holds paid-course notes, picks and holdings

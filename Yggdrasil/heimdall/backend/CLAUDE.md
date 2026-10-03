@@ -2,69 +2,161 @@
 
 Agent notes for the Python backend. The root [CLAUDE.md](../../../CLAUDE.md) has
 the fleet-wide rules; this file is the backend map and its specific traps.
+Deep dives on single features live in [docs/internals/](../../../docs/internals/).
 
 ## Boot & wiring
 
 `app.py` is the composition root. At import it:
 
-1. calls `setup_logging()` **before** constructing anything (so every module
-   logger goes through the rotating file + console handlers);
-2. constructs each service **once** (`SteamService`, `SettingsManager`,
-   `RatatoskrService`, `HuginnService`, `DraupnirService`, `BackupService`,
-   `ConfirmationScheduler`, `MimirService`);
-3. hangs the singletons on `context.ctx`;
-4. registers route blueprints via `routes.register_blueprints(app)`;
-5. starts the background scheduler in the request-serving process, then
-   `app.run(threaded=True)`.
+1. calls `setup_logging()` **before** constructing anything (rotating
+   `logs/heimdall.log`, 5 MB × 5, plus console);
+2. installs `request_guard` (Host allow-list + cross-origin write refusal);
+3. constructs each service **once**, in this order (constructor arguments shown):
 
-Dependency shape (who is passed what):
-`HuginnService(steam_service, ratatoskr_service)` →
-`DraupnirService(huginn_service)` → `BackupService(draupnir_service.path)` +
-`draupnir_service.set_backup(...)`; `MimirService(steam_service.storage)`;
-`ConfirmationScheduler(settings_manager, steam_service, ratatoskr_service)`.
+| # | Service | Built from |
+|---|---------|------------|
+| 1 | `SettingsManager()` | `settings.json` (defaults in `settings.py`) |
+| 2 | `SteamService()` | its own `SecureStorage` over `maFiles/` |
+| 3 | `RatatoskrService()` | `RATATOSKR_URL` |
+| 4 | `HuginnService(steam, ratatoskr)` | + `settings_provider` (all market fees) |
+| 5 | `DraupnirService(huginn)` | `portfolios.json` |
+| 6 | `BackupService(draupnir.path)` | + `draupnir.set_backup(...)` |
+| 7 | `ConfirmationScheduler(settings, steam, ratatoskr)` | |
+| 8 | `MimirService(steam.storage)` | shares the maFile key |
+| 9 | `SteamMarketService(steam)` | Gjallarhorn liquidity |
+| 10 | `GjallarhornService(draupnir, huginn, steam_market, ratatoskr, steam)` | read-only cockpit |
+| 11 | `TelegramCaller()` | `telegram_caller.json` |
+| 12 | `GjallarhornNewsService(settings, telegram_caller)` | |
+| 13 | `CrossArbitrageService(huginn, draupnir)` | |
+| 14 | `HarvestService(huginn, draupnir)` | |
+| 15 | `CardDealsService(steam, settings)` | Andvari |
+| 16 | `AsfService(steam, ratatoskr)` | + `ratatoskr.before_login = asf.pause_for_ratatoskr`, `asf.card_deals = card_deals` |
+| 17 | `TeamFortressService(settings, steam, asf, telegram_caller)` | |
+| 18 | `CardSellerService(settings, steam, asf)` | |
+| 19 | `StorePurchaseService(steam, card_deals, asf, settings_provider)` | Andvari "Buy games" |
+| 20 | `StorageShopService(steam, ratatoskr, card_deals)` | Ratatoskr Storage shop |
+| 21 | `MorningRoutine(...)` | wired to `routes.huginn` scan + CSFloat sweep |
+
+4. hangs the singletons on `context.ctx` and registers the blueprints
+   (`routes/__init__.py`: accounts, settings, draupnir, ratatoskr, huginn, mimir);
+5. starts the background threads — **only in the reloader child**
+   (`WERKZEUG_RUN_MAIN == 'true'`) when `FLASK_ENV=development`, so they never
+   run twice — then `app.run(threaded=True)`.
 
 > **`ctx` is populated only here.** In a bare `python -c` or `docker exec`
 > shell, `ctx.steam_service` etc. are `None`. Construct services directly or
 > mirror this wiring if you need to script against them.
 
+> **A constructor that raises takes the whole backend down** (and the
+> auto-reloader keeps restarting into the same crash). Compile before saving
+> (`python -m py_compile file.py`) and mind the order of attributes inside
+> `__init__` (load state before deriving from it).
+
+## Background threads (started at boot, all daemon threads)
+
+| Thread | Interval | Does | Switch |
+|--------|----------|------|--------|
+| `scheduler` | `check_interval` (default 300 s, floor 10) | Token keep-alive sweep every 4 h (renews accounts with < 8 h + 0–2 h jitter left); confirmation sweep (1 s between accounts); auto-store sweep | `auto_check_enabled`, `auto_confirm_market`, `auto_confirm_trades`, `auto_store_enabled` |
+| Huginn container refresh | `case_poll_interval_sec` (600 s, floor 60) | Full container pull hourly, alert markets in between, then Case Arbitrage alerts | needs `tradeon_token`; alerts need `case_alerts_enabled` |
+| Draupnir backups | hourly | `boot` snapshot, then a `daily` snapshot after UTC midnight, then prune | always |
+| LOOT.Farm auction tracker | 900 s | Snapshot into the auction log | always |
+| Gjallarhorn news | `gjallarhorn_news_poll_minutes` (10, floor 2) | Counter-Strike 2 news → limited case/collection → Telegram + phone ring | `gjallarhorn_news_armed` |
+| Andvari card deals | 300 s tick | Starts a scan every `card_deals_scan_interval_hours` (12) | `card_deals_auto_scan_enabled` |
+| ASF | 45 s tick (20 s first wait) | Provision/enable bots (max 20), resume after Ratatoskr, assist one login, license sweep, Team Fortress 2 mode | off until `ASF_IPC_PASSWORD` is set |
+| `team-fortress-news` | `team_fortress_poll_minutes` (2) | Team Fortress 2 news → case added → play + ring | `team_fortress_watch_enabled` |
+| `team-fortress-sell` | 15 s | Auto-stop after `team_fortress_auto_stop_hours`; sell step (inventory at most every 5 min) | `team_fortress_auto_sell_enabled` |
+| `andvari-card-sell` | 20 s | Card auto-sell step (each inventory at most every 30 min) | `card_auto_sell_enabled` (off by default) |
+| `morning-routine` | 60 s tick | 08:00 local: "Get all items" scan, then the CSFloat buy-order sweep (unless < 12 h old); catches up after the Mac sleeps | always |
+
+On-demand threads: CSFloat sweep, trade-alert sender, market/cross-arbitrage/
+Harvest warmers, card-deals scans, `andvari-{kind}` store-purchase jobs,
+`storage-shop-{kind}` jobs, `team-fortress-sell-now`.
+
+**Every one of these restarts when any `.py` file is saved** (see below).
+
 ## File map
 
 | File | Responsibility |
 |------|----------------|
-| `app.py` | Composition root, `ctx` wiring, scheduler start |
+| `app.py` | Composition root, `ctx` wiring, background thread start, JSON error handlers, `GET /health` |
 | `context.py` | The `ctx` singleton holder (empty until `app.py` fills it) |
-| `routes/` | Flask blueprints by domain: `accounts`, `settings`, `draupnir`, `ratatoskr`, `huginn`, `mimir`. Each reads `ctx` at request time. |
-| `steam_service.py` | Steam login, TOTP, sessions, **mobile confirmations**, web-token lifecycle (largest hot file) |
-| `scheduler.py` | Background auto-confirm loop **+ session keep-alive sweep** |
-| `huginn_service.py` | Tradeon pulse price feed, cross-market prices, case arbitrage catalog (largest file) |
-| `draupnir_service.py` | Portfolio store, average-cost profit/loss, CSV import |
-| `draupnir_backup_service.py` | Point-in-time snapshots of `portfolios.json`, gzip-compressed, GFS retention |
-| `mimir_service.py` | Encrypted credential vault (shares the maFile key) |
-| `morning_routine.py` | Daily "Get all items" at 08:00 local (catches up the first minute the Mac is awake after it), then rebuilds the CSFloat item dictionary (`cache/csfloat_item_links.json`: held item → CSFloat listing) and starts the buy-order sweep unless prices are under 12 hours old; state in `cache/morning_routine.json` |
+| `request_guard.py` | CORS only for `localhost:3000` / `127.0.0.1:3000`; 403 for a foreign `Host` (DNS rebinding) or a cross-origin write; extra hosts via `HEIMDALL_ALLOWED_HOSTS` |
+| `routes/` | Flask blueprints by domain: `accounts`, `settings`, `draupnir`, `ratatoskr`, `huginn`, `mimir`. Each reads `ctx` at request time. About 135 routes; `tests/test_routes_blueprints.py` counts them per blueprint |
+| `steam_service.py` | Steam login, TOTP, sessions, **mobile confirmations**, web-token lifecycle, password lookup from Mímir, outbound proxy (`HTTP(S)_PROXY`, `SOCKS_PROXY`); debug log `logs/steam_debug.log` with secrets redacted |
+| `scheduler.py` | Background auto-confirm loop **+ session keep-alive sweep** + auto-store sweep + auto-confirmed trade alerts |
+| `storage.py` | maFile load/save, encryption (key from `HEIMDALL_SECRET_KEY` or `maFiles/.heimdall_key`), legacy migration, soft delete to `maFiles/.deleted/` |
+| `huginn_service.py` | Tradeon pulse price feed, cross-market prices, market registry + fees, case arbitrage catalog + Telegram board, CSFloat buy-order sweep and key rotation, LOOT.Farm auctions (largest file) |
+| `cross_arbitrage_service.py` | One board across all accounts: per held item the best buy-minimum market vs the best autobuy market, fee-netted, plus user-defined chains; cached 10 min, warmed in the background |
 | `harvest_service.py` | Harvest (Huginn tab): each purchase lot still held (`DraupnirService.open_lots()`: real price paid, sells use up the oldest buys first) vs the chosen autobuy market's instant offer; per-market index cached 10 min and warmed one market at a time; marks site-balance payouts and cash offers above 1.3× Buff163's listing |
+| `draupnir_service.py` | Portfolio store, moving-average profit/loss, canonical platform names, CSV import/export, combined ledger |
+| `draupnir_backup_service.py` | Point-in-time snapshots of `portfolios.json`, gzip, content-addressed, GFS retention, safe restore |
+| `mimir_service.py` | Encrypted credential vault (shares the maFile key), import parser, plaintext export, test login, rolling `.bak` copies |
+| `gjallarhorn_service.py` | Event-rotation cockpit (read-only, never trades): rotation sell list scored on liquidity, market-hold whitelist, target basket, Storage Unit readiness |
+| `gjallarhorn_news_service.py` | Counter-Strike 2 news watcher: detects a case/collection added or removed (rules in the docstring), baseline on first run, records before alerting so a reload cannot ring twice |
+| `steam_market_service.py` | Steam Market liquidity (`priceoverview` public, `pricehistory` needs the web session), serial with 3 s + 2 s gaps, defers history while the page is in use, gzip cache |
+| `telegram_caller.py`, `telegram_caller_login.py` | Rings Ivan's phone through a burner Telegram user account (Telethon; a bot cannot call). One-time setup: `docker exec -it steam-odin-heimdall-backend-1 python /app/telegram_caller_login.py` |
+| `morning_routine.py` | Daily "Get all items" at 08:00 local (catches up the first minute the Mac is awake after it), then rebuilds the CSFloat item dictionary (`cache/csfloat_item_links.json`: held item → CSFloat listing) and starts the buy-order sweep unless prices are under 12 hours old; state in `cache/morning_routine.json` |
 | `card_deals_service.py` | Andvari (Huginn → Card deals): games whose trading-card drops resell for more than the game costs, per account; background scan with its own Steam throttles, cache in `cache/card_deals.json.gz`. Telegram (deal alerts, card-sale summaries) only through Andvari's own bot (`card_deals_bot_token` + `card_deals_chat_id`, `notifications.own_bot_settings`), never the shared Huginn arbitrage bot; without one, Andvari is silent |
 | `asf_service.py` | ArchiSteamFarm driver: hardened bot per account, switched on only while it has cards to farm (max 20, Ivan's choice; ASF's FAQ recommends 10), password + Steam Guard code only when ASF asks (paced, three tries), pause while Ratatoskr plays, farming status; Team Fortress 2 mode (chosen bots play app 440 outside the 10-bot ceiling) and the license sweep (every account, new ones included, gets the free Team Fortress 2 license; stopped bots started one at a time for it); off until `ASF_IPC_PASSWORD` is set |
 | `team_fortress_service.py` | Team Fortress 2 case drops: polls the app 440 news feed for "Added the … Case" → starts Team Fortress 2 mode, adds the case to the sell list, texts + rings; auto-sell reads each playing account's inventory (paced) and lists sell-list items one minor unit under the lowest Market listing in the wallet currency (fee rules from `g_rgWalletInfo`), confirming only those listings; state in `cache/team_fortress.json` |
 | `store_purchase_service.py` | Andvari "Buy games" tab: plan (per account: store country, wallet currency + balance from `g_rgWalletInfo`, owned games from the store's `dynamicstore/userdata`, regional price of the cheapest default package from `appdetails`, US dollar conversion, maximum price, balance, best Andvari profit first) and guarded wallet purchases (empty cart only, cart and Steam's final price must equal the plan to the cent, checkout on `checkout.steampowered.com`, dry run cancels before paying, then ASF farm now); history + statistics in `cache/store_purchases.json` |
-| `storage_shop_service.py` | Ratatoskr Storage shop: plan (wallet currency + balance, store country, the game store's Storage Unit price from its LZMA binary KeyValues price sheet, entry "casket") and guarded purchases through Ratatoskr (`StorePurchaseInit` with the game store's 0-based currency, USD 0 — Steam's wallet code gets result 8 — and the store country, then the login's country → Steam's approval request (`ClientMicroTxnAuthRequest`, caught by Ratatoskr, binary KeyValues) must be exactly this order: orderid = the Game Coordinator transaction, app 730, only Storage Units in the quantity, the planned total and wallet currency; its `transid` names the page `checkout.steampowered.com/checkout/approvetxn/<transid>/`, which must name the account, show the total and carry the `form_authtxn` form (sent with `approved=1`, as its Authorize button does) → `StorePurchaseFinalize`, count must grow); dry run cancels before approving; after approving nothing is cancelled and failures read "MAY BE PAID" ("Deliver again" re-sends Finalize, which only delivers an approved transaction); logs the account in and out of Ratatoskr (never a session it did not open, never during moves); every dashboard account listed with its last known wallet and Storage Unit count (`known`, no Steam read until a check), the running purchase's step (`job.step`: wallet, login, opening, approving, delivering) for the page's progress view; history in `cache/storage_shop.json`, last approval page in `cache/storage_shop_approval_page.html` |
-| `card_seller_service.py`, `market_seller.py`, `community_pacer.py` | Andvari card auto-sell (off by default): new trading cards listed one cent under the lowest Market listing in the wallet currency, only cards that arrived after it was switched on, only their confirmations accepted (exact item name, type 3 or market type 12), retried until confirmed; statistics per account and game in `cache/card_sales.json`. One steamcommunity.com gap shared with the Team Fortress 2 seller |
-| `storage.py` | maFile load/save, encryption/migration |
-| `jsonio.py` | Crash-safe atomic JSON read/write |
+| `storage_shop_service.py` | Ratatoskr Storage shop — Counter-Strike 2 Storage Units through the game store over the Game Coordinator. Full protocol, guards and live findings: [docs/internals/storage-shop.md](../../../docs/internals/storage-shop.md). Plan (wallet, store country, price sheet entry "casket", web-inventory Storage Unit count), guarded purchase (Init with the game store's 0-based currency → Steam's `ClientMicroTxnAuthRequest` must be exactly this order → approval page `approvetxn/<transid>` with `approved=1` → Finalize as a Game Coordinator job, which is when the wallet is charged); dry run cancels; after approval failures read "MAY BE PAID" and "Deliver again" re-sends Finalize; state in `cache/storage_shop.json` |
+| `card_seller_service.py`, `market_seller.py`, `community_pacer.py` | Andvari card auto-sell (off by default): new trading cards listed one cent under the lowest Market listing in the wallet currency, never under the highest buy order, only cards that arrived after it was switched on, only their confirmations accepted (exact item name, type 3 or market type 12), retried until confirmed; statistics per account and game in `cache/card_sales.json`. `community_pacer` keeps one 4 s steamcommunity.com gap shared by the card seller, the Team Fortress 2 seller and the Storage shop |
+| `jsonio.py` | Crash-safe atomic JSON read/write (`.tmp-*.json` then rename) |
 | `validation.py` | Request-body validation for writes |
-| `settings.py` | `settings.json` load with safe defaults |
-| `notifications.py`, `logging_setup.py`, `system_ops.py` | Supporting utilities |
+| `settings.py` | `settings.json` load with safe defaults; a corrupt file is copied aside and writes are refused until it loads |
+| `notifications.py` | Telegram / webhook sender; `own_bot_settings(settings, prefix)` for a feature's own bot (no fallback) |
+| `logging_setup.py` | Rotating log + console; level from `HEIMDALL_LOG_LEVEL` |
+| `system_ops.py` | `trigger_restart()` (exit, Docker restarts) — currently unused |
+| `cases_containers.json` | Bundled container catalog (read-only) |
+
+## Telegram routing (who sends where)
+
+| Feature | Bot | Chat |
+|---------|-----|------|
+| Case Arbitrage board, auto-confirmed trade alerts | Shared "Huginn arbitrage" bot (`telegram_bot_token`), else `notify_webhook_url` | `telegram_chat_id` |
+| Gjallarhorn news | Shared bot | `gjallarhorn_chat_id`, else `telegram_chat_id` |
+| Team Fortress 2 releases and auto-stop | Shared bot | `team_fortress_chat_id`, else `telegram_chat_id` |
+| **Andvari** deal alerts and card-sale summaries | **Only its own bot** (`card_deals_bot_token`) | `card_deals_chat_id` — silent without them |
+| Phone rings (Gjallarhorn news, Team Fortress 2 release, manual ring) | `TelegramCaller` burner user account | `telegram_caller.json` target |
+
+Storage shop, Buy games, ASF and Harvest send nothing. **Never route Andvari
+through the shared bot**, and never add a fallback to it (Ivan's rule).
 
 ## Data files (all gitignored except `portfolios.json`)
 
-- `portfolios.json` — Draupnir holdings. **Committed on purpose** (no secrets).
-- `backups/portfolios/` — gzip snapshot history (`*.json.gz`, content-addressed
-  by sha1 of the *uncompressed* content; legacy plain `.json` still read).
-- `maFiles/` — Steam Guard files (`*.maFile`). Secret. Never commit.
-- `.heimdall_key` / `.heimdall_salt` — maFile encryption key/salt. Secret.
-- `credentials.vault` — Mímir vault. Secret.
-- `settings.json` — holds `tradeon_token`. Secret. Template: `settings.example.json`.
-- `csfloat_keys.json` — CSFloat API key rotation pool. Secret.
-- `logs/`, `cache/` — runtime, gitignored.
+| Path | Holds | Secret? |
+|------|-------|---------|
+| `portfolios.json` | Draupnir holdings — **committed on purpose**, but never stage it unless Ivan asks | no |
+| `backups/portfolios/*.json.gz` | Snapshot history (`portfolios__<time>__<reason>__<sha8>`; reasons change, daily, boot, manual, pre-restore) | no |
+| `maFiles/*.maFile` | Steam Guard secrets, encrypted | **yes** |
+| `maFiles/.heimdall_key` | maFile + vault key (unless `HEIMDALL_SECRET_KEY` is set) | **yes** |
+| `maFiles/credentials.vault` (+ `.bak-*`, newest 10) | Mímir vault | **yes** |
+| `settings.json` (+ `.corrupt-*`) | Settings incl. tokens and chat ids | **yes** |
+| `csfloat_keys.json` | CSFloat API key pool (+ optional proxy) | **yes** |
+| `telegram_caller.json` | Burner Telegram session | **yes** |
+| `cache/` | Every service's state (below) | low |
+| `logs/` | `heimdall.log`, `steam_debug.log` (redacted), portfolio backup logs | low, but may hold SteamIDs |
+
+`cache/` files: `huginn_scan.json`, `huginn_csfloat_buyorders.json`,
+`csfloat_item_links.json`, `csfloat_key_state.json`, `case_price_history.json`,
+`case_alert_state.json`, `huginn_container_snapshots.json`,
+`lootfarm_auction_log.json`, `gjallarhorn_liquidity.json.gz`,
+`card_deals.json.gz`, `asf_state.json`, `team_fortress.json`,
+`card_sales.json`, `store_purchases.json`, `storage_shop.json`,
+`storage_shop_approval_page.html`, `morning_routine.json`. Cache files are not
+watched: `docker restart steam-odin-heimdall-backend-1` after editing one by hand.
+
+## Settings and environment
+
+Every setting with its default is in `settings.py` (`DEFAULT_SETTINGS`); the
+Settings route accepts known keys only and type-casts them. Notes:
+`csfloat_api_key` is a dead setting (keys come from `csfloat_keys.json`).
+
+Environment: `FLASK_ENV`, `PORT` (5000), `RATATOSKR_URL` (compose:
+`http://ratatoskr:3000`; code fallback `:3030`), `ASF_URL`, `ASF_IPC_PASSWORD`
+(ASF off when empty), `HEIMDALL_SECRET_KEY`, `HEIMDALL_ALLOWED_HOSTS`,
+`HEIMDALL_LOG_LEVEL`, proxy variables.
 
 ## Running & testing
 
@@ -73,8 +165,7 @@ Backend **auto-reloads on every `.py` save** (`FLASK_ENV=development` in
 in `logs/heimdall.log`), and every background loop restarts with it — so an edit
 is live immediately, half-finished or not. Test long runs with outward effects
 (Steam calls, Telegram alerts) in a sandbox script with its own cache file and a
-stubbed notifier. Use `docker restart steam-odin-heimdall-backend-1` to reload a
-changed cache or data file (those are not watched).
+stubbed notifier.
 
 ```bash
 # tests inside the running container (pytest installed ephemerally)
@@ -85,17 +176,27 @@ docker exec steam-odin-heimdall-backend-1 sh -c \
 docker exec steam-odin-heimdall-backend-1 sh -c 'cd /app && ruff check .'
 ```
 
-Dev dependencies: `requirements-dev.txt` (pytest, ruff, pip-audit).
+About 590 tests in 34 files (`tests/`); `conftest.py` stubs CSFloat so no test
+reaches the network. Every feature that spends money or sells has pure helpers
+with tests — extend them, including with bytes captured live.
+Dev dependencies: `requirements-dev.txt` (pytest, ruff, pip-audit). The image
+runs Python 3.9; CI runs 3.11 — write code that works on both.
 
 ## Backend-specific traps
 
+- **Money paths are guarded, never bypassed.** Buy games
+  (`store_purchase_service.py`) and the Storage shop (`storage_shop_service.py`)
+  re-check currency, price and balance to the minor unit, and support a dry
+  run that cancels before paying. Test with dry run; spend only on Ivan's
+  explicit word, through the guarded routes.
 - **Sell fees live in ONE place.** The market registry in `huginn_service.py` holds
   the defaults, and the Fees editor on the Arbitrage page (settings
   `huginn_market_fees`) overrides them. Every profit calculation reads them through
   `HuginnService.market_fee(market_id)`. That covers the Arbitrage profiles, Case
   Arbitrage, Cross-Profile, Harvest, LOOT.Farm and the auctions. Never add a
   per-feature fee constant.
-
+- **Automatic selling only touches items that arrive after it is switched on**,
+  unless an explicit opt-in says otherwise (`card_auto_sell_include_held`).
 - **Confirmations `a` param = SteamID64**, not the 32-bit account id (see
   `steam_service.py`). Wrong form returns a fake-looking rate-limit message.
 - **Web token for confirmations expires ~24h.** Only a full login mints a fresh
@@ -104,6 +205,9 @@ Dev dependencies: `requirements-dev.txt` (pytest, ruff, pip-audit).
 - **Passwords come from the Mímir vault by login**, never from the maFile
   (maFiles have no password field).
 - **Do not parallelise or speed up Steam calls** — 429 rate limits. The
-  scheduler sleeps between accounts on purpose.
+  scheduler sleeps between accounts on purpose; steamcommunity.com calls share
+  `community_pacer`.
+- **Any new Ratatoskr login path goes through `RatatoskrService.login`**, so the
+  `before_login` hook pauses ASF (one "playing" session per account).
 - **Blueprints import services from `ctx` at request time**, so import order is
   not a concern, but a service being `None` means `app.py` did not wire it.
