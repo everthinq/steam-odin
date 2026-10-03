@@ -158,20 +158,21 @@ def test_amount_shown(text, minor_units, currency, shown):
 # ---- purchase (fakes) --------------------------------------------------------------------------
 
 class FakeResponse:
-    def __init__(self, text='', status_code=200, headers=None):
-        self.text, self.status_code, self.headers = text, status_code, headers or {}
+    def __init__(self, text='', status_code=200, headers=None, payload=None):
+        self.text, self.status_code, self.headers, self.payload = text, status_code, headers or {}, payload
 
     @property
     def ok(self):
         return self.status_code < 400
 
     def json(self):
-        return {}
+        return self.payload if self.payload is not None else {}
 
 
 class FakeHttp:
     def __init__(self, page=PAGE, wallet=(1, 759)):
         self.page, self.wallet = page, wallet
+        self.inventory = None      # (first page, second page) of the Counter-Strike 2 inventory
         self.gets, self.posts = [], []
 
     def get(self, url, **kwargs):
@@ -181,6 +182,9 @@ class FakeHttp:
                                 f'"wallet_balance":"{self.wallet[1]}"}};')
         if 'approvetxn' in url:
             return FakeResponse(self.page)
+        if '/inventory/' in url and self.inventory is not None:
+            page = self.inventory[1] if (kwargs.get('params') or {}).get('start_assetid') else self.inventory[0]
+            return FakeResponse(payload=page)
         return FakeResponse('', 404)
 
     def post(self, url, **kwargs):
@@ -581,3 +585,133 @@ def test_the_live_approval_page_is_accepted():
     action, fields = approval_form(page, identifier)
     assert action.endswith('/checkout/approvetxnsubmit') and fields['approved'] == '1'
     assert amount_shown(page, 199, 'USD')
+
+
+def test_a_closed_store_is_logged_in_afresh_for_delivery(tmp_path):
+    """Live 2026-10-03: Finalize timed out, the store closed, and retries on the same
+    session were refused until a fresh login."""
+    ratatoskr = FakeRatatoskr()
+    service = _service(tmp_path, ratatoskr=ratatoskr)
+    order = _order(service)
+    original = ratatoskr.store_purchase_finalize
+    answers = [{'error': 'The Game Coordinator did not answer in time'},
+               {'error': 'An earlier store request timed out: log in again before buying'}]
+
+    def finalize(steamid, transaction_id):
+        if answers:
+            ratatoskr.calls.append(('finalize', transaction_id))
+            return answers.pop(0)
+        return original(steamid, transaction_id)
+    ratatoskr.store_purchase_finalize = finalize
+    result = service._buy_account(order, dry_run=False)
+    assert result['paid'] and result['item_ids'] == ['11', '12']
+    finalize_index = max(i for i, call in enumerate(ratatoskr.calls) if call == ('finalize', GAME_COORDINATOR_TRANSACTION))
+    assert 'disconnect' in ratatoskr.calls[:finalize_index] and ratatoskr.calls.count('login') >= 3
+
+
+def test_every_account_is_listed_with_what_is_last_known(tmp_path):
+    ratatoskr = FakeRatatoskr()
+    service = _service(tmp_path, ratatoskr=ratatoskr)
+    row = service.status()['accounts'][0]
+    assert (row['account_name'], row['balance'], row['affordable']) == ('mer_tols', None, None)   # never read
+    service._build_plan(None)
+    row = service.status()['accounts'][0]
+    assert (row['balance'], row['currency'], row['unit_price'], row['affordable']) == (759, 'USD', 199, 3)
+    service._buy_account(_order(service, quantity=2), dry_run=False)
+    row = service.status()['accounts'][0]
+    assert (row['balance'], row['storage_units']) == (361, 4)        # paid 398; 2 + 2 delivered
+    assert _service(tmp_path, ratatoskr=ratatoskr).status()['accounts'][0]['storage_units'] == 4   # kept on disk
+
+
+def test_the_purchase_reports_its_steps(tmp_path):
+    ratatoskr = FakeRatatoskr()
+    service = _service(tmp_path, ratatoskr=ratatoskr)
+    order = _order(service)
+    steps = []
+    original = service._step
+    service._step = lambda steamid, step: (steps.append(step), original(steamid, step))
+    service._buy_account(order, dry_run=False)
+    assert steps == ['wallet', 'login', 'opening', 'approving', 'delivering']
+
+
+def _inventory_page(units, others, more=False, last=None):
+    descriptions = [{'classid': '1', 'instanceid': '0', 'market_hash_name': 'Storage Unit', 'name': 'Storage Unit'},
+                    {'classid': '2', 'instanceid': '0', 'market_hash_name': 'Revolution Case'}]
+    assets = [{'classid': '1', 'instanceid': '0'}] * units + [{'classid': '2', 'instanceid': '0'}] * others
+    return {'success': 1, 'assets': assets, 'descriptions': descriptions,
+            **({'more_items': 1, 'last_assetid': last} if more else {})}
+
+
+def test_the_check_counts_storage_units_from_the_web_inventory(tmp_path):
+    http = FakeHttp()
+    http.inventory = (_inventory_page(2, 5, more=True, last='999'), _inventory_page(1, 3))
+    service = _service(tmp_path, http=http)
+    service._build_plan(None)
+    assert service.status()['accounts'][0]['storage_units'] == 3       # 2 on the first page, 1 on the second
+    http.inventory = (_inventory_page(0, 4), None)
+    service._build_plan(None)
+    assert service.status()['accounts'][0]['storage_units'] == 0       # 0 is shown as 0, not unknown
+
+
+def test_an_unreadable_inventory_keeps_the_last_known_count(tmp_path):
+    http = FakeHttp()
+    http.inventory = (_inventory_page(4, 0), None)
+    service = _service(tmp_path, http=http)
+    service._build_plan(None)
+    http.inventory = ({'success': 0}, None)
+    service._build_plan(None)
+    assert service.status()['accounts'][0]['storage_units'] == 4
+
+
+def _timing_out_finalize(ratatoskr, answers):
+    original = ratatoskr.store_purchase_finalize
+
+    def finalize(steamid, transaction_id):
+        if answers:
+            ratatoskr.calls.append(('finalize', transaction_id))
+            return answers.pop(0)
+        return original(steamid, transaction_id)
+    ratatoskr.store_purchase_finalize = finalize
+
+
+def test_a_timed_out_session_the_shop_did_not_open_is_never_logged_out(tmp_path):
+    ratatoskr = FakeRatatoskr()
+    service = _service(tmp_path, ratatoskr=ratatoskr)
+    order = _order(service)
+    ratatoskr.calls.clear()
+    ratatoskr.connected = True                       # the Ratatoskr page holds the session
+    _timing_out_finalize(ratatoskr, [{'error': 'The Game Coordinator did not answer in time'}])
+    result = service._buy_account(order, dry_run=False)
+    assert 'disconnect' not in ratatoskr.calls and 'did not open' in result['error']
+    assert 'MAY BE PAID' in result['error']
+
+
+def test_a_timed_out_session_is_not_logged_out_during_a_move(tmp_path):
+    ratatoskr = FakeRatatoskr()
+    service = _service(tmp_path, ratatoskr=ratatoskr)
+    order = _order(service)
+    ratatoskr.calls.clear()
+    _timing_out_finalize(ratatoskr, [{'error': 'The Game Coordinator did not answer in time'}])
+    original_status = ratatoskr.get_move_status
+    ratatoskr.get_move_status = lambda steamid: {'running': True, 'pending': 0}
+    result = service._buy_account(order, dry_run=False)
+    ratatoskr.get_move_status = original_status
+    assert 'items are moving' in result['error'] and 'disconnect' not in ratatoskr.calls
+
+
+def test_a_failed_count_keeps_the_wallet_row_buyable(tmp_path):
+    http = FakeHttp()
+    http.inventory = (_inventory_page(1, 0), None)
+    service = _service(tmp_path, http=http)
+    original = service._count_storage_units
+    service._count_storage_units = lambda steamid, cookies: (_ for _ in ()).throw(shop.ShopError('HTTP 429'))
+    service._build_plan(None)
+    row = service.status()['plan']['accounts'][0]
+    assert row['status'] == 'buy' and row['error'] is None
+    service._count_storage_units = original
+
+
+def test_jobs_report_their_server_start_time(tmp_path):
+    service = _service(tmp_path)
+    answer = service.start_plan()
+    assert answer['started'] and answer['kind'] == 'plan' and answer['started_at'] > 0

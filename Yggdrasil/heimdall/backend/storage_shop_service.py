@@ -46,6 +46,7 @@ from html.parser import HTMLParser
 
 import requests
 
+import community_pacer
 from jsonio import atomic_write_json, read_json
 from store_purchase_service import CURRENCY_CODES, to_usd
 
@@ -55,6 +56,10 @@ STATE_PATH = 'cache/storage_shop.json'
 APPROVAL_PAGE_PATH = 'cache/storage_shop_approval_page.html'
 USER_AGENT = 'Mozilla/5.0 (Heimdall Ratatoskr storage shop)'
 MARKET_URL = 'https://steamcommunity.com/market/'
+# The Counter-Strike 2 inventory lists every Storage Unit (empty ones too) without a login.
+INVENTORY_URL = 'https://steamcommunity.com/inventory/{steamid}/730/2'
+INVENTORY_PAGE = 2000
+INVENTORY_PAGES_MAX = 10
 APPROVAL_URL = 'https://checkout.steampowered.com/checkout/approvetxn/{transaction_id}/'
 HTTP_TIMEOUT_SECONDS = 30
 
@@ -87,6 +92,8 @@ GAME_STORE_CURRENCIES = {
     'UYU': 40, 'KZT': 41, 'BYN': 42,
 }
 GAME_COORDINATOR_INVALID_PARAMETER = 8
+# Ratatoskr's errors after a store request timed out (that session's store is then closed).
+STORE_CLOSED_ERRORS = ('did not answer in time', 'log in again')
 # Currencies Steam prints without decimals ("₩ 2,670", "¥ 310", "Rp 34 299").
 WHOLE_UNIT_CURRENCIES = {'JPY', 'KRW', 'IDR', 'VND', 'CLP', 'COP', 'KZT', 'CRC', 'UYU', 'TWD', 'UAH', 'INR'}
 
@@ -323,7 +330,15 @@ class StorageShopService:
         saved = read_json(state_path, default={}) or {}
         self._plan = saved.get('plan')
         self._prices = saved.get('prices') or {}      # {'prices': {ISO: minor}, 'version', 'fetched_at'}
+        # Last known per account (the page lists every account without reading Steam):
+        # {steamid: {currency_id, balance, checked_at, storage_units, storage_units_at}}
+        self._known = saved.get('known') or {}
         self._history = list(saved.get('history') or [])
+        for entry in self._history:      # the purchase log knows some Storage Unit counts already
+            count = entry.get('storage_units_after') if entry.get('paid') else entry.get('storage_units_before')
+            known = self._known.setdefault(str(entry.get('steamid')), {})
+            if count is not None and (entry.get('at') or 0) >= (known.get('storage_units_at') or 0):
+                known.update(storage_units=count, storage_units_at=entry.get('at'))
         for entry in self._history:      # a reload killed the job mid-purchase
             if entry.get('state') == 'in progress':
                 entry['state'] = 'done'
@@ -331,13 +346,14 @@ class StorageShopService:
                                   + (' after the approval was sent — it MAY BE PAID: check the account'
                                      if entry.get('payment_attempted') else ' before approving'))
         self._job = {'running': False, 'kind': None, 'done': 0, 'total': 0, 'phase': None,
-                     'error': None, 'started_at': None, 'finished_at': None, 'dry_run': False}
+                     'error': None, 'started_at': None, 'finished_at': None, 'dry_run': False,
+                     'account': None, 'step': None}
 
     # ---- plumbing ------------------------------------------------------------------------------
 
     def _save(self):
         with self._lock:
-            snapshot = json.loads(json.dumps({'plan': self._plan, 'prices': self._prices,
+            snapshot = json.loads(json.dumps({'plan': self._plan, 'prices': self._prices, 'known': self._known,
                                               'history': self._history[-HISTORY_CAP:]}))
         try:
             atomic_write_json(self.state_path, snapshot)
@@ -345,7 +361,10 @@ class StorageShopService:
             log.error('[STORAGE-SHOP] could not save %s: %s', self.state_path, e)
 
     def _pace(self, host):
-        gap = COMMUNITY_GAP_SECONDS if host == 'community' else STEAM_GAP_SECONDS
+        if host == 'community':        # one gap shared with the Market sellers (same address)
+            community_pacer.pace(self._sleep, COMMUNITY_GAP_SECONDS)
+            return
+        gap = STEAM_GAP_SECONDS
         wait = gap - (time.time() - self._last_call[host])
         if wait > 0:
             self._sleep(wait)
@@ -384,6 +403,27 @@ class StorageShopService:
         info = json.loads(match.group(1))
         return int(info.get('wallet_currency') or 0), int(info.get('wallet_balance') or 0)
 
+    def _count_storage_units(self, steamid, cookies):
+        """How many Storage Units the account holds, from its Counter-Strike 2 web inventory
+        (a renamed one keeps the market name "Storage Unit"); None when it cannot be read."""
+        count, start = 0, None
+        for _ in range(INVENTORY_PAGES_MAX):
+            params = {'l': 'english', 'count': INVENTORY_PAGE, **({'start_assetid': start} if start else {})}
+            response = self._get(INVENTORY_URL.format(steamid=steamid), host='community', cookies=cookies, params=params)
+            if not response.ok:
+                return None
+            data = response.json() or {}
+            if not data.get('success', 1):
+                return None
+            names = {(d.get('classid'), d.get('instanceid')): d.get('market_hash_name')
+                     for d in data.get('descriptions') or []}
+            count += sum(1 for asset in data.get('assets') or []
+                         if names.get((asset.get('classid'), asset.get('instanceid'))) == 'Storage Unit')
+            start = data.get('last_assetid')
+            if not data.get('more_items') or not start:
+                return count
+        return None          # more pages than read: no partial count
+
     def _accounts(self):
         countries = self.card_deals.account_countries() if self.card_deals else {}
         rows = []
@@ -398,6 +438,14 @@ class StorageShopService:
         except Exception:
             return {}
 
+    def _remember(self, steamid, **fields):
+        with self._lock:
+            self._known.setdefault(str(steamid), {}).update(fields)
+
+    def _step(self, steamid, step):
+        """The running purchase's step, for the page's progress view."""
+        self._set_job(account=str(steamid), step=step)
+
     def _set_job(self, **fields):
         with self._lock:
             self._job.update(fields)
@@ -406,7 +454,7 @@ class StorageShopService:
         if not self._job_lock.acquire(blocking=False):
             return {'started': False, 'error': f'a {self._job.get("kind")} is already running'}
         self._set_job(running=True, kind=kind, done=0, total=0, phase='starting', error=None,
-                      started_at=time.time(), finished_at=None, dry_run=dry_run)
+                      started_at=time.time(), finished_at=None, dry_run=dry_run, account=None, step=None)
 
         def run():
             try:
@@ -415,10 +463,11 @@ class StorageShopService:
                 log.exception('[STORAGE-SHOP] %s failed', kind)
                 self._set_job(error=str(e))
             finally:
-                self._set_job(running=False, phase=None, finished_at=time.time())
+                self._set_job(running=False, phase=None, finished_at=time.time(), account=None, step=None)
                 self._job_lock.release()
         threading.Thread(target=run, daemon=True, name=f'storage-shop-{kind}').start()
-        return {'started': True}
+        # The page follows this job by its server start time (never the browser's clock).
+        return {'started': True, 'started_at': self._job['started_at'], 'kind': kind}
 
     # ---- Ratatoskr sessions ------------------------------------------------------------------
 
@@ -501,9 +550,19 @@ class StorageShopService:
             account = {'steamid': steamid, 'account_name': name, 'country': country,
                        'currency_id': None, 'balance': None, 'error': None}
             try:
-                account['currency_id'], account['balance'] = self._wallet(self._cookies(steamid))
+                cookies = self._cookies(steamid)
+                account['currency_id'], account['balance'] = self._wallet(cookies)
+                self._remember(steamid, currency_id=account['currency_id'], balance=account['balance'],
+                               checked_at=time.time())
             except Exception as e:
                 account['error'] = str(e)
+            if not account['error']:
+                try:        # a count that fails (HTTP 429 …) keeps the last one; the wallet row stays good
+                    units = self._count_storage_units(steamid, cookies)
+                    if units is not None:
+                        self._remember(steamid, storage_units=units, storage_units_at=time.time())
+                except Exception as e:
+                    log.info('[STORAGE-SHOP] could not count the Storage Units of %s: %s', name, e)
             rows.append(plan_account(account, prices, rates))
             self._set_job(done=index + 2)
         with self._lock:
@@ -588,16 +647,21 @@ class StorageShopService:
         self._record(result)
         transaction_id, opened = None, False
         try:
+            self._step(steamid, 'wallet')
             cookies = self._cookies(steamid)
             currency_id, balance = self._wallet(cookies)
+            self._remember(steamid, currency_id=currency_id, balance=balance, checked_at=time.time())
             if currency_id != order['currency_id']:
                 raise ShopError('the wallet currency changed since the plan: not bought')
             if balance < expected:
                 raise ShopError(f'the wallet holds {balance}, {quantity} Storage Units cost {expected}: not bought')
+            self._step(steamid, 'login')
             opened = self._session(steamid)
             prices, store_answer = self._read_prices(steamid)
             before = store_answer.get('storage_units')
             result['storage_units_before'] = before
+            if before is not None:
+                self._remember(steamid, storage_units=before, storage_units_at=time.time())
             if prices.get(order['currency']) != unit_price:
                 raise ShopError(f'the game store price is now {prices.get(order["currency"])}, planned {unit_price}: not bought')
             # The store country first: Steam's checkout authorizes the transaction in it (seen
@@ -606,6 +670,7 @@ class StorageShopService:
             # Then the country Steam reports for the login; a refused open opens nothing.
             countries = [c for c in dict.fromkeys([(order.get('country') or '').upper(),
                                                    (store_answer.get('account_country') or '').upper()]) if len(c) == 2]
+            self._step(steamid, 'opening')
             answer = {}
             for country in countries:
                 answer = self.ratatoskr.store_purchase_init(steamid, country, GAME_STORE_CURRENCIES[order['currency']],
@@ -626,6 +691,7 @@ class StorageShopService:
             steam_transaction_id = check_auth_request(message, transaction_id, quantity, expected, currency_id)
             approval_url = APPROVAL_URL.format(transaction_id=steam_transaction_id)
             result['steam_transaction_id'] = steam_transaction_id
+            self._step(steamid, 'approving')
             self._record(result)
             client = self._client(cookies)
             response = self._get(approval_url, client=client, cookies=cookies, params={'returnurl': 'steam'})
@@ -664,6 +730,7 @@ class StorageShopService:
                                          'location': response.headers.get('Location') if response.headers else None,
                                          'body': (response.text or '')[:300]}
             self._record(result)
+            self._step(steamid, 'delivering')
             finalized, opened = self._finalize(steamid, approved_id, opened)
             if finalized.get('result') != GAME_COORDINATOR_OK:
                 raise ShopError(f'the game store did not deliver (result {finalized.get("error") or finalized.get("result")}; '
@@ -679,6 +746,9 @@ class StorageShopService:
                 after = (self.ratatoskr.store_user_data(steamid) or {}).get('storage_units')
             result['storage_units_after'] = after
             result['ok'] = True
+            # Paid: the wallet is lower by the total (re-read on the next check).
+            self._remember(steamid, balance=balance - expected, checked_at=time.time(),
+                           **({'storage_units': after, 'storage_units_at': time.time()} if after is not None else {}))
             if len(result['item_ids']) != quantity:
                 result['error'] = f'paid; the game store answered with {len(result["item_ids"])} item ids for {quantity}'
             elif before is not None and (after is None or after < before + quantity):
@@ -710,6 +780,18 @@ class StorageShopService:
             if attempt:
                 self._sleep(FINALIZE_GAP_SECONDS)
             if finalized.get('error'):
+                # Ratatoskr closes a session's store after a timeout (a late answer could be
+                # taken for another request): only a fresh login opens it again. Only a
+                # session the shop opened itself is logged out for that, never during a move.
+                if any(text in str(finalized['error']) for text in STORE_CLOSED_ERRORS):
+                    if not opened:
+                        raise ShopError('the delivery timed out on a Ratatoskr session the shop did not open: '
+                                        'disconnect the account in Ratatoskr, then press Deliver again')
+                    moves = self.ratatoskr.get_move_status(steamid) or {}
+                    if moves.get('running') or moves.get('pending'):
+                        raise ShopError('the delivery timed out while items are moving on the account: '
+                                        'press Deliver again when the move is done')
+                    self.ratatoskr.disconnect(steamid)
                 try:
                     opened = self._session(steamid) or opened
                 except Exception as e:
@@ -731,6 +813,7 @@ class StorageShopService:
 
     def _deliver_again(self, entry):
         self._set_job(total=1, phase=f'delivering again: {entry["account_name"]}')
+        self._step(entry['steamid'], 'delivering')
         opened = False
         try:
             finalized, opened = self._finalize(entry['steamid'], entry['transaction_id'], False)
@@ -738,6 +821,8 @@ class StorageShopService:
                 entry.update(paid=True, ok=True, item_ids=[str(i) for i in finalized.get('itemIds') or []],
                              storage_units_after=finalized.get('storageUnits'),
                              error='delivered on the second request')
+                if finalized.get('storageUnits') is not None:
+                    self._remember(entry['steamid'], storage_units=finalized['storageUnits'], storage_units_at=time.time())
                 self._mark_plan(entry['steamid'], 'bought')
             else:
                 entry['error'] = (f'delivering again failed (result {finalized.get("error") or finalized.get("result")})'
@@ -757,11 +842,30 @@ class StorageShopService:
 
     # ---- status --------------------------------------------------------------------------------
 
+    def accounts_view(self, known, prices, rates):
+        """Every account in the dashboard with what is last known about it (nothing is read
+        from Steam here): wallet, Storage Units, price and how many the wallet covers."""
+        rows = []
+        for steamid, name, country in self._accounts():
+            entry = known.get(steamid) or {}
+            currency = CURRENCY_CODES.get(entry.get('currency_id'))
+            price = prices.get(currency) if currency else None
+            balance = entry.get('balance')
+            rows.append({'steamid': steamid, 'account_name': name, 'country': country, 'currency': currency,
+                         'balance': balance, 'checked_at': entry.get('checked_at'),
+                         'storage_units': entry.get('storage_units'), 'storage_units_at': entry.get('storage_units_at'),
+                         'unit_price': price, 'usd_per_unit': to_usd(price, currency, rates) if price else None,
+                         'affordable': min(balance // price, MAX_QUANTITY_PER_ACCOUNT) if price and balance is not None else None,
+                         'sold_in_currency': bool(currency is None or (price and currency in GAME_STORE_CURRENCIES))})
+        return rows
+
     def status(self):
         with self._lock:
             state = json.loads(json.dumps({'job': self._job, 'plan': self._plan, 'history': self._history,
-                                           'prices': self._prices}))
+                                           'prices': self._prices, 'known': self._known}))
+        accounts = self.accounts_view(state['known'], (state['prices'] or {}).get('prices') or {}, self._rates())
         return {'job': state['job'], 'plan': state['plan'], 'history': state['history'][-100:][::-1],
+                'accounts': accounts,
                 'statistics': shop_statistics(state['history']), 'price_sheet': state['prices'],
                 'plan_time_to_live_seconds': PLAN_TIME_TO_LIVE_SECONDS,
                 'max_quantity_per_account': MAX_QUANTITY_PER_ACCOUNT,

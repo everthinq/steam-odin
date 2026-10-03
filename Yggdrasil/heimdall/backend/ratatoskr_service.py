@@ -264,7 +264,8 @@ class RatatoskrService:
     def store_purchase_finalize(self, steam_id, transaction_id):
         """Deliver an approved transaction's Storage Units."""
         return self._store_call('POST', '/store/purchase/finalize',
-                                {"steamID": steam_id, "transactionId": str(transaction_id)})
+                                {"steamID": steam_id, "transactionId": str(transaction_id)},
+                                timeout=75)   # Ratatoskr waits up to 60 s for the delivery
 
     def store_purchase_cancel(self, steam_id, transaction_id):
         """Drop a transaction that was never approved."""

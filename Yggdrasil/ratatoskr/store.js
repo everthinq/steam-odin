@@ -10,7 +10,10 @@
 //                              their item ids.
 // StorePurchaseCancel drops a transaction that was never approved.
 //
-// One store request per session at a time; the answers are matched by message type.
+// One store request per session at a time. Each goes out as a Game Coordinator job (a
+// source job id), as Valve's client does (BYldSendMessageAndGetReply): Finalize is
+// answered only to a job (seen live: without one, no answer in 60 s). The answer comes
+// back to that job; a plain message of the reply type is still accepted.
 // `currency` is the game store's own 0-based ECurrency (USD 0, EUR 2, NOK 9, HKD 27 —
 // Valve's econ_store.h), not Steam's wallet currency code (USD 1): the wallet code
 // makes the Game Coordinator answer result 8, "invalid parameter".
@@ -31,11 +34,13 @@ SteamUser.prototype._handlerManager.add(CLIENT_MICRO_TRANSACTION_AUTH_REQUEST, f
 });
 const STORAGE_UNIT_DEFINITION_INDEX = 1201;
 const GAME_COORDINATOR_TIMEOUT_MS = 20000;
+// Finalize makes the Game Coordinator charge the wallet through Steam: slower.
+const FINALIZE_TIMEOUT_MS = 60000;
 
 const decode = (proto, payload) => proto.toObject(proto.decode(payload), { longs: String, defaults: true, bytes: Buffer });
 
 // Ask the Game Coordinator and wait for its answer of `replyType`.
-const request = (session, sendType, sendProto, body, replyType, replyProto) => new Promise((resolve, reject) => {
+const request = (session, sendType, sendProto, body, replyType, replyProto, timeoutMs = GAME_COORDINATOR_TIMEOUT_MS) => new Promise((resolve, reject) => {
     const { user, csgo } = session;
     if (!csgo || !csgo.haveGCSession) {
         reject(new Error('No active Game Coordinator session'));
@@ -48,8 +53,15 @@ const request = (session, sendType, sendProto, body, replyType, replyProto) => n
         reject(new Error('An earlier store request timed out: log in again before buying'));
         return;
     }
+    const others = [];    // other Game Coordinator messages meanwhile, named in a timeout
+    let finished = false;
     const onMessage = (appId, messageType, payload) => {
-        if (appId !== COUNTER_STRIKE_APP_ID || messageType !== replyType) return;
+        if (finished || appId !== COUNTER_STRIKE_APP_ID) return;
+        if (messageType !== replyType) {
+            if (others.length < 20) others.push(messageType);
+            return;
+        }
+        finished = true;
         cleanup();
         try {
             resolve(decode(replyProto, payload));
@@ -58,19 +70,25 @@ const request = (session, sendType, sendProto, body, replyType, replyProto) => n
         }
     };
     const timer = setTimeout(() => {
+        finished = true;
         session.storeClosed = true;
         cleanup();
+        console.log(`[STORE] No answer of type ${replyType} in ${timeoutMs} ms; other Game Coordinator messages meanwhile: ${others.join(', ') || 'none'}`);
         reject(new Error('The Game Coordinator did not answer in time'));
-    }, GAME_COORDINATOR_TIMEOUT_MS);
+    }, timeoutMs);
     const cleanup = () => {
         clearTimeout(timer);
         user.removeListener('receivedFromGC', onMessage);
     };
     user.on('receivedFromGC', onMessage);
-    if (!csgo._send(sendType, sendProto, body)) {
+    if (!user.steamID) {
+        finished = true;
         cleanup();
         reject(new Error('Not logged into Steam'));
+        return;
     }
+    // The job's answer arrives here (steam-user routes it by job id, not as receivedFromGC).
+    user.sendToGC(COUNTER_STRIKE_APP_ID, sendType, {}, Buffer.from(sendProto.encode(body).finish()), onMessage);
 });
 
 // One store request at a time per session: two answers of the same type would mix.
@@ -126,7 +144,7 @@ const initPurchase = (session, { country, currency, quantity, unitPrice, itemDef
 
 const finalizePurchase = (session, transactionId) => serial(session, () => request(
     session, Language.StorePurchaseFinalize, Protos.CMsgGCStorePurchaseFinalize, { txn_id: String(transactionId) },
-    Language.StorePurchaseFinalizeResponse, Protos.CMsgGCStorePurchaseFinalizeResponse,
+    Language.StorePurchaseFinalizeResponse, Protos.CMsgGCStorePurchaseFinalizeResponse, FINALIZE_TIMEOUT_MS,
 ));
 
 const cancelPurchase = (session, transactionId) => serial(session, () => request(
