@@ -19345,7 +19345,7 @@
       "id": "ff52cedd2fdb",
       "name": "kit_bonillaqqq",
       "created_at": "2026-07-21T14:49:46.675531+00:00",
-      "updated_at": "2026-09-14T22:27:44.992406+00:00",
+      "updated_at": "2026-10-05T13:37:59.146808+00:00",
       "transactions": [
         {
           "id": "4fea706d173c",
@@ -19768,6 +19768,45 @@
           "fee_percent": 0.0,
           "is_arbitrage": false,
           "created_at": "2026-09-14T22:17:50.001237+00:00"
+        },
+        {
+          "id": "284a76f4c7f8",
+          "item_name": "M4A1-S | Wash me plz (Well-Worn)",
+          "type": "sell",
+          "qty": 10,
+          "price": 0.15,
+          "platform": "cs.money.trade",
+          "date": "2026-10-05",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": false,
+          "created_at": "2026-10-05T13:19:35.638361+00:00"
+        },
+        {
+          "id": "0cf5befd8018",
+          "item_name": "SCAR-20 | Assault (Field-Tested)",
+          "type": "buy",
+          "qty": 3,
+          "price": 0.4,
+          "platform": "cs.money.trade",
+          "date": "2026-10-05T14:00:00",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": true,
+          "created_at": "2026-10-05T13:37:28.358192+00:00"
+        },
+        {
+          "id": "221a3ee3574c",
+          "item_name": "SCAR-20 | Assault (Field-Tested)",
+          "type": "sell",
+          "qty": 3,
+          "price": 0.98,
+          "platform": "steam",
+          "date": "2026-10-05T14:00:00",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": true,
+          "created_at": "2026-10-05T13:37:53.303444+00:00"
         }
       ]
     },
