@@ -4,7 +4,7 @@
       "id": "fbf692611b3c",
       "name": "everthinklol",
       "created_at": "2026-07-21T13:40:18.177768+00:00",
-      "updated_at": "2026-10-01T13:27:05.978961+00:00",
+      "updated_at": "2026-10-06T11:46:15.061956+00:00",
       "transactions": [
         {
           "id": "3ea474874554",
@@ -10311,6 +10311,19 @@
           "fee_percent": 0.0,
           "is_arbitrage": true,
           "created_at": "2026-10-01T13:27:02.474080+00:00"
+        },
+        {
+          "id": "2ccf290cb316",
+          "item_name": "MAG-7 | Copper Coated (Minimal Wear)",
+          "type": "sell",
+          "qty": 1,
+          "price": 3.24,
+          "platform": "csfloat",
+          "date": "2026-10-06",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": false,
+          "created_at": "2026-10-06T11:46:15.061942+00:00"
         }
       ]
     },
