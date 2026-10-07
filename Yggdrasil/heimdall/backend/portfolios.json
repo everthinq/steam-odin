@@ -4,7 +4,7 @@
       "id": "fbf692611b3c",
       "name": "everthinklol",
       "created_at": "2026-07-21T13:40:18.177768+00:00",
-      "updated_at": "2026-10-06T11:46:15.061956+00:00",
+      "updated_at": "2026-10-07T06:55:30.818097+00:00",
       "transactions": [
         {
           "id": "3ea474874554",
@@ -10324,6 +10324,19 @@
           "fee_percent": 0.0,
           "is_arbitrage": false,
           "created_at": "2026-10-06T11:46:15.061942+00:00"
+        },
+        {
+          "id": "166f2bbc3c9d",
+          "item_name": "Sticker | Ancient Beast",
+          "type": "buy",
+          "qty": 2,
+          "price": 0.06,
+          "platform": "cs.money.trade",
+          "date": "2026-10-07",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": false,
+          "created_at": "2026-10-07T06:55:30.818074+00:00"
         }
       ]
     },
