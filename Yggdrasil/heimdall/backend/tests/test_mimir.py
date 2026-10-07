@@ -7,21 +7,21 @@ from storage import SecureStorage
 
 def test_parser_password_with_semicolon():
     rows, warnings = parse_credentials_text(
-        'hidey_spidey;BSLq=f%4%3zv;$a-;everthinklol0@gmail.com;irina@rambler.ru')
+        'semicolon_account;fake;pass-word;someone@example.com;comment@example.com')
     assert not warnings
     r = rows[0]
-    assert r['login'] == 'hidey_spidey'
-    assert r['password'] == 'BSLq=f%4%3zv;$a-'          # ';' inside password preserved
-    assert r['email'] == 'everthinklol0@gmail.com'
-    assert r['comment'] == 'irina@rambler.ru'           # trailing field kept as comment
+    assert r['login'] == 'semicolon_account'
+    assert r['password'] == 'fake;pass-word'          # ';' inside password preserved
+    assert r['email'] == 'someone@example.com'
+    assert r['comment'] == 'comment@example.com'           # trailing field kept as comment
 
 
 def test_parser_password_with_at_sign():
     # The password itself contains '@' — must NOT be mistaken for the email.
-    rows, _ = parse_credentials_text('arthur_maddox;7@1qvy-1D6|57_km;arthur@proton.me; ban?')
+    rows, _ = parse_credentials_text('at_sign_account;f@ke|pass-word;at@example.com; ban?')
     r = rows[0]
-    assert r['password'] == '7@1qvy-1D6|57_km'
-    assert r['email'] == 'arthur@proton.me'
+    assert r['password'] == 'f@ke|pass-word'
+    assert r['email'] == 'at@example.com'
     assert r['comment'] == 'ban?'
 
 
@@ -48,14 +48,14 @@ def vault(tmp_path):
 
 def test_add_get_update_delete(vault):
     m, _ = vault
-    rec = m.add(login='vincent_iles', password='pw', email='v@x.com', comment='hi')
-    assert m.get_by_login('VINCENT_ILES')['password'] == 'pw'   # case-insensitive
+    rec = m.add(login='account_login', password='pw', email='v@x.com', comment='hi')
+    assert m.get_by_login('ACCOUNT_LOGIN')['password'] == 'pw'   # case-insensitive
     with pytest.raises(ValueError):
-        m.add(login='vincent_iles', password='dup')             # unique login
+        m.add(login='account_login', password='dup')             # unique login
     m.update(rec['id'], {'password': 'newpw', 'comment': ''})
-    assert m.get_by_login('vincent_iles')['password'] == 'newpw'
+    assert m.get_by_login('account_login')['password'] == 'newpw'
     assert m.delete(rec['id']) is True
-    assert m.get_by_login('vincent_iles') is None
+    assert m.get_by_login('account_login') is None
 
 
 def test_import_upsert_preserves_nonimported_fields(vault):
@@ -71,12 +71,12 @@ def test_import_upsert_preserves_nonimported_fields(vault):
 
 def test_record_login_result_and_get(vault):
     m, _ = vault
-    rec = m.add(login='vincent_iles', password='pw')
+    rec = m.add(login='account_login', password='pw')
     assert m.get(rec['id'])['last_login_status'] is None
-    m.record_login_result('VINCENT_ILES', True)                 # case-insensitive
+    m.record_login_result('ACCOUNT_LOGIN', True)                 # case-insensitive
     got = m.get(rec['id'])
     assert got['last_login_status'] == 'ok' and got['last_login_at']
-    m.record_login_result('vincent_iles', False, 'bad password')
+    m.record_login_result('account_login', False, 'bad password')
     got = m.get(rec['id'])
     assert got['last_login_status'] == 'failed'
     assert got['last_login_error'] == 'bad password'
@@ -85,12 +85,12 @@ def test_record_login_result_and_get(vault):
 
 def test_export_roundtrips_through_import(vault):
     m, _ = vault
-    m.import_text('hidey_spidey;BSLq=f%4%3zv;$a-;e@x.com;note\nlonely;pw;a@b.com')
+    m.import_text('semicolon_account;fake;pass-word;e@x.com;note\nlonely;pw;a@b.com')
     text = m.export_text()
     # A fresh vault fed the export must reproduce the same passwords/emails.
     m2 = MimirService(m.storage.__class__(storage_dir=str(m.storage.storage_dir) + '_2'))
     m2.import_text(text)
-    assert m2.get_by_login('hidey_spidey')['password'] == 'BSLq=f%4%3zv;$a-'
+    assert m2.get_by_login('semicolon_account')['password'] == 'fake;pass-word'
     assert m2.get_by_login('lonely')['email'] == 'a@b.com'
 
 
@@ -116,7 +116,7 @@ ROUND_TRIP_RECORDS = [
     ('leading_semi', ';pw', '', 'x'),                    # starts with ';'
     ('spaces', '  pass word  ', '', ''),                 # spaces kept, not stripped
     ('spaces_email', ' pw ', 's@x.com', 'c'),
-    ('at_sign', '7@1qvy-1D6|57_km', 'arthur@proton.me', 'ban?'),
+    ('at_sign', 'f@ke|pass-word', 'at@example.com', 'ban?'),
     ('at_semi', 'x@y;z', '', 'c;d'),                     # '@' and ';' in password, ';' in comment
     ('email_only', 'pw', 'e@x.com', ''),
     ('bare', 'justapassword', '', ''),

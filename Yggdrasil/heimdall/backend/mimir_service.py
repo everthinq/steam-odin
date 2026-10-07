@@ -30,7 +30,7 @@ logger = logging.getLogger(__name__)
 
 # A field is treated as the email column only if the WHOLE field is a valid
 # address. This is what lets the parser survive passwords that contain '@'
-# (e.g. ``7@1qvy-1D6|57_km``): those are not full emails, so they stay password.
+# (e.g. ``f@ke|pass-word``): those are not full emails, so they stay password.
 _EMAIL_RE = re.compile(r'^[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}$')
 
 _VAULT_FILENAME = 'credentials.vault'

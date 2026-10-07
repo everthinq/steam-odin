@@ -585,7 +585,7 @@ const MimirVault = () => {
                             value={importText}
                             onChange={e => setImportText(e.target.value)}
                             rows={10}
-                            placeholder={'vincent_iles;SuMghnCkKEpHLf6b;irina@rambler.ru;spare gmail\n…'}
+                            placeholder={'account_login;not-a-real-password;comment@example.com;spare gmail\n…'}
                             className="w-full px-3 py-2 rounded-lg bg-black/40 border border-white/10 text-slate-200 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-cyan-500/50 custom-scrollbar"
                         />
                         {importResult && (
