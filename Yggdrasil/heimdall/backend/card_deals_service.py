@@ -424,6 +424,14 @@ def parse_badges_page(html):
     return drops, max(pages) if pages else 1
 
 
+def badges_page_owner(html):
+    """The SteamID64 a badges page was served to, or None when Steam served it
+    logged out (an expired session gets an anonymous page with no drop lines,
+    which would otherwise read as "no drops left")."""
+    found = re.search(r'g_steamID = "([^"]+)"', html or '')
+    return found.group(1) if found else None
+
+
 def parse_store_country(html):
     """The logged-in account's store country ('TR', 'MD', ...) from any store
     page's embedded config, or None."""
@@ -535,6 +543,7 @@ class CardDealsService:
         self._notify = notify
         self._cache_file = cache_file
         self._lock = threading.Lock()
+        self._save_lock = threading.Lock()   # one cache write at a time (scan thread + ASF's read_drops)
         self._last_call = {}
         self._cooling_until = {}       # host -> epoch until which it is skipped after 429s
         self._job = self._idle_job()
@@ -785,17 +794,45 @@ class CardDealsService:
         country = parse_store_country(self._fetch(STORE_ACCOUNT_URL, {'l': 'english'}, cookies, 'store'))
         userdata = json.loads(self._fetch(STORE_USERDATA_URL, None, cookies, 'store'))
         owned = sorted({str(app) for app in (userdata.get('rgOwnedApps') or [])})
+        return {'account_name': name, 'fetched_at': time.time(), 'country': country,
+                'owned': owned, 'drops': self._read_badges(steamid, cookies), 'error': None}
+
+    def _read_badges(self, steamid, cookies):
+        """{app_id: card drops left} (only games with drops) from every badges
+        page. Raises when a page was not served to this account (expired
+        session), so a logged-out page never counts as "no drops"."""
         drops = {}
         page, last_page = 1, 1
         while page <= min(last_page, _BADGE_MAX_PAGES):
             html = self._fetch(f'https://steamcommunity.com/profiles/{steamid}/badges/',
                                {'l': 'english', 'p': page}, cookies, 'community')
+            if badges_page_owner(html) != str(steamid):
+                raise ValueError('badges page served logged out (web session expired)')
             page_drops, last_page = parse_badges_page(html)
             drops.update(page_drops)
             page += 1
-        return {'account_name': name, 'fetched_at': time.time(), 'country': country,
-                'owned': owned, 'drops': {app: n for app, n in drops.items() if n > 0},
-                'error': None}
+        return {app: n for app, n in drops.items() if n > 0}
+
+    def read_drops(self, steamid):
+        """Card drops left on one account, read from its badges pages now, and
+        stored as Andvari's count. The ASF service calls it before switching a
+        bot off, so a mistaken "nothing to farm" never stops one with drops left.
+        Returns None when the pages could not be read."""
+        cookies = self.steam.web_session_cookie_for(steamid)
+        if not cookies:
+            return None
+        try:
+            drops = self._read_badges(steamid, cookies)
+        except Exception as e:
+            logger.warning('[CARD DEALS] badges of %s: %s', steamid, e)
+            return None
+        with self._lock:
+            entry = self._state['accounts'].get(str(steamid))
+            if entry is not None:
+                entry['drops'] = drops
+                entry['drops_fetched_at'] = time.time()
+        self._save_cache()
+        return sum(drops.values())
 
     def account_countries(self):
         """{steamid: store country} from the last account refresh (Andvari "Buy games")."""
@@ -814,7 +851,8 @@ class CardDealsService:
         (the ASF service switches farming bots on from it)."""
         with self._lock:
             accounts = dict(self._state.get('accounts') or {})
-        return {steamid: (sum((entry.get('drops') or {}).values()), entry.get('fetched_at') or 0)
+        return {steamid: (sum((entry.get('drops') or {}).values()),
+                          max(entry.get('fetched_at') or 0, entry.get('drops_fetched_at') or 0))
                 for steamid, entry in accounts.items()}
 
     @staticmethod
@@ -1660,10 +1698,11 @@ class CardDealsService:
         with self._lock:
             snapshot = json.dumps(self._state)
         try:
-            os.makedirs(os.path.dirname(self._cache_file), exist_ok=True)
-            temporary = f'{self._cache_file}.tmp'
-            with gzip.open(temporary, 'wt', encoding='utf-8') as f:
-                f.write(snapshot)
-            os.replace(temporary, self._cache_file)
+            with self._save_lock:
+                os.makedirs(os.path.dirname(self._cache_file), exist_ok=True)
+                temporary = f'{self._cache_file}.tmp'
+                with gzip.open(temporary, 'wt', encoding='utf-8') as f:
+                    f.write(snapshot)
+                os.replace(temporary, self._cache_file)
         except Exception as e:
             logger.warning('[CARD DEALS] could not save cache: %s', e)

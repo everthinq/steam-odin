@@ -28,9 +28,17 @@ work — ASF is farming it, Andvari's badges scan shows drops left, or you press
 switches it **off** once ASF has been logged in for 5 minutes and found nothing.
 The login token is kept, so switching back on needs no password.
 
-A bot that loses its Steam connection while farming reports nothing until it is
-back, so Heimdall keeps it **on** for up to 6 hours after ASF last showed cards
-to farm on it, instead of reading that silence as "nothing to farm".
+A bot is never switched off with drops left:
+
+- **Disconnected mid-farm.** A bot that loses its Steam connection reports
+  nothing until it is back. Once ASF has shown cards to farm on it, it stays
+  **on** (through outages and backend reloads) until an empty check is confirmed.
+- **ASF says "nothing to farm".** Before switching a bot off, Heimdall reads the
+  account's own badges pages (Andvari). Drops left: the bot stays on and ASF is
+  restarted for it to look again. Pages unreadable (network down, session
+  expired): a bot with unfinished work stays on and is looked at again every
+  15 minutes. Only "0 drops" on a page served to that account switches it off.
+  (A logged-out badges page has no drop lines, so it is never read as 0.)
 
 **Bought a game?** Andvari → Card farming → press ⚡ (Farm now) on that account:
 ASF logs in within a minute, finds the new drops and farms them. (Otherwise the

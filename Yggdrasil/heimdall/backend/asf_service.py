@@ -94,7 +94,7 @@ REQUEST_TIMEOUT_SECONDS = 15
 MAX_RUNNING_BOTS = 20
 EMPTY_CHECK_SECONDS = 5 * 60     # connected this long with nothing queued = ASF checked the badges
 FARM_NOW_SECONDS = 60 * 60       # a "farm now" request keeps a bot on at most this long
-RECONNECT_GRACE_SECONDS = 6 * 60 * 60   # a bot seen with cards to farm stays on this long while it reconnects
+VERIFY_RETRY_SECONDS = 15 * 60   # an unconfirmed "nothing to farm" is looked at again after this long
 ACCOUNTS_CACHE_SECONDS = 5 * 60  # status() reuses the account list (reading it decrypts every maFile)
 COUNTER_STRIKE_2 = 730           # blacklisted in ASF.json by scripts/asf_setup.py
 TEAM_FORTRESS_2 = 440            # free to play: ASF adds the license, then plays it for item drops
@@ -207,8 +207,10 @@ class AsfService:
         # switches the bot back on. (Older saves hold a bare epoch: {bot_name: epoch}.)
         self._checked_empty = dict(saved.get('checked_empty') or {})
         # {bot_name: epoch} — when ASF last reported cards to farm for a connected bot.
-        # A disconnected bot reports nothing, so this keeps it on while it reconnects.
+        # Work seen after the last confirmed empty check is unfinished: the bot stays
+        # on (also while disconnected) until a check confirms it is empty.
         self._last_work = dict(saved.get('last_work') or {})
+        self._verify_after = {}          # {bot_name: epoch} — next badges check of a doubtful "empty"
         # Why ASF's global config is unsafe (None while it is safe): every bot stays off
         self._global_config_unsafe = saved.get('global_config_unsafe')
         # Team Fortress 2 mode: {active, names (None = every account), since, reason,
@@ -521,7 +523,18 @@ class AsfService:
                 continue
             if now - since >= EMPTY_CHECK_SECONDS:
                 steamid = (accounts.get(name) or {}).get('steamid')
-                left = drops.get(steamid, (0, 0))[0] if steamid else 0
+                if now < self._verify_after.get(name, 0):
+                    continue                 # badges read at most every VERIFY_RETRY_SECONDS
+                self._verify_after[name] = now + VERIFY_RETRY_SECONDS
+                read = self._read_drops(name, steamid)
+                if read:                     # drops left: ASF missed them, make it look again
+                    self._recheck(name, read)
+                    continue
+                if read is None and self._unfinished(name):
+                    continue                 # unreadable: never switch off unfinished work
+                # Confirmed empty, or unreadable for a bot with no unfinished work
+                # (then Andvari's count is recorded, as before, so it does not flap).
+                left = 0 if read == 0 else (drops.get(steamid, (0, 0))[0] if steamid else 0)
                 with self._lock:
                     previous = self._checked_empty.get(name)
                     self._checked_empty[name] = {'at': now, 'drops': left}
@@ -532,6 +545,42 @@ class AsfService:
                                    'drops left; keeping it off until that count changes', name, left)
         if changed:
             self._persist()
+
+    def _read_drops(self, name, steamid):
+        """ASF says a bot has nothing to farm: its card drops left, read from its
+        badges pages now (Andvari), or None when they could not be read."""
+        reader = getattr(self.card_deals, 'read_drops', None)
+        if not (reader and steamid):
+            return None
+        try:
+            return reader(steamid)
+        except Exception as e:
+            logger.warning('[ASF] could not read the badges of %s: %s', name, e)
+            return None
+
+    def _unfinished(self, name, last_work=None, checked=None):
+        """Whether ASF showed cards to farm on this bot after its last confirmed
+        empty check."""
+        with self._lock:
+            work = (last_work if last_work is not None else self._last_work).get(name)
+            check = (checked if checked is not None else self._checked_empty).get(name)
+        if not work:
+            return False
+        checked_at = check.get('at') if isinstance(check, dict) else check
+        return work > (checked_at or 0)
+
+    def _recheck(self, name, left):
+        """ASF found nothing, the badges show *left* drops: restart the bot so
+        ASF reads its badges again."""
+        logger.warning('[ASF] %s: ASF found nothing to farm, but its badges show %s card drops '
+                       'left; restarting it to look again', name, left)
+        for action in ('Stop', 'Start'):
+            try:
+                self._call('POST', f'/Api/Bot/{name}/{action}')
+            except AsfError as e:
+                logger.warning('[ASF] could not %s %s: %s', action.lower(), name, e)
+                return
+        self._connected_since.pop(name, None)
 
     @staticmethod
     def _drops_changed_since_check(check, left, fetched_at):
@@ -560,9 +609,9 @@ class AsfService:
             if view and view['enabled'] and (view['now_farming'] or view['games_to_farm']
                                              or view['paused'] or name in paused):
                 ranked.append((0, -view['cards_remaining'], name))
-            elif (view and view['enabled'] and not view['connected']
-                  and now - (last_work.get(name) or 0) < RECONNECT_GRACE_SECONDS):
-                # Disconnected mid-farm: ASF reports nothing until it is back, so keep it on.
+            elif view and view['enabled'] and self._unfinished(name, last_work, checked):
+                # Cards seen and no confirmed empty check since (disconnected, or an
+                # unconfirmed "nothing"): ASF reports nothing until it is back, so keep it on.
                 ranked.append((0, 0, name))
             elif now - (requests_.get(name) or 0) < FARM_NOW_SECONDS:
                 ranked.append((1, 0, name))
@@ -897,6 +946,9 @@ class AsfService:
         name = self._name_for_steamid(steamid)
         with self._lock:
             self._farm_requests[name] = time.time()
+            # Counts as unfinished work: switched off only once its badges confirm 0
+            # (a game bought during an outage is never left unfarmed).
+            self._last_work[name] = time.time()
             self._checked_empty.pop(name, None)
         self._persist()
         return {'success': True}

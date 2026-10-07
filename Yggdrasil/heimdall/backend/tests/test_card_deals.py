@@ -14,7 +14,7 @@ import card_deals_service as deals_module
 from card_deals_service import (
     buy_order_ceiling_cents,
     CardDealsService, RateLimited, capped_card_prices, card_drops, clean_config, fill_net_cents,
-    parse_badges_page, parse_orderbook, parse_store_items,
+    badges_page_owner, parse_badges_page, parse_orderbook, parse_store_items,
     parse_appdetails_prices, parse_card_exchange_feed, parse_market_cards, parse_store_country,
     parse_store_search, seller_receives_cents, store_price_step, to_usd_cents, undercut_net_cents,
 )
@@ -391,6 +391,7 @@ class FakeSteamWeb:
         self.rates_down = rates_down
         self.currency_down = currency_down
         self.orderbook_rate_limited = orderbook_rate_limited
+        self.logged_out_badges = set()       # accounts whose badges pages come back logged out
 
     def __call__(self, url, params, cookies, host):
         params = dict(params or {})
@@ -407,8 +408,11 @@ class FakeSteamWeb:
         if url == deals_module.STORE_USERDATA_URL:
             return json.dumps({'rgOwnedApps': OWNED[steamid]})
         if '/badges/' in url:
-            app_id, drops = DROPS[url.split('/profiles/')[1].split('/')[0]]
-            return badge_row(app_id, drops)
+            owner = url.split('/profiles/')[1].split('/')[0]
+            app_id, drops = DROPS[owner]
+            if owner in self.logged_out_badges:          # expired session: Steam's anonymous page
+                return '<script>g_steamID = false;</script>' + badge_row(app_id, drops).split('<div class="badge_title')[0]
+            return f'<script>g_steamID = "{owner}";</script>' + badge_row(app_id, drops)
         if url == deals_module.STORE_SEARCH_URL:
             return self._store(params)
         if url == deals_module.STORE_APPDETAILS_URL:
@@ -1180,6 +1184,38 @@ def test_account_drops_sums_each_accounts_remaining_drops(tmp_path):
                                   '2': {'drops': {}, 'fetched_at': 200.0},
                                   '3': {'error': 'no fresh web session'}}
     assert service.account_drops() == {'1': (5, 100.0), '2': (0, 200.0), '3': (0, 0)}
+
+
+def test_badges_page_owner_tells_a_logged_out_page_apart():
+    assert badges_page_owner('<script>g_steamID = "76561198000000042";</script>') == '76561198000000042'
+    assert badges_page_owner('<script>g_steamID = false;</script>') is None      # Steam's anonymous page
+    assert badges_page_owner('') is None
+
+
+def test_logged_out_badges_page_never_reads_as_no_drops(tmp_path):
+    web = FakeSteamWeb()
+    service, _ = make_service(tmp_path, web=web)
+    service._refresh_accounts(force=True)
+    assert service.account_drops()['A'][0] == 2
+    web.logged_out_badges.add('A')                       # the session expired since
+    service._refresh_accounts(force=True)
+    entry = service._state['accounts']['A']
+    assert 'logged out' in entry['error']
+    assert service.account_drops()['A'][0] == 2          # the last good count is kept, not 0
+    assert service.read_drops('A') is None               # and a single read says "unknown"
+
+
+def test_read_drops_reads_one_account_and_stores_the_count(tmp_path, monkeypatch):
+    web = FakeSteamWeb()
+    service, _ = make_service(tmp_path, web=web)
+    service._state['accounts']['A'] = {'drops': {'200': 5}, 'fetched_at': 100.0}
+    monkeypatch.setattr(deals_module.time, 'time', lambda: 5_000.0)
+    assert service.read_drops('A') == 2
+    assert [c[0] for c in web.calls] == ['https://steamcommunity.com/profiles/A/badges/']
+    assert service.account_drops()['A'] == (2, 5_000.0)  # newer than the full refresh
+    assert service._state['accounts']['A']['fetched_at'] == 100.0   # owned games keep their age
+    assert service.read_drops('B') == 0                  # a real page with no drops left
+    assert service.read_drops('Z') is None               # no web session: unknown, never 0
 
 
 # ---- buy-order coverage: ceiling, early drop-out, queue order, buy-order-only check ----

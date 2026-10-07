@@ -7,7 +7,7 @@ import pytest
 import asf_service
 from asf_service import (AsfService, AsfError, HARDENED_BOT_CONFIG, INPUT_NONE, INPUT_PASSWORD,
                          INPUT_TWO_FACTOR, INPUT_STEAM_GUARD, MAX_LOGIN_ATTEMPTS, LOGIN_RETRY_SECONDS,
-                         EMPTY_CHECK_SECONDS, MAX_RUNNING_BOTS, RECONNECT_GRACE_SECONDS, bot_view, farming_state, parse_time_span)
+                         EMPTY_CHECK_SECONDS, MAX_RUNNING_BOTS, VERIFY_RETRY_SECONDS, bot_view, farming_state, parse_time_span)
 
 PASSWORD = 'hunter2-secret'
 SHARED_SECRET = 'c2hhcmVkLXNlY3JldA=='
@@ -44,13 +44,28 @@ class FakeSteam:
 
 
 class FakeCardDeals:
-    """Andvari's per-account drop counts: {steamid: (drops left, fetched_at)}."""
+    """Andvari's per-account drop counts: {steamid: (drops left, fetched_at)}.
+    *badges* answers read_drops: {steamid: drops | None (unreadable) | Exception};
+    without it (older tests) there is no badges reader at all."""
 
-    def __init__(self, drops=None):
+    def __init__(self, drops=None, badges=None):
         self.drops = drops or {}
+        self.badges = badges
+        self.reads = []
+        if badges is None:
+            self.read_drops = None
 
     def account_drops(self):
         return dict(self.drops)
+
+    def read_drops(self, steamid):
+        self.reads.append(steamid)
+        answer = self.badges.get(steamid)
+        if isinstance(answer, Exception):
+            raise answer
+        if answer is not None:
+            self.drops[steamid] = (answer, FRESH)        # the real reader stores the count
+        return answer
 
 
 FRESH = 1e12                                         # an Andvari refresh newer than any check
@@ -254,20 +269,124 @@ def test_idle_bot_switches_off_after_asf_checked(world, monkeypatch):
     assert service.status()['accounts'][1]['state'] == 'farming'     # bravo keeps farming
 
 
-def test_bot_disconnected_mid_farm_stays_on_while_it_reconnects(world, monkeypatch):
-    service, fake, *_ = world
-    service.card_deals = FakeCardDeals({})          # Andvari's scan predates the purchase: no drops known
+ALPHA = '76561198000000001'
+
+
+def farming_then(fake, service, clock, bot):
+    """alpha seen farming for one tick, then ASF reports *bot* for it."""
     fake.bots = {'alpha': make_bot(farming=True, to_farm=(10,)), 'bravo': make_bot(farming=True, to_farm=(10,))}
+    service.tick()
+    fake.bots['alpha'] = bot
+    clock[0] += 60
+
+
+def test_incident_replay_disconnected_mid_farm_stays_on_through_a_long_outage(world, monkeypatch):
+    """2026-10-07: Steam dropped every bot mid-farm; Andvari's count predated the
+    purchases (0), so the loop switched three bots with drops left off."""
+    service, fake, *_ = world
+    service.card_deals = FakeCardDeals({}, badges={})          # badges unreadable during the outage
     clock = [10_000.0]
     monkeypatch.setattr(asf_service.time, 'time', lambda: clock[0])
-    service.tick()                                   # seen farming
-    fake.bots['alpha'] = make_bot(connected=False)   # Steam dropped the connection: ASF reports nothing
-    clock[0] += 60 * 60
+    farming_then(fake, service, clock, make_bot(connected=False))
+    for _ in range(48):                                         # two days of ticks, every hour
+        service.tick()
+        clock[0] += 60 * 60
+    assert enabled_changes(fake) == []
+    assert service.status()['accounts'][0]['state'] != 'off'
+    fake.bots['alpha'] = make_bot(farming=True, to_farm=(10,))  # Steam is back: ASF farms on
     service.tick()
-    assert enabled_changes(fake) == []               # kept on while ASF reconnects
-    assert service.status()['accounts'][1]['state'] == 'farming'
-    clock[0] += RECONNECT_GRACE_SECONDS
-    service.tick()                                   # never came back within the grace: off
+    assert enabled_changes(fake) == []
+
+
+def test_unfinished_work_survives_a_backend_reload_mid_outage(world, tmp_path, monkeypatch):
+    service, fake, steam, ratatoskr, sleeps = world
+    service.card_deals = FakeCardDeals({}, badges={})
+    clock = [10_000.0]
+    monkeypatch.setattr(asf_service.time, 'time', lambda: clock[0])
+    farming_then(fake, service, clock, make_bot(connected=False))
+    reloaded = AsfService(steam, ratatoskr, base_url='http://asf:1242', ipc_password='ipc',
+                          state_path=str(tmp_path / 'asf_state.json'), sleep=sleeps.append)
+    reloaded._call = fake
+    reloaded.card_deals = FakeCardDeals({}, badges={})
+    reloaded._team_fortress['licensed'] = ['alpha', 'bravo']
+    clock[0] += 10 * 60 * 60
+    reloaded.tick()
+    assert enabled_changes(fake) == []
+
+
+def test_asf_saying_nothing_is_checked_against_the_badges_before_switching_off(world, monkeypatch):
+    service, fake, *_ = world
+    service.card_deals = FakeCardDeals({}, badges={ALPHA: 4})   # ASF wrong: 4 drops left
+    clock = [10_000.0]
+    monkeypatch.setattr(asf_service.time, 'time', lambda: clock[0])
+    farming_then(fake, service, clock, make_bot())              # connected, "nothing to farm"
+    clock[0] += EMPTY_CHECK_SECONDS + 1
+    service.tick()
+    assert enabled_changes(fake) == []                           # kept on
+    assert ('POST', '/Api/Bot/alpha/Stop', None) in fake.calls   # and ASF made to look again
+    assert ('POST', '/Api/Bot/alpha/Start', None) in fake.calls
+    assert 'alpha' not in service._checked_empty
+
+
+def test_unreadable_badges_never_switch_off_unfinished_work_and_confirmed_empty_does(world, monkeypatch):
+    service, fake, *_ = world
+    deals = FakeCardDeals({}, badges={ALPHA: None})
+    service.card_deals = deals
+    clock = [10_000.0]
+    monkeypatch.setattr(asf_service.time, 'time', lambda: clock[0])
+    farming_then(fake, service, clock, make_bot())
+    for _ in range(10):
+        clock[0] += EMPTY_CHECK_SECONDS + 1
+        service.tick()
+    assert enabled_changes(fake) == []
+    assert len(deals.reads) <= 10 * (EMPTY_CHECK_SECONDS + 1) // VERIFY_RETRY_SECONDS + 1   # paced
+    deals.badges[ALPHA] = 0                                      # readable again: really empty
+    clock[0] += VERIFY_RETRY_SECONDS
+    service.tick()
+    assert enabled_changes(fake) == [('alpha', False)]
+    assert service._checked_empty['alpha']['drops'] == 0
+    for _ in range(5):                                           # and it stays off
+        clock[0] += EMPTY_CHECK_SECONDS + 1
+        service.tick()
+    assert enabled_changes(fake) == [('alpha', False)]
+
+
+def test_a_reader_that_raises_counts_as_unreadable(world, monkeypatch):
+    service, fake, *_ = world
+    service.card_deals = FakeCardDeals({}, badges={ALPHA: RuntimeError('TLS/SSL connection has been closed')})
+    clock = [10_000.0]
+    monkeypatch.setattr(asf_service.time, 'time', lambda: clock[0])
+    farming_then(fake, service, clock, make_bot())
+    clock[0] += EMPTY_CHECK_SECONDS + 1
+    service.tick()
+    assert enabled_changes(fake) == []
+
+
+def test_no_unfinished_work_and_unreadable_badges_switches_off_once_without_flapping(world, monkeypatch):
+    service, fake, *_ = world
+    service.card_deals = FakeCardDeals({ALPHA: (3, 5_000.0)}, badges={ALPHA: None})   # stale count
+    fake.bots = {'alpha': make_bot(), 'bravo': make_bot(farming=True, to_farm=(10,))}
+    clock = [10_000.0]
+    monkeypatch.setattr(asf_service.time, 'time', lambda: clock[0])
+    service.tick()
+    clock[0] += EMPTY_CHECK_SECONDS + 1
+    service.tick()
+    assert enabled_changes(fake) == [('alpha', False)]
+    assert service._checked_empty['alpha']['drops'] == 3          # Andvari's count, so no flapping
+    for _ in range(5):
+        clock[0] += EMPTY_CHECK_SECONDS + 1
+        service.tick()
+    assert enabled_changes(fake) == [('alpha', False)]
+
+
+def test_bot_that_finished_its_cards_is_switched_off(world, monkeypatch):
+    service, fake, *_ = world
+    service.card_deals = FakeCardDeals({}, badges={ALPHA: 0})
+    clock = [10_000.0]
+    monkeypatch.setattr(asf_service.time, 'time', lambda: clock[0])
+    farming_then(fake, service, clock, make_bot())               # last card dropped
+    clock[0] += EMPTY_CHECK_SECONDS + 1
+    service.tick()
     assert enabled_changes(fake) == [('alpha', False)]
 
 
@@ -329,7 +448,7 @@ def test_checked_bot_comes_back_only_when_andvari_drop_count_changes(world, monk
 
 def test_farm_now_switches_on_then_off_when_empty(world, monkeypatch):
     service, fake, *_ = world
-    service.card_deals = FakeCardDeals()
+    service.card_deals = FakeCardDeals(badges={ALPHA: 0})
     off = {'Enabled': False, **HARDENED_BOT_CONFIG}
     fake.bots = {'alpha': make_bot(connected=False, running=False, config=dict(off)),
                  'bravo': make_bot(connected=False, running=False, config=dict(off))}
@@ -345,6 +464,31 @@ def test_farm_now_switches_on_then_off_when_empty(world, monkeypatch):
     service.tick()
     assert enabled_changes(fake)[-1] == ('alpha', False)
     assert 'alpha' not in service._farm_requests
+
+
+def test_game_bought_during_an_outage_is_never_left_unfarmed(world, monkeypatch):
+    """Buy games presses Farm now; ASF wrongly finds nothing and the badges cannot
+    be read: the bot stays on until a readable page says 0."""
+    service, fake, *_ = world
+    deals = FakeCardDeals({}, badges={ALPHA: None})
+    service.card_deals = deals
+    off = {'Enabled': False, **HARDENED_BOT_CONFIG}
+    fake.bots = {'alpha': make_bot(connected=False, running=False, config=dict(off)),
+                 'bravo': make_bot(connected=False, running=False, config=dict(off))}
+    clock = [10_000.0]
+    monkeypatch.setattr(asf_service.time, 'time', lambda: clock[0])
+    service.farm_now(ALPHA)
+    service.tick()
+    fake.bots['alpha'] = make_bot()                  # logged in, ASF: "nothing to farm"
+    for _ in range(30):                              # hours past the farm-now window
+        clock[0] += EMPTY_CHECK_SECONDS + 1
+        service.tick()
+    assert enabled_changes(fake) == [('alpha', True)]
+    deals.badges[ALPHA] = 3                          # readable: drops left, ASF made to look again
+    clock[0] += VERIFY_RETRY_SECONDS
+    service.tick()
+    assert ('POST', '/Api/Bot/alpha/Start', None) in fake.calls
+    assert enabled_changes(fake) == [('alpha', True)]
 
 
 def test_at_most_ten_bots_run(tmp_path):

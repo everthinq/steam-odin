@@ -41,7 +41,9 @@ starts farming the new game.
 Needs ASF set up ([getting-started.md](getting-started.md#5-card-farming-optional-for-andvari)).
 The panel shows each account's ASF state. An account's bot is switched on only
 while it has cards left to drop (at most 20 at a time; the rest wait as
-"Queued") and off again when it is done.
+"Queued") and off again when it is done. "Done" is double-checked against the
+account's badges page first, and a bot that loses its Steam connection mid-farm
+stays on until it is back, so a network outage never leaves drops unfarmed.
 
 | Button | Does |
 |--------|------|
