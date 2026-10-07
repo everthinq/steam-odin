@@ -94,6 +94,7 @@ REQUEST_TIMEOUT_SECONDS = 15
 MAX_RUNNING_BOTS = 20
 EMPTY_CHECK_SECONDS = 5 * 60     # connected this long with nothing queued = ASF checked the badges
 FARM_NOW_SECONDS = 60 * 60       # a "farm now" request keeps a bot on at most this long
+RECONNECT_GRACE_SECONDS = 6 * 60 * 60   # a bot seen with cards to farm stays on this long while it reconnects
 ACCOUNTS_CACHE_SECONDS = 5 * 60  # status() reuses the account list (reading it decrypts every maFile)
 COUNTER_STRIKE_2 = 730           # blacklisted in ASF.json by scripts/asf_setup.py
 TEAM_FORTRESS_2 = 440            # free to play: ASF adds the license, then plays it for item drops
@@ -205,6 +206,9 @@ class AsfService:
         # Andvari's drop count for that account then; only a different count later
         # switches the bot back on. (Older saves hold a bare epoch: {bot_name: epoch}.)
         self._checked_empty = dict(saved.get('checked_empty') or {})
+        # {bot_name: epoch} — when ASF last reported cards to farm for a connected bot.
+        # A disconnected bot reports nothing, so this keeps it on while it reconnects.
+        self._last_work = dict(saved.get('last_work') or {})
         # Why ASF's global config is unsafe (None while it is safe): every bot stays off
         self._global_config_unsafe = saved.get('global_config_unsafe')
         # Team Fortress 2 mode: {active, names (None = every account), since, reason,
@@ -304,6 +308,7 @@ class AsfService:
                 state = copy.deepcopy({'paused_for_ratatoskr': self._paused_for_ratatoskr,
                                        'attempts': self._attempts, 'farm_requests': self._farm_requests,
                                        'checked_empty': self._checked_empty,
+                                       'last_work': self._last_work,
                                        'global_config_unsafe': self._global_config_unsafe,
                                        'team_fortress': self._team_fortress,
                                        'license_failures': self._license_failures,
@@ -505,7 +510,14 @@ class AsfService:
                 self._connected_since.pop(name, None)
                 continue
             since = self._connected_since.setdefault(name, now)
-            if view['now_farming'] or view['games_to_farm'] or view['paused']:
+            if view['now_farming'] or view['games_to_farm']:
+                with self._lock:
+                    stale = now - (self._last_work.get(name) or 0) >= EMPTY_CHECK_SECONDS
+                    if stale:                # saved every few minutes, not every tick
+                        self._last_work[name] = now
+                changed |= stale
+                continue
+            if view['paused']:
                 continue
             if now - since >= EMPTY_CHECK_SECONDS:
                 steamid = (accounts.get(name) or {}).get('steamid')
@@ -537,6 +549,7 @@ class AsfService:
         drops = self._andvari_drops() if drops is None else drops
         with self._lock:
             requests_, checked = dict(self._farm_requests), dict(self._checked_empty)
+            last_work = dict(self._last_work)
             paused = set(self._paused_for_ratatoskr)
         ranked = []
         for name, account in accounts.items():
@@ -547,6 +560,10 @@ class AsfService:
             if view and view['enabled'] and (view['now_farming'] or view['games_to_farm']
                                              or view['paused'] or name in paused):
                 ranked.append((0, -view['cards_remaining'], name))
+            elif (view and view['enabled'] and not view['connected']
+                  and now - (last_work.get(name) or 0) < RECONNECT_GRACE_SECONDS):
+                # Disconnected mid-farm: ASF reports nothing until it is back, so keep it on.
+                ranked.append((0, 0, name))
             elif now - (requests_.get(name) or 0) < FARM_NOW_SECONDS:
                 ranked.append((1, 0, name))
             else:

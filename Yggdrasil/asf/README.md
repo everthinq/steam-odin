@@ -24,9 +24,13 @@ ASF's FAQ recommends at most **10 bots** ("based on internal Valve guidelines";
 ASF logs a warning above that), and a logged-in bot with nothing to farm is risk
 without reward. So Heimdall switches a bot **on** only while its account has
 work — ASF is farming it, Andvari's badges scan shows drops left, or you pressed
-**Farm now** — at most 10 at once (the rest show "Queued"), and switches it
-**off** once ASF has been logged in for 5 minutes and found nothing. The login
-token is kept, so switching back on needs no password.
+**Farm now** — at most 20 at once (Ivan's choice; the rest show "Queued"), and
+switches it **off** once ASF has been logged in for 5 minutes and found nothing.
+The login token is kept, so switching back on needs no password.
+
+A bot that loses its Steam connection while farming reports nothing until it is
+back, so Heimdall keeps it **on** for up to 6 hours after ASF last showed cards
+to farm on it, instead of reading that silence as "nothing to farm".
 
 **Bought a game?** Andvari → Card farming → press ⚡ (Farm now) on that account:
 ASF logs in within a minute, finds the new drops and farms them. (Otherwise the

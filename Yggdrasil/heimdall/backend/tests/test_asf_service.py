@@ -7,7 +7,7 @@ import pytest
 import asf_service
 from asf_service import (AsfService, AsfError, HARDENED_BOT_CONFIG, INPUT_NONE, INPUT_PASSWORD,
                          INPUT_TWO_FACTOR, INPUT_STEAM_GUARD, MAX_LOGIN_ATTEMPTS, LOGIN_RETRY_SECONDS,
-                         EMPTY_CHECK_SECONDS, MAX_RUNNING_BOTS, bot_view, farming_state, parse_time_span)
+                         EMPTY_CHECK_SECONDS, MAX_RUNNING_BOTS, RECONNECT_GRACE_SECONDS, bot_view, farming_state, parse_time_span)
 
 PASSWORD = 'hunter2-secret'
 SHARED_SECRET = 'c2hhcmVkLXNlY3JldA=='
@@ -252,6 +252,23 @@ def test_idle_bot_switches_off_after_asf_checked(world, monkeypatch):
     assert config['SteamUserPermissions'] == {} and config['SteamLogin'] == 'alpha'
     assert service.status()['accounts'][0]['state'] == 'off'
     assert service.status()['accounts'][1]['state'] == 'farming'     # bravo keeps farming
+
+
+def test_bot_disconnected_mid_farm_stays_on_while_it_reconnects(world, monkeypatch):
+    service, fake, *_ = world
+    service.card_deals = FakeCardDeals({})          # Andvari's scan predates the purchase: no drops known
+    fake.bots = {'alpha': make_bot(farming=True, to_farm=(10,)), 'bravo': make_bot(farming=True, to_farm=(10,))}
+    clock = [10_000.0]
+    monkeypatch.setattr(asf_service.time, 'time', lambda: clock[0])
+    service.tick()                                   # seen farming
+    fake.bots['alpha'] = make_bot(connected=False)   # Steam dropped the connection: ASF reports nothing
+    clock[0] += 60 * 60
+    service.tick()
+    assert enabled_changes(fake) == []               # kept on while ASF reconnects
+    assert service.status()['accounts'][1]['state'] == 'farming'
+    clock[0] += RECONNECT_GRACE_SECONDS
+    service.tick()                                   # never came back within the grace: off
+    assert enabled_changes(fake) == [('alpha', False)]
 
 
 def test_fresh_andvari_drops_switch_a_bot_on_but_stale_ones_do_not(world, monkeypatch):
