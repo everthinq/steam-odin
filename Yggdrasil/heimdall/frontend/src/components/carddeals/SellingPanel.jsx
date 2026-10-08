@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
 
 // Andvari card auto-sell. Backend: /api/huginn/card-deals/selling (status) and
-// /api/settings (the switches). Cards are listed one cent under the lowest Market
-// listing but never below the highest buy order, in each account's wallet currency.
+// /api/settings (the switches). Cards are listed at the highest price that still
+// sells (from the price history), at least one cent under the lowest Market listing
+// and never below the highest buy order, in each account's wallet currency.
 
 const CURRENCIES = { 1: ['$', ''], 3: ['', ' €'], 9: ['', ' kr'], 17: ['', ' TL'], 29: ['HK$ ', ''] };
 const amount = (minorUnits, currency) => {
@@ -66,7 +67,7 @@ const SellingPanel = ({ selling, onSaved }) => {
                     <span>
                         Sell dropped cards automatically
                         <span className="block text-xs text-slate-500">
-                            One cent under the lowest listing, never below the highest buy order (where they meet: at the buy order, sells at once), confirmed automatically
+                            At the highest price that still sells: up to what 90% of the last week’s sales fetched, with at most 3 days of sales listed cheaper; never under one cent below the lowest listing nor the highest buy order; confirmed automatically
                             {selling.enabled_at ? ` · on since ${ago(selling.enabled_at)}` : ''}
                         </span>
                     </span>

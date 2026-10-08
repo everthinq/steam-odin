@@ -84,7 +84,7 @@ asf_service.card_deals = card_deals_service   # drop counts decide which bots ru
 # Team Fortress 2 case drops: watch the news for a newly added case, start ASF's
 # Team Fortress 2 mode the same minute, and list the drops on the Market as they land.
 team_fortress_service = TeamFortressService(settings_manager, steam_service, asf_service, telegram_caller)
-# Andvari card auto-sell: dropped cards listed one cent under the lowest listing (off by default).
+# Andvari card auto-sell: dropped cards listed at the highest price that still sells (off by default).
 card_seller_service = CardSellerService(settings_manager, steam_service, asf_service)
 # Andvari "Buy games": plan + buy a card-deal game on many accounts (wallet checkout, price-guarded).
 store_purchase_service = StorePurchaseService(steam_service, card_deals_service, asf_service,

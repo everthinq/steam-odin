@@ -60,9 +60,17 @@ account or run `loot` there — see [Yggdrasil/asf/README.md](../../Yggdrasil/as
 
 **Off by default.** When **Sell dropped cards automatically** is on, every
 trading card that drops **after you switched it on** is listed on the Steam
-Market one cent (one minor unit) under the lowest listing, never under the
-highest buy order, and the listing is confirmed automatically — only that
-listing, matched by the card's exact name.
+Market at the **highest price that still sells**, and the listing is confirmed
+automatically — only that listing, matched by the card's exact name.
+
+The price is patient: it waits for buyers instead of racing to the bottom.
+Andvari reads the card's last 7 days of sales and goes as high as the price 90%
+of those sales fetched, as long as no more than 3 days' worth of sales are
+listed cheaper ahead of it, placing it one cent under the next group of
+listings. It is never lower than one cent under the lowest listing, nor under
+the highest buy order. When a card has too few sales to judge, it is listed one
+cent under the lowest listing. Hover over "Listed" in the sales table to see why
+a price was chosen.
 
 | Option | Effect |
 |--------|--------|

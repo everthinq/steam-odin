@@ -329,7 +329,7 @@ const CardDeals = () => {
                         </p>
                     </button>
                     <button type="button" onClick={() => setShowSelling((v) => !v)}
-                        title="List dropped trading cards one cent under the lowest Market listing, on every account."
+                        title="List dropped trading cards at the highest price that still sells, on every account."
                         className="px-4 py-2.5 rounded-xl bg-odin-blue/40 border border-white/10 text-left hover:border-white/20">
                         <p className="text-[10px] uppercase tracking-wider text-slate-500 flex items-center gap-1"><Coins size={10} /> Card selling</p>
                         <p className={`text-lg font-bold tabular-nums ${selling?.enabled ? 'text-emerald-300' : 'text-slate-400'}`}>

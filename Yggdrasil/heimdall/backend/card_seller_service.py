@@ -1,15 +1,16 @@
-"""Andvari card auto-sell: list dropped trading cards one cent under the lowest
-Market listing — never under the highest buy order (where they meet, at the buy
-order, which sells at once) — on every account, and keep the statistics.
+"""Andvari card auto-sell: list dropped trading cards at the highest price that
+still sells (patient pricing from the price history, see ``market_seller.py``),
+at least one cent under the lowest Market listing and never under the highest
+buy order — on every account, and keep the statistics.
 
 Off until switched on (settings ``card_auto_sell_enabled``). In turn, paced,
 each account's Steam inventory (app 753, context 6) is read at most every
 ``INVENTORY_INTERVAL_SECONDS``; every marketable trading card (foil ones too,
 unless ``card_auto_sell_foil`` is off), of any game or only the games on
-``card_auto_sell_apps``, is listed one minor unit under the lowest listing in
-the account's wallet currency — at that price when the lowest listing is our
-own last one, so our accounts never undercut each other — and only those
-listings' confirmations are accepted.
+``card_auto_sell_apps``, is listed in the account's wallet currency at the
+patient price, or one minor unit under the lowest listing when that is higher
+(at that price when the lowest listing is our own last one, so our accounts
+never undercut each other), and only those listings' confirmations are accepted.
 
 Cards the account already held when auto-sell was switched on are left alone
 (each account's first read records where its inventory stood), unless

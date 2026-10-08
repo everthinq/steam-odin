@@ -120,8 +120,9 @@ DEFAULT_SETTINGS = {
     "card_deals_chat_id": "",
     # Store country priced when no account's country is known yet.
     "card_deals_fallback_country": "TR",
-    # Card auto-sell: list dropped trading cards one cent under the lowest Market
-    # listing (not the buy orders) on every account, confirmed automatically.
+    # Card auto-sell: list dropped trading cards at the highest price that still
+    # sells (from the price history; at least one cent under the lowest Market
+    # listing, never under the buy orders) on every account, confirmed automatically.
     # Cards an account already held when it was switched on are left alone unless
     # card_auto_sell_include_held. card_auto_sell_apps: app ids (empty = every game).
     "card_auto_sell_enabled": False,
