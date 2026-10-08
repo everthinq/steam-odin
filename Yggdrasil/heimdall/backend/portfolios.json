@@ -12083,7 +12083,7 @@
       "id": "1a0e2b429eb0",
       "name": "ethan_clark777",
       "created_at": "2026-07-21T14:49:46.296235+00:00",
-      "updated_at": "2026-07-21T14:49:46.296239+00:00",
+      "updated_at": "2026-10-08T15:27:19.050720+00:00",
       "transactions": [
         {
           "id": "a3178ac2c50d",
@@ -12288,6 +12288,19 @@
           "note": "",
           "fee_percent": 0.0,
           "created_at": "2026-07-21T14:49:46.296229+00:00"
+        },
+        {
+          "id": "fd739427f892",
+          "item_name": "SG 553 | Aloha (Field-Tested)",
+          "type": "sell",
+          "qty": 1,
+          "price": 0.23,
+          "platform": "steam",
+          "date": "2026-10-08",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": false,
+          "created_at": "2026-10-08T15:27:19.050696+00:00"
         }
       ]
     },
