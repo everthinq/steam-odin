@@ -392,6 +392,7 @@ class FakeSteamWeb:
         self.currency_down = currency_down
         self.orderbook_rate_limited = orderbook_rate_limited
         self.logged_out_badges = set()       # accounts whose badges pages come back logged out
+        self.sale_histories = {}             # card -> pricehistory answer; missing: Steam says no
 
     def __call__(self, url, params, cookies, host):
         params = dict(params or {})
@@ -447,6 +448,10 @@ class FakeSteamWeb:
             appid, name = json.loads(params['qp'])
             assert appid == 753 and params['q'] == 'Load'
             return json.dumps({'data': {'success': True, 'data': orderbook_for(name)}})
+        if url == deals_module.MARKET_PRICE_HISTORY_URL:
+            assert cookies, 'the price history needs a logged-in session'
+            assert params['appid'] == 753
+            return json.dumps(self.sale_histories.get(params['market_hash_name'], {'success': False}))
         if url == deals_module.MARKET_SEARCH_URL:
             if self.market_rate_limited:
                 raise RateLimited('Steam rate limit (429) on community')
@@ -1354,7 +1359,8 @@ def test_buy_order_check_asks_for_card_prices_only(tmp_path):
     web.calls.clear()
     service._buy_order_check_safely()
     kinds = [c[0] for c in web.calls]
-    assert set(kinds) == {deals_module.MARKET_SEARCH_URL, deals_module.MARKET_ORDERBOOK_URL}
+    assert set(kinds) == {deals_module.MARKET_SEARCH_URL, deals_module.MARKET_ORDERBOOK_URL,
+                          deals_module.MARKET_PRICE_HISTORY_URL}
     first_book = kinds.index(deals_module.MARKET_ORDERBOOK_URL)
     assert deals_module.MARKET_SEARCH_URL in kinds[:first_book]
     games = {name.split('-')[0] for name in orderbook_requests(web)}
@@ -1395,3 +1401,136 @@ def test_deals_held_back_without_a_bot_are_sent_once_a_bot_is_added(tmp_path):
     settings.settings['card_deals_bot_token'] = 'andvari-bot'
     run_scan(service)
     assert sent and {m['bot'] for m in sent} == {'andvari-bot'} and 'Sale Winner' in sent[0]['text']
+
+
+# ---- sale history: what cards actually sell for, and how many the market takes ----
+
+def sale_history(price_cents, units, prefix='$', hours_apart=6):
+    """A pricehistory answer: `units` sales (one per row) at `price_cents`, the
+    newest an hour ago, `hours_apart` hours between them."""
+    import datetime
+    now = datetime.datetime.now(datetime.timezone.utc)
+    return {'success': True, 'price_prefix': prefix, 'price_suffix': '', 'prices': [
+        [(now - datetime.timedelta(hours=1 + i * hours_apart)).strftime('%b %d %Y %H: +0'), price_cents / 100, '1']
+        for i in range(units)]}
+
+
+def test_parse_sale_history_only_in_us_dollars():
+    points = deals_module.parse_sale_history({'success': True, 'price_prefix': '$', 'price_suffix': '', 'prices': [
+        ['Oct 08 2026 14: +0', 0.223, '3'], ['broken', 'x', '1'], ['Oct 08 2026 15: +0', 1.5, '1,204']]})
+    assert [(price, units) for _, price, units in points] == [(22, 3), (150, 1204)]
+    assert deals_module.parse_sale_history(sale_history(20, 5, prefix='HK$ ')) == []
+    assert deals_module.parse_sale_history({'success': False}) == []
+
+
+def test_card_sales_summary_week_median_month_fallback_and_never_sold():
+    import time
+    parse = deals_module.parse_sale_history
+    summary = deals_module.card_sales_summary
+    now = time.time()
+    week = parse(sale_history(15, 4)) + parse(sale_history(96, 1))     # one sale at the lone high ask
+    assert summary(week, now) == {'price': 15, 'per_day': round(5 / 7, 2), 'sold_week': 5, 'sold_month': 5}
+    month = parse(sale_history(30, 2, hours_apart=24 * 10))             # 2 sales, 1 and 11 days ago
+    assert summary(month, now) == {'price': 30, 'per_day': round(2 / 30, 2), 'sold_week': 1, 'sold_month': 2}
+    assert summary([], now)['price'] is None
+
+
+def test_accounts_market_absorbs():
+    # 6-card set, 3 drops: each account sells half a copy of every card.
+    assert deals_module.accounts_market_absorbs(3 / 7, 3, 6) == 3       # 3 sold a week, we take half
+    assert deals_module.accounts_market_absorbs(40, 3, 6) == 280
+    assert deals_module.accounts_market_absorbs(0, 3, 6) == 0
+
+
+def test_a_lone_high_ask_nobody_pays_is_valued_at_what_the_card_sold_for(tmp_path):
+    web = FakeSteamWeb()
+    for index in range(6):
+        web.sale_histories[f'100-Card {index}'] = sale_history(15, 40)  # asks 40-60 cents, sales at 15
+    service, _ = make_service(tmp_path, web)
+    run_scan(service)
+    row = by_app(service.deals(FakeSettings().get_settings(), 'sale', include_unprofitable=True))['100']
+    assert not row['is_deal'] and row['sales_checked'] == 6
+    assert row['expected_net_listing'] == round(3 * seller_receives_cents(15) / 100, 2)
+    assert row['cards'][0]['sold_price'] == 0.15 and row['cards'][0]['listing_value'] == 0.15
+    assert row['cards'][0]['lowest_ask'] == 0.60
+    # Without the history (as the shortlists judge it) it is still the old deal.
+    optimistic = {**FakeSettings().get_settings(), deals_module._IGNORE_SALES: True}
+    assert by_app(service.deals(optimistic, 'sale'))['100']['is_deal']
+
+
+def test_a_card_that_sells_above_its_ask_keeps_the_ask(tmp_path):
+    web = FakeSteamWeb()
+    for index in range(6):
+        web.sale_histories[f'100-Card {index}'] = sale_history(500, 40)
+    service, _ = make_service(tmp_path, web)
+    run_scan(service)
+    row = by_app(service.deals(FakeSettings().get_settings(), 'sale'))['100']
+    assert row['expected_net_listing'] == round(expected_cents('100') / 100, 2)   # unchanged
+    assert row['market_absorbs_accounts'] > 4 and not row['thin_market']
+
+
+def test_a_card_nobody_bought_in_a_month_is_worth_nothing(tmp_path):
+    web = FakeSteamWeb()
+    for index in range(6):
+        web.sale_histories[f'100-Card {index}'] = sale_history(500, 40)
+    web.sale_histories['100-Card 0'] = {'success': True, 'price_prefix': '$', 'price_suffix': '', 'prices': []}
+    service, _ = make_service(tmp_path, web)
+    run_scan(service)
+    row = by_app(service.deals(FakeSettings().get_settings(), 'sale'))['100']
+    assert row['cards'][0]['listing_value'] == 0 and row['worst_case_net'] == 0
+    assert row['market_absorbs_accounts'] == 0 and row['thin_market']
+
+
+def test_the_all_accounts_total_counts_only_what_the_market_absorbs(tmp_path):
+    web = FakeSteamWeb()
+    for index in range(6):
+        web.sale_histories[f'100-Card {index}'] = sale_history(500, 40)
+    web.sale_histories['100-Card 3'] = sale_history(500, 3)            # the slowest card: 3 sold this week
+    service, _ = make_service(tmp_path, web)
+    run_scan(service)
+    row = by_app(service.deals(FakeSettings().get_settings(), 'sale'))['100']
+    assert row['profitable_accounts'] == 4 and row['market_absorbs_accounts'] == 3 and row['thin_market']
+    best_three = sorted((b['profit_list'] for b in row['buyers']), reverse=True)[:3]
+    assert row['total_profit_all_accounts'] == pytest.approx(sum(best_three), abs=0.02)
+    assert row['days_to_sell_all_accounts'] == round(2 / round(3 / 7, 2), 1)   # 4 accounts: 2 of each card
+
+
+def test_sale_history_needs_a_session_and_us_dollars(tmp_path):
+    web = FakeSteamWeb()
+    web.sale_histories['100-Card 0'] = sale_history(20, 40, prefix='HK$ ')
+    service, _ = make_service(tmp_path, web)
+    run_scan(service)
+    assert '100-Card 0' not in service._state['sales']                  # not in dollars: not stored
+    web.calls.clear()
+    service._market_cookies = lambda: None
+    service._state['sales'].clear()
+    service._refresh_sales('sale', FakeSettings().get_settings())
+    assert web.calls_to(deals_module.MARKET_PRICE_HISTORY_URL) == []
+    assert 'no logged-in' in service.status()['message']
+
+
+def test_a_game_ruled_out_by_its_sales_is_checked_again_after_a_day(tmp_path):
+    web = FakeSteamWeb()
+    for index in range(6):
+        web.sale_histories[f'100-Card {index}'] = sale_history(15, 40)
+    service, _ = make_service(tmp_path, web)
+    run_scan(service)
+    assert '100' not in by_app(service.deals(FakeSettings().get_settings(), 'sale'))
+    web.calls.clear()
+    service._refresh_sales('sale', FakeSettings().get_settings())
+    asked = {c[1]['market_hash_name'] for c in web.calls_to(deals_module.MARKET_PRICE_HISTORY_URL)}
+    assert not any(name.startswith('100-') for name in asked)           # fresh: not asked again
+    for name in list(service._state['sales']):
+        service._state['sales'][name]['fetched_at'] -= deals_module._SALES_TIME_TO_LIVE
+    for index in range(6):
+        web.sale_histories[f'100-Card {index}'] = sale_history(500, 40)   # the market recovered
+    service._refresh_sales('sale', FakeSettings().get_settings())
+    assert by_app(service.deals(FakeSettings().get_settings(), 'sale'))['100']['is_deal']
+
+
+def test_sale_history_requests_are_capped_per_scan(tmp_path, monkeypatch):
+    monkeypatch.setitem(deals_module._SALES_CAP_PER_SCAN, 'sale', 2)
+    web = FakeSteamWeb()
+    service, _ = make_service(tmp_path, web)
+    service._scan_safely(True, False)
+    assert len(web.calls_to(deals_module.MARKET_PRICE_HISTORY_URL)) == 2

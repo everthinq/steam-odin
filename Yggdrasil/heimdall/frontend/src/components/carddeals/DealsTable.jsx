@@ -35,13 +35,13 @@ const COLUMNS = [
     { key: 'name', label: 'Game', align: 'left' },
     { key: 'price', label: 'Price', align: 'right', hint: 'What the game costs in the store country most of your accounts are in, in US dollars. Other accounts pay their own country’s price — often very different (Turkey can be several times cheaper; Hong Kong and Norway pay in their own currency, converted at today’s exchange rate). Hover a price for every region.' },
     { key: 'card_drops', label: 'Drops', align: 'right', hint: 'Card drops you get for buying the game: half the card set, rounded up. Hover for the set size.' },
-    { key: 'expected_net', label: 'Cards net', align: 'right', hint: 'Expected money back from one copy’s drops (drops × the average card), after Steam’s 5% + publisher’s 10% fee (each at least one cent). Instant card value (default): each card sold to its highest buy order. Listing card value: listed one cent under the lowest ask. The Source column says which prices were used. Wallet money.' },
+    { key: 'expected_net', label: 'Cards net', align: 'right', hint: 'Expected money back from one copy’s drops (drops × the average card), after Steam’s 5% + publisher’s 10% fee (each at least one cent). Instant card value (default): each card sold to its highest buy order. Listing card value: listed one cent under the lowest ask, but never above what the card actually sold for in the last week (once its sale history is read). The Source column says which prices were used. Wallet money.' },
     { key: 'worst_case_profit', label: 'Worst case', align: 'right', hint: 'Profit if every drop is the cheapest card in the set (at the same card value). Only known once the game has been checked card by card on the Steam Market.' },
     { key: 'profit', label: 'Profit', align: 'right', hint: 'Cards net minus the Price column, per copy, with the return on the price underneath. Can be negative while the game is still a deal for accounts in a cheaper country — see Best account.' },
     { key: 'best_profit', label: 'Best account', align: 'right', hint: 'Profit for the account that pays the least (its own country’s price) among those that do not own the game yet.' },
     { key: 'profitable_accounts', label: 'Accounts', align: 'right', hint: 'Accounts that can buy it at a profit at their own regional price / accounts that already own it. Expand the row for the list.' },
-    { key: 'total_profit_all_accounts', label: 'All accounts', align: 'right', hint: 'Profit if every account that does not own the game yet buys one copy, at each account’s own regional price. With buy-order prices this already includes the market impact: all those copies are sold into the order book together, walking down the bids. Otherwise it does not — selling many copies of the same cards pushes their price down.' },
-    { key: 'fewest_listings', label: 'Liquidity', align: 'right', hint: 'Fewest listings among the set’s cards on the Steam Market — a card with very few listings is thin: it may sell slowly or its price may be a one-off. Known once checked.' },
+    { key: 'total_profit_all_accounts', label: 'All accounts', align: 'right', hint: 'Profit if every account that does not own the game yet buys one copy, at each account’s own regional price. With buy-order prices this already includes the market impact: all those copies are sold into the order book together, walking down the bids. At listing prices, once the cards’ sale history is read, only the accounts whose drops the market takes within a week are counted (“market takes N”). Otherwise it does not include market impact — selling many copies of the same cards pushes their price down.' },
+    { key: 'fewest_listings', label: 'Liquidity', align: 'right', hint: 'Fewest listings among the set’s cards on the Steam Market, and underneath how many of the slowest-selling card sold per day (from its sale history) — a card that rarely sells is thin: your drops wait, and its listing price may be a one-off. Known once checked.' },
     { key: 'value_source', label: 'Source', align: 'center', hint: 'Where the card prices come from — buy orders (live, what the cards sell for right now), listings (lowest Market asks) or estimate (SteamCardExchange set price, not checked yet).' },
 ];
 
@@ -168,6 +168,11 @@ function AccountBreakdown({ row }) {
                                     {' '}· bid <span className="text-emerald-300">{money(card.highest_bid)}</span>
                                     {card.buy_orders != null && <span> ({card.buy_orders.toLocaleString()} orders)</span>}
                                     {' '}· {card.listings.toLocaleString()} listed
+                                    {card.sold_per_day != null && (
+                                        <span title="From the card’s Steam Market sale history: the typical price it sold for and how many sold per day.">
+                                            {' '}· sold <span className="text-sky-300">{card.sold_price == null ? 'never' : money(card.sold_price)}</span>, {card.sold_per_day}/day
+                                        </span>
+                                    )}
                                 </span>
                             </div>
                         ))}
@@ -282,7 +287,12 @@ const DealsTable = ({ rows, emptyText }) => {
                                         <span className="text-slate-400">{r.owners.length}</span>
                                     </td>
                                     <td className={`px-3 py-2 text-right tabular-nums ${signClass(r.total_profit_all_accounts)}`}>{signed(r.total_profit_all_accounts)}</td>
-                                    <td className={`px-3 py-2 text-right tabular-nums ${r.fewest_listings != null && r.fewest_listings < 20 ? 'text-amber-400' : 'text-slate-400'}`}>{r.fewest_listings == null ? '—' : r.fewest_listings.toLocaleString()}</td>
+                                    <td className={`px-3 py-2 text-right tabular-nums ${r.fewest_listings != null && r.fewest_listings < 20 ? 'text-amber-400' : 'text-slate-400'}`}>
+                                        <div>{r.fewest_listings == null ? '—' : r.fewest_listings.toLocaleString()}</div>
+                                        {r.slowest_card_sales_per_day != null && (
+                                            <div className={`text-[10px] ${r.thin_market ? 'text-amber-400' : 'opacity-70'}`}>{r.slowest_card_sales_per_day} sold/day</div>
+                                        )}
+                                    </td>
                                     <td className="px-3 py-2 text-center">
                                         <div className="flex flex-col items-center gap-0.5">
                                         <SourceBadge source={r.value_source} />
@@ -294,6 +304,11 @@ const DealsTable = ({ rows, emptyText }) => {
                                                 <span className="block text-[10px] text-sky-300/80 whitespace-nowrap">
                                                     {r.cards ? `awaiting buy orders (${r.buy_orders_checked}/${r.cards.length})` : 'awaiting Market check'}
                                                 </span>
+                                            </InfoTip>
+                                        )}
+                                        {r.thin_market && (
+                                            <InfoTip tip={`Thin market: the slowest card sells about ${r.slowest_card_sales_per_day} a day, so within a week the market takes the drops of about ${r.market_absorbs_accounts} account(s) (counting half of its sales as ours). Selling every account’s drops would take about ${r.days_to_sell_all_accounts ?? '∞'} days, and our own listings would push the price down. The All accounts total counts only ${r.market_absorbs_accounts}.`}>
+                                                <span className="block text-[10px] text-amber-400 whitespace-nowrap">market takes {r.market_absorbs_accounts}</span>
                                             </InfoTip>
                                         )}
                                         {r.buy_orders_ruled_out && (

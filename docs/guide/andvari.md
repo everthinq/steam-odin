@@ -19,6 +19,14 @@ Open it from the Dashboard tile **Andvari** (also /huginn/card-deals).
   card's price.
 - **Buy orders / Listings**: value cards at what buyers pay now (safe) or at
   the lowest listing (optimistic).
+- **Sale history**: for games that pay at listing prices, each card's last
+  week of actual sales is read too. A lowest listing is only an asking price
+  (thin sets often have one lone high ask nobody pays), so a card is never
+  valued above what it really sold for, and a card nobody bought in a month is
+  worth nothing. The Liquidity column shows how many of the slowest card sell
+  per day; **market takes N** means only N accounts' drops sell within a week
+  (counting half the sales as ours), and the All accounts total counts only
+  those N.
 - Tiles: **Accounts** (country, games owned, drops left), **Card farming** and
   **Card selling** open their panels below.
 

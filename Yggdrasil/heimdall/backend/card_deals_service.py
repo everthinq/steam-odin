@@ -40,7 +40,13 @@ Data sources, cheapest first, so Steam is asked as little as possible:
    prices, one request per card, and a game is dropped as soon as even its
    ceiling (unchecked cards at their lowest ask) can't pay for it. Steps 4 and
    5 also run on their own ("Check buy orders"), without the rest of the scan.
-6. **Per account** (its own fresh web session): owned games, store country, and
+6. **Steam Market price history** (authenticated) — what each card ACTUALLY sold
+   for and how many sold, for games still profitable at listing prices. A
+   lowest listing is only an asking price: thin sets often have a lone high ask
+   nobody pays. Listing prices are capped at the recent sale price, and the
+   all-accounts total counts only the accounts whose drops the market can
+   absorb in a week (``_ABSORB_DAYS``). Runs with steps 4 and 5.
+7. **Per account** (its own fresh web session): owned games, store country, and
    remaining card drops from the badges page — so a game is never bought twice
    and each account's regional price is used.
 
@@ -51,6 +57,7 @@ Money is handled in integer cents internally (Steam's own unit) and exposed as
 US dollars. It is Steam-wallet money: games are bought with wallet funds and
 card sales pay back into the wallet. Read-only: it never buys anything.
 """
+import datetime
 import gzip
 import html
 import http.client
@@ -80,6 +87,8 @@ MARKET_SEARCH_URL = 'https://steamcommunity.com/market/search/render/'
 # Order book (buy + sell orders with depth) by item NAME — the endpoint SteamDB's
 # browser extension uses for its quick-sell buttons. Works anonymously.
 MARKET_ORDERBOOK_URL = 'https://steamcommunity.com/market/orderbook'
+# Hourly/daily median sale prices and units sold; needs a logged-in session.
+MARKET_PRICE_HISTORY_URL = 'https://steamcommunity.com/market/pricehistory/'
 # Steam's own store backend (the protobuf service documented in
 # github.com/SteamTracking/Protobufs, webui/service_storebrowse.proto): batched
 # items with each country's price, discount end date and feature categories.
@@ -135,6 +144,8 @@ _VERIFIED_TIME_TO_LIVE = 24 * 3600     # per-card Market prices: re-check after 
 _VERIFIED_TRUSTED_FOR = 48 * 3600      # after this, fall back to the feed estimate
 _ORDERBOOK_TIME_TO_LIVE = 12 * 3600    # buy orders move faster than asks
 _ORDERBOOK_TRUSTED_FOR = 36 * 3600
+_SALES_TIME_TO_LIVE = 24 * 3600        # a card's sale history: re-read after a day
+_SALES_TRUSTED_FOR = 72 * 3600
 
 # Which discovered games get priced in the other account countries: those whose
 # expected cards net is at least this share of the discovery-country price.
@@ -169,6 +180,21 @@ _OUTLIER_CAP_MULTIPLE = 3
 # count too). Measured: 30 requests at a 2-second gap never hit a 429, and
 # runs of 200 + 120 at the 2.5-second gap logged none either (to 2026-10-02).
 _ORDERBOOK_CAP_PER_SCAN = {SCOPE_SALE: 200, SCOPE_FULL: 120}
+# Price-history requests per run (one per card, authenticated, the community
+# host's gap). Thin sets are where listing prices lie most, so they come first.
+_SALES_CAP_PER_SCAN = {SCOPE_SALE: 120, SCOPE_FULL: 60}
+# A card's sale price: the volume-weighted median of the last 7 days, or of the
+# last 30 when fewer than _SALES_MINIMUM_UNITS sold in the week.
+_SALES_WINDOW_DAYS = 7
+_SALES_FALLBACK_WINDOW_DAYS = 30
+_SALES_MINIMUM_UNITS = 3
+# Market absorption: our accounts' drops should sell within this many days,
+# taking this share of the card's sales (other sellers list too).
+_ABSORB_DAYS = 7
+_ABSORB_SHARE = 0.5
+# deals() setting key used internally: value cards ignoring the sale history
+# (the optimistic side), so shortlists never lose a game before it is checked.
+_IGNORE_SALES = '_ignore_card_sales'
 _BADGE_MAX_PAGES = 20
 _ALERTED_MEMORY_SECONDS = 14 * 86400   # don't re-alert the same deal at the same price
 _ALERT_MAX_LINES = 15
@@ -397,6 +423,57 @@ def buy_order_ceiling_cents(cards, drops):
     return drops * sum(nets) / len(nets)
 
 
+def parse_sale_history(payload):
+    """Steam ``pricehistory`` JSON -> [(epoch seconds, US cents, units sold)].
+    Empty unless it answered in US dollars (it answers in the session's wallet
+    currency, which has no currency id in the answer — only its symbol)."""
+    if not isinstance(payload, dict) or not payload.get('success'):
+        return []
+    if payload.get('price_prefix') != '$' or (payload.get('price_suffix') or '').strip():
+        return []
+    points = []
+    for row in payload.get('prices') or []:
+        try:
+            stamp = str(row[0]).rsplit(':', 1)[0].strip()      # "Oct 08 2026 14: +0" (UTC hour)
+            when = datetime.datetime.strptime(stamp, '%b %d %Y %H').replace(
+                tzinfo=datetime.timezone.utc).timestamp()
+            points.append((when, int(round(float(row[1]) * 100)), int(float(str(row[2]).replace(',', '')))))
+        except (ValueError, IndexError, TypeError):
+            continue
+    return points
+
+
+def card_sales_summary(points, now):
+    """{price, per_day, sold_week, sold_month} for one card: the volume-weighted
+    median sale price (cents) and units sold per day over the last week, or the
+    last month when fewer than _SALES_MINIMUM_UNITS sold in the week. `price` is
+    None when nothing sold in a month (nobody buys it)."""
+    def window(days):
+        start = now - days * 86400
+        return sorted((price, units) for when, price, units in points if when >= start and units > 0)
+
+    week, month = window(_SALES_WINDOW_DAYS), window(_SALES_FALLBACK_WINDOW_DAYS)
+    sold_week, sold_month = sum(u for _, u in week), sum(u for _, u in month)
+    use, days = (week, _SALES_WINDOW_DAYS) if sold_week >= _SALES_MINIMUM_UNITS else (
+        month, _SALES_FALLBACK_WINDOW_DAYS)
+    sold = sum(u for _, u in use)
+    price, counted = None, 0
+    for value, units in use:
+        counted += units
+        if counted * 2 >= sold:
+            price = value
+            break
+    return {'price': price, 'per_day': round(sold / days, 2), 'sold_week': sold_week, 'sold_month': sold_month}
+
+
+def accounts_market_absorbs(slowest_per_day, drops, card_count):
+    """How many accounts' drops the market takes within _ABSORB_DAYS, at the
+    slowest-selling card and _ABSORB_SHARE of its sales (each account drops
+    about drops / card_count copies of every card)."""
+    per_account = drops / card_count if card_count else 1
+    return int(slowest_per_day * _ABSORB_DAYS * _ABSORB_SHARE / per_account) if per_account else 0
+
+
 def parse_market_cards(payload):
     """Steam market search JSON -> [{name, hash_name, price_cents, listings}]."""
     cards = []
@@ -565,6 +642,7 @@ class CardDealsService:
             'exchange_rates': None,    # {fetched_at, rates: {currency: units per USD}}
             'verified': {},            # {app_id: {fetched_at, cards: [...]}}
             'orderbooks': {},          # {card hash name: {fetched_at, bids, asks, buy_orders, sell_orders}}
+            'sales': {},               # {card hash name: {fetched_at, price, per_day, sold_week, sold_month}}
             'accounts': {},            # {steamid: {account_name, country, owned, drops, ...}}
             'alerted': {},             # {deal key: epoch sent}
             'last_scan': None,
@@ -718,6 +796,7 @@ class CardDealsService:
             # Order books need each card's Market name: Market-check estimates first.
             self._verify_shortlist(scope, self.settings_manager.get_settings())
             self._refresh_orderbooks(scope, self.settings_manager.get_settings())
+            self._refresh_sales(scope, self.settings_manager.get_settings())
             self._save_cache()
             self._send_alerts(scope, self.settings_manager.get_settings())
 
@@ -750,6 +829,7 @@ class CardDealsService:
             self._verify_shortlist(scope, settings)
             # Whatever Settings say: the page's Buy orders / Listings switch shows either.
             self._refresh_orderbooks(scope, settings)
+            self._refresh_sales(scope, settings)
             self._save_cache()
             self._send_alerts(scope, self.settings_manager.get_settings())
 
@@ -1037,7 +1117,7 @@ class CardDealsService:
             verified = dict(self._state.get('verified') or {})
         # Judged at listing prices (the optimistic side), so buy-order valuation
         # never hides a game from the checks that would confirm it.
-        listing = {**settings, 'card_deals_valuation': VALUATION_LISTING}
+        listing = {**settings, 'card_deals_valuation': VALUATION_LISTING, _IGNORE_SALES: True}
         due = [r['app_id'] for r in self.deals(listing, scope)['deals']
                if now - ((verified.get(r['app_id']) or {}).get('fetched_at') or 0)
                >= _VERIFIED_TIME_TO_LIVE][:_VERIFY_CAP_PER_SCAN[scope]]
@@ -1097,7 +1177,7 @@ class CardDealsService:
 
         An empty answer (seen live, occasionally) is retried once at the end,
         within the same cap."""
-        listing = {**settings, 'card_deals_valuation': VALUATION_LISTING}
+        listing = {**settings, 'card_deals_valuation': VALUATION_LISTING, _IGNORE_SALES: True}
         now = time.time()
         with self._lock:
             books = dict(self._state.get('orderbooks') or {})
@@ -1170,6 +1250,56 @@ class CardDealsService:
         except RateLimited as e:
             self._note(f'Buy-order check stopped early: {e}')
 
+    def _refresh_sales(self, scope, settings):
+        """Read the sale history of every card of this scope's games that are
+        profitable at listing prices — judged without the sale history, so a game
+        it ruled out is checked again once its history is a day old. Cards never
+        read first, thinnest sets first, capped at _SALES_CAP_PER_SCAN requests.
+        Needs a logged-in session (any account; the answer must be in US dollars)."""
+        listing = {**settings, 'card_deals_valuation': VALUATION_LISTING, _IGNORE_SALES: True}
+        now = time.time()
+        with self._lock:
+            sales = self._state.setdefault('sales', {})
+            for name in [n for n, e in sales.items() if now - (e.get('fetched_at') or 0) >= 2 * _SALES_TRUSTED_FOR]:
+                sales.pop(name)
+            sales = dict(sales)
+            verified = dict(self._state.get('verified') or {})
+        due = []
+        for row in self.deals(listing, scope)['deals']:
+            for card in self._trusted_cards(verified.get(row['app_id'])):
+                name, entry = card.get('hash_name'), sales.get(card.get('hash_name'))
+                if name and (not entry or now - (entry.get('fetched_at') or 0) >= _SALES_TIME_TO_LIVE):
+                    due.append((entry is not None, row['fewest_listings'] or 0, name))
+        names = list(dict.fromkeys(name for _, _, name in sorted(due)))[:_SALES_CAP_PER_SCAN[scope]]
+        if not names:
+            return
+        cookies = self._market_cookies()
+        if not cookies:
+            self._note('Sale history skipped: no logged-in account session')
+            return
+        self._set_phase('sale history (Steam Market)', scope, len(names))
+        for name in names:
+            try:
+                payload = json.loads(self._fetch(MARKET_PRICE_HISTORY_URL, {
+                    'appid': 753, 'market_hash_name': name}, cookies, 'community'))
+            except RateLimited as e:
+                self._note(f'Sale history stopped early: {e}')
+                return
+            except Exception as e:
+                logger.warning('[CARD DEALS] sale history %s: %s', name, e)
+                self._tick()
+                continue
+            if not (isinstance(payload, dict) and payload.get('success') and payload.get('price_prefix') == '$'
+                    and not (payload.get('price_suffix') or '').strip()):
+                logger.warning('[CARD DEALS] sale history %s: no US dollar answer', name)
+                self._tick()
+                continue
+            checked_at = time.time()
+            with self._lock:
+                self._state['sales'][name] = {'fetched_at': checked_at,
+                                              **card_sales_summary(parse_sale_history(payload), checked_at)}
+            self._tick()
+
     def _fetch_orderbook(self, name):
         """One card's order book, stored on success. Returns the book, None for
         an empty or non-US-dollar answer, False when the request failed.
@@ -1210,6 +1340,7 @@ class CardDealsService:
                 'exchange_rates': self._state.get('exchange_rates'),
                 'verified': dict(self._state.get('verified') or {}),
                 'orderbooks': dict(self._state.get('orderbooks') or {}),
+                'sales': dict(self._state.get('sales') or {}),
                 'accounts': {steamid: {**a, 'owned_set': set(a['owned']) if a.get('owned') is not None else None}
                              for steamid, a in (self._state.get('accounts') or {}).items()},
                 'last_scan': self._state.get('last_scan'),
@@ -1222,16 +1353,40 @@ class CardDealsService:
             return []
         return [c for c in (verified.get('cards') or []) if c.get('price_cents')]
 
-    def _expected_net_cents(self, feed_entry, verified):
+    @staticmethod
+    def _trusted_sales(card, sales, now):
+        """A card's sale-history summary if it is recent enough to trust, else None."""
+        entry = (sales or {}).get(card.get('hash_name'))
+        return entry if entry and now - (entry.get('fetched_at') or 0) < _SALES_TRUSTED_FOR else None
+
+    @classmethod
+    def _card_values(cls, cards, sales, now):
+        """Each card's LISTING price (US cents the buyer pays): one cent under its
+        lowest ask (outliers capped), but never above what it actually sold for
+        lately when its sale history is known — and 0 when nothing sold in a
+        month. Returns (values, how many cards had a sale history)."""
+        capped, _ = capped_card_prices([c['price_cents'] for c in cards])
+        values, checked = [], 0
+        for card, ask in zip(cards, capped):
+            value = max(_MINIMUM_LISTING_CENTS, int(ask) - 1)
+            summary = cls._trusted_sales(card, sales, now)
+            if summary is not None:
+                checked += 1
+                value = 0 if summary.get('price') is None else min(value, summary['price'])
+            values.append(value)
+        return values, checked
+
+    def _expected_net_cents(self, feed_entry, verified, sales=None):
         """Expected cards net per copy (US cents) at LISTING prices: from the
-        Market check (outlier asks capped), else the SteamCardExchange feed."""
+        Market check (outlier asks capped, and capped at the sale price when the
+        sale history is known), else the SteamCardExchange feed."""
         cards = self._trusted_cards(verified)
         card_count = (feed_entry or {}).get('card_count') or len(cards)
         if not card_count:
             return None
         if cards:
-            capped, _ = capped_card_prices([c['price_cents'] for c in cards])
-            return card_drops(card_count) * sum(undercut_net_cents(p) for p in capped) / len(capped)
+            values, _ = self._card_values(cards, sales, time.time())
+            return card_drops(card_count) * sum(seller_receives_cents(v) for v in values) / len(values)
         if feed_entry:
             return card_drops(card_count) * undercut_net_cents(round(feed_entry['set_cents'] / card_count))
         return None
@@ -1263,6 +1418,7 @@ class CardDealsService:
         valuation = settings.get('card_deals_valuation') or VALUATION_BOTH
         sale = snapshot['store'].get(SCOPE_SALE) or {}
         full = snapshot['store'].get(SCOPE_FULL) or {}
+        sales = {} if settings.get(_IGNORE_SALES) else snapshot.get('sales') or {}
         now = time.time()
 
         def fresh_regional(country, app_id):
@@ -1297,7 +1453,7 @@ class CardDealsService:
                 listings = {c: listing for c, listing in listings.items() if listing['usd_cents'] is not None}
                 row = self._row(app_id, snapshot['feed'].get(app_id), listings, country,
                                 snapshot['verified'].get(app_id), snapshot['accounts'],
-                                snapshot['orderbooks'], valuation)
+                                snapshot['orderbooks'], valuation, sales)
                 if row is None:
                     continue
                 row['scope'] = scope
@@ -1324,7 +1480,7 @@ class CardDealsService:
                 -(row['best_profit'] or 0))
 
     def _row(self, app_id, feed_entry, listings, discovery_country, verified, accounts,
-             orderbooks=None, valuation=VALUATION_BOTH):
+             orderbooks=None, valuation=VALUATION_BOTH, sales=None):
         """One game's deal math. `price`/`profit` are at the discovery country's
         price (the one most accounts pay); every account is also priced at its
         own country's price, and the game is a deal when ANY account profits —
@@ -1335,7 +1491,11 @@ class CardDealsService:
         orders (and, for the all-accounts total, walks the order book for the
         copies every account would sell together); "listing" undercuts the
         lowest ask. Instant falls back to listing prices until every card's
-        order book is known; `value_source` says which one was used."""
+        order book is known; `value_source` says which one was used.
+
+        With the cards' sale history (`sales`), listing prices are capped at what
+        each card actually sold for, and the all-accounts listing total counts
+        only the accounts whose drops the market absorbs (`market_absorbs_accounts`)."""
         if not listings or discovery_country not in listings:
             return None
         any_listing = next(iter(listings.values()))
@@ -1344,7 +1504,7 @@ class CardDealsService:
         if not card_count:
             return None
         drops = card_drops(card_count)
-        listing_net = self._expected_net_cents(feed_entry, verified)
+        listing_net = self._expected_net_cents(feed_entry, verified, sales)
         if listing_net is None:
             return None
 
@@ -1383,10 +1543,12 @@ class CardDealsService:
                                            for book in books) / len(books)
 
         cheapest_card = fewest_listings = listing_worst_net = None
-        capped_count, cards_view = 0, None
+        capped_count, cards_view, sales_checked, card_sales = 0, None, 0, []
         if verified_cards:
             capped, capped_count = capped_card_prices([c['price_cents'] for c in verified_cards])
-            listing_worst_net = drops * min(undercut_net_cents(p) for p in capped)
+            values, sales_checked = self._card_values(verified_cards, sales, now)
+            card_sales = [self._trusted_sales(card, sales, now) for card in verified_cards]
+            listing_worst_net = drops * min(seller_receives_cents(v) for v in values)
             cheapest_card = min(c['price_cents'] for c in verified_cards)
             fewest_listings = min(c['listings'] for c in verified_cards)
             average_card = sum(capped) / len(capped)
@@ -1395,12 +1557,26 @@ class CardDealsService:
                 'valued_at': _dollars(value), 'listings': c['listings'], 'capped': value < c['price_cents'],
                 'highest_bid': _dollars(partial[i]['bids'][0][0]) if partial[i] and partial[i]['bids'] else None,
                 'buy_orders': partial[i]['buy_orders'] if partial[i] else None,
+                'sold_price': _dollars(card_sales[i]['price']) if card_sales[i] else None,
+                'sold_per_day': card_sales[i]['per_day'] if card_sales[i] else None,
+                'listing_value': _dollars(values[i]),
             } for i, (c, value) in enumerate(zip(verified_cards, capped))]
         else:
             average_card = feed_entry['set_cents'] / card_count
 
-        def measure(per_copy_net, all_accounts_net, worst_net):
-            """Deal metrics for one way of valuing the cards (US cents in, dollars out)."""
+        # Market absorption, once every card's sale history is known: how many
+        # accounts' drops sell within _ABSORB_DAYS, and how long all of them take.
+        absorbs = days_to_sell = slowest_per_day = None
+        if verified_cards and sales_checked == len(verified_cards):
+            slowest_per_day = min(summary['per_day'] for summary in card_sales)
+            absorbs = accounts_market_absorbs(slowest_per_day, drops, card_count)
+            all_copies = max(1, math.ceil(len(candidates) * drops / card_count))
+            days_to_sell = round(all_copies / slowest_per_day, 1) if slowest_per_day else None
+
+        def measure(per_copy_net, all_accounts_net, worst_net, account_limit=None):
+            """Deal metrics for one way of valuing the cards (US cents in, dollars out).
+            `account_limit`: only that many accounts (the most profitable) count
+            towards the all-accounts total — the ones the market can absorb."""
             priced = [(price_cents, per_copy_net - price_cents) for _, _, price_cents, _ in candidates
                       if price_cents is not None]
             if accounts:
@@ -1410,7 +1586,8 @@ class CardDealsService:
                 best_price_cents = price_low         # no account data yet: the cheapest region
                 looks_profitable = per_copy_net - price_low > 0
             best = per_copy_net - best_price_cents if best_price_cents is not None else None
-            total = sum(all_accounts_net - p for p, _ in priced if all_accounts_net - p > 0)
+            gains = sorted((all_accounts_net - p for p, _ in priced if all_accounts_net - p > 0), reverse=True)
+            total = sum(gains if account_limit is None else gains[:account_limit])
             return {
                 'expected_net': _dollars(per_copy_net),
                 'profit': _dollars(per_copy_net - price),
@@ -1424,7 +1601,7 @@ class CardDealsService:
                 'is_profitable': looks_profitable,
             }
 
-        list_metrics = measure(listing_net, listing_net, listing_worst_net)
+        list_metrics = measure(listing_net, listing_net, listing_worst_net, absorbs)
         sell_now_metrics = (measure(instant_net, sell_now_all_net, drops * min(top_bid_nets))
                             if instant_net is not None else None)
         # Partly checked: can the buy orders still pay for it, even with every
@@ -1512,6 +1689,12 @@ class CardDealsService:
             'cheapest_card_price': _dollars(cheapest_card),
             'fewest_listings': fewest_listings,
             'capped_cards': capped_count,
+            'sales_checked': sales_checked,
+            'slowest_card_sales_per_day': slowest_per_day,
+            'market_absorbs_accounts': absorbs,
+            'days_to_sell_all_accounts': days_to_sell,
+            # More accounts would profit than the market can take in _ABSORB_DAYS.
+            'thin_market': absorbs is not None and absorbs < list_metrics['profitable_accounts'],
             'cards': cards_view,
             'owners': owners,
             'buyers': buyers,
