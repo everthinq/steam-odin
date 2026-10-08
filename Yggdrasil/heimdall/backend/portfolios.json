@@ -4,7 +4,7 @@
       "id": "fbf692611b3c",
       "name": "everthinklol",
       "created_at": "2026-07-21T13:40:18.177768+00:00",
-      "updated_at": "2026-10-07T20:31:51.639223+00:00",
+      "updated_at": "2026-10-08T06:43:56.800373+00:00",
       "transactions": [
         {
           "id": "3ea474874554",
@@ -10350,6 +10350,19 @@
           "fee_percent": 0.0,
           "is_arbitrage": false,
           "created_at": "2026-10-07T20:31:51.639199+00:00"
+        },
+        {
+          "id": "e62bd600c6b3",
+          "item_name": "Dreams & Nightmares Case",
+          "type": "sell",
+          "qty": 7,
+          "price": 0.97,
+          "platform": "buff.market",
+          "date": "2026-10-08",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": false,
+          "created_at": "2026-10-08T06:43:56.800348+00:00"
         }
       ]
     },
