@@ -461,12 +461,14 @@ _TRADEON_CSFLOAT_BODY["secondMarketOptions"]["secondMarketPriceType"] = "Sell"
 #             0.0 where unconfirmed (profit is then an upper bound — see feeKnown)
 #   premium   pulse gates this market as a *direct* first-market (info only; we always
 #             go through TradeOnMarket, so it never blocks a pair)
-# Confirmed live against pulse on 2026-09-05. 'Youpine' is Youpin898's real id;
+# Confirmed live against pulse on 2026-09-05 ('BuffMarket', Buff163's international
+# site, on 2026-10-10). 'Youpine' is Youpin898's real id;
 # C5Game's identifier could not be resolved and is intentionally left out.
 _MARKET_REGISTRY = [
     {'id': 'TradeOnMarket',  'display': 'Tradeon',           'buy_type': 'Sell',            'autobuy': None,  'fee': 0.0,   'premium': False},
     {'id': 'LisSkins',       'display': 'LisSkins',          'buy_type': 'SellWithoutHold', 'autobuy': None,  'fee': 0.0,   'premium': False},
     {'id': 'Buff',           'display': 'Buff163',           'buy_type': 'Sell',            'autobuy': 'Buy', 'fee': 0.015, 'premium': True},
+    {'id': 'BuffMarket',     'display': 'Buff.market',       'buy_type': 'Sell',            'autobuy': 'Buy', 'fee': 0.0,   'premium': False},
     {'id': 'CsFloat',        'display': 'CSFloat',           'buy_type': 'Sell',            'autobuy': None,  'fee': 0.02,  'premium': True},
     {'id': 'Dmarket',        'display': 'DMarket',           'buy_type': 'Sell',            'autobuy': 'Buy', 'fee': 0.0,   'premium': False},
     {'id': 'Steam',          'display': 'Steam',             'buy_type': 'Sell',            'autobuy': 'Buy', 'fee': 0.13,  'premium': False},

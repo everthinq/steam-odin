@@ -29,6 +29,8 @@ const PROFILES = [
     // link to that market's page for the item. Data is fetched live on demand only.
     { id: 'tradeon-steam',           from: 'Tradeon',  fromSub: 'min', to: 'Steam',   toSub: 'autobuy', buyMarket: 'TradeOnMarket', sellMarket: 'Steam',   fetchEndpoint: '/api/huginn/tradeon/steam' },
     { id: 'tradeon-buff',            from: 'Tradeon',  fromSub: 'min', to: 'Buff163', toSub: 'autobuy', buyMarket: 'TradeOnMarket', sellMarket: 'Buff',    fetchEndpoint: '/api/huginn/tradeon/buff' },
+    { id: 'tradeon-buffmarket',      from: 'Tradeon',  fromSub: 'min', to: 'Buff.market', toSub: 'autobuy', buyMarket: 'TradeOnMarket', sellMarket: 'BuffMarket', fetchEndpoint: '/api/huginn/tradeon/pair?buy=TradeOnMarket&sell=BuffMarket&mode=autobuy' },
+    { id: 'tradeon-buffmarket-min',  from: 'Tradeon',  fromSub: 'min', to: 'Buff.market', toSub: 'min',     buyMarket: 'TradeOnMarket', sellMarket: 'BuffMarket', fetchEndpoint: '/api/huginn/tradeon/pair?buy=TradeOnMarket&sell=BuffMarket&mode=min' },
     { id: 'tradeon-csfloat',         from: 'Tradeon',  fromSub: 'min', to: 'CSFloat', toSub: 'min',     buyMarket: 'TradeOnMarket', sellMarket: 'CsFloat', fetchEndpoint: '/api/huginn/tradeon/csfloat' },
     // "autobuy" profiles sell into CSFloat buy orders, which only exist for owned
     // items we've swept (see the CSFloat buy-orders panel). Data covers owned items.
