@@ -461,14 +461,16 @@ _TRADEON_CSFLOAT_BODY["secondMarketOptions"]["secondMarketPriceType"] = "Sell"
 #             0.0 where unconfirmed (profit is then an upper bound — see feeKnown)
 #   premium   pulse gates this market as a *direct* first-market (info only; we always
 #             go through TradeOnMarket, so it never blocks a pair)
-# Confirmed live against pulse on 2026-09-05 ('BuffMarket', Buff163's international
-# site, on 2026-10-10). 'Youpine' is Youpin898's real id;
-# C5Game's identifier could not be resolved and is intentionally left out.
+# Confirmed live against pulse on 2026-09-05; 'BuffMarket' (Buff163's international
+# site) and the twelve markets after Youpine on 2026-10-10, every price type returning items.
+# 'Youpine' is Youpin898's real id. Pulse's own list of markets, their price types and
+# whether a subscription gates them: GET /api/table/supported-features/counter-strike/
+# market-info. Its GameBoost and Bitskins are unsupported, so they are left out.
 _MARKET_REGISTRY = [
     {'id': 'TradeOnMarket',  'display': 'Tradeon',           'buy_type': 'Sell',            'autobuy': None,  'fee': 0.0,   'premium': False},
     {'id': 'LisSkins',       'display': 'LisSkins',          'buy_type': 'SellWithoutHold', 'autobuy': None,  'fee': 0.0,   'premium': False},
     {'id': 'Buff',           'display': 'Buff163',           'buy_type': 'Sell',            'autobuy': 'Buy', 'fee': 0.015, 'premium': True},
-    {'id': 'BuffMarket',     'display': 'Buff.market',       'buy_type': 'Sell',            'autobuy': 'Buy', 'fee': 0.0,   'premium': False},
+    {'id': 'BuffMarket',     'display': 'Buff.market',       'buy_type': 'Sell',            'autobuy': 'Buy', 'fee': 0.0,   'premium': True},
     {'id': 'CsFloat',        'display': 'CSFloat',           'buy_type': 'Sell',            'autobuy': None,  'fee': 0.02,  'premium': True},
     {'id': 'Dmarket',        'display': 'DMarket',           'buy_type': 'Sell',            'autobuy': 'Buy', 'fee': 0.0,   'premium': False},
     {'id': 'Steam',          'display': 'Steam',             'buy_type': 'Sell',            'autobuy': 'Buy', 'fee': 0.13,  'premium': False},
@@ -493,6 +495,18 @@ _MARKET_REGISTRY = [
     {'id': 'Skinout',        'display': 'Skinout',           'buy_type': 'Sell',            'autobuy': None,  'fee': 0.0,   'premium': True},
     {'id': 'SkinSwapMarket', 'display': 'SkinSwap',          'buy_type': 'Sell',            'autobuy': None,  'fee': 0.0,   'premium': False},
     {'id': 'Youpine',        'display': 'Youpin898',         'buy_type': 'Sell',            'autobuy': None,  'fee': 0.0,   'premium': False},
+    {'id': 'C5GameMarket',   'display': 'C5Game',            'buy_type': 'Sell',            'autobuy': None,  'fee': 0.0,   'premium': True},
+    {'id': 'ShadowPay',      'display': 'ShadowPay',         'buy_type': 'Sell',            'autobuy': None,  'fee': 0.0,   'premium': False},
+    {'id': 'UuSkins',        'display': 'UUSkins',           'buy_type': 'Sell',            'autobuy': None,  'fee': 0.0,   'premium': False},
+    {'id': 'ItTrade',        'display': 'ITrade',            'buy_type': 'Sell',            'autobuy': 'Buy', 'fee': 0.0,   'premium': False},
+    {'id': 'SkinFlow',       'display': 'SkinFlow',          'buy_type': 'Sell',            'autobuy': 'Buy', 'fee': 0.0,   'premium': False},
+    {'id': 'CsgoEmpire',     'display': 'CSGOEmpire',        'buy_type': 'Sell',            'autobuy': None,  'fee': 0.0,   'premium': False},
+    {'id': 'Skins',          'display': 'Skins.com',         'buy_type': 'Sell',            'autobuy': None,  'fee': 0.0,   'premium': False},
+    {'id': 'RapidSkinsMarket', 'display': 'RapidSkins (Market)', 'buy_type': 'Sell',        'autobuy': None,  'fee': 0.0,   'premium': False},
+    {'id': 'RapidSkinsTrade',  'display': 'RapidSkins (Trade)',  'buy_type': 'Sell',        'autobuy': None,  'fee': 0.0,   'premium': False},
+    {'id': 'Waxpeer',        'display': 'Waxpeer',           'buy_type': 'Sell',            'autobuy': 'Buy', 'fee': 0.0,   'premium': False},
+    {'id': 'ExeSkins',       'display': 'ExeSkins',          'buy_type': 'Sell',            'autobuy': None,  'fee': 0.0,   'premium': False},
+    {'id': 'EcoSteam',       'display': 'EcoSteam',          'buy_type': 'Sell',            'autobuy': 'Buy', 'fee': 0.0,   'premium': False},
 ]
 _MARKET_BY_ID = {m['id']: m for m in _MARKET_REGISTRY}
 # Markets whose sell-side fee is confirmed; the rest default to 0 (flagged in the UI).
