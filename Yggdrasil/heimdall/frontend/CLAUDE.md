@@ -92,7 +92,7 @@ path prefix — add your page there. No catch-all route, no Settings page.
   `PriceCell`'s `estimated` prop. Profiles also carry `fromPageLabel`/`toPageLabel`
   (registry `pagePriceLabel`); with a row's `pagePrice`, `PriceCell` shows the price
   as the Trade page does and "$x real" in grey under it (profit stays real dollars). `ProfilePicker.jsx` splits each group into
-  "⚡ Sell instantly · buy orders" (toSub `autobuy`) and "List for sale". Any
+  "⚡ Sell instantly · buy orders" (toSub `autobuy`) and "List for sale"; while searching, groups whose buy market (Harvest: account) matches come first (`rankGroups`). Any
   SkinSwap profile shows `SkinSwapBalanceNote.jsx` (deposits: Trade = Market × 1.4;
   sale money stays on Trade; Trade → real dollars calculator; "worth it" check:
   money out ÷ Trade page price ≥ 1/1.4; estimate chip). Keep anything estimated visibly marked.

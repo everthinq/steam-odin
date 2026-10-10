@@ -31,6 +31,8 @@ fetch the profile again.
    orders** first (autobuy: the market buys from you at once), then **List for
    sale · lowest price** (min: you list the item and wait for a buyer). **Instant
    sell only** hides the second kind. Every pulse market is there, 40 in all.
+   Type a market's name in the picker's search and its "Buy on …" section comes
+   first, above the pairs that only sell to it.
    An ⓘ marks GgSwap, GamerPay and SkinSwap (Trade): the pulse website does not
    show them and their prices can be old, so check the market before you trade.
    SkinSwap has two sides; see [SkinSwap](#skinswap-market-trade-and-one-balance) below.

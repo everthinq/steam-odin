@@ -15,6 +15,23 @@ const groupProfiles = (profiles) => {
     return groups;
 };
 
+// While searching, the sections whose buy market (or Harvest account) matches the
+// query come first: typing "skinswap (t" should land on "Buy on SkinSwap (Trade)",
+// not on every "Buy on X → SkinSwap (Trade)" pair above it. A name that starts with
+// the query beats one that only contains it; ties keep their original order.
+const groupRank = (from, q) => {
+    const name = from.toLowerCase();
+    if (name.startsWith(q)) return 0;
+    if (name.includes(q)) return 1;
+    return 2;
+};
+
+const rankGroups = (groups, q) => q
+    ? groups.map((g, i) => ({ g, i, rank: groupRank(g.from, q) }))
+        .sort((a, b) => a.rank - b.rank || a.i - b.i)
+        .map(x => x.g)
+    : groups;
+
 // Selling into a buy order (autobuy) is instant; selling at the lowest listing (min)
 // means listing the item and waiting for a buyer.
 const isInstant = (p) => p.toSub === 'autobuy';
@@ -35,6 +52,7 @@ const ProfilePicker = ({ profiles, value, onChange, groupLabel = (from) => `Buy 
     const [query, setQuery] = useState('');
     const [instantOnly, setInstantOnly] = useState(false);
     const ref = useRef(null);
+    const listRef = useRef(null);
     const active = profiles.find(p => p.id === value) ?? profiles[0];
     const hasBothKinds = profiles.some(isInstant) && profiles.some(p => !isInstant(p));
 
@@ -94,7 +112,7 @@ const ProfilePicker = ({ profiles, value, onChange, groupLabel = (from) => `Buy 
                                 autoFocus
                                 type="text"
                                 value={query}
-                                onChange={e => setQuery(e.target.value)}
+                                onChange={e => { setQuery(e.target.value); if (listRef.current) listRef.current.scrollTop = 0; }}
                                 placeholder={searchPlaceholder}
                                 className="w-full bg-transparent text-sm text-slate-200 placeholder:text-slate-600 outline-none"
                             />
@@ -110,11 +128,11 @@ const ProfilePicker = ({ profiles, value, onChange, groupLabel = (from) => `Buy 
                             </button>
                         )}
                     </div>
-                    <div className="max-h-[60vh] overflow-y-auto custom-scrollbar py-1">
+                    <div ref={listRef} className="max-h-[60vh] overflow-y-auto custom-scrollbar py-1">
                         {filtered.length === 0 && (
                             <div className="px-4 py-3 text-xs text-slate-500">No matching pairs</div>
                         )}
-                        {groupProfiles(filtered).map(group => {
+                        {rankGroups(groupProfiles(filtered), q).map(group => {
                             const instant = group.items.filter(isInstant);
                             const listing = group.items.filter(p => !isInstant(p));
                             const split = instant.length > 0 && listing.length > 0;
