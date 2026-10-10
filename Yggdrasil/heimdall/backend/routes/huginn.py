@@ -351,6 +351,8 @@ def huginn_tradeon_pair():
     try:
         data = ctx.huginn_service.fetch_generated_pair(token, buy, sell, mode, fee)
         return jsonify(data)
+    except ValueError as e:   # a sell-only market (no listings) asked for as a buy or min side
+        return jsonify({'error': str(e)}), 400
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 

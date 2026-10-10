@@ -195,7 +195,8 @@ runs Python 3.9; CI runs 3.11 — write code that works on both.
   run that cancels before paying. Test with dry run; spend only on Ivan's
   explicit word, through the guarded routes.
 - **Sell fees live in ONE place.** The market registry in `huginn_service.py` holds
-  the defaults, and the Fees editor on the Arbitrage page (settings
+  the defaults (ours where confirmed, else pulse's own fee from
+  `GET /api/commission-settings`), and the Fees editor on the Arbitrage page (settings
   `huginn_market_fees`) overrides them. Every profit calculation reads them through
   `HuginnService.market_fee(market_id)`. That covers the Arbitrage profiles, Case
   Arbitrage, Cross-Profile, Harvest, Store Catalogue Arbitrage, LOOT.Farm and the auctions. Never add a

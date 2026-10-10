@@ -186,8 +186,9 @@ const HuginnArbitrage = () => {
         e.target.value = '';
     };
 
-    // Generated pairs: every registry market as a buy source × every sell target
-    // (both autobuy and min where the target has buy orders), minus pairs already
+    // Generated pairs: every registry market with listings as a buy source × every
+    // sell target (autobuy where it has buy orders, min where it has listings — a
+    // sell-only market like SkinSwap (Trade) is autobuy only), minus pairs already
     // covered by the curated PROFILES above. Each is synthesised server-side via
     // /api/huginn/tradeon/pair. Tradeon is skipped as a sell target (it's the pull's
     // own market) and LootFarm too (its selling is handled by the feed-based profiles).
@@ -196,9 +197,10 @@ const HuginnArbitrage = () => {
         const covered = new Set(PROFILES.map(p => `${p.buyMarket}:${p.sellMarket}:${p.toSub}`));
         const generated = [];
         for (const buy of markets) {
+            if (buy.hasListings === false) continue;
             for (const sell of markets) {
                 if (sell.id === buy.id || sell.id === 'TradeOnMarket' || sell.id === 'LootFarm') continue;
-                const modes = sell.hasAutobuy ? ['autobuy', 'min'] : ['min'];
+                const modes = [...(sell.hasAutobuy ? ['autobuy'] : []), ...(sell.hasListings !== false ? ['min'] : [])];
                 for (const mode of modes) {
                     if (covered.has(`${buy.id}:${sell.id}:${mode}`)) continue;
                     // CSFloat autobuy sells into swept buy orders → show the sweep panel.
@@ -208,6 +210,7 @@ const HuginnArbitrage = () => {
                         from: buy.display, fromSub: 'min',
                         to: sell.display, toSub: mode,
                         buyMarket: buy.id, sellMarket: sell.id,
+                        fromNotInPulseUi: !!buy.notInPulseUi, toNotInPulseUi: !!sell.notInPulseUi,
                         fetchEndpoint: `/api/huginn/tradeon/pair?buy=${buy.id}&sell=${sell.id}&mode=${mode}`,
                         ...(csfloatAutobuy ? { autobuy: true } : {}),
                     });

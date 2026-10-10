@@ -455,10 +455,12 @@ _TRADEON_CSFLOAT_BODY["secondMarketOptions"]["secondMarketPriceType"] = "Sell"
 # you'd get), exactly like the hand-written cross-pairs above. Each market carries:
 #   id        pulse enum identifier (URL path segment)
 #   display   name shown in the UI
-#   buy_type  secondMarketPriceType for its MIN listing (the buy leg)
+#   buy_type  secondMarketPriceType for its MIN listing (the buy leg), or None when
+#             pulse has no listings for it (sell only: never a buy source or a min target)
 #   autobuy   secondMarketPriceType for its buy-order (instant-sell leg), or None
-#   fee       default sell-side fee netted from proceeds; editable in settings, and
-#             0.0 where unconfirmed (profit is then an upper bound — see feeKnown)
+#   fee       default sell-side fee netted from proceeds; editable in settings. Ours
+#             where confirmed (_MARKET_FEE_CONFIRMED), else pulse's own fee for the
+#             market (GET /api/commission-settings, read 2026-10-10)
 #   premium   pulse gates this market as a *direct* first-market (info only; we always
 #             go through TradeOnMarket, so it never blocks a pair)
 # Confirmed live against pulse on 2026-09-05; 'BuffMarket' (Buff163's international
@@ -475,28 +477,28 @@ _MARKET_REGISTRY = [
     {'id': 'Dmarket',        'display': 'DMarket',           'buy_type': 'Sell',            'autobuy': 'Buy', 'fee': 0.0,   'premium': False},
     {'id': 'Steam',          'display': 'Steam',             'buy_type': 'Sell',            'autobuy': 'Buy', 'fee': 0.13,  'premium': False},
     {'id': 'LootFarm',       'display': 'LOOT.Farm',         'buy_type': 'Sell',            'autobuy': 'Buy', 'fee': 0.05,  'premium': False},
-    {'id': 'CsMoneyTrade',   'display': 'CSMoney (Trade)',   'buy_type': 'Sell',            'autobuy': 'Buy', 'fee': 0.0,   'premium': False},
-    {'id': 'CsMoneyMarket',  'display': 'CSMoney (Market)',  'buy_type': 'Sell',            'autobuy': 'Buy', 'fee': 0.0,   'premium': False},
-    {'id': 'TradeItStore',   'display': 'TradeIt (Store)',   'buy_type': 'Sell',            'autobuy': None,  'fee': 0.0,   'premium': False},
-    {'id': 'TradeItTrade',   'display': 'TradeIt (Trade)',   'buy_type': 'Sell',            'autobuy': 'Buy', 'fee': 0.0,   'premium': False},
-    {'id': 'Tm',             'display': 'Market.CSGO',       'buy_type': 'Sell',            'autobuy': 'Buy', 'fee': 0.0,   'premium': False},
+    {'id': 'CsMoneyTrade',   'display': 'CSMoney (Trade)',   'buy_type': 'Sell',            'autobuy': 'Buy', 'fee': 0.07,  'premium': False},
+    {'id': 'CsMoneyMarket',  'display': 'CSMoney (Market)',  'buy_type': 'Sell',            'autobuy': 'Buy', 'fee': 0.02,  'premium': False},
+    {'id': 'TradeItStore',   'display': 'TradeIt (Store)',   'buy_type': 'Sell',            'autobuy': None,  'fee': 0.025, 'premium': False},
+    {'id': 'TradeItTrade',   'display': 'TradeIt (Trade)',   'buy_type': 'Sell',            'autobuy': 'Buy', 'fee': 0.10,  'premium': False},
+    {'id': 'Tm',             'display': 'Market.CSGO',       'buy_type': 'Sell',            'autobuy': 'Buy', 'fee': 0.05,  'premium': False},
     {'id': 'WhiteMarket',    'display': 'WhiteMarket',       'buy_type': 'Sell',            'autobuy': 'Buy', 'fee': 0.0,   'premium': True},
-    {'id': 'Skinport',       'display': 'Skinport',          'buy_type': 'Sell',            'autobuy': None,  'fee': 0.0,   'premium': False},
+    {'id': 'Skinport',       'display': 'Skinport',          'buy_type': 'Sell',            'autobuy': None,  'fee': 0.12,  'premium': False},
     {'id': 'SkinVault',      'display': 'SkinVault',         'buy_type': 'Sell',            'autobuy': None,  'fee': 0.0,   'premium': False},
     {'id': 'AimMarket',      'display': 'AimMarket',         'buy_type': 'Sell',            'autobuy': None,  'fee': 0.0,   'premium': True},
     {'id': 'Haloskins',      'display': 'Haloskins',         'buy_type': 'Sell',            'autobuy': None,  'fee': 0.0,   'premium': True},
     {'id': 'AvanMarket',     'display': 'AvanMarket',        'buy_type': 'Sell',            'autobuy': None,  'fee': 0.0,   'premium': True},
     {'id': 'DupeFi',         'display': 'Dupe.fi',           'buy_type': 'Sell',            'autobuy': None,  'fee': 0.0,   'premium': False},
     {'id': 'SkinPlace',      'display': 'SkinPlace',         'buy_type': 'Sell',            'autobuy': None,  'fee': 0.0,   'premium': False},
-    {'id': 'SkinsMonkey',    'display': 'SkinsMonkey',       'buy_type': 'Sell',            'autobuy': None,  'fee': 0.0,   'premium': False},
-    {'id': 'CsTradeTrade',   'display': 'CS.Trade (Trade)',  'buy_type': 'Sell',            'autobuy': None,  'fee': 0.0,   'premium': False},
-    {'id': 'CsTradeMarket',  'display': 'CS.Trade (Market)', 'buy_type': 'Sell',            'autobuy': None,  'fee': 0.0,   'premium': False},
-    {'id': 'CsDeals',        'display': 'CS.Deals',          'buy_type': 'Sell',            'autobuy': None,  'fee': 0.0,   'premium': False},
+    {'id': 'SkinsMonkey',    'display': 'SkinsMonkey',       'buy_type': 'Sell',            'autobuy': None,  'fee': 0.07,  'premium': False},
+    {'id': 'CsTradeTrade',   'display': 'CS.Trade (Trade)',  'buy_type': 'Sell',            'autobuy': None,  'fee': 0.08,  'premium': False},
+    {'id': 'CsTradeMarket',  'display': 'CS.Trade (Market)', 'buy_type': 'Sell',            'autobuy': None,  'fee': 0.08,  'premium': False},
+    {'id': 'CsDeals',        'display': 'CS.Deals',          'buy_type': 'Sell',            'autobuy': None,  'fee': 0.02,  'premium': False},
     {'id': 'Skinout',        'display': 'Skinout',           'buy_type': 'Sell',            'autobuy': None,  'fee': 0.0,   'premium': True},
     {'id': 'SkinSwapMarket', 'display': 'SkinSwap',          'buy_type': 'Sell',            'autobuy': None,  'fee': 0.0,   'premium': False},
     {'id': 'Youpine',        'display': 'Youpin898',         'buy_type': 'Sell',            'autobuy': None,  'fee': 0.0,   'premium': False},
     {'id': 'C5GameMarket',   'display': 'C5Game',            'buy_type': 'Sell',            'autobuy': None,  'fee': 0.0,   'premium': True},
-    {'id': 'ShadowPay',      'display': 'ShadowPay',         'buy_type': 'Sell',            'autobuy': None,  'fee': 0.0,   'premium': False},
+    {'id': 'ShadowPay',      'display': 'ShadowPay',         'buy_type': 'Sell',            'autobuy': None,  'fee': 0.05,  'premium': False},
     {'id': 'UuSkins',        'display': 'UUSkins',           'buy_type': 'Sell',            'autobuy': None,  'fee': 0.0,   'premium': False},
     {'id': 'ItTrade',        'display': 'ITrade',            'buy_type': 'Sell',            'autobuy': 'Buy', 'fee': 0.0,   'premium': False},
     {'id': 'SkinFlow',       'display': 'SkinFlow',          'buy_type': 'Sell',            'autobuy': 'Buy', 'fee': 0.0,   'premium': False},
@@ -504,13 +506,22 @@ _MARKET_REGISTRY = [
     {'id': 'Skins',          'display': 'Skins.com',         'buy_type': 'Sell',            'autobuy': None,  'fee': 0.0,   'premium': False},
     {'id': 'RapidSkinsMarket', 'display': 'RapidSkins (Market)', 'buy_type': 'Sell',        'autobuy': None,  'fee': 0.0,   'premium': False},
     {'id': 'RapidSkinsTrade',  'display': 'RapidSkins (Trade)',  'buy_type': 'Sell',        'autobuy': None,  'fee': 0.0,   'premium': False},
-    {'id': 'Waxpeer',        'display': 'Waxpeer',           'buy_type': 'Sell',            'autobuy': 'Buy', 'fee': 0.0,   'premium': False},
+    {'id': 'Waxpeer',        'display': 'Waxpeer',           'buy_type': 'Sell',            'autobuy': 'Buy', 'fee': 0.06,  'premium': False},
     {'id': 'ExeSkins',       'display': 'ExeSkins',          'buy_type': 'Sell',            'autobuy': None,  'fee': 0.0,   'premium': False},
     {'id': 'EcoSteam',       'display': 'EcoSteam',          'buy_type': 'Sell',            'autobuy': 'Buy', 'fee': 0.0,   'premium': False},
+    # Not on the pulse website's market list, but its tables still answer
+    # (_MARKETS_NOT_IN_PULSE_UI). SkinSwapChina answers nothing, so it is left out.
+    {'id': 'SkinSwapTrade',  'display': 'SkinSwap (Trade)',  'buy_type': None,              'autobuy': 'Buy', 'fee': 0.0,   'premium': False},
+    {'id': 'GgSwap',         'display': 'GgSwap',            'buy_type': 'Sell',            'autobuy': None,  'fee': 0.08,  'premium': False},
+    {'id': 'GamerPay',       'display': 'GamerPay',          'buy_type': 'Sell',            'autobuy': None,  'fee': 0.0,   'premium': False},
 ]
 _MARKET_BY_ID = {m['id']: m for m in _MARKET_REGISTRY}
-# Markets whose sell-side fee is confirmed; the rest default to 0 (flagged in the UI).
+# Markets whose sell-side fee is confirmed; the rest default to pulse's fee (flagged in the UI).
 _MARKET_FEE_CONFIRMED = {'Steam', 'Buff', 'CsFloat', 'Dmarket', 'LootFarm'}
+# Markets the pulse website does not list (its market-info leaves them out) whose
+# tables still answer. Their prices can be stale: on 2026-10-10 GgSwap's were a year
+# old and GamerPay's five months; SkinSwap (Trade)'s buy orders were fresh.
+_MARKETS_NOT_IN_PULSE_UI = {'SkinSwapTrade', 'GgSwap', 'GamerPay'}
 # CSFloat has no pulse buy orders, but it DOES have an autobuy — its highest buy
 # order, gathered by the CSFloat API sweep (see the buy-orders panel). So every buy
 # market can also sell into CSFloat autobuy, sourced from that swept cache, not pulse.
@@ -1301,6 +1312,8 @@ class HuginnService:
         come from TradeOnMarket/{id} pulls (never the paywalled direct pair)."""
         buy = _MARKET_BY_ID[buy_id]      # KeyError -> route returns 400
         sell = _MARKET_BY_ID[sell_id]
+        if not buy['buy_type'] or (mode != 'autobuy' and not sell['buy_type']):
+            raise ValueError(f'{buy_id if not buy["buy_type"] else sell_id} has no listings on pulse')
         if fee is None:
             fee = self.market_fee(sell_id)
         if sell_id in _AUTOBUY_VIA_CSFLOAT_SWEEP and mode == 'autobuy':
@@ -1323,6 +1336,8 @@ class HuginnService:
         (buy_side='first'), otherwise the target market's second-market price. `fee`
         defaults to CSFloat's registry fee."""
         buy = _MARKET_BY_ID[buy_id]      # KeyError -> route returns 400
+        if not buy['buy_type']:
+            raise ValueError(f'{buy_id} has no listings on pulse')
         if buy_id == 'TradeOnMarket':
             # firstMarket of any TradeOnMarket table is TradeOnMarket's min; use the
             # CsFloat table so only CSFloat-listed items are considered (as the curated one does).
@@ -1358,10 +1373,16 @@ class HuginnService:
                 'id': m['id'],
                 'display': m['display'],
                 'hasAutobuy': bool(m['autobuy']) or m['id'] in _AUTOBUY_VIA_CSFLOAT_SWEEP,
+                'hasListings': bool(m['buy_type']),
                 'premium': m['premium'],
+                'notInPulseUi': m['id'] in _MARKETS_NOT_IN_PULSE_UI,
                 'fee': overrides.get(m['id'], m['fee']),
                 'feeDefault': m['fee'],
                 'feeKnown': m['id'] in _MARKET_FEE_CONFIRMED,
+                # Where the default fee comes from: 'confirmed' by us, else 'pulse'.
+                'feeSource': 'confirmed' if m['id'] in _MARKET_FEE_CONFIRMED else 'pulse',
+                # Your Fees-editor value differs from that default (so it is yours).
+                'feeEdited': m['id'] in overrides and overrides[m['id']] != m['fee'],
             })
         return out
 
@@ -1387,7 +1408,7 @@ class HuginnService:
         """{name: {price,count,image}} of a market's MIN listing (what you'd pay to
         buy). Empty for an unknown market id. Cached briefly via _pull_market."""
         m = _MARKET_BY_ID.get(market_id)
-        if not m:
+        if not m or not m['buy_type']:
             return {}
         return self._index_from_pull(self._pull_market(token, market_id, m['buy_type']))
 

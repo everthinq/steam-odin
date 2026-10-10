@@ -18,14 +18,22 @@ buy-order check; the header shows "daily HH:MM ✓" when that went well.
 ## Fees — set once, used everywhere
 
 **Fees** (Arbitrage view) holds each market's sell fee. Every profit figure in
-Huginn, Harvest and Gjallarhorn uses these numbers. "assumed" marks a market
-whose fee has not been confirmed — check it. After changing fees, fetch the
-profile again.
+Huginn, Harvest and Gjallarhorn uses these numbers. Your number always wins.
+A market you never changed uses our confirmed fee, or else Tradeon pulse's own
+fee for it, tagged **pulse**; **yours** marks a fee you changed. ⚡ marks a
+market with buy orders (you can sell there instantly). After changing fees,
+fetch the profile again.
 
 ## Arbitrage
 
 1. Pick a **profile** — a buy market → sell market pair (for example "Buff163 →
-   CSFloat autobuy").
+   CSFloat autobuy"). Each "Buy on …" section lists **⚡ Sell instantly · buy
+   orders** first (autobuy: the market buys from you at once), then **List for
+   sale · lowest price** (min: you list the item and wait for a buyer). **Instant
+   sell only** hides the second kind. Every pulse market is there, 40 in all.
+   An ⓘ marks GgSwap, GamerPay and SkinSwap (Trade): the pulse website does not
+   show them and their prices can be old, so check the market before you trade.
+   SkinSwap (Trade) only buys from you; it is never a place to buy.
 2. Press **Fetch live data**.
 3. The table lists items with buy price, sell price, profit and profit %, how
    many you own and on which accounts, and links to each market.
