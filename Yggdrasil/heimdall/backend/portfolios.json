@@ -4,7 +4,7 @@
       "id": "fbf692611b3c",
       "name": "everthinklol",
       "created_at": "2026-07-21T13:40:18.177768+00:00",
-      "updated_at": "2026-10-10T11:44:09.089396+00:00",
+      "updated_at": "2026-10-10T14:17:34.878079+00:00",
       "transactions": [
         {
           "id": "3ea474874554",
@@ -10402,6 +10402,19 @@
           "fee_percent": 0.0,
           "is_arbitrage": false,
           "created_at": "2026-10-10T11:44:09.089374+00:00"
+        },
+        {
+          "id": "540503a1ba88",
+          "item_name": "AWP | Elite Build (Well-Worn)",
+          "type": "sell",
+          "qty": 1,
+          "price": 14.13,
+          "platform": "skinswap.trade",
+          "date": "2026-10-10T17:00:00",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": false,
+          "created_at": "2026-10-10T14:17:34.878035+00:00"
         }
       ]
     },
