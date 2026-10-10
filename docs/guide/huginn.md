@@ -38,7 +38,10 @@ fetch the profile again.
    no Trade page asking prices, so it is never a place to buy. SkinSwap shows
    your balance 1.4 times higher on its Trade page (its 40% bonus), so Huginn
    divides Trade prices by 1.4: $35.35 on the Trade page is $25.25 here, the
-   amount you can spend on SkinSwap (Market).
+   amount you can spend on SkinSwap (Market). There is no conversion step: sell
+   on the Trade page, open the Market page and the balance is already there,
+   divided by 1.4. Picking a SkinSwap profile shows a card with these steps and
+   a Trade → Market calculator.
 2. Press **Fetch live data**.
 3. The table lists items with buy price, sell price, profit and profit %, how
    many you own and on which accounts, and links to each market.

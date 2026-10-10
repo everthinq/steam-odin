@@ -18,11 +18,15 @@ import LootfarmSellCell from '../../components/arbitrage/LootfarmSellCell';
 import ProfilePicker from '../../components/arbitrage/ProfilePicker';
 import FeeEditor from '../../components/arbitrage/FeeEditor';
 import CsfloatBuyOrdersPanel from '../../components/arbitrage/CsfloatBuyOrdersPanel';
+import SkinSwapBalanceNote from '../../components/arbitrage/SkinSwapBalanceNote';
 
 // Render results in capped pages — the datasets are ~17k rows and painting them all
 // at once freezes the page. Rows are sorted best-profit-first, so the first page is
 // what matters; "Load more" reveals the rest on demand.
 const PAGE_SIZE = 150;
+
+// SkinSwap's two sides; picking either shows the shared-balance card.
+const SKINSWAP_MARKETS = new Set(['SkinSwapMarket', 'SkinSwapTrade']);
 
 const PROFILES = [
     // buyMarket / sellMarket are pulse short-link slugs; when set, the Buy/Sell prices
@@ -424,6 +428,11 @@ const HuginnArbitrage = () => {
                     />
                     {markets.length > 0 && <FeeEditor markets={markets} onSaved={refreshMarkets} />}
                 </div>
+
+                {/* SkinSwap's one balance, two views — only for SkinSwap profiles */}
+                {(SKINSWAP_MARKETS.has(activeProfile.buyMarket) || SKINSWAP_MARKETS.has(activeProfile.sellMarket)) && (
+                    <SkinSwapBalanceNote />
+                )}
 
                 {/* CSFloat buy-order sweep — only for "=> CSFloat (autobuy)" profiles */}
                 {activeProfile.autobuy && (
