@@ -210,20 +210,26 @@ runs Python 3.9; CI runs 3.11 — write code that works on both.
   - `_MARKETS_NOT_IN_PULSE_UI` (SkinSwapTrade, GgSwap, GamerPay): tables answer
     but the pulse website hides them; prices can be months old. UI shows an ⓘ.
   - `_MARKET_PRICE_SCALE`: prices in a bonus balance are turned into real dollars
-    in `_pull_market`. SkinSwap keeps one balance, "Trade = Market × 1.4"; pulse's
+    in `_pull_market`. SkinSwap says "Trade = Market × 1.4"; pulse's
     SkinSwapTrade `Buy` is what its Trade page pays, in Trade dollars, so it is
     divided by 1.4 (checked on the live Trade page 2026-10-10: Redline $35.35 →
-    $25.25 ≈ Buff). SkinSwapMarket `Sell` is already real dollars.
+    $25.25 ≈ Buff). SkinSwapMarket `Sell` is already real dollars. The ×1.4 rule
+    holds for deposits only: money from selling a skin on the Trade page stayed on
+    Trade (live test 2026-10-10, probably escrow under Steam trade protection). So
+    each scaled row keeps the page's own price in `pagePrice` (Trade dollars) and
+    `_MARKET_PAGE_LABEL` names the page; the UI shows `pagePrice` first. Profit
+    always uses `price` (real dollars).
   - `buy_type` `_ESTIMATED_SELL` (SkinSwapTrade only): pulse has no Trade-page
     asking prices, so `_estimated_listings` makes them = pay price ×
     `_SKINSWAP_TRADE_ASK_MARKUP` (measured on 11 skins; the $1–$5 band rests on one
     point), only where pay ≥ `_ESTIMATE_MIN_PAY` and ≥ 0.6 × SkinSwap (Market)'s
-    listing. Rows carry `estimated: True`; the pseudo price type must never reach
+    listing. Rows carry `estimated: True` and `pagePrice` (the estimate in Trade
+    dollars; asks differ per copy, a Redline asked 41.87 then 38.52); the pseudo price type must never reach
     pulse (`fetch_generated_pair` and `fetch_generated_csfloat_autobuy` route it);
     `market_buy_index` returns `{}` for it so Cross-Profile and Store Catalogue
     Arbitrage stay real-data only. More Trade-page prices → update the markup points.
   - `market_registry()` exposes these to the UI as `hasListings`, `notInPulseUi`,
-    `priceNote`, `listingsEstimated`, plus fee `feeSource` / `feeEdited`.
+    `priceNote`, `listingsEstimated`, `pagePriceLabel`, plus fee `feeSource` / `feeEdited`.
   - Pulse discovery: `GET /api/table/supported-features/counter-strike/market-info`
     (price types per market), `GET /api/commission-settings` (fees), per-item
     `POST /api/item/market-best-prices` (`{"marketHashName", "gameType": "CsGo"}`).

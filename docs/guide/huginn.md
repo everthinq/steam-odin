@@ -44,30 +44,39 @@ kept until you reload the page.
 
 ### SkinSwap: Market, Trade and one balance
 
-SkinSwap keeps **one balance** and shows it two ways: the Trade page shows it
-1.4 times higher than the Market page (its 40% bonus). There is no conversion
-button: sell on the Trade page, open the Market page, and the money is already
-there, divided by 1.4.
+SkinSwap has a Market page (real dollars) and a Trade page (Trade dollars,
+shown 1.4 times higher: its 40% bonus).
 
-- **SkinSwap (Market)** is where you buy, in real dollars.
-- **SkinSwap (Trade)** buys from you. Huginn divides its prices by 1.4, so they
-  are real dollars too: $35.35 on the Trade page is $25.25 in Huginn.
+- **Money you deposit** is one balance: the Trade page shows it 1.4 times higher
+  than the Market page.
+- **Money from selling a skin on the Trade page stays on Trade.** Tested on
+  2026-10-10: a sale showed up on the Trade page and not on the Market page.
+  It is most likely held while Steam's 7-day trade protection runs; whether it
+  reaches the Market page afterwards is not confirmed.
+- **SkinSwap (Trade) prices are shown as on the Trade page**, with the
+  real-dollar value (divided by 1.4) in grey under each: $35.35 with "$25.25
+  real" under it. Profit and profit % always use the real-dollar value.
+- **To get Trade balance back out**, buy on the Trade page and sell to a market
+  that pays money. It pays off when what you get after fees is at least 0.714 of
+  the Trade page price (1 divided by 1.4). Steam, LOOT.Farm, TradeIt (Trade) and
+  CSMoney (Trade) pay in their own balance, not money. The SkinSwap card has a
+  calculator for this.
 - **SkinSwap (Trade) min is an estimate**, not real data (pulse does not have the
   Trade page's asking prices). It shows as "(min, estimated)" in amber, with ≈
   before each price: what Trade pays plus the markup measured on 11 skins
   (about 1.6 times under $1, 1.19 times from $5; the $1–$5 range is the least
-  certain). Skins SkinSwap barely wants (Trade pays under 60% of its Market
+  certain). Asks differ per copy, so the real price can be about 10% lower. Skins SkinSwap barely wants (Trade pays under 60% of its Market
   price, or under $0.10) get no estimate. Cross-Profile and Store Catalogue
   Arbitrage leave the estimate out. Check the Trade page before you buy.
 - Picking any SkinSwap profile shows a card under the profile picker with these
-  steps, a Trade → Market calculator and links to both pages.
+  rules, a Trade → real dollars calculator, the "worth it" check and links.
 
-**Sell and buy back (keep the item, pocket the gap).** Pick **Buy on SkinSwap
-(Market) → SkinSwap (Trade) (autobuy)**, press Fetch live data and turn on **My
-Inventory**: each row is an item you own that Trade pays more for than the
-Market sells it. Sell your copies on the Trade page and buy the same number back
-on the Market; you keep the items and the gap stays as SkinSwap balance. Before
-each swap check:
+**Sell and buy back: on hold.** The idea was to sell items you own on the Trade
+page and buy them back cheaper on the Market (**SkinSwap (Market) → SkinSwap
+(Trade) (autobuy)** with **My Inventory**). The live test showed the sale money
+stays on the Trade page, so the buy-back cannot happen at once. Don't do it until
+it is known whether that money reaches the Market page after the trade protection.
+If it does, check before each swap:
 
 - the Trade page's offer for the whole batch (SkinSwap can lower its price as
   its stock grows);

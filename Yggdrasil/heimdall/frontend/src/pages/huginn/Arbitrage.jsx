@@ -219,6 +219,8 @@ const HuginnArbitrage = () => {
                         buyMarket: buy.id, sellMarket: sell.id,
                         fromNotInPulseUi: !!buy.notInPulseUi, toNotInPulseUi: !!sell.notInPulseUi,
                         fromPriceNote: buy.priceNote, toPriceNote: sell.priceNote,
+                        // Rows carry `pagePrice` as this market's own page shows it (SkinSwap Trade page).
+                        fromPageLabel: buy.pagePriceLabel, toPageLabel: sell.pagePriceLabel,
                         fetchEndpoint: `/api/huginn/tradeon/pair?buy=${buy.id}&sell=${sell.id}&mode=${mode}`,
                         ...(csfloatAutobuy ? { autobuy: true } : {}),
                     });
@@ -556,7 +558,7 @@ const HuginnArbitrage = () => {
                             <span className="text-right">Buy</span>
                             <span className="text-right">Sell</span>
                             <span className="text-right">Overstock</span>
-                            <span className="text-right">Profit</span>
+                            <span className="text-right" title={(activeProfile.fromPageLabel || activeProfile.toPageLabel) ? 'In real dollars: SkinSwap Trade page prices divided by 1.4 (the grey value under each price)' : undefined}>Profit</span>
                             <span className="text-right">Profit %</span>
                             <span>Accounts</span>
                         </div>
@@ -616,10 +618,10 @@ const HuginnArbitrage = () => {
                                         </div>
 
                                         <span className="text-base text-right font-bold text-amber-400 tabular-nums">{owned ? owned.count : <span className="text-slate-600">—</span>}</span>
-                                        <PriceCell market={activeProfile.buyMarket} itemName={mhn} price={item.firstMarket?.price} estimated={!!item.firstMarket?.estimated} className="text-base text-right text-slate-300 tabular-nums" />
+                                        <PriceCell market={activeProfile.buyMarket} itemName={mhn} price={item.firstMarket?.price} estimated={!!item.firstMarket?.estimated} pagePrice={item.firstMarket?.pagePrice} pageLabel={activeProfile.fromPageLabel} className="text-base text-right text-slate-300 tabular-nums" />
                                         {activeProfile.sellMarket === 'LootFarm'
                                             ? <LootfarmSellCell itemName={mhn} price={item.secondMarket?.price} rate={item.secondMarket?.rate} />
-                                            : <PriceCell market={activeProfile.sellMarket} itemName={mhn} price={item.secondMarket?.price} estimated={!!item.secondMarket?.estimated} className="text-base text-right text-slate-300 tabular-nums" />}
+                                            : <PriceCell market={activeProfile.sellMarket} itemName={mhn} price={item.secondMarket?.price} estimated={!!item.secondMarket?.estimated} pagePrice={item.secondMarket?.pagePrice} pageLabel={activeProfile.toPageLabel} className="text-base text-right text-slate-300 tabular-nums" />}
                                         <OverstockCell info={item.secondMarket?.overstockInfo} className="text-sm text-right tabular-nums" />
                                         <span className={`text-base text-right tabular-nums ${(item.profit ?? 0) <= 0 ? 'text-red-400' : 'text-emerald-400'}`}>${item.profit?.toFixed(2)}</span>
                                         <span className={`text-base text-right font-semibold tabular-nums ${(item.profitPercent ?? 0) <= 0 ? 'text-red-400' : 'text-emerald-400'}`}>{item.profitPercent?.toFixed(0)}%</span>

@@ -528,15 +528,20 @@ _MARKET_FEE_CONFIRMED = {'Steam', 'Buff', 'CsFloat', 'Dmarket', 'LootFarm'}
 _MARKETS_NOT_IN_PULSE_UI = {'SkinSwapTrade', 'GgSwap', 'GamerPay'}
 # Markets whose pulse prices are in a bonus balance, not real dollars: the factor
 # turns them into real dollars as they are pulled, so every profit compares like
-# with like. SkinSwap has one balance shown two ways: "Trade balance = Market
-# balance x 1.4, always" (its 40% deposit bonus, SkinSwap help centre 2026-10). So
-# $35.35 on its Trade page is $25.25 of Market balance; checked on 2026-10-10
-# against Ivan's Trade page (Fracture Case $0.40, AK-47 Redline $35.35).
+# with like. SkinSwap says "Trade balance = Market balance x 1.4, always" (its 40%
+# deposit bonus, SkinSwap help centre 2026-10), so $35.35 on its Trade page is
+# $25.25 of Market balance. That holds for DEPOSITS: on 2026-10-10 a skin sold on
+# the Trade page gave Trade balance and nothing on Market (most likely
+# escrow under Steam's 7-day trade protection; not confirmed). So each row keeps
+# the price as the market's own page shows it in 'pagePrice' (_MARKET_PAGE_LABEL
+# names that page), and the UI shows that first, the real-dollar value under it.
 _SKINSWAP_TRADE_BONUS = 1.4
 _MARKET_PRICE_SCALE = {'SkinSwapTrade': 1 / _SKINSWAP_TRADE_BONUS}
+_MARKET_PAGE_LABEL = {'SkinSwapTrade': 'Trade page'}
 _MARKET_PRICE_NOTE = {
-    'SkinSwapTrade': ("Prices here are real dollars. SkinSwap's Trade page shows them 1.4 times higher "
-                      "(its 40% bonus): $35.35 there is $25.25 here, the same as your Market balance. "
+    'SkinSwapTrade': ("Prices are shown as on SkinSwap's Trade page (Trade dollars), with the real-dollar value "
+                      "under each (divided by 1.4, its 40% bonus); profit uses the real-dollar value. "
+                      "Money from selling a skin on the Trade page stays on Trade (tested 2026-10-10). "
                       "Its min (what the Trade page asks) is an ESTIMATE, not real data: what Trade pays, "
                       "plus the markup we measured on 11 items (about 1.6 times under $1, 1.19 times from $5). "
                       "Skins SkinSwap barely wants get no estimate."),
@@ -552,7 +557,9 @@ _ESTIMATED_SELL = 'EstimatedSell'
 # M4A1-S Decimator 14.29 -> 17.19, Glock Water Elemental 23.37 -> 27.69, AK-47
 # Redline 35.35 -> 41.87, Deagle Printstream 42.60 -> 50.35, AWP Asiimov 135.51 ->
 # 160.42, AK-47 Vulcan 219.71 -> 263.02 (all 1.18-1.20). Nothing measured between
-# $1 and $4.73, so that stretch is the least certain.
+# $1 and $4.73, so that stretch is the least certain. Asks also differ per copy: later
+# that day the Redline asked 38.52 (1.09) for the same pay price, so the estimate
+# can be about 10% high for the cheapest copy.
 _SKINSWAP_TRADE_ASK_MARKUP = ((1.0, 1.60), (5.0, 1.19))
 # Estimate only inside what was measured. The 11 items paid 0.71-1.3 times their
 # SkinSwap (Market) price and at least $0.10 (real dollars). When Trade pays far
@@ -1348,21 +1355,25 @@ class HuginnService:
             if not price or price < _ESTIMATE_MIN_PAY or not listed \
                     or price < _ESTIMATE_MIN_PAY_SHARE_OF_MARKET * listed:
                 continue
-            markup = self._skinswap_trade_ask_markup(price * _SKINSWAP_TRADE_BONUS)
-            estimate = round(price * markup, 2)
+            pay_on_page = market.get('pagePrice') or round(price * _SKINSWAP_TRADE_BONUS, 2)
+            estimate_on_page = round(pay_on_page * self._skinswap_trade_ask_markup(pay_on_page), 2)
+            estimate = round(estimate_on_page / _SKINSWAP_TRADE_BONUS, 2)
             out.append({**it, 'secondMarket': {**market, 'price': estimate, 'realPrice': estimate,
-                                               'estimated': True}})
+                                               'pagePrice': estimate_on_page, 'estimated': True}})
         return out
 
     @staticmethod
     def _scale_market_prices(items, market_id):
         """Turn a bonus-balance market's prices (the pull's second market) into real
-        dollars, in place (_MARKET_PRICE_SCALE). Other markets are left untouched."""
+        dollars, in place (_MARKET_PRICE_SCALE), keeping the price as the market's own
+        page shows it in 'pagePrice'. Other markets are left untouched."""
         scale = _MARKET_PRICE_SCALE.get(market_id)
         if not scale or not isinstance(items, list):
             return
         for it in items:
             market = it.get('secondMarket') or {}
+            if market.get('price'):
+                market['pagePrice'] = market['price']
             for field in ('price', 'realPrice'):
                 if market.get(field):
                     market[field] = round(market[field] * scale, 2)
@@ -1471,6 +1482,8 @@ class HuginnService:
                 'premium': m['premium'],
                 'notInPulseUi': m['id'] in _MARKETS_NOT_IN_PULSE_UI,
                 'priceNote': _MARKET_PRICE_NOTE.get(m['id']),
+                # Rows carry 'pagePrice', the price as this page shows it (SkinSwap Trade).
+                'pagePriceLabel': _MARKET_PAGE_LABEL.get(m['id']),
                 # Its lowest listing is an estimate, not pulse data (SkinSwap Trade).
                 'listingsEstimated': m['buy_type'] == _ESTIMATED_SELL,
                 'fee': overrides.get(m['id'], m['fee']),

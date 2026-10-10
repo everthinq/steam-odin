@@ -89,10 +89,13 @@ path prefix — add your page there. No catch-all route, no Settings page.
   (ⓘ via `components/arbitrage/NotInPulseNote.jsx`, prop `extra`),
   `fromEstimated`/`toEstimated` with sub "min, estimated" (amber in
   `MarketBadge`). Rows whose price side has `estimated: true` render "≈" via
-  `PriceCell`'s `estimated` prop. `ProfilePicker.jsx` splits each group into
+  `PriceCell`'s `estimated` prop. Profiles also carry `fromPageLabel`/`toPageLabel`
+  (registry `pagePriceLabel`); with a row's `pagePrice`, `PriceCell` shows the price
+  as the Trade page does and "$x real" in grey under it (profit stays real dollars). `ProfilePicker.jsx` splits each group into
   "⚡ Sell instantly · buy orders" (toSub `autobuy`) and "List for sale". Any
-  SkinSwap profile shows `SkinSwapBalanceNote.jsx` (one balance, Trade = Market
-  × 1.4, calculator, estimate chip). Keep anything estimated visibly marked.
+  SkinSwap profile shows `SkinSwapBalanceNote.jsx` (deposits: Trade = Market × 1.4;
+  sale money stays on Trade; Trade → real dollars calculator; "worth it" check:
+  money out ÷ Trade page price ≥ 1/1.4; estimate chip). Keep anything estimated visibly marked.
 - **Styling:** Tailwind utility classes inline, dark slate palette
   (`bg-slate-950/85`, `border-white/10`, `text-slate-400`), `tabular-nums` for
   numbers, section labels `text-[10px] font-bold tracking-widest uppercase`.

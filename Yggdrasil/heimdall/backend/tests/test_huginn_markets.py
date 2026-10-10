@@ -1,6 +1,7 @@
 """Market registry: pulse's fees as defaults (your edited fees win), markets the
 pulse website does not list, sell-only markets (buy orders, no listings), and
-SkinSwap (Trade): prices in real dollars, its min an estimate.
+SkinSwap (Trade): prices in real dollars with the Trade page price kept beside
+them, its min an estimate.
 
 Nothing here touches pulse: every pull is replaced by a fake.
 """
@@ -95,6 +96,15 @@ def test_skinswap_trade_prices_become_real_dollars(monkeypatch):
     assert index['AK']['price'] == pytest.approx(25.25)
     rows = service.fetch_generated_pair('token', 'TradeOnMarket', 'SkinSwapTrade', 'autobuy', fee=0.0)
     assert rows[0]['profit'] == pytest.approx(5.25)
+    # The Trade page's own price stays on the row, for the UI to show first.
+    assert rows[0]['secondMarket']['pagePrice'] == 35.35
+
+
+def test_trade_page_price_is_labelled_only_for_skinswap_trade():
+    registry = _registry()
+    assert registry['SkinSwapTrade']['pagePriceLabel'] == 'Trade page'
+    assert registry['SkinSwapMarket']['pagePriceLabel'] is None
+    assert registry['Steam']['pagePriceLabel'] is None
 
 
 def test_other_markets_keep_pulse_prices(monkeypatch):
@@ -102,6 +112,7 @@ def test_other_markets_keep_pulse_prices(monkeypatch):
     monkeypatch.setattr(service, '_post_tradeon', lambda url, token, body: [
         {'itemName': {'marketHashName': 'AK'}, 'secondMarket': {'price': 25.02}}])
     assert service.market_buy_index('token', 'SkinSwapMarket')['AK']['price'] == 25.02
+    assert 'pagePrice' not in service._pull_market('token', 'SkinSwapMarket', 'Sell')[0]['secondMarket']
 
 
 def test_skinswap_market_and_trade_are_told_apart():
@@ -145,6 +156,8 @@ def test_skinswap_trade_min_estimate_is_close_to_the_trade_page(monkeypatch, pay
     assert row['estimated'] is True
     # In real dollars (Trade dollars / 1.4), within 2% of what the page asked.
     assert row['price'] == pytest.approx(asks / 1.4, rel=0.02)
+    # As the Trade page shows it, in Trade dollars.
+    assert row['pagePrice'] == pytest.approx(asks, rel=0.02)
 
 
 def test_skinswap_trade_min_is_marked_estimated_and_kept_off_real_data_pages(monkeypatch):
