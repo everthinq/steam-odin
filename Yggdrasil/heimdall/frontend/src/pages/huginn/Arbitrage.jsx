@@ -209,10 +209,13 @@ const HuginnArbitrage = () => {
                     if (covered.has(`${buy.id}:${sell.id}:${mode}`)) continue;
                     // CSFloat autobuy sells into swept buy orders → show the sweep panel.
                     const csfloatAutobuy = sell.id === 'CsFloat' && mode === 'autobuy';
+                    // SkinSwap (Trade)'s min is estimated, not pulse data: say so in the name.
+                    const toEstimated = mode === 'min' && !!sell.listingsEstimated;
                     generated.push({
                         id: `gen:${buy.id}:${sell.id}:${mode}`,
-                        from: buy.display, fromSub: 'min',
-                        to: sell.display, toSub: mode,
+                        from: buy.display, fromSub: buy.listingsEstimated ? 'min, estimated' : 'min',
+                        to: sell.display, toSub: toEstimated ? 'min, estimated' : mode,
+                        fromEstimated: !!buy.listingsEstimated, toEstimated,
                         buyMarket: buy.id, sellMarket: sell.id,
                         fromNotInPulseUi: !!buy.notInPulseUi, toNotInPulseUi: !!sell.notInPulseUi,
                         fromPriceNote: buy.priceNote, toPriceNote: sell.priceNote,
@@ -431,7 +434,7 @@ const HuginnArbitrage = () => {
 
                 {/* SkinSwap's one balance, two views — only for SkinSwap profiles */}
                 {(SKINSWAP_MARKETS.has(activeProfile.buyMarket) || SKINSWAP_MARKETS.has(activeProfile.sellMarket)) && (
-                    <SkinSwapBalanceNote />
+                    <SkinSwapBalanceNote estimated={!!(activeProfile.fromEstimated || activeProfile.toEstimated)} />
                 )}
 
                 {/* CSFloat buy-order sweep — only for "=> CSFloat (autobuy)" profiles */}
@@ -613,10 +616,10 @@ const HuginnArbitrage = () => {
                                         </div>
 
                                         <span className="text-base text-right font-bold text-amber-400 tabular-nums">{owned ? owned.count : <span className="text-slate-600">—</span>}</span>
-                                        <PriceCell market={activeProfile.buyMarket} itemName={mhn} price={item.firstMarket?.price} className="text-base text-right text-slate-300 tabular-nums" />
+                                        <PriceCell market={activeProfile.buyMarket} itemName={mhn} price={item.firstMarket?.price} estimated={!!item.firstMarket?.estimated} className="text-base text-right text-slate-300 tabular-nums" />
                                         {activeProfile.sellMarket === 'LootFarm'
                                             ? <LootfarmSellCell itemName={mhn} price={item.secondMarket?.price} rate={item.secondMarket?.rate} />
-                                            : <PriceCell market={activeProfile.sellMarket} itemName={mhn} price={item.secondMarket?.price} className="text-base text-right text-slate-300 tabular-nums" />}
+                                            : <PriceCell market={activeProfile.sellMarket} itemName={mhn} price={item.secondMarket?.price} estimated={!!item.secondMarket?.estimated} className="text-base text-right text-slate-300 tabular-nums" />}
                                         <OverstockCell info={item.secondMarket?.overstockInfo} className="text-sm text-right tabular-nums" />
                                         <span className={`text-base text-right tabular-nums ${(item.profit ?? 0) <= 0 ? 'text-red-400' : 'text-emerald-400'}`}>${item.profit?.toFixed(2)}</span>
                                         <span className={`text-base text-right font-semibold tabular-nums ${(item.profitPercent ?? 0) <= 0 ? 'text-red-400' : 'text-emerald-400'}`}>{item.profitPercent?.toFixed(0)}%</span>

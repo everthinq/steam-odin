@@ -20,7 +20,9 @@ const readOpen = () => {
     try { return localStorage.getItem(OPEN_KEY) === '1'; } catch { return false; }
 };
 
-const SkinSwapBalanceNote = () => {
+// `estimated`: the picked profile uses SkinSwap (Trade)'s min, which pulse does not
+// have; Huginn estimates it (huginn_service.py, _SKINSWAP_TRADE_ASK_MARKUP).
+const SkinSwapBalanceNote = ({ estimated = false }) => {
     const [open, setOpen] = useState(readOpen);
     const [trade, setTrade] = useState('35.35');
     const tradeValue = parseFloat(trade);
@@ -42,11 +44,25 @@ const SkinSwapBalanceNote = () => {
                 <Info size={14} className="text-sky-400 shrink-0" />
                 <span className="text-sky-200 font-medium">SkinSwap: Trade and Market share one balance</span>
                 <span className="text-slate-400 hidden sm:inline">· the Trade page shows it 1.4 times higher, no conversion needed</span>
+                {estimated && (
+                    <span className="shrink-0 rounded-md border border-amber-500/30 bg-amber-500/10 px-1.5 py-0.5 text-[11px] text-amber-300">
+                        ≈ Trade min is an estimate
+                    </span>
+                )}
                 <ChevronDown size={14} className={`ml-auto text-slate-500 shrink-0 transition-transform ${open ? '' : '-rotate-90'}`} />
             </button>
 
             {open && (
                 <div className="px-4 pb-3 pt-1 border-t border-sky-500/10 space-y-3">
+                    {estimated && (
+                        <p className="rounded-lg border border-amber-500/20 bg-amber-500/[0.06] px-3 py-2 text-xs text-amber-200/90">
+                            <b>SkinSwap (Trade) min is an estimate, not real data.</b> Pulse does not have the Trade page&apos;s asking prices.
+                            Huginn takes what Trade pays and adds the markup we measured on 11 skins on 2026-10-10: about 1.6 times
+                            under $1 and 1.19 times from $5 (the $1 to $5 range is the least certain). Skins SkinSwap barely wants
+                            (Trade pays under 60% of its Market price, or under $0.10) get no estimate. Prices marked ≈ are
+                            estimates; check the Trade page before you buy.
+                        </p>
+                    )}
                     <ol className="space-y-1.5 text-slate-300 list-decimal pl-5 marker:text-sky-400/70">
                         <li>Sell your skins on SkinSwap&apos;s <b>Trade page</b>. The money lands on your balance in Trade dollars.</li>
                         <li>Open the <b>Market page</b>. The same balance is already there, divided by 1.4. There is no button and nothing to convert.</li>

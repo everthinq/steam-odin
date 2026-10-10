@@ -456,7 +456,8 @@ _TRADEON_CSFLOAT_BODY["secondMarketOptions"]["secondMarketPriceType"] = "Sell"
 #   id        pulse enum identifier (URL path segment)
 #   display   name shown in the UI
 #   buy_type  secondMarketPriceType for its MIN listing (the buy leg), or None when
-#             pulse has no listings for it (sell only: never a buy source or a min target)
+#             pulse has no listings for it (sell only: never a buy source or a min target),
+#             or _ESTIMATED_SELL when that min is estimated from its buy price
 #   autobuy   secondMarketPriceType for its buy-order (instant-sell leg), or None
 #   fee       default sell-side fee netted from proceeds; editable in settings. Ours
 #             where confirmed (_MARKET_FEE_CONFIRMED), else pulse's own fee for the
@@ -512,8 +513,9 @@ _MARKET_REGISTRY = [
     # Not on the pulse website's market list, but its tables still answer
     # (_MARKETS_NOT_IN_PULSE_UI). SkinSwapChina answers nothing, so it is left out.
     # SkinSwap (Trade)'s pulse price is what its Trade page pays for your skin, in
-    # Trade dollars (see _MARKET_PRICE_SCALE); pulse has no Trade page asking prices.
-    {'id': 'SkinSwapTrade',  'display': 'SkinSwap (Trade)',  'buy_type': None,              'autobuy': 'Buy', 'fee': 0.0,   'premium': False},
+    # Trade dollars (see _MARKET_PRICE_SCALE). Pulse has no Trade page asking prices,
+    # so its min is ESTIMATED from that pay price (_ESTIMATED_SELL).
+    {'id': 'SkinSwapTrade',  'display': 'SkinSwap (Trade)',  'buy_type': 'EstimatedSell',   'autobuy': 'Buy', 'fee': 0.0,   'premium': False},
     {'id': 'GgSwap',         'display': 'GgSwap',            'buy_type': 'Sell',            'autobuy': None,  'fee': 0.08,  'premium': False},
     {'id': 'GamerPay',       'display': 'GamerPay',          'buy_type': 'Sell',            'autobuy': None,  'fee': 0.0,   'premium': False},
 ]
@@ -534,8 +536,30 @@ _SKINSWAP_TRADE_BONUS = 1.4
 _MARKET_PRICE_SCALE = {'SkinSwapTrade': 1 / _SKINSWAP_TRADE_BONUS}
 _MARKET_PRICE_NOTE = {
     'SkinSwapTrade': ("Prices here are real dollars. SkinSwap's Trade page shows them 1.4 times higher "
-                      "(its 40% bonus): $35.35 there is $25.25 here, the same as your Market balance."),
+                      "(its 40% bonus): $35.35 there is $25.25 here, the same as your Market balance. "
+                      "Its min (what the Trade page asks) is an ESTIMATE, not real data: what Trade pays, "
+                      "plus the markup we measured on 11 items (about 1.6 times under $1, 1.19 times from $5). "
+                      "Skins SkinSwap barely wants get no estimate."),
 }
+# A pseudo price type: the market's lowest listing, ESTIMATED from its buy price
+# because pulse has none. Only SkinSwap (Trade) uses it.
+_ESTIMATED_SELL = 'EstimatedSell'
+# What SkinSwap's Trade page asks, as a multiple of what it pays for the same skin
+# (both in Trade dollars), by that pay price: (pay price, markup) points, straight
+# lines between them, flat outside. Measured on Ivan's Trade page on 2026-10-10:
+# Revolution Case 0.14 -> 0.23 (1.64), Fracture Case 0.40 -> 0.64 (1.60), MP9 Storm
+# 0.85 -> 1.37 (1.61), AK-47 Slate 4.73 -> 5.88 (1.24), AWP Atheris 5.31 -> 6.30,
+# M4A1-S Decimator 14.29 -> 17.19, Glock Water Elemental 23.37 -> 27.69, AK-47
+# Redline 35.35 -> 41.87, Deagle Printstream 42.60 -> 50.35, AWP Asiimov 135.51 ->
+# 160.42, AK-47 Vulcan 219.71 -> 263.02 (all 1.18-1.20). Nothing measured between
+# $1 and $4.73, so that stretch is the least certain.
+_SKINSWAP_TRADE_ASK_MARKUP = ((1.0, 1.60), (5.0, 1.19))
+# Estimate only inside what was measured. The 11 items paid 0.71-1.3 times their
+# SkinSwap (Market) price and at least $0.10 (real dollars). When Trade pays far
+# less than Market (2026-10-10: $0.01 for a souvenir Market lists at $2.88) SkinSwap
+# does not want the item and its asking price is unknown, so no estimate is made.
+_ESTIMATE_MIN_PAY = 0.10
+_ESTIMATE_MIN_PAY_SHARE_OF_MARKET = 0.6
 # CSFloat has no pulse buy orders, but it DOES have an autobuy — its highest buy
 # order, gathered by the CSFloat API sweep (see the buy-orders panel). So every buy
 # market can also sell into CSFloat autobuy, sourced from that swept cache, not pulse.
@@ -1275,6 +1299,8 @@ class HuginnService:
     def _pull_market(self, token, market_id, price_type):
         """Pull TradeOnMarket/{market_id} priced as `price_type`, cached briefly so
         generating several pairs that share a market doesn't re-hit pulse each time."""
+        if price_type == _ESTIMATED_SELL:
+            return self._estimated_listings(token, market_id)
         key = (market_id, price_type)
         now = time.time()
         with self._market_pull_lock:
@@ -1293,6 +1319,40 @@ class HuginnService:
                                        if v[0] >= fresh_cutoff}
             self._market_pull_cache[key] = (now, items)
         return items
+
+    @staticmethod
+    def _skinswap_trade_ask_markup(pay_price_trade_dollars):
+        """SkinSwap Trade page asking price / pay price, for a pay price in Trade
+        dollars (_SKINSWAP_TRADE_ASK_MARKUP, interpolated)."""
+        (low_price, low_markup), (high_price, high_markup) = _SKINSWAP_TRADE_ASK_MARKUP
+        if pay_price_trade_dollars <= low_price:
+            return low_markup
+        if pay_price_trade_dollars >= high_price:
+            return high_markup
+        share = (pay_price_trade_dollars - low_price) / (high_price - low_price)
+        return low_markup + share * (high_markup - low_markup)
+
+    def _estimated_listings(self, token, market_id):
+        """A pull shaped like a listings pull, with each item's lowest listing
+        ESTIMATED from the market's buy price (already in real dollars) times the
+        measured markup. Every row is flagged 'estimated'. Items outside the measured
+        range (_ESTIMATE_MIN_PAY, _ESTIMATE_MIN_PAY_SHARE_OF_MARKET against SkinSwap
+        (Market)'s listing) get no estimate."""
+        market_listing = self._index_from_pull(self._pull_market(token, 'SkinSwapMarket', 'Sell'))
+        out = []
+        for it in self._pull_market(token, market_id, 'Buy'):
+            market = it.get('secondMarket') or {}
+            price = market.get('price')
+            name = (it.get('itemName') or {}).get('marketHashName')
+            listed = (market_listing.get(name) or {}).get('price')
+            if not price or price < _ESTIMATE_MIN_PAY or not listed \
+                    or price < _ESTIMATE_MIN_PAY_SHARE_OF_MARKET * listed:
+                continue
+            markup = self._skinswap_trade_ask_markup(price * _SKINSWAP_TRADE_BONUS)
+            estimate = round(price * markup, 2)
+            out.append({**it, 'secondMarket': {**market, 'price': estimate, 'realPrice': estimate,
+                                               'estimated': True}})
+        return out
 
     @staticmethod
     def _scale_market_prices(items, market_id):
@@ -1348,7 +1408,10 @@ class HuginnService:
             # Sell into CSFloat buy orders (swept cache), not a pulse price type —
             # netting the same (possibly edited) fee as every other pair.
             return self.fetch_generated_csfloat_autobuy(token, buy_id, fee)
-        sell_type = sell['autobuy'] if (mode == 'autobuy' and sell['autobuy']) else 'Sell'
+        if mode == 'autobuy' and sell['autobuy']:
+            sell_type = sell['autobuy']
+        else:
+            sell_type = _ESTIMATED_SELL if sell['buy_type'] == _ESTIMATED_SELL else 'Sell'
         if buy_id == 'TradeOnMarket':
             # Tradeon is the pull's own first market — one pull, buy = firstMarket.
             items = self._pull_market(token, sell_id, sell_type)
@@ -1371,6 +1434,9 @@ class HuginnService:
             # CsFloat table so only CSFloat-listed items are considered (as the curated one does).
             return self._combine_autobuy(token, _TRADEON_TABLE_URL.format('CsFloat'),
                                          self._body_for_type('Sell'), buy_side='first', sell_fee=fee)
+        if buy['buy_type'] == _ESTIMATED_SELL:
+            return self._combine_autobuy(token, None, None, buy_side='second', sell_fee=fee,
+                                         items=self._pull_market(token, buy_id, _ESTIMATED_SELL))
         return self._combine_autobuy(token, _TRADEON_TABLE_URL.format(buy_id),
                                      self._body_for_type(buy['buy_type']), buy_side='second', sell_fee=fee)
 
@@ -1405,6 +1471,8 @@ class HuginnService:
                 'premium': m['premium'],
                 'notInPulseUi': m['id'] in _MARKETS_NOT_IN_PULSE_UI,
                 'priceNote': _MARKET_PRICE_NOTE.get(m['id']),
+                # Its lowest listing is an estimate, not pulse data (SkinSwap Trade).
+                'listingsEstimated': m['buy_type'] == _ESTIMATED_SELL,
                 'fee': overrides.get(m['id'], m['fee']),
                 'feeDefault': m['fee'],
                 'feeKnown': m['id'] in _MARKET_FEE_CONFIRMED,
@@ -1437,7 +1505,9 @@ class HuginnService:
         """{name: {price,count,image}} of a market's MIN listing (what you'd pay to
         buy). Empty for an unknown market id. Cached briefly via _pull_market."""
         m = _MARKET_BY_ID.get(market_id)
-        if not m or not m['buy_type']:
+        # Estimated listings stay on the Arbitrage page, where they are marked as
+        # estimates; Cross-Profile and Store Catalogue Arbitrage use real data only.
+        if not m or not m['buy_type'] or m['buy_type'] == _ESTIMATED_SELL:
             return {}
         return self._index_from_pull(self._pull_market(token, market_id, m['buy_type']))
 
@@ -2091,13 +2161,14 @@ class HuginnService:
             result['public_ip'] = detect_public_ip()
         return result
 
-    def _combine_autobuy(self, token, pulse_url, pulse_body, buy_side='second', sell_fee=None):
+    def _combine_autobuy(self, token, pulse_url, pulse_body, buy_side='second', sell_fee=None, items=None):
         """Combine a buy-side market's min price (from pulse) with CSFloat's highest
         buy order (from the cached sweep). `buy_side` selects which pulse market holds
         the buy price: 'first' = Tradeon (the query's first market), 'second' = the
         target market (LisSkins/Buff). Only owned items with a cached CSFloat buy order
         appear. Shaped like the other profiles so the UI renders it unchanged.
         `sell_fee` is the CSFloat seller fee to net (default: its registry fee).
+        `items` is an already-made pull to use instead of asking pulse (estimated listings).
         """
         if sell_fee is None:
             sell_fee = self.market_fee('CsFloat')
@@ -2106,7 +2177,8 @@ class HuginnService:
         if not by_name:
             return []
 
-        items = self._post_tradeon(pulse_url, token, pulse_body)
+        if items is None:
+            items = self._post_tradeon(pulse_url, token, pulse_body)
         key = 'firstMarket' if buy_side == 'first' else 'secondMarket'
         combined = []
         for it in items:
