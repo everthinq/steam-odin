@@ -83,6 +83,16 @@ path prefix — add your page there. No catch-all route, no Settings page.
   `utils/transferItems.js` (`matchesSearchQuery`, wear shorthand fn/mw/ft/ww/bs);
   per-market link builders in `utils/*Market.js` + `*MarketLink.jsx`;
   `utils/tradeonShortLink.js`. Item images: `api.steamapis.com/image/item/730/<name>`.
+- **Huginn Arbitrage profiles** are generated in `pages/huginn/Arbitrage.jsx`
+  from `/api/huginn/markets` (every buy × sell pair, modes autobuy/min) and
+  carry the registry flags: `fromNotInPulseUi`/`toNotInPulseUi` + `*PriceNote`
+  (ⓘ via `components/arbitrage/NotInPulseNote.jsx`, prop `extra`),
+  `fromEstimated`/`toEstimated` with sub "min, estimated" (amber in
+  `MarketBadge`). Rows whose price side has `estimated: true` render "≈" via
+  `PriceCell`'s `estimated` prop. `ProfilePicker.jsx` splits each group into
+  "⚡ Sell instantly · buy orders" (toSub `autobuy`) and "List for sale". Any
+  SkinSwap profile shows `SkinSwapBalanceNote.jsx` (one balance, Trade = Market
+  × 1.4, calculator, estimate chip). Keep anything estimated visibly marked.
 - **Styling:** Tailwind utility classes inline, dark slate palette
   (`bg-slate-950/85`, `border-white/10`, `text-slate-400`), `tabular-nums` for
   numbers, section labels `text-[10px] font-bold tracking-widest uppercase`.

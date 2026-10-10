@@ -201,6 +201,33 @@ runs Python 3.9; CI runs 3.11 — write code that works on both.
   `HuginnService.market_fee(market_id)`. That covers the Arbitrage profiles, Case
   Arbitrage, Cross-Profile, Harvest, Store Catalogue Arbitrage, LOOT.Farm and the auctions. Never add a
   per-feature fee constant.
+- **The pulse market registry (`_MARKET_REGISTRY` in `huginn_service.py`) has
+  rules beyond id + fee.** Every generated pair, Cross-Profile, Harvest and Store
+  Catalogue Arbitrage read markets through `_pull_market` / `market_buy_index` /
+  `market_autobuy_index`, so a rule placed there applies everywhere:
+  - `buy_type` None = sell-only (buy orders, no listings): refused as a buy source
+    or min target before pulse is asked.
+  - `_MARKETS_NOT_IN_PULSE_UI` (SkinSwapTrade, GgSwap, GamerPay): tables answer
+    but the pulse website hides them; prices can be months old. UI shows an ⓘ.
+  - `_MARKET_PRICE_SCALE`: prices in a bonus balance are turned into real dollars
+    in `_pull_market`. SkinSwap keeps one balance, "Trade = Market × 1.4"; pulse's
+    SkinSwapTrade `Buy` is what its Trade page pays, in Trade dollars, so it is
+    divided by 1.4 (checked on the live Trade page 2026-10-10: Redline $35.35 →
+    $25.25 ≈ Buff). SkinSwapMarket `Sell` is already real dollars.
+  - `buy_type` `_ESTIMATED_SELL` (SkinSwapTrade only): pulse has no Trade-page
+    asking prices, so `_estimated_listings` makes them = pay price ×
+    `_SKINSWAP_TRADE_ASK_MARKUP` (measured on 11 skins; the $1–$5 band rests on one
+    point), only where pay ≥ `_ESTIMATE_MIN_PAY` and ≥ 0.6 × SkinSwap (Market)'s
+    listing. Rows carry `estimated: True`; the pseudo price type must never reach
+    pulse (`fetch_generated_pair` and `fetch_generated_csfloat_autobuy` route it);
+    `market_buy_index` returns `{}` for it so Cross-Profile and Store Catalogue
+    Arbitrage stay real-data only. More Trade-page prices → update the markup points.
+  - `market_registry()` exposes these to the UI as `hasListings`, `notInPulseUi`,
+    `priceNote`, `listingsEstimated`, plus fee `feeSource` / `feeEdited`.
+  - Pulse discovery: `GET /api/table/supported-features/counter-strike/market-info`
+    (price types per market), `GET /api/commission-settings` (fees), per-item
+    `POST /api/item/market-best-prices` (`{"marketHashName", "gameType": "CsGo"}`).
+    Tests: `tests/test_huginn_markets.py`.
 - **Automatic selling only touches items that arrive after it is switched on**,
   unless an explicit opt-in says otherwise (`card_auto_sell_include_held`).
 - **Confirmations `a` param = SteamID64**, not the 32-bit account id (see

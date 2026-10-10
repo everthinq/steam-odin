@@ -33,20 +33,7 @@ fetch the profile again.
    sell only** hides the second kind. Every pulse market is there, 40 in all.
    An ⓘ marks GgSwap, GamerPay and SkinSwap (Trade): the pulse website does not
    show them and their prices can be old, so check the market before you trade.
-   SkinSwap has two sides with one balance. **SkinSwap (Market)** is where you
-   buy, priced in real dollars. **SkinSwap (Trade)** buys from you (its pulse
-   price). Pulse has no Trade page asking prices, so its **min is an estimate**,
-   shown as "(min, estimated)" with ≈ before each price: what Trade pays plus the
-   markup measured on 11 skins (about 1.6 times under $1, 1.19 times from $5).
-   Skins SkinSwap barely wants get no estimate, and Cross-Profile and Store
-   Catalogue Arbitrage leave the estimate out. Check the Trade page before you
-   buy. SkinSwap shows
-   your balance 1.4 times higher on its Trade page (its 40% bonus), so Huginn
-   divides Trade prices by 1.4: $35.35 on the Trade page is $25.25 here, the
-   amount you can spend on SkinSwap (Market). There is no conversion step: sell
-   on the Trade page, open the Market page and the balance is already there,
-   divided by 1.4. Picking a SkinSwap profile shows a card with these steps and
-   a Trade → Market calculator.
+   SkinSwap has two sides; see [SkinSwap](#skinswap-market-trade-and-one-balance) below.
 2. Press **Fetch live data**.
 3. The table lists items with buy price, sell price, profit and profit %, how
    many you own and on which accounts, and links to each market.
@@ -54,6 +41,41 @@ fetch the profile again.
 Filters: search (wear shorthand works: `fn`, `mw`, `ft`, `ww`, `bs`), **My
 Inventory**, **Hide Unstable** (LOOT.Farm overstock), collection. Results are
 kept until you reload the page.
+
+### SkinSwap: Market, Trade and one balance
+
+SkinSwap keeps **one balance** and shows it two ways: the Trade page shows it
+1.4 times higher than the Market page (its 40% bonus). There is no conversion
+button: sell on the Trade page, open the Market page, and the money is already
+there, divided by 1.4.
+
+- **SkinSwap (Market)** is where you buy, in real dollars.
+- **SkinSwap (Trade)** buys from you. Huginn divides its prices by 1.4, so they
+  are real dollars too: $35.35 on the Trade page is $25.25 in Huginn.
+- **SkinSwap (Trade) min is an estimate**, not real data (pulse does not have the
+  Trade page's asking prices). It shows as "(min, estimated)" in amber, with ≈
+  before each price: what Trade pays plus the markup measured on 11 skins
+  (about 1.6 times under $1, 1.19 times from $5; the $1–$5 range is the least
+  certain). Skins SkinSwap barely wants (Trade pays under 60% of its Market
+  price, or under $0.10) get no estimate. Cross-Profile and Store Catalogue
+  Arbitrage leave the estimate out. Check the Trade page before you buy.
+- Picking any SkinSwap profile shows a card under the profile picker with these
+  steps, a Trade → Market calculator and links to both pages.
+
+**Sell and buy back (keep the item, pocket the gap).** Pick **Buy on SkinSwap
+(Market) → SkinSwap (Trade) (autobuy)**, press Fetch live data and turn on **My
+Inventory**: each row is an item you own that Trade pays more for than the
+Market sells it. Sell your copies on the Trade page and buy the same number back
+on the Market; you keep the items and the gap stays as SkinSwap balance. Before
+each swap check:
+
+- the Trade page's offer for the whole batch (SkinSwap can lower its price as
+  its stock grows);
+- the Market price for that many copies (Huginn shows only the cheapest);
+- peer-to-peer (P2P) Market listings cost 1% more and take up to 12 hours; instant ones do not;
+- the copies you get back may have other floats;
+- items in a Storage Unit must be moved to the inventory first (Ratatoskr →
+  Transfer).
 
 **CSFloat buy orders** (CSFloat autobuy profiles): **Fetch buy orders** checks
 the highest CSFloat buy order for every item you own (runs in the background,
