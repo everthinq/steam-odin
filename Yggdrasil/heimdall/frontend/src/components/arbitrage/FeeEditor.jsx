@@ -86,7 +86,7 @@ const FeeEditor = ({ markets, onSaved }) => {
                                             <Zap size={11} className="text-emerald-400/70" />
                                         </span>
                                     )}
-                                    {m.notInPulseUi && <NotInPulseNote size={11} />}
+                                    {m.notInPulseUi && <NotInPulseNote size={11} extra={m.priceNote} />}
                                 </span>
                                 {m.feeEdited ? (
                                     <span title={`Your fee. Default: ${feeToPct(m.feeDefault)}% (${m.feeSource === 'pulse' ? 'Tradeon pulse' : 'confirmed'})`} className="text-[9px] uppercase tracking-wider text-amber-400/70">yours</span>

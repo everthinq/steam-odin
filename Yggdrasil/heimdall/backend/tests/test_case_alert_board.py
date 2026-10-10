@@ -34,7 +34,7 @@ def test_every_buy_market_cheaper_than_csfloat_is_listed(monkeypatch, tmp_path):
         'Recoil Case|skinswap', 'Recoil Case|tradeon']
     plain = sent[0][0]
     assert '• Recoil Case ×8100' in plain
-    assert ('CS.MONEY Trade $0.19 · SkinSwap $0.20 · Tradeon $0.22 · CS.MONEY Market $0.23 · LisSkins $0.24  '
+    assert ('CS.MONEY Trade $0.19 · SkinSwap (Market) $0.20 · Tradeon $0.22 · CS.MONEY Market $0.23 · LisSkins $0.24  '
             'vs CSFloat $0.25  (-$0.06, -24.0%)') in plain
 
 
@@ -56,7 +56,7 @@ def test_every_market_is_a_link(monkeypatch, tmp_path):
         {'name': 'Recoil Case', 'prices': {'csfloat': 0.25, 'lisskins': 0.23, 'tradeon': 0.23, 'skinswap': 0.23}},
     ])
     html = _run(monkeypatch, service)[0][1]
-    for market in ('LisSkins', 'Tradeon', 'SkinSwap', 'CSFloat'):
+    for market in ('LisSkins', 'Tradeon', 'SkinSwap (Market)', 'CSFloat'):
         assert f'>{market}</a>' in html
 
 

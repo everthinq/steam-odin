@@ -495,7 +495,7 @@ _MARKET_REGISTRY = [
     {'id': 'CsTradeMarket',  'display': 'CS.Trade (Market)', 'buy_type': 'Sell',            'autobuy': None,  'fee': 0.08,  'premium': False},
     {'id': 'CsDeals',        'display': 'CS.Deals',          'buy_type': 'Sell',            'autobuy': None,  'fee': 0.02,  'premium': False},
     {'id': 'Skinout',        'display': 'Skinout',           'buy_type': 'Sell',            'autobuy': None,  'fee': 0.0,   'premium': True},
-    {'id': 'SkinSwapMarket', 'display': 'SkinSwap',          'buy_type': 'Sell',            'autobuy': None,  'fee': 0.0,   'premium': False},
+    {'id': 'SkinSwapMarket', 'display': 'SkinSwap (Market)', 'buy_type': 'Sell',            'autobuy': None,  'fee': 0.0,   'premium': False},
     {'id': 'Youpine',        'display': 'Youpin898',         'buy_type': 'Sell',            'autobuy': None,  'fee': 0.0,   'premium': False},
     {'id': 'C5GameMarket',   'display': 'C5Game',            'buy_type': 'Sell',            'autobuy': None,  'fee': 0.0,   'premium': True},
     {'id': 'ShadowPay',      'display': 'ShadowPay',         'buy_type': 'Sell',            'autobuy': None,  'fee': 0.05,  'premium': False},
@@ -511,6 +511,8 @@ _MARKET_REGISTRY = [
     {'id': 'EcoSteam',       'display': 'EcoSteam',          'buy_type': 'Sell',            'autobuy': 'Buy', 'fee': 0.0,   'premium': False},
     # Not on the pulse website's market list, but its tables still answer
     # (_MARKETS_NOT_IN_PULSE_UI). SkinSwapChina answers nothing, so it is left out.
+    # SkinSwap (Trade)'s pulse price is what its Trade page pays for your skin, in
+    # Trade dollars (see _MARKET_PRICE_SCALE); pulse has no Trade page asking prices.
     {'id': 'SkinSwapTrade',  'display': 'SkinSwap (Trade)',  'buy_type': None,              'autobuy': 'Buy', 'fee': 0.0,   'premium': False},
     {'id': 'GgSwap',         'display': 'GgSwap',            'buy_type': 'Sell',            'autobuy': None,  'fee': 0.08,  'premium': False},
     {'id': 'GamerPay',       'display': 'GamerPay',          'buy_type': 'Sell',            'autobuy': None,  'fee': 0.0,   'premium': False},
@@ -522,6 +524,18 @@ _MARKET_FEE_CONFIRMED = {'Steam', 'Buff', 'CsFloat', 'Dmarket', 'LootFarm'}
 # tables still answer. Their prices can be stale: on 2026-10-10 GgSwap's were a year
 # old and GamerPay's five months; SkinSwap (Trade)'s buy orders were fresh.
 _MARKETS_NOT_IN_PULSE_UI = {'SkinSwapTrade', 'GgSwap', 'GamerPay'}
+# Markets whose pulse prices are in a bonus balance, not real dollars: the factor
+# turns them into real dollars as they are pulled, so every profit compares like
+# with like. SkinSwap has one balance shown two ways: "Trade balance = Market
+# balance x 1.4, always" (its 40% deposit bonus, SkinSwap help centre 2026-10). So
+# $35.35 on its Trade page is $25.25 of Market balance; checked on 2026-10-10
+# against Ivan's Trade page (Fracture Case $0.40, AK-47 Redline $35.35).
+_SKINSWAP_TRADE_BONUS = 1.4
+_MARKET_PRICE_SCALE = {'SkinSwapTrade': 1 / _SKINSWAP_TRADE_BONUS}
+_MARKET_PRICE_NOTE = {
+    'SkinSwapTrade': ("Prices here are real dollars. SkinSwap's Trade page shows them 1.4 times higher "
+                      "(its 40% bonus): $35.35 there is $25.25 here, the same as your Market balance."),
+}
 # CSFloat has no pulse buy orders, but it DOES have an autobuy — its highest buy
 # order, gathered by the CSFloat API sweep (see the buy-orders panel). So every buy
 # market can also sell into CSFloat autobuy, sourced from that swept cache, not pulse.
@@ -1269,6 +1283,7 @@ class HuginnService:
             return hit[1]
         items = self._post_tradeon(_TRADEON_TABLE_URL.format(market_id), token,
                                    self._body_for_type(price_type))
+        self._scale_market_prices(items, market_id)
         with self._market_pull_lock:
             # A raw pull is tens of megabytes and only reused for _MARKET_PULL_TTL
             # seconds, so drop every expired pull on write instead of keeping one per
@@ -1278,6 +1293,19 @@ class HuginnService:
                                        if v[0] >= fresh_cutoff}
             self._market_pull_cache[key] = (now, items)
         return items
+
+    @staticmethod
+    def _scale_market_prices(items, market_id):
+        """Turn a bonus-balance market's prices (the pull's second market) into real
+        dollars, in place (_MARKET_PRICE_SCALE). Other markets are left untouched."""
+        scale = _MARKET_PRICE_SCALE.get(market_id)
+        if not scale or not isinstance(items, list):
+            return
+        for it in items:
+            market = it.get('secondMarket') or {}
+            for field in ('price', 'realPrice'):
+                if market.get(field):
+                    market[field] = round(market[field] * scale, 2)
 
     def _join_direct(self, items, sell_fee):
         """Build rows from a single TradeOnMarket/{sell} pull, where the buy side IS
@@ -1376,6 +1404,7 @@ class HuginnService:
                 'hasListings': bool(m['buy_type']),
                 'premium': m['premium'],
                 'notInPulseUi': m['id'] in _MARKETS_NOT_IN_PULSE_UI,
+                'priceNote': _MARKET_PRICE_NOTE.get(m['id']),
                 'fee': overrides.get(m['id'], m['fee']),
                 'feeDefault': m['fee'],
                 'feeKnown': m['id'] in _MARKET_FEE_CONFIRMED,
@@ -2268,7 +2297,8 @@ class HuginnService:
     _CONTAINER_MARKETS = ('steam', 'buff', 'csfloat', 'lisskins', 'dmarket', 'tradeon',
                           'csmoney_market', 'csmoney_trade', 'skinswap')
     # Buy-only price sources read from the generic pulse market table (their cheapest
-    # listing). CS.MONEY Trade and SkinSwap price in their own trade balance.
+    # listing). CS.MONEY Trade prices in its own trade balance; SkinSwap (Market) in
+    # real dollars (its Market balance).
     _CONTAINER_REGISTRY_MARKETS = {'csmoney_market': 'CsMoneyMarket', 'csmoney_trade': 'CsMoneyTrade',
                                    'skinswap': 'SkinSwapMarket'}
     # Markets you can realistically CASH OUT on (drives the "best flip" + profit
@@ -2282,8 +2312,8 @@ class HuginnService:
         return {key: self.market_fee(market_id) for key, market_id in self._CONTAINER_SELL_MARKETS.items()}
     # Markets whose pulse price is shown but excluded from the cheapest/dearest/spread
     # math because it's not actionable (DMarket "Sell" prices are often unfillable).
-    # CS.MONEY Trade and SkinSwap price in their own trade balance, but they DO count
-    # as places to buy (cheapest, flip): Ivan buys there with balance (2026-10-01).
+    # CS.MONEY Trade prices in its own trade balance, but it DOES count as a place
+    # to buy (cheapest, flip): Ivan buys there with balance (2026-10-01).
     _CONTAINER_NOISE_MARKETS = frozenset({'dmarket'})
     # The long-horizon price history (lo/hi/f, trend, the "hot" baseline, the
     # bottom-call check) keeps the markets it was built from, so a newly added,
@@ -2830,7 +2860,7 @@ class HuginnService:
     _ALERT_MARKETS = ('csfloat',) + _ALERT_BUY_MARKETS
     _ALERT_MARKET_LABEL = {'lisskins': 'LisSkins', 'buff': 'Buff', 'tradeon': 'Tradeon',
                            'csmoney_market': 'CS.MONEY Market', 'csmoney_trade': 'CS.MONEY Trade',
-                           'skinswap': 'SkinSwap'}
+                           'skinswap': 'SkinSwap (Market)'}
     # Don't re-PING the same (case,market) more often than this even if it flickers
     # out and back in (the board still edits silently). New deals still ping instantly.
     _ALERT_NOTIFY_COOLDOWN_SEC = 3600

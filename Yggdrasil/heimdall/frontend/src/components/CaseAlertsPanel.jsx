@@ -99,7 +99,7 @@ const CaseAlertsPanel = () => {
             <div className="flex items-center gap-2 flex-wrap">
                 <Bell size={14} className="text-amber-300 shrink-0" />
                 <span className="text-xs font-bold tracking-wider text-slate-300 uppercase">Price alerts</span>
-                <span className="text-[11px] text-slate-500">notify when LisSkins, Buff, Tradeon, CS.MONEY Market, CS.MONEY Trade or SkinSwap is cheaper than CSFloat</span>
+                <span className="text-[11px] text-slate-500">notify when LisSkins, Buff, Tradeon, CS.MONEY Market, CS.MONEY Trade or SkinSwap (Market) is cheaper than CSFloat</span>
                 <label className="ml-auto flex items-center gap-2 cursor-pointer">
                     <span className="text-xs text-slate-400">enabled</span>
                     <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)}

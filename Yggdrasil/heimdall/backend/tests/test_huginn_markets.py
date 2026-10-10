@@ -72,7 +72,35 @@ def test_selling_into_a_sell_only_markets_buy_orders_works(monkeypatch):
     monkeypatch.setattr(service, '_post_tradeon', fake_pull)
     rows = service.fetch_generated_pair('token', 'TradeOnMarket', 'SkinSwapTrade', 'autobuy')
     assert bodies == [('https://api-pulse.tradeon.space/api/table/counter-strike/TradeOnMarket/SkinSwapTrade/all', 'Buy')]
-    assert rows and rows[0]['secondMarket']['price'] == 2.0
+    assert rows and rows[0]['secondMarket']['price'] == pytest.approx(1.43)   # 2.00 Trade dollars / 1.4
+
+
+def test_skinswap_trade_prices_become_real_dollars(monkeypatch):
+    # SkinSwap: Trade balance = Market balance x 1.4. Its Trade page paid $35.35
+    # for an AK-47 Redline on 2026-10-10, which is $25.25 of real (Market) balance.
+    service = _service()
+    monkeypatch.setattr(service, '_post_tradeon', lambda url, token, body: [
+        {'itemName': {'marketHashName': 'AK'}, 'firstMarket': {'price': 20.0},
+         'secondMarket': {'price': 35.35, 'realPrice': 35.35}}])
+    index = service.market_autobuy_index('token', 'SkinSwapTrade')
+    assert index['AK']['price'] == pytest.approx(25.25)
+    rows = service.fetch_generated_pair('token', 'TradeOnMarket', 'SkinSwapTrade', 'autobuy', fee=0.0)
+    assert rows[0]['profit'] == pytest.approx(5.25)
+
+
+def test_other_markets_keep_pulse_prices(monkeypatch):
+    service = _service()
+    monkeypatch.setattr(service, '_post_tradeon', lambda url, token, body: [
+        {'itemName': {'marketHashName': 'AK'}, 'secondMarket': {'price': 25.02}}])
+    assert service.market_buy_index('token', 'SkinSwapMarket')['AK']['price'] == 25.02
+
+
+def test_skinswap_market_and_trade_are_told_apart():
+    registry = _registry()
+    assert registry['SkinSwapMarket']['display'] == 'SkinSwap (Market)'
+    assert registry['SkinSwapTrade']['display'] == 'SkinSwap (Trade)'
+    assert '1.4' in registry['SkinSwapTrade']['priceNote']
+    assert registry['SkinSwapMarket']['priceNote'] is None
 
 
 def test_fee_edited_only_when_your_value_differs_from_the_default():

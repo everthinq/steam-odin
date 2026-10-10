@@ -211,6 +211,7 @@ const HuginnArbitrage = () => {
                         to: sell.display, toSub: mode,
                         buyMarket: buy.id, sellMarket: sell.id,
                         fromNotInPulseUi: !!buy.notInPulseUi, toNotInPulseUi: !!sell.notInPulseUi,
+                        fromPriceNote: buy.priceNote, toPriceNote: sell.priceNote,
                         fetchEndpoint: `/api/huginn/tradeon/pair?buy=${buy.id}&sell=${sell.id}&mode=${mode}`,
                         ...(csfloatAutobuy ? { autobuy: true } : {}),
                     });

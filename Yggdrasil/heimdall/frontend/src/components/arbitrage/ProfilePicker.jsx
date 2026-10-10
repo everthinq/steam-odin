@@ -9,7 +9,7 @@ const groupProfiles = (profiles) => {
     const groups = [];
     const byFrom = {};
     for (const p of profiles) {
-        if (!byFrom[p.from]) { byFrom[p.from] = { from: p.from, notInPulseUi: !!p.fromNotInPulseUi, items: [] }; groups.push(byFrom[p.from]); }
+        if (!byFrom[p.from]) { byFrom[p.from] = { from: p.from, notInPulseUi: !!p.fromNotInPulseUi, priceNote: p.fromPriceNote, items: [] }; groups.push(byFrom[p.from]); }
         byFrom[p.from].items.push(p);
     }
     return groups;
@@ -63,7 +63,7 @@ const ProfilePicker = ({ profiles, value, onChange, groupLabel = (from) => `Buy 
             >
                 <ArrowRight size={12} className={isActive ? 'text-amber-500/60 shrink-0' : 'text-slate-600 shrink-0'} />
                 <MarketBadge name={p.to} sub={p.toSub} dim={!isActive} />
-                {p.toNotInPulseUi && <NotInPulseNote />}
+                {p.toNotInPulseUi && <NotInPulseNote extra={p.toPriceNote} />}
                 {isActive && <span className="ml-auto w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0" />}
             </button>
         );
@@ -77,11 +77,11 @@ const ProfilePicker = ({ profiles, value, onChange, groupLabel = (from) => `Buy 
                 className="flex items-center gap-2.5 px-3 py-2 rounded-xl bg-odin-blue/60 border border-amber-500/20 hover:border-amber-500/40 hover:bg-odin-blue/80 transition-all text-sm"
             >
                 <MarketBadge name={active.from} sub={active.fromSub} />
-                {active.fromNotInPulseUi && <NotInPulseNote />}
+                {active.fromNotInPulseUi && <NotInPulseNote extra={active.fromPriceNote} />}
                 <ArrowRight size={13} className="text-amber-500/60 shrink-0" />
                 {hasBothKinds && isInstant(active) && <Zap size={12} className="text-emerald-400/70 shrink-0" />}
                 <MarketBadge name={active.to} sub={active.toSub} />
-                {active.toNotInPulseUi && <NotInPulseNote />}
+                {active.toNotInPulseUi && <NotInPulseNote extra={active.toPriceNote} />}
                 <ChevronDown size={13} className={`text-slate-500 ml-1 transition-transform ${open ? 'rotate-180' : ''}`} />
             </button>
 
@@ -122,7 +122,7 @@ const ProfilePicker = ({ profiles, value, onChange, groupLabel = (from) => `Buy 
                                 <div key={group.from}>
                                     <div className="flex items-center gap-1.5 px-3 pt-2.5 pb-1 text-[10px] font-bold uppercase tracking-wider text-slate-500">
                                         {groupLabel(group.from)}
-                                        {group.notInPulseUi && <NotInPulseNote size={11} />}
+                                        {group.notInPulseUi && <NotInPulseNote size={11} extra={group.priceNote} />}
                                     </div>
                                     {split ? (
                                         <>
