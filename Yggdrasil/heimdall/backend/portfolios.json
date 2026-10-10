@@ -4,7 +4,7 @@
       "id": "fbf692611b3c",
       "name": "everthinklol",
       "created_at": "2026-07-21T13:40:18.177768+00:00",
-      "updated_at": "2026-10-09T23:10:42.120199+00:00",
+      "updated_at": "2026-10-10T11:44:09.089396+00:00",
       "transactions": [
         {
           "id": "3ea474874554",
@@ -10389,6 +10389,19 @@
           "fee_percent": 0.0,
           "is_arbitrage": false,
           "created_at": "2026-10-09T23:10:42.120168+00:00"
+        },
+        {
+          "id": "890de73ff0b6",
+          "item_name": "Sticker | Ribbon Tie",
+          "type": "sell",
+          "qty": 2,
+          "price": 0.68,
+          "platform": "buff.market",
+          "date": "2026-10-10T14:44:00",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": false,
+          "created_at": "2026-10-10T11:44:09.089374+00:00"
         }
       ]
     },
