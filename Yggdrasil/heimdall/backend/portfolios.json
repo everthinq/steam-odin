@@ -4,7 +4,7 @@
       "id": "fbf692611b3c",
       "name": "everthinklol",
       "created_at": "2026-07-21T13:40:18.177768+00:00",
-      "updated_at": "2026-10-11T09:40:47.471824+00:00",
+      "updated_at": "2026-10-11T10:45:42.779532+00:00",
       "transactions": [
         {
           "id": "3ea474874554",
@@ -10558,6 +10558,58 @@
           "fee_percent": 0.0,
           "is_arbitrage": true,
           "created_at": "2026-10-11T09:40:44.337236+00:00"
+        },
+        {
+          "id": "102fa792c9d8",
+          "item_name": "Glock-18 | Green Line (Minimal Wear)",
+          "type": "buy",
+          "qty": 1,
+          "price": 0.71,
+          "platform": "csfloat",
+          "date": "2026-10-11T13:25:00",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": true,
+          "created_at": "2026-10-11T10:25:14.080507+00:00"
+        },
+        {
+          "id": "64523e9caa93",
+          "item_name": "Glock-18 | Green Line (Minimal Wear)",
+          "type": "sell",
+          "qty": 1,
+          "price": 0.86,
+          "platform": "cs.money.trade",
+          "date": "2026-10-11T13:25:00",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": true,
+          "created_at": "2026-10-11T10:25:29.555435+00:00"
+        },
+        {
+          "id": "ae6d7ff60f89",
+          "item_name": "Snakebite Case",
+          "type": "buy",
+          "qty": 1,
+          "price": 0.32,
+          "platform": "csfloat",
+          "date": "2026-10-11T13:36:00",
+          "note": "buy order - sell to buff.market for 19 x $0.32",
+          "fee_percent": 0.0,
+          "is_arbitrage": false,
+          "created_at": "2026-10-11T10:36:23.683418+00:00"
+        },
+        {
+          "id": "0323faecfb79",
+          "item_name": "Sticker | Liquid (Gold) | 2020 RMR",
+          "type": "buy",
+          "qty": 1,
+          "price": 1.73,
+          "platform": "steam",
+          "date": "2026-10-11T13:42:00",
+          "note": "buy order - sell to cs.money.trade for $1.80",
+          "fee_percent": 0.0,
+          "is_arbitrage": false,
+          "created_at": "2026-10-11T10:42:47.397827+00:00"
         }
       ]
     },
