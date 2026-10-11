@@ -4,7 +4,7 @@
       "id": "fbf692611b3c",
       "name": "everthinklol",
       "created_at": "2026-07-21T13:40:18.177768+00:00",
-      "updated_at": "2026-10-10T23:50:29.670646+00:00",
+      "updated_at": "2026-10-11T00:53:25.339069+00:00",
       "transactions": [
         {
           "id": "3ea474874554",
@@ -10480,6 +10480,45 @@
           "fee_percent": 0.0,
           "is_arbitrage": true,
           "created_at": "2026-10-10T23:45:24.981588+00:00"
+        },
+        {
+          "id": "31fd43f2f7e9",
+          "item_name": "USP-S | Check Engine (Field-Tested)",
+          "type": "sell",
+          "qty": 1,
+          "price": 0.58,
+          "platform": "buff.market",
+          "date": "2026-10-11T03:25:00",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": true,
+          "created_at": "2026-10-11T00:25:31.414653+00:00"
+        },
+        {
+          "id": "7e5ab3edf9e2",
+          "item_name": "USP-S | Check Engine (Field-Tested)",
+          "type": "buy",
+          "qty": 1,
+          "price": 0.41,
+          "platform": "csfloat",
+          "date": "2026-10-11T03:25:00",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": true,
+          "created_at": "2026-10-11T00:39:20.387892+00:00"
+        },
+        {
+          "id": "5fabe7435d6f",
+          "item_name": "Dreams & Nightmares Case",
+          "type": "buy",
+          "qty": 5,
+          "price": 0.84,
+          "platform": "skinswap.trade",
+          "date": "2026-10-11T03:50:00",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": false,
+          "created_at": "2026-10-11T00:53:13.868069+00:00"
         }
       ]
     },
