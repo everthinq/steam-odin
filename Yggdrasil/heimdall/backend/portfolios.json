@@ -4,7 +4,7 @@
       "id": "fbf692611b3c",
       "name": "everthinklol",
       "created_at": "2026-07-21T13:40:18.177768+00:00",
-      "updated_at": "2026-10-11T10:45:42.779532+00:00",
+      "updated_at": "2026-10-11T11:11:22.278210+00:00",
       "transactions": [
         {
           "id": "3ea474874554",
@@ -10610,6 +10610,32 @@
           "fee_percent": 0.0,
           "is_arbitrage": false,
           "created_at": "2026-10-11T10:42:47.397827+00:00"
+        },
+        {
+          "id": "a9ec477d535d",
+          "item_name": "MAC-10 | Oceanic (Factory New)",
+          "type": "buy",
+          "qty": 1,
+          "price": 0.65,
+          "platform": "cs.money.market",
+          "date": "2026-10-11T14:10:00",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": true,
+          "created_at": "2026-10-11T11:11:09.760910+00:00"
+        },
+        {
+          "id": "42a1f1af0559",
+          "item_name": "MAC-10 | Oceanic (Factory New)",
+          "type": "sell",
+          "qty": 1,
+          "price": 0.7,
+          "platform": "csfloat",
+          "date": "2026-10-11T14:10:00",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": true,
+          "created_at": "2026-10-11T11:11:22.278158+00:00"
         }
       ]
     },
