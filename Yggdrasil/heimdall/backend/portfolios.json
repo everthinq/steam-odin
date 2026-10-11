@@ -4,7 +4,7 @@
       "id": "fbf692611b3c",
       "name": "everthinklol",
       "created_at": "2026-07-21T13:40:18.177768+00:00",
-      "updated_at": "2026-10-11T11:11:22.278210+00:00",
+      "updated_at": "2026-10-11T13:16:36.362941+00:00",
       "transactions": [
         {
           "id": "3ea474874554",
@@ -10564,10 +10564,10 @@
           "item_name": "Glock-18 | Green Line (Minimal Wear)",
           "type": "buy",
           "qty": 1,
-          "price": 0.71,
+          "price": 999.0,
           "platform": "csfloat",
           "date": "2026-10-11T13:25:00",
-          "note": "",
+          "note": "gandon ne otpravil trade",
           "fee_percent": 0.0,
           "is_arbitrage": true,
           "created_at": "2026-10-11T10:25:14.080507+00:00"
