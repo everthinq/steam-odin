@@ -6,7 +6,8 @@ import SteamMarketLink from '../../components/SteamMarketLink';
 import BuffMarketLink from '../../components/BuffMarketLink';
 import LisSkinsMarketLink from '../../components/LisSkinsMarketLink';
 import CSFloatMarketLink from '../../components/CSFloatMarketLink';
-import CollectionFilter from '../../components/CollectionFilter';
+import ArbitrageFilters, { ActiveFilterChips } from '../../components/arbitrage/ArbitrageFilters';
+import { EMPTY_FILTERS, parsePrice } from '../../utils/arbitrageFilters';
 import CaseArbitrage from '../../components/CaseArbitrage';
 import CrossProfileArbitrage from '../../components/CrossProfileArbitrage';
 import Harvest from '../../components/Harvest';
@@ -27,6 +28,26 @@ const PAGE_SIZE = 150;
 
 // SkinSwap's two sides; picking either shows the shared-balance card.
 const SKINSWAP_MARKETS = new Set(['SkinSwapMarket', 'SkinSwapTrade']);
+
+// Price / account / collection filters are remembered per browser (a convenience;
+// the chips under the toolbar always show what is active).
+const FILTERS_KEY = 'huginn.arbitrageFilters';
+const loadFilters = () => {
+    try {
+        const saved = JSON.parse(localStorage.getItem(FILTERS_KEY) || 'null');
+        if (!saved || typeof saved !== 'object') return EMPTY_FILTERS;
+        const list = (value) => (Array.isArray(value) ? value.filter(v => typeof v === 'string') : []);
+        return {
+            priceSide: saved.priceSide === 'sell' ? 'sell' : 'buy',
+            minPrice: typeof saved.minPrice === 'string' ? saved.minPrice : '',
+            maxPrice: typeof saved.maxPrice === 'string' ? saved.maxPrice : '',
+            accounts: list(saved.accounts),
+            collections: list(saved.collections),
+        };
+    } catch {
+        return EMPTY_FILTERS;
+    }
+};
 
 const PROFILES = [
     // buyMarket / sellMarket are pulse short-link slugs; when set, the Buy/Sell prices
@@ -96,11 +117,15 @@ const HuginnArbitrage = () => {
     const [itemSearch, setItemSearch] = useState('');
     const [inventoryOnly, setInventoryOnly] = useState(false);
     const [hideUnstable, setHideUnstable] = useState(false);   // LOOT.Farm: drop max=0 (Unstable) rows
-    const [includedCollections, setIncludedCollections] = useState([]);
+    const [filters, setFilters] = useState(loadFilters);
     const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
     const [copiedName, setCopiedName] = useState('');
     // Filtering ~17k rows on every keystroke is heavy; defer it so typing stays snappy.
     const deferredSearch = useDeferredValue(itemSearch);
+
+    useEffect(() => {
+        try { localStorage.setItem(FILTERS_KEY, JSON.stringify(filters)); } catch { /* storage unavailable */ }
+    }, [filters]);
 
     useEffect(() => {
         fetch('/api/huginn/scan/cache')
@@ -270,18 +295,39 @@ const HuginnArbitrage = () => {
         return [...tradeonData].sort((a, b) => (b.profitPercent ?? 0) - (a.profitPercent ?? 0));
     }, [tradeonData]);
 
-    // Collections found in the current inventory scan (pulse data carries none),
-    // for the collection filter. Empty until an inventory scan exists.
-    const collections = useMemo(() => {
-        if (!byHash) return [];
-        const set = new Set();
-        for (const entry of Object.values(byHash)) {
-            for (const inst of entry.instances || []) {
-                if (inst.collection) set.add(inst.collection);
+    // Accounts and collections found in the current inventory scan (pulse data
+    // carries neither), each with how many deals of this profile it holds. Empty
+    // until an inventory scan exists. A filtered-on name that is no longer in the
+    // scan stays listed (count 0) so it can still be unticked.
+    const { accountOptions, collectionOptions } = useMemo(() => {
+        const accounts = new Map();
+        const collections = new Map();
+        if (byHash) {
+            for (const entry of Object.values(byHash)) {
+                for (const inst of entry.instances || []) {
+                    if (inst.account_name) accounts.set(inst.account_name, 0);
+                    if (inst.collection) collections.set(inst.collection, 0);
+                }
+            }
+            for (const item of sortedResults) {
+                const owned = byHash[item.itemName?.marketHashName];
+                if (!owned) continue;
+                const seenAccounts = new Set();
+                const seenCollections = new Set();
+                for (const inst of owned.instances || []) {
+                    if (inst.account_name) seenAccounts.add(inst.account_name);
+                    if (inst.collection) seenCollections.add(inst.collection);
+                }
+                for (const name of seenAccounts) accounts.set(name, accounts.get(name) + 1);
+                for (const name of seenCollections) collections.set(name, collections.get(name) + 1);
             }
         }
-        return [...set].sort();
-    }, [byHash]);
+        for (const name of filters.accounts) if (!accounts.has(name)) accounts.set(name, 0);
+        for (const name of filters.collections) if (!collections.has(name)) collections.set(name, 0);
+        const toOptions = (map) => [...map].map(([name, count]) => ({ name, count }))
+            .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
+        return { accountOptions: toOptions(accounts), collectionOptions: toOptions(collections) };
+    }, [byHash, sortedResults, filters.accounts, filters.collections]);
 
     // How many arbitrage rows you own — memoized (was recomputed 3x per render).
     const ownedCount = useMemo(() => {
@@ -293,13 +339,26 @@ const HuginnArbitrage = () => {
 
     const filteredResults = useMemo(() => {
         const q = deferredSearch.trim();
-        const cols = includedCollections.length ? new Set(includedCollections) : null;
-        if (!inventoryOnly && !cols && !q && !hideUnstable) return sortedResults;
+        const accounts = filters.accounts.length ? new Set(filters.accounts) : null;
+        const cols = filters.collections.length ? new Set(filters.collections) : null;
+        const min = parsePrice(filters.minPrice);
+        const max = parsePrice(filters.maxPrice);
+        const priced = min !== null || max !== null;
+        const side = filters.priceSide === 'sell' ? 'secondMarket' : 'firstMarket';
+        if (!inventoryOnly && !accounts && !cols && !priced && !q && !hideUnstable) return sortedResults;
         return sortedResults.filter(item => {
             const owned = byHash?.[item.itemName?.marketHashName];
             if (inventoryOnly && !owned) return false;
             if (hideUnstable && item.secondMarket?.overstockInfo?.limit === 0) return false;
-            if (cols && !(owned?.instances || []).some(i => cols.has(i.collection))) {
+            if (priced) {
+                // Real dollars (SkinSwap Trade page prices are divided by 1.4), as profit is.
+                const price = item[side]?.price;
+                if (price == null || (min !== null && price < min) || (max !== null && price > max)) return false;
+            }
+            // Account and collection must hold for the same copy: "a Dreams & Nightmares
+            // skin on the ticked account", not any copy from that collection on any account.
+            if ((accounts || cols) && !(owned?.instances || []).some(i =>
+                (!accounts || accounts.has(i.account_name)) && (!cols || cols.has(i.collection)))) {
                 return false;
             }
             if (q && !matchesSearchQuery(
@@ -308,7 +367,7 @@ const HuginnArbitrage = () => {
             )) return false;
             return true;
         });
-    }, [sortedResults, byHash, deferredSearch, inventoryOnly, includedCollections, hideUnstable]);
+    }, [sortedResults, byHash, deferredSearch, inventoryOnly, filters, hideUnstable]);
 
     // Only the first `visibleCount` rows are painted (see PAGE_SIZE note).
     const visibleResults = useMemo(
@@ -319,7 +378,7 @@ const HuginnArbitrage = () => {
     // Reset the window whenever the result set changes so we start from the top.
     useEffect(() => {
         setVisibleCount(PAGE_SIZE);
-    }, [deferredSearch, inventoryOnly, includedCollections, profileId, hideUnstable]);
+    }, [deferredSearch, inventoryOnly, filters, profileId, hideUnstable]);
 
     return (
         <div className="h-screen bg-odin-dark flex flex-col overflow-hidden">
@@ -541,17 +600,20 @@ const HuginnArbitrage = () => {
                                     Hide Unstable
                                 </button>
                             )}
-                            <CollectionFilter
-                                collections={collections}
-                                selected={includedCollections}
-                                onChange={setIncludedCollections}
-                                disabledHint="Scan your inventory (Get all items) to filter by collection"
+                            <ArbitrageFilters
+                                filters={filters}
+                                onChange={setFilters}
+                                accountOptions={accountOptions}
+                                collectionOptions={collectionOptions}
+                                hasScan={!!byHash}
+                                realDollarsNote={!!(filters.priceSide === 'sell' ? activeProfile.toPageLabel : activeProfile.fromPageLabel)}
                             />
                             <span className="text-sm text-slate-500 shrink-0">
                                 showing {Math.min(visibleCount, filteredResults.length)} of {filteredResults.length}
                                 {filteredResults.length !== sortedResults.length && ` (${sortedResults.length} total)`}
                             </span>
                         </div>
+                        <ActiveFilterChips filters={filters} onChange={setFilters} />
                         <div className="shrink-0 grid grid-cols-[minmax(0,2.5fr)_64px_88px_88px_84px_96px_88px_minmax(0,1fr)] gap-2 px-4 py-2 border-b border-white/5 text-[11px] font-bold tracking-wider text-slate-400 uppercase bg-black/20">
                             <span>Item</span>
                             <span className="text-right">Owned</span>
@@ -631,7 +693,7 @@ const HuginnArbitrage = () => {
                                                 <span
                                                     key={a.name}
                                                     title={Object.entries(a.locations).map(([l, c]) => `${l} ×${c}`).join('\n')}
-                                                    className="inline-flex items-center gap-1 rounded bg-white/5 border border-white/10 px-2 py-0.5 text-xs text-slate-300"
+                                                    className={`inline-flex items-center gap-1 rounded px-2 py-0.5 text-xs border ${filters.accounts.includes(a.name) ? 'bg-amber-500/10 border-amber-500/40 text-amber-200' : 'bg-white/5 border-white/10 text-slate-300'}`}
                                                 >
                                                     <span className="truncate max-w-[9rem]">{a.name}</span>
                                                     {a.count > 1 && <span className="text-amber-400 font-medium">×{a.count}</span>}

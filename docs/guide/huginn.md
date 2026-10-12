@@ -41,8 +41,17 @@ fetch the profile again.
    many you own and on which accounts, and links to each market.
 
 Filters: search (wear shorthand works: `fn`, `mw`, `ft`, `ww`, `bs`), **My
-Inventory**, **Hide Unstable** (LOOT.Farm overstock), collection. Results are
-kept until you reload the page.
+Inventory**, **Hide Unstable** (LOOT.Farm overstock), and the **Filters** button:
+
+- **Price**: a range on the buy price or the sell price, typed or picked from
+  Under $1, $1–$10, $10–$100, $100+. SkinSwap (Trade) is filtered in real dollars.
+- **Accounts**: only items held on the ticked accounts (needs Get all items).
+- **Collections**: only items from the ticked collections you hold. With accounts
+  ticked too, the same copy must match both.
+
+Each option shows how many deals of the profile it matches. Active filters show as
+chips under the search bar (× removes one) and are remembered in this browser.
+Results are kept until you reload the page.
 
 ### SkinSwap: Market, Trade and one balance
 

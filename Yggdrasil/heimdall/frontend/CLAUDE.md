@@ -77,9 +77,10 @@ path prefix — add your page there. No catch-all route, no Settings page.
 - **localStorage** is for per-browser conveniences only (layout, filters),
   every access wrapped in `try`/`catch`. Keys in use: `heimdall-dashboard-layout`,
   `draupnir-portfolio-layout`, `huginn.harvest`, `andvari.valuation`,
-  `andvari.buy.apps`, `ratatoskr.storeArbitrage`, `huginn.skinswapNoteOpen`, `lf_balance_pct`, `lf_unlocked`.
+  `andvari.buy.apps`, `huginn.arbitrageFilters`, `ratatoskr.storeArbitrage`, `huginn.skinswapNoteOpen`, `lf_balance_pct`, `lf_unlocked`.
 - **Shared pieces:** `components/gjallarhorn/InfoTip.jsx` (prop `tip`) for
   tooltips; `components/draupnir/columnSort.js` (`useColumnSort`, `sortRows`) with the header `components/ratatoskr/SortHeader.jsx`;
+  `components/arbitrage/ArbitrageFilters.jsx` (Arbitrage price / account / collection filters + chips; helpers in `utils/arbitrageFilters.js`);
   `utils/transferItems.js` (`matchesSearchQuery`, wear shorthand fn/mw/ft/ww/bs);
   per-market link builders in `utils/*Market.js` + `*MarketLink.jsx`;
   `utils/tradeonShortLink.js`. Item images: `api.steamapis.com/image/item/730/<name>`.
