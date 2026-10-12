@@ -357,7 +357,7 @@ _TRADEON_STEAM_BODY = {
     "templateId": None,
     "firstMarketOptions": {
         "firstMarketPriceType": "Sell",
-        "firstMarketPriceFilter": {"minValue": 0.13, "maxValue": None},
+        "firstMarketPriceFilter": {"minValue": None, "maxValue": None},   # no price floor: cheap items count too
         "firstMarketCountFilter": {"minValue": None, "maxValue": None},
         "updateTimeFilter": {"minTime": None, "maxTime": None},
     },
@@ -1299,14 +1299,12 @@ class HuginnService:
 
     def _body_for_type(self, price_type, unfiltered=False):
         """A standard Tradeon table body with the second market priced as `price_type`.
-        `unfiltered` drops the filters on Tradeon's own price (the $0.13 floor and
-        "hide sold out on Tradeon"), which only make sense for a buy-side pull: a
-        sell-side lookup (what a market pays for an item you hold) must not lose an
-        item because Tradeon lists it cheaply or not at all."""
+        `unfiltered` also shows items Tradeon has sold out of, which only matters
+        for a sell-side lookup (what a market pays for an item you hold): that item
+        must not vanish because Tradeon does not list it."""
         body = copy.deepcopy(_TRADEON_STEAM_BODY)
         body["secondMarketOptions"]["secondMarketPriceType"] = price_type
         if unfiltered:
-            body["firstMarketOptions"]["firstMarketPriceFilter"]["minValue"] = None
             body["counterStrikeItemTypeOptions"]["displaySoldOutItems"] = True
         return body
 
@@ -1537,8 +1535,8 @@ class HuginnService:
         get selling instantly). Empty if the market has no autobuy. CSFloat comes from
         the swept buy-orders cache (no pulse buy price); every other autobuy market
         comes from pulse's 'Buy' price type, unfiltered: Harvest, Cross-Profile and
-        Store Catalogue Arbitrage look up items you hold, and cheap ones (Tradeon
-        price under $0.13) or ones Tradeon has sold out of still have buy orders."""
+        Store Catalogue Arbitrage look up items you hold, and ones Tradeon has sold
+        out of can still have buy orders."""
         m = _MARKET_BY_ID.get(market_id)
         if not m:
             return {}

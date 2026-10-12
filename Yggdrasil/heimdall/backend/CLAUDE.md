@@ -207,10 +207,11 @@ runs Python 3.9; CI runs 3.11 — write code that works on both.
   `market_autobuy_index`, so a rule placed there applies everywhere:
   - `buy_type` None = sell-only (buy orders, no listings): refused as a buy source
     or min target before pulse is asked.
-  - Every pull filters on Tradeon's own price (`_TRADEON_STEAM_BODY`: $0.13 floor,
-    sold out hidden), a buy-side filter. `market_autobuy_index` pulls `unfiltered`
+  - No pulse request has a price floor (`_TRADEON_STEAM_BODY`, which every body
+    copies; Ivan removed the old $0.13 floor 2026-10-12). Pulls hide items Tradeon
+    has sold out of, a buy-side filter; `market_autobuy_index` pulls `unfiltered`
     (cached apart) so Harvest, Cross-Profile and Store Catalogue Arbitrage still see
-    what a market pays for cheap items you hold; generated pairs keep the floor.
+    what a market pays for those.
   - `_MARKETS_NOT_IN_PULSE_UI` (SkinSwapTrade, GgSwap, GamerPay): tables answer
     but the pulse website hides them; prices can be months old. UI shows an ⓘ.
   - `_MARKET_PRICE_SCALE`: prices in a bonus balance are turned into real dollars
