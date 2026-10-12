@@ -4,7 +4,7 @@
       "id": "fbf692611b3c",
       "name": "everthinklol",
       "created_at": "2026-07-21T13:40:18.177768+00:00",
-      "updated_at": "2026-10-12T20:47:23.525420+00:00",
+      "updated_at": "2026-10-12T21:34:06.126966+00:00",
       "transactions": [
         {
           "id": "3ea474874554",
@@ -10703,19 +10703,6 @@
           "created_at": "2026-10-12T17:58:39.338852+00:00"
         },
         {
-          "id": "c3ed5bbb004c",
-          "item_name": "Kilowatt Case",
-          "type": "buy",
-          "qty": 11,
-          "price": 0.08,
-          "platform": "cs.money.trade",
-          "date": "2026-10-12T22:55:00",
-          "note": "",
-          "fee_percent": 0.0,
-          "is_arbitrage": false,
-          "created_at": "2026-10-12T19:52:07.783145+00:00"
-        },
-        {
           "id": "76b699b41f29",
           "item_name": "CZ75-Auto | Distressed (Field-Tested)",
           "type": "sell",
@@ -10727,6 +10714,97 @@
           "fee_percent": 0.0,
           "is_arbitrage": false,
           "created_at": "2026-10-12T20:06:01.249299+00:00"
+        },
+        {
+          "id": "cdc2cd12ada5",
+          "item_name": "AUG | Luxe Trim (Field-Tested)",
+          "type": "sell",
+          "qty": 17,
+          "price": 0.36,
+          "platform": "steam",
+          "date": "2026-10-13T00:02:00",
+          "note": "buy them back on csfloat",
+          "fee_percent": 0.0,
+          "is_arbitrage": false,
+          "created_at": "2026-10-12T21:02:35.672048+00:00"
+        },
+        {
+          "id": "36574504db03",
+          "item_name": "MAC-10 | Classic Crate (Well-Worn)",
+          "type": "buy",
+          "qty": 2,
+          "price": 0.25,
+          "platform": "csfloat",
+          "date": "2026-10-13T00:12:00",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": true,
+          "created_at": "2026-10-12T21:12:31.828035+00:00"
+        },
+        {
+          "id": "eac080efbef0",
+          "item_name": "MAC-10 | Classic Crate (Well-Worn)",
+          "type": "sell",
+          "qty": 2,
+          "price": 0.49,
+          "platform": "steam",
+          "date": "2026-10-13T00:12:00",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": true,
+          "created_at": "2026-10-12T21:13:36.012072+00:00"
+        },
+        {
+          "id": "eb9c21ec7299",
+          "item_name": "M249 | Hypnosis (Well-Worn)",
+          "type": "buy",
+          "qty": 1,
+          "price": 0.2,
+          "platform": "csfloat",
+          "date": "2026-10-13T00:17:00",
+          "note": "steam: sold on everthinklol1",
+          "fee_percent": 0.0,
+          "is_arbitrage": true,
+          "created_at": "2026-10-12T21:19:42.481778+00:00"
+        },
+        {
+          "id": "008a87acbdd3",
+          "item_name": "Kilowatt Case",
+          "type": "buy",
+          "qty": 28,
+          "price": 0.08,
+          "platform": "cs.money.trade",
+          "date": "2026-10-13T00:30:00",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": true,
+          "created_at": "2026-10-12T21:29:33.163137+00:00"
+        },
+        {
+          "id": "8a955d3820f9",
+          "item_name": "Glock-18 | Green Line (Minimal Wear)",
+          "type": "sell",
+          "qty": 2,
+          "price": 0.86,
+          "platform": "cs.money.trade",
+          "date": "2026-10-13T00:29:00",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": false,
+          "created_at": "2026-10-12T21:29:53.138821+00:00"
+        },
+        {
+          "id": "bff41fc38da6",
+          "item_name": "Kilowatt Case",
+          "type": "sell",
+          "qty": 28,
+          "price": 0.1,
+          "platform": "csfloat",
+          "date": "2026-10-13T00:30:00",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": true,
+          "created_at": "2026-10-12T21:33:37.309599+00:00"
         }
       ]
     },
@@ -12672,7 +12750,7 @@
       "id": "99c18756f9ee",
       "name": "everthinklol1",
       "created_at": "2026-07-21T14:49:46.392883+00:00",
-      "updated_at": "2026-09-24T18:48:26.527887+00:00",
+      "updated_at": "2026-10-12T21:25:16.707420+00:00",
       "transactions": [
         {
           "id": "ed83a19ba6bc",
@@ -16853,6 +16931,45 @@
           "fee_percent": 0.0,
           "is_arbitrage": true,
           "created_at": "2026-09-24T18:48:26.527862+00:00"
+        },
+        {
+          "id": "8bd56c56829d",
+          "item_name": "M249 | Hypnosis (Well-Worn)",
+          "type": "sell",
+          "qty": 3,
+          "price": 0.32,
+          "platform": "steam",
+          "date": "2026-10-13T00:17:00",
+          "note": "buy back on everthinklol",
+          "fee_percent": 0.0,
+          "is_arbitrage": true,
+          "created_at": "2026-10-12T21:17:31.531221+00:00"
+        },
+        {
+          "id": "83583ba0d032",
+          "item_name": "SCAR-20 | Blueprint (Field-Tested)",
+          "type": "buy",
+          "qty": 9,
+          "price": 0.32,
+          "platform": "csfloat",
+          "date": "2026-10-13T00:24:00",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": true,
+          "created_at": "2026-10-12T21:24:33.492403+00:00"
+        },
+        {
+          "id": "ca27fab8cff5",
+          "item_name": "SCAR-20 | Blueprint (Field-Tested)",
+          "type": "sell",
+          "qty": 9,
+          "price": 0.49,
+          "platform": "steam",
+          "date": "2026-10-13T00:24:00",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": true,
+          "created_at": "2026-10-12T21:25:00.504268+00:00"
         }
       ]
     },
