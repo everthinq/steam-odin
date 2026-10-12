@@ -4,7 +4,7 @@
       "id": "fbf692611b3c",
       "name": "everthinklol",
       "created_at": "2026-07-21T13:40:18.177768+00:00",
-      "updated_at": "2026-10-12T16:53:17.328325+00:00",
+      "updated_at": "2026-10-12T17:58:55.387291+00:00",
       "transactions": [
         {
           "id": "3ea474874554",
@@ -10539,7 +10539,7 @@
           "type": "sell",
           "qty": 1,
           "price": 2.67,
-          "platform": "cs.money.market",
+          "platform": "cs.money.trade",
           "date": "2026-10-11T12:39:00",
           "note": "",
           "fee_percent": 0.0,
@@ -10604,7 +10604,7 @@
           "type": "buy",
           "qty": 1,
           "price": 0.65,
-          "platform": "cs.money.market",
+          "platform": "cs.money.trade",
           "date": "2026-10-11T14:10:00",
           "note": "",
           "fee_percent": 0.0,
@@ -10643,7 +10643,7 @@
           "type": "sell",
           "qty": 5,
           "price": 0.86,
-          "platform": "cs.money.market",
+          "platform": "cs.money.trade",
           "date": "2026-10-12T19:08:00",
           "note": "bought Dreams & Nightmares Case",
           "fee_percent": 0.0,
@@ -10675,6 +10675,32 @@
           "fee_percent": 0.0,
           "is_arbitrage": true,
           "created_at": "2026-10-12T16:53:17.328291+00:00"
+        },
+        {
+          "id": "9b5f4a634019",
+          "item_name": "Sticker | gla1ve | Berlin 2019",
+          "type": "buy",
+          "qty": 2,
+          "price": 0.04,
+          "platform": "csfloat",
+          "date": "2026-10-12T21:00:00",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": true,
+          "created_at": "2026-10-12T17:58:16.582817+00:00"
+        },
+        {
+          "id": "80b0ac238799",
+          "item_name": "Sticker | gla1ve | Berlin 2019",
+          "type": "sell",
+          "qty": 2,
+          "price": 0.08,
+          "platform": "cs.money.trade",
+          "date": "2026-10-12T21:00:00",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": true,
+          "created_at": "2026-10-12T17:58:39.338852+00:00"
         }
       ]
     },
