@@ -209,7 +209,7 @@ def test_market_pull_cache_drops_expired_pulls_on_write(monkeypatch):
     service._market_pull_cache = {k: (v[0] - huginn_service._MARKET_PULL_TTL - 1, v[1])
                                   for k, v in service._market_pull_cache.items()}
     service._pull_market('token', 'Dmarket', 'Buy')
-    assert list(service._market_pull_cache) == [('Dmarket', 'Buy')]
+    assert list(service._market_pull_cache) == [('Dmarket', 'Buy', False)]
 
 
 # ---- 4. file caches re-read only on change + locks ----------------------------

@@ -116,6 +116,9 @@ make?" Every purchase you still hold (from Draupnir, oldest sold first) against
 an autobuy market's instant offer.
 
 - Pick the account (or all) and the market.
+- A lot the market has no buy order for is left out and counted as "lots not
+  bought there" (CS.MONEY Trade, for example, does not buy many capsules and
+  cheap stickers). Pick more markets to see it priced elsewhere.
 - **check** marks an offer that looks wrong (much above Buff163, or paid in
   site balance) — it is left out of the totals.
 - The clock icon marks lots bought less than 8 days ago (may still be trade

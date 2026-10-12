@@ -1297,25 +1297,33 @@ class HuginnService:
 
     # ---- Generated pairs (any registry market -> any registry market) -------
 
-    def _body_for_type(self, price_type):
-        """A standard Tradeon table body with the second market priced as `price_type`."""
+    def _body_for_type(self, price_type, unfiltered=False):
+        """A standard Tradeon table body with the second market priced as `price_type`.
+        `unfiltered` drops the filters on Tradeon's own price (the $0.13 floor and
+        "hide sold out on Tradeon"), which only make sense for a buy-side pull: a
+        sell-side lookup (what a market pays for an item you hold) must not lose an
+        item because Tradeon lists it cheaply or not at all."""
         body = copy.deepcopy(_TRADEON_STEAM_BODY)
         body["secondMarketOptions"]["secondMarketPriceType"] = price_type
+        if unfiltered:
+            body["firstMarketOptions"]["firstMarketPriceFilter"]["minValue"] = None
+            body["counterStrikeItemTypeOptions"]["displaySoldOutItems"] = True
         return body
 
-    def _pull_market(self, token, market_id, price_type):
+    def _pull_market(self, token, market_id, price_type, unfiltered=False):
         """Pull TradeOnMarket/{market_id} priced as `price_type`, cached briefly so
-        generating several pairs that share a market doesn't re-hit pulse each time."""
+        generating several pairs that share a market doesn't re-hit pulse each time.
+        `unfiltered`: see _body_for_type (cached apart from the filtered pull)."""
         if price_type == _ESTIMATED_SELL:
             return self._estimated_listings(token, market_id)
-        key = (market_id, price_type)
+        key = (market_id, price_type, unfiltered)
         now = time.time()
         with self._market_pull_lock:
             hit = self._market_pull_cache.get(key)
         if hit and now - hit[0] < _MARKET_PULL_TTL:
             return hit[1]
         items = self._post_tradeon(_TRADEON_TABLE_URL.format(market_id), token,
-                                   self._body_for_type(price_type))
+                                   self._body_for_type(price_type, unfiltered))
         self._scale_market_prices(items, market_id)
         with self._market_pull_lock:
             # A raw pull is tens of megabytes and only reused for _MARKET_PULL_TTL
@@ -1528,7 +1536,9 @@ class HuginnService:
         """{name: {price,count,image}} of a market's autobuy / buy-order (what you'd
         get selling instantly). Empty if the market has no autobuy. CSFloat comes from
         the swept buy-orders cache (no pulse buy price); every other autobuy market
-        comes from pulse's 'Buy' price type."""
+        comes from pulse's 'Buy' price type, unfiltered: Harvest, Cross-Profile and
+        Store Catalogue Arbitrage look up items you hold, and cheap ones (Tradeon
+        price under $0.13) or ones Tradeon has sold out of still have buy orders."""
         m = _MARKET_BY_ID.get(market_id)
         if not m:
             return {}
@@ -1538,7 +1548,7 @@ class HuginnService:
                     for n, o in (cache.get('by_name') or {}).items() if o.get('price')}
         if not m['autobuy']:
             return {}
-        return self._index_from_pull(self._pull_market(token, market_id, m['autobuy']))
+        return self._index_from_pull(self._pull_market(token, market_id, m['autobuy'], unfiltered=True))
 
     def market_display(self, market_id):
         """Human name for a market id (falls back to the id itself)."""

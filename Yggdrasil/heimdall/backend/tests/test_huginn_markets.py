@@ -203,3 +203,34 @@ def test_no_estimate_where_skinswap_does_not_want_the_item(monkeypatch):
         market_prices={'unwanted': 2.88, 'cheap': 0.07, 'normal': 25.02}))
     names = [r['itemName']['marketHashName'] for r in service._pull_market('token', 'SkinSwapTrade', 'EstimatedSell')]
     assert names == ['normal']   # 'cheap' pays $0.07, under the $0.10 measured floor
+
+
+def test_autobuy_index_keeps_items_tradeon_lists_cheaply_or_not_at_all(monkeypatch):
+    # The base body filters on Tradeon's own price ($0.13 floor, sold out hidden).
+    # That suits a buy-side pull, but Harvest, Cross-Profile and Store Catalogue
+    # Arbitrage look up what a market PAYS for items you hold, so a cheap or
+    # sold-out-on-Tradeon item must not vanish from the autobuy index.
+    service = _service()
+    bodies = []
+
+    def post(url, token, body):
+        bodies.append(body)
+        return [{'itemName': {'marketHashName': 'Sticker | Cheap'}, 'secondMarket': {'price': 0.05}}]
+
+    monkeypatch.setattr(service, '_post_tradeon', post)
+    assert service.market_autobuy_index('token', 'CsMoneyTrade') == {
+        'Sticker | Cheap': {'price': 0.05, 'count': None, 'image': None, 'rising': False, 'falling': False}}
+    service.market_buy_index('token', 'CsMoneyTrade')
+    autobuy_body, buy_body = bodies
+    assert autobuy_body['firstMarketOptions']['firstMarketPriceFilter']['minValue'] is None
+    assert autobuy_body['counterStrikeItemTypeOptions']['displaySoldOutItems'] is True
+    assert autobuy_body['secondMarketOptions']['secondMarketPriceType'] == 'Buy'
+    # The buy side (and every generated pair) keeps the floor, so Arbitrage is unchanged.
+    assert buy_body['firstMarketOptions']['firstMarketPriceFilter']['minValue'] == 0.13
+    assert buy_body['counterStrikeItemTypeOptions']['displaySoldOutItems'] is False
+    # The shared base body is never changed in place.
+    assert huginn_service._TRADEON_STEAM_BODY['firstMarketOptions']['firstMarketPriceFilter']['minValue'] == 0.13
+    # A filtered 'Buy' pull of the same market is cached apart, not served the unfiltered one.
+    service._pull_market('token', 'CsMoneyTrade', 'Buy')
+    assert len(bodies) == 3
+    assert bodies[2]['firstMarketOptions']['firstMarketPriceFilter']['minValue'] == 0.13
