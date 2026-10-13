@@ -4,7 +4,7 @@
       "id": "fbf692611b3c",
       "name": "everthinklol",
       "created_at": "2026-07-21T13:40:18.177768+00:00",
-      "updated_at": "2026-10-13T12:05:54.724248+00:00",
+      "updated_at": "2026-10-13T14:55:25.877048+00:00",
       "transactions": [
         {
           "id": "3ea474874554",
@@ -10823,7 +10823,7 @@
           "id": "6fbb6519fa03",
           "item_name": "Kilowatt Case",
           "type": "buy",
-          "qty": 3,
+          "qty": 4,
           "price": 0.08,
           "platform": "cs.money.trade",
           "date": "2026-10-13T12:26:00",
@@ -10844,6 +10844,19 @@
           "fee_percent": 0.0,
           "is_arbitrage": false,
           "created_at": "2026-10-13T09:28:12.916835+00:00"
+        },
+        {
+          "id": "6b2f954f3c5c",
+          "item_name": "Prisma Case",
+          "type": "buy",
+          "qty": 5,
+          "price": 0.89,
+          "platform": "csfloat",
+          "date": "2026-10-13T17:40:00",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": false,
+          "created_at": "2026-10-13T14:37:39.796005+00:00"
         }
       ]
     },
