@@ -4,7 +4,7 @@
       "id": "fbf692611b3c",
       "name": "everthinklol",
       "created_at": "2026-07-21T13:40:18.177768+00:00",
-      "updated_at": "2026-10-14T07:28:04.030778+00:00",
+      "updated_at": "2026-10-14T21:25:56.446915+00:00",
       "transactions": [
         {
           "id": "3ea474874554",
@@ -11013,6 +11013,19 @@
           "fee_percent": 0.0,
           "is_arbitrage": false,
           "created_at": "2026-10-13T17:54:08.945483+00:00"
+        },
+        {
+          "id": "0213dde02962",
+          "item_name": "Warhammer 40,000 Traitor Astartes Sticker Capsule",
+          "type": "buy",
+          "qty": 1,
+          "price": 0.99,
+          "platform": "steam",
+          "date": "2026-10-15",
+          "note": "ingame shop",
+          "fee_percent": 0.0,
+          "is_arbitrage": false,
+          "created_at": "2026-10-14T21:25:01.071099+00:00"
         }
       ]
     },
