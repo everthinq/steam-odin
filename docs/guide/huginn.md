@@ -101,23 +101,6 @@ If it does, check before each swap:
 the highest CSFloat buy order for every item you own (runs in the background,
 needs Get all items first). **Test connection** checks CSFloat and the proxy.
 
-## Case Arbitrage
-
-Cases, capsules and souvenir packages across nine markets: the cheapest market
-for each, the best flip after fees, liquidity and a 7-day trend. **Hot** marks
-flips above your threshold.
-
-**Alerts** sends a Telegram message (or a Discord/Slack webhook) when a
-container is cheaper than CSFloat by your percentage; **Send test** checks the
-setup. The alert is one "board" message that is updated as prices move.
-
-## Cross-Profile
-
-For each item you hold (or every item), the best route from any buy market to
-any autobuy market, across all accounts at once. **Markets & chains** lets you
-choose the markets and build multi-step chains (for example LisSkins →
-CS.MONEY trade → CSFloat).
-
 ## Harvest
 
 "If I sold what I hold right now, at what I actually paid for it, what would I
@@ -132,6 +115,34 @@ an autobuy market's instant offer.
   site balance) — it is left out of the totals.
 - The clock icon marks lots bought less than 8 days ago (may still be trade
   protected).
+- The **Filters** button works as on Arbitrage, with **Price** on what you
+  paid or what the market pays now, **Accounts** from Draupnir and
+  **Collections** from Get all items.
+
+## Case Arbitrage
+
+Cases, capsules and souvenir packages across nine markets: the cheapest market
+for each, the best flip after fees, liquidity and a 7-day trend. **Hot** marks
+flips above your threshold.
+
+**Alerts** sends a Telegram message (or a Discord/Slack webhook) when a
+container is cheaper than CSFloat by your percentage; **Send test** checks the
+setup. The alert is one "board" message that is updated as prices move.
+
+The **Filters** button works as on Arbitrage: **Price** on the cheapest buy
+price or the best flip's sell price, and **Accounts** / **Collections** for the
+containers you hold (needs Get all items).
+
+## Cross-Profile
+
+For each item you hold (or every item), the best route from any buy market to
+any autobuy market, across all accounts at once. **Markets & chains** lets you
+choose the markets and build multi-step chains (for example LisSkins →
+CS.MONEY trade → CSFloat).
+
+The **Filters** button works as on Arbitrage and narrows the chain tables too:
+**Price** on the buy or the sell price (a chain's first buy and last sell),
+**Accounts** from Draupnir holders, **Collections** from Get all items.
 
 ## LF Auctions and LF Arbitrage
 

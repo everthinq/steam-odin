@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { RefreshCw, Filter, Boxes, Settings2, Plus, X, ArrowRight, Link2 } from 'lucide-react';
 import InfoTip from './gjallarhorn/InfoTip';
+import ArbitrageFilters, { ActiveFilterChips } from './arbitrage/ArbitrageFilters';
+import { activeFilterCount, buildOptions, collectionByName, priceInRange, useStoredFilters } from '../utils/arbitrageFilters';
 
 // Cross-profile arbitrage tab (lives inside the Huginn Arbitrage page, right after
 // Case Arbitrage). For every item held across ALL Draupnir accounts:
@@ -11,6 +13,20 @@ import InfoTip from './gjallarhorn/InfoTip';
 // persisted server-side. Backend: GET /api/huginn/arbitrage/cross-profile
 // (non-blocking; serves cache + warms in the background, so we poll while warming)
 // and GET/POST .../cross-profile/config for the market + chain config.
+
+// Filters (price / account / collection), as on the Arbitrage tab. They narrow the
+// best-route table and every chain table alike. A chain's "Buy" is its first leg's
+// buy price, its "Sell" the last leg's instant-sell price.
+const FILTERS_KEY = 'huginn.crossProfileFilters';
+const PRICE_SIDES = [
+    ['buy', 'Buy price', 'Cheapest listing on the buy market', 'Buy'],
+    ['sell', 'Sell price', 'What the instant-sell market pays, after its fee', 'Sell'],
+];
+const rowPrice = (r, side) => {
+    if (!r.legs) return side === 'sell' ? r.sell_net : r.buy_price;
+    const priced = r.legs.filter(Boolean);
+    return side === 'sell' ? priced[priced.length - 1]?.sell_net : priced[0]?.buy_price;
+};
 
 const money = (v) => `$${Number(v || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const pct = (v) => (v === null || v === undefined ? '—' : `${v > 0 ? '+' : ''}${v.toFixed(2)}%`);
@@ -53,11 +69,12 @@ const MarketChip = ({ market, active, onClick, disabled }) => (
     </button>
 );
 
-const CrossProfileArbitrage = () => {
+const CrossProfileArbitrage = ({ byHash }) => {
     const [data, setData] = useState(null);
     const [loading, setLoading] = useState(false);
     const [ownedOnly, setOwnedOnly] = useState(true);
     const [minPct, setMinPct] = useState('');
+    const [filters, setFilters] = useStoredFilters(FILTERS_KEY);
 
     // Market + chain config (server-persisted). `available` is the full market list.
     const [config, setConfig] = useState(null);
@@ -111,8 +128,32 @@ const CrossProfileArbitrage = () => {
         }
     }, [data, fetchData]);
 
-    const rows = data?.rows || [];
-    const chains = data?.chains || [];
+    const allRows = useMemo(() => data?.rows || [], [data]);
+    const allChains = useMemo(() => data?.chains || [], [data]);
+    const collections = useMemo(() => collectionByName(byHash), [byHash]);
+
+    // Accounts are the Draupnir holders; collections come from the inventory scan,
+    // so an item never scanned has none.
+    const accountOptions = useMemo(
+        () => buildOptions(allRows, (r) => (r.holders || []).map((h) => h.account), [], filters.accounts),
+        [allRows, filters.accounts]);
+    const collectionOptions = useMemo(
+        () => buildOptions(allRows, (r) => [collections.get(r.item_name)], collections.values(), filters.collections),
+        [allRows, collections, filters.collections]);
+
+    const filtering = activeFilterCount(filters) > 0;
+    const { rows, chains } = useMemo(() => {
+        if (!filtering) return { rows: allRows, chains: allChains };
+        const accounts = filters.accounts.length ? new Set(filters.accounts) : null;
+        const cols = filters.collections.length ? new Set(filters.collections) : null;
+        const keep = (r) => priceInRange(rowPrice(r, filters.priceSide), filters)
+            && (!accounts || (r.holders || []).some((h) => accounts.has(h.account)))
+            && (!cols || cols.has(collections.get(r.item_name)));
+        return {
+            rows: allRows.filter(keep),
+            chains: allChains.map((chain) => ({ ...chain, rows: chain.rows.filter(keep) })),
+        };
+    }, [filtering, allRows, allChains, filters, collections]);
     const summary = data?.summary;
     const status = data?.status;
     const warming = status === 'warming' || status === 'refreshing';
@@ -176,6 +217,22 @@ const CrossProfileArbitrage = () => {
                         className="w-16 bg-black/30 border border-white/10 rounded px-1.5 py-1 text-slate-200 outline-none focus:border-amber-500/40"
                     />
                 </div>
+                <ArbitrageFilters
+                    filters={filters}
+                    onChange={setFilters}
+                    accountOptions={accountOptions}
+                    collectionOptions={collectionOptions}
+                    hasScan={!!byHash}
+                    priceSides={PRICE_SIDES}
+                    countTitle="Best-route rows it matches"
+                    accountsEmptyHint="No account holds anything in Draupnir yet."
+                    accountsNeedScan={false}
+                />
+                {filtering && (
+                    <span className="text-xs text-slate-500 tabular-nums">
+                        showing {rows.length} of {allRows.length}
+                    </span>
+                )}
                 <button
                     type="button"
                     onClick={() => setConfigOpen((v) => !v)}
@@ -197,6 +254,12 @@ const CrossProfileArbitrage = () => {
                     <RefreshCw size={14} className={(loading || warming) ? 'animate-spin' : ''} /> Refresh
                 </button>
             </div>
+
+            {filtering && (
+                <div className="shrink-0 -my-1 rounded-xl overflow-hidden border border-white/5">
+                    <ActiveFilterChips filters={filters} onChange={setFilters} priceSides={PRICE_SIDES} />
+                </div>
+            )}
 
             {/* Config panel: buy sources, sell targets, chains */}
             {configOpen && config && (
@@ -364,7 +427,9 @@ const CrossProfileArbitrage = () => {
                         {!rows.length && (
                             <tr>
                                 <td colSpan={8} className="px-3 py-10 text-center text-slate-500">
-                                    {warming ? 'Warming…' : status === 'no_token' ? 'Set a tradeon_token to price markets.' : 'No arbitrage rows. Try “All items” or lower the min %.'}
+                                    {warming ? 'Warming…' : status === 'no_token' ? 'Set a tradeon_token to price markets.'
+                                        : filtering && allRows.length ? 'Nothing matches these filters. Remove a chip above, or clear them all.'
+                                            : 'No arbitrage rows. Try “All items” or lower the min %.'}
                                 </td>
                             </tr>
                         )}
@@ -428,7 +493,7 @@ const CrossProfileArbitrage = () => {
                             {!chain.rows.length && (
                                 <tr>
                                     <td colSpan={6} className="px-3 py-6 text-center text-slate-500 text-xs">
-                                        {warming ? 'Warming…' : 'No priced routes for this chain right now.'}
+                                        {warming ? 'Warming…' : filtering ? 'Nothing in this chain matches the filters.' : 'No priced routes for this chain right now.'}
                                     </td>
                                 </tr>
                             )}

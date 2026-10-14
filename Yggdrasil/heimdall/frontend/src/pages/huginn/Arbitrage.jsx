@@ -7,7 +7,7 @@ import BuffMarketLink from '../../components/BuffMarketLink';
 import LisSkinsMarketLink from '../../components/LisSkinsMarketLink';
 import CSFloatMarketLink from '../../components/CSFloatMarketLink';
 import ArbitrageFilters, { ActiveFilterChips } from '../../components/arbitrage/ArbitrageFilters';
-import { EMPTY_FILTERS, parsePrice } from '../../utils/arbitrageFilters';
+import { parsePrice, useStoredFilters } from '../../utils/arbitrageFilters';
 import CaseArbitrage from '../../components/CaseArbitrage';
 import CrossProfileArbitrage from '../../components/CrossProfileArbitrage';
 import Harvest from '../../components/Harvest';
@@ -29,25 +29,8 @@ const PAGE_SIZE = 150;
 // SkinSwap's two sides; picking either shows the shared-balance card.
 const SKINSWAP_MARKETS = new Set(['SkinSwapMarket', 'SkinSwapTrade']);
 
-// Price / account / collection filters are remembered per browser (a convenience;
-// the chips under the toolbar always show what is active).
+// Price / account / collection filters, remembered per browser (useStoredFilters).
 const FILTERS_KEY = 'huginn.arbitrageFilters';
-const loadFilters = () => {
-    try {
-        const saved = JSON.parse(localStorage.getItem(FILTERS_KEY) || 'null');
-        if (!saved || typeof saved !== 'object') return EMPTY_FILTERS;
-        const list = (value) => (Array.isArray(value) ? value.filter(v => typeof v === 'string') : []);
-        return {
-            priceSide: saved.priceSide === 'sell' ? 'sell' : 'buy',
-            minPrice: typeof saved.minPrice === 'string' ? saved.minPrice : '',
-            maxPrice: typeof saved.maxPrice === 'string' ? saved.maxPrice : '',
-            accounts: list(saved.accounts),
-            collections: list(saved.collections),
-        };
-    } catch {
-        return EMPTY_FILTERS;
-    }
-};
 
 const PROFILES = [
     // buyMarket / sellMarket are pulse short-link slugs; when set, the Buy/Sell prices
@@ -117,15 +100,11 @@ const HuginnArbitrage = () => {
     const [itemSearch, setItemSearch] = useState('');
     const [inventoryOnly, setInventoryOnly] = useState(false);
     const [hideUnstable, setHideUnstable] = useState(false);   // LOOT.Farm: drop max=0 (Unstable) rows
-    const [filters, setFilters] = useState(loadFilters);
+    const [filters, setFilters] = useStoredFilters(FILTERS_KEY);
     const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
     const [copiedName, setCopiedName] = useState('');
     // Filtering ~17k rows on every keystroke is heavy; defer it so typing stays snappy.
     const deferredSearch = useDeferredValue(itemSearch);
-
-    useEffect(() => {
-        try { localStorage.setItem(FILTERS_KEY, JSON.stringify(filters)); } catch { /* storage unavailable */ }
-    }, [filters]);
 
     useEffect(() => {
         fetch('/api/huginn/scan/cache')
@@ -402,6 +381,14 @@ const HuginnArbitrage = () => {
                     </button>
                     <button
                         type="button"
+                        onClick={() => setView('harvest')}
+                        title="Your holdings at what you paid vs what autobuy markets pay now"
+                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${view === 'harvest' ? 'bg-amber-600 text-white' : 'text-slate-400 hover:text-white'}`}
+                    >
+                        <Wheat size={13} /> Harvest
+                    </button>
+                    <button
+                        type="button"
                         onClick={() => setView('cases')}
                         className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${view === 'cases' ? 'bg-amber-600 text-white' : 'text-slate-400 hover:text-white'}`}
                     >
@@ -413,14 +400,6 @@ const HuginnArbitrage = () => {
                         className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${view === 'crossprofile' ? 'bg-amber-600 text-white' : 'text-slate-400 hover:text-white'}`}
                     >
                         <Users size={13} /> Cross-Profile
-                    </button>
-                    <button
-                        type="button"
-                        onClick={() => setView('harvest')}
-                        title="Your holdings at what you paid vs what autobuy markets pay now"
-                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${view === 'harvest' ? 'bg-amber-600 text-white' : 'text-slate-400 hover:text-white'}`}
-                    >
-                        <Wheat size={13} /> Harvest
                     </button>
                     <button
                         type="button"
@@ -470,7 +449,7 @@ const HuginnArbitrage = () => {
             </div>
 
             <div className="flex-1 flex flex-col gap-3 p-6 overflow-hidden max-w-7xl w-full mx-auto">
-                {view === 'lfarb' ? <LootfarmArbitrage byHash={byHash} /> : view === 'auctions' ? <AuctionBoard /> : view === 'crossprofile' ? <CrossProfileArbitrage /> : view === 'harvest' ? <Harvest /> : view === 'cases' ? <CaseArbitrage /> : (<>
+                {view === 'lfarb' ? <LootfarmArbitrage byHash={byHash} /> : view === 'auctions' ? <AuctionBoard /> : view === 'crossprofile' ? <CrossProfileArbitrage byHash={byHash} /> : view === 'harvest' ? <Harvest byHash={byHash} /> : view === 'cases' ? <CaseArbitrage byHash={byHash} /> : (<>
                 {scanError && (
                     <div className="shrink-0 bg-red-500/20 border border-red-500/30 text-red-300 px-4 py-3 rounded-lg text-sm">
                         {scanError}
@@ -606,6 +585,7 @@ const HuginnArbitrage = () => {
                                 accountOptions={accountOptions}
                                 collectionOptions={collectionOptions}
                                 hasScan={!!byHash}
+                                scanHint='Press "Get all items" first: accounts and collections come from the inventory scan.'
                                 realDollarsNote={!!(filters.priceSide === 'sell' ? activeProfile.toPageLabel : activeProfile.fromPageLabel)}
                             />
                             <span className="text-sm text-slate-500 shrink-0">

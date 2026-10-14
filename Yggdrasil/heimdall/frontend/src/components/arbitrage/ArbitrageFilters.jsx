@@ -1,12 +1,14 @@
 import { useState, useMemo, useRef, useEffect } from 'react';
 import { Filter, X, Search, DollarSign, Users, Layers } from 'lucide-react';
 import { matchesSearchQuery } from '../../utils/transferItems';
-import { EMPTY_FILTERS, parsePrice, hasPriceFilter, activeFilterCount, priceRangeLabel } from '../../utils/arbitrageFilters';
+import { EMPTY_FILTERS, DEFAULT_PRICE_SIDES, parsePrice, hasPriceFilter, activeFilterCount, priceRangeLabel } from '../../utils/arbitrageFilters';
 
-// Filters for the Huginn Arbitrage table: a price range (buy or sell side), the
-// accounts that hold the item and its collection. One "Filters" button opens a
-// tabbed panel; the active filters also show as removable chips under the toolbar
-// (ActiveFilterChips), so a narrowed table never looks like missing data.
+// Filters for the Huginn tables (Arbitrage, Case Arbitrage, Cross-Profile, Harvest):
+// a price range (one of two price sides), the accounts that hold the item and its
+// collection. One "Filters" button opens a tabbed panel; the active filters also
+// show as removable chips under the toolbar (ActiveFilterChips), so a narrowed
+// table never looks like missing data. Each tab names its own price sides
+// (`priceSides`, see DEFAULT_PRICE_SIDES) and what an option's count means.
 
 const PRICE_PRESETS = [
     { label: 'Under $1', min: '', max: '1' },
@@ -16,8 +18,8 @@ const PRICE_PRESETS = [
 ];
 
 // Searchable checkbox list with "Select all" / "Clear"; each option shows how many
-// deals of the current profile it matches.
-const CheckList = ({ options, selected, onChange, placeholder, emptyHint }) => {
+// rows of the current table it matches (`countTitle` says what they are).
+const CheckList = ({ options, selected, onChange, placeholder, emptyHint, countTitle }) => {
     const [search, setSearch] = useState('');
     const visible = useMemo(
         () => (search.trim() ? options.filter(o => matchesSearchQuery([o.name], search)) : options),
@@ -78,7 +80,7 @@ const CheckList = ({ options, selected, onChange, placeholder, emptyHint }) => {
                             />
                             <span className="truncate flex-1" title={name}>{name}</span>
                             <span className={`tabular-nums shrink-0 ${count ? 'text-slate-400' : 'text-slate-600'}`}
-                                title="Deals of this profile it holds">{count}</span>
+                                title={countTitle}>{count}</span>
                         </label>
                     );
                 })}
@@ -87,7 +89,7 @@ const CheckList = ({ options, selected, onChange, placeholder, emptyHint }) => {
     );
 };
 
-const PriceSection = ({ filters, onChange, realDollarsNote }) => {
+const PriceSection = ({ filters, onChange, realDollarsNote, priceSides }) => {
     const set = (patch) => onChange({ ...filters, ...patch });
     const min = parsePrice(filters.minPrice);
     const max = parsePrice(filters.maxPrice);
@@ -110,7 +112,7 @@ const PriceSection = ({ filters, onChange, realDollarsNote }) => {
             <div>
                 <p className="text-[10px] font-bold tracking-widest uppercase text-slate-500 mb-1.5">Price of</p>
                 <div className="grid grid-cols-2 gap-1 p-0.5 rounded-lg bg-black/40 border border-white/10">
-                    {[['buy', 'Buy price', 'What you pay on the buy market'], ['sell', 'Sell price', 'What the sell market pays or lists at']].map(([side, label, tip]) => (
+                    {priceSides.map(([side, label, tip]) => (
                         <button
                             key={side}
                             type="button"
@@ -164,7 +166,16 @@ const PriceSection = ({ filters, onChange, realDollarsNote }) => {
     );
 };
 
-const ArbitrageFilters = ({ filters, onChange, accountOptions, collectionOptions, hasScan, realDollarsNote }) => {
+const DEFAULT_SCAN_HINT = 'Press "Get all items" on the Arbitrage tab first: accounts and collections come from the inventory scan.';
+
+const ArbitrageFilters = ({
+    filters, onChange, accountOptions, collectionOptions, hasScan, realDollarsNote,
+    priceSides = DEFAULT_PRICE_SIDES,
+    countTitle = 'Deals of this profile it holds',
+    scanHint = DEFAULT_SCAN_HINT,
+    accountsEmptyHint = 'No account holds anything yet.',
+    accountsNeedScan = true,
+}) => {
     const [open, setOpen] = useState(false);
     const [tab, setTab] = useState('price');
     const ref = useRef(null);
@@ -184,7 +195,6 @@ const ArbitrageFilters = ({ filters, onChange, accountOptions, collectionOptions
         { id: 'accounts', label: 'Accounts', icon: Users, badge: filters.accounts.length },
         { id: 'collections', label: 'Collections', icon: Layers, badge: filters.collections.length },
     ];
-    const scanHint = 'Press "Get all items" first: accounts and collections come from the inventory scan.';
 
     return (
         <div className="relative shrink-0" ref={ref}>
@@ -217,7 +227,7 @@ const ArbitrageFilters = ({ filters, onChange, accountOptions, collectionOptions
                             </button>
                         ))}
                     </div>
-                    {tab === 'price' && <PriceSection filters={filters} onChange={onChange} realDollarsNote={realDollarsNote} />}
+                    {tab === 'price' && <PriceSection filters={filters} onChange={onChange} realDollarsNote={realDollarsNote} priceSides={priceSides} />}
                     {tab === 'accounts' && (
                         <CheckList
                             key="accounts"
@@ -225,7 +235,8 @@ const ArbitrageFilters = ({ filters, onChange, accountOptions, collectionOptions
                             selected={filters.accounts}
                             onChange={(accounts) => onChange({ ...filters, accounts })}
                             placeholder="Search accounts"
-                            emptyHint={hasScan ? 'No account holds anything yet.' : scanHint}
+                            emptyHint={hasScan || !accountsNeedScan ? accountsEmptyHint : scanHint}
+                            countTitle={countTitle}
                         />
                     )}
                     {tab === 'collections' && (
@@ -236,6 +247,7 @@ const ArbitrageFilters = ({ filters, onChange, accountOptions, collectionOptions
                             onChange={(collections) => onChange({ ...filters, collections })}
                             placeholder="Search collections"
                             emptyHint={hasScan ? 'No collections in your inventory scan.' : scanHint}
+                            countTitle={countTitle}
                         />
                     )}
                     {count > 0 && (
@@ -262,7 +274,7 @@ const Chip = ({ children, onRemove, title }) => (
 );
 
 // One chip per active filter (collections fold into one chip past three), each removable.
-export const ActiveFilterChips = ({ filters, onChange }) => {
+export const ActiveFilterChips = ({ filters, onChange, priceSides = DEFAULT_PRICE_SIDES }) => {
     if (activeFilterCount(filters) === 0) return null;
     const without = (key, name) => onChange({ ...filters, [key]: filters[key].filter(n => n !== name) });
     const manyCollections = filters.collections.length > 3;
@@ -270,7 +282,7 @@ export const ActiveFilterChips = ({ filters, onChange }) => {
         <div className="shrink-0 flex items-center gap-1.5 flex-wrap px-4 py-2 border-b border-white/5 bg-amber-500/[0.03]">
             <span className="text-[10px] font-bold tracking-widest uppercase text-slate-500 mr-1">Filtered by</span>
             {hasPriceFilter(filters) && (
-                <Chip onRemove={() => onChange({ ...filters, minPrice: '', maxPrice: '' })}>{priceRangeLabel(filters)}</Chip>
+                <Chip onRemove={() => onChange({ ...filters, minPrice: '', maxPrice: '' })}>{priceRangeLabel(filters, priceSides)}</Chip>
             )}
             {filters.accounts.map(name => (
                 <Chip key={`account-${name}`} title="Held on this account" onRemove={() => without('accounts', name)}>

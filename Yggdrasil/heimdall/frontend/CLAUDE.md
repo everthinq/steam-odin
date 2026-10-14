@@ -39,7 +39,7 @@ real Pay / Buy / Sell / Approve button while testing; use the dry-run paths.
 | `/` | `pages/Dashboard.jsx` | The only eager page; account cards + tool tiles |
 | `/add-account` | `pages/AddAccount.jsx` | maFile import |
 | `/accounts/:steamid/confirmations` | `pages/Confirmations.jsx` | |
-| `/huginn` | `pages/huginn/Arbitrage.jsx` | Views: Arbitrage, Case Arbitrage, Cross-Profile, Harvest, LF Auctions, LF Arbitrage |
+| `/huginn` | `pages/huginn/Arbitrage.jsx` | Views: Arbitrage, Harvest, Case Arbitrage, Cross-Profile, LF Auctions, LF Arbitrage |
 | `/huginn/gjallarhorn` | `pages/huginn/Gjallarhorn.jsx` | |
 | `/huginn/card-deals` | `pages/huginn/CardDeals.jsx` | Andvari; `#buy` opens Buy games |
 | `/huginn/team-fortress` | `pages/huginn/TeamFortress.jsx` | |
@@ -77,10 +77,10 @@ path prefix — add your page there. No catch-all route, no Settings page.
 - **localStorage** is for per-browser conveniences only (layout, filters),
   every access wrapped in `try`/`catch`. Keys in use: `heimdall-dashboard-layout`,
   `draupnir-portfolio-layout`, `huginn.harvest`, `andvari.valuation`,
-  `andvari.buy.apps`, `huginn.arbitrageFilters`, `ratatoskr.storeArbitrage`, `huginn.skinswapNoteOpen`, `lf_balance_pct`, `lf_unlocked`.
+  `andvari.buy.apps`, `huginn.arbitrageFilters`, `huginn.harvestFilters`, `huginn.caseArbitrageFilters`, `huginn.crossProfileFilters`, `ratatoskr.storeArbitrage`, `huginn.skinswapNoteOpen`, `lf_balance_pct`, `lf_unlocked`.
 - **Shared pieces:** `components/gjallarhorn/InfoTip.jsx` (prop `tip`) for
   tooltips; `components/draupnir/columnSort.js` (`useColumnSort`, `sortRows`) with the header `components/ratatoskr/SortHeader.jsx`;
-  `components/arbitrage/ArbitrageFilters.jsx` (Arbitrage price / account / collection filters + chips; helpers in `utils/arbitrageFilters.js`);
+  `components/arbitrage/ArbitrageFilters.jsx` (price / account / collection filters + chips on Arbitrage, Harvest, Case Arbitrage and Cross-Profile; each tab names its price sides via `priceSides`; helpers, `useStoredFilters` and `buildOptions` in `utils/arbitrageFilters.js`; the page passes its inventory scan down as `byHash`, the only source of collections);
   `utils/transferItems.js` (`matchesSearchQuery`, wear shorthand fn/mw/ft/ww/bs);
   per-market link builders in `utils/*Market.js` + `*MarketLink.jsx`;
   `utils/tradeonShortLink.js`. Item images: `api.steamapis.com/image/item/730/<name>`.

@@ -3,6 +3,8 @@ import { Search, RefreshCw, AlertTriangle, ArrowRight, TrendingUp, TrendingDown,
 import { matchesSearchQuery } from '../utils/transferItems';
 import { getTradeonShortLink } from '../utils/tradeonShortLink';
 import CaseAlertsPanel from './CaseAlertsPanel';
+import ArbitrageFilters, { ActiveFilterChips } from './arbitrage/ArbitrageFilters';
+import { activeFilterCount, buildOptions, priceInRange, useStoredFilters } from '../utils/arbitrageFilters';
 
 const PAGE_SIZE = 150;
 // While pulse snapshots warm, re-fetch every WARM_POLL_MS — but at most
@@ -27,6 +29,16 @@ const MARKETS = [
     // SkinSwap's Market balance is real dollars (its Trade page shows the same balance 1.4x higher).
     { key: 'skinswap', label: 'SkinSwap (Market)', short: 'SS', slug: 'SkinSwapMarket', sellable: false },
 ];
+// Filters (price / account / collection), as on the Arbitrage tab. "Buy" is the
+// cheapest price across markets, "Sell" what the best flip's sell market pays
+// after its fee. Accounts and collections come from the inventory scan: only
+// containers you hold match them.
+const FILTERS_KEY = 'huginn.caseArbitrageFilters';
+const PRICE_SIDES = [
+    ['buy', 'Buy price', 'Cheapest price across the markets', 'Buy'],
+    ['sell', 'Sell price', "What the best flip's sell market pays, after its fee", 'Sell'],
+];
+
 const MARKET_BY_KEY = Object.fromEntries(MARKETS.map(m => [m.key, m]));
 const marketLabel = (key) => MARKET_BY_KEY[key]?.label || key || '';
 
@@ -127,7 +139,7 @@ const Img = ({ src }) => src ? (
 const GRID_CHIPS = 'grid grid-cols-[minmax(0,1.5fr)_minmax(220px,2.6fr)_64px_minmax(150px,1.3fr)_104px] gap-2';
 const GRID_EXPAND = 'grid grid-cols-[minmax(0,2.2fr)_120px_minmax(150px,1fr)_64px_104px] gap-2';
 
-const CaseArbitrage = () => {
+const CaseArbitrage = ({ byHash }) => {
     const [categories, setCategories] = useState(['case']);
     const [layout, setLayout] = useState('chips'); // 'chips' | 'expand'
     const [data, setData] = useState(null);
@@ -141,6 +153,7 @@ const CaseArbitrage = () => {
     const [minProfit, setMinProfit] = useState('');
     const [profitableOnly, setProfitableOnly] = useState(false);
     const [hotOnly, setHotOnly] = useState(false);
+    const [filters, setFilters] = useStoredFilters(FILTERS_KEY);
     const [showAlerts, setShowAlerts] = useState(false);
     const [expanded, setExpanded] = useState({});
     const deferredSearch = useDeferredValue(search);
@@ -173,7 +186,7 @@ const CaseArbitrage = () => {
     }, [categories]);
 
     useEffect(() => { setVisibleCount(PAGE_SIZE); },
-        [deferredSearch, categories, sortKey, sortDir, minProfit, profitableOnly, hotOnly]);
+        [deferredSearch, categories, sortKey, sortDir, minProfit, profitableOnly, hotOnly, filters]);
 
     const toggleCategory = (slug) => {
         setCategories(prev => {
@@ -196,7 +209,7 @@ const CaseArbitrage = () => {
         else { setSortKey(key); setSortDir(key === 'name' ? 'asc' : 'desc'); }
     };
 
-    const containers = data?.containers ?? [];
+    const containers = useMemo(() => data?.containers ?? [], [data]);
 
     const sorted = useMemo(() => {
         const val = (r) => {
@@ -217,18 +230,37 @@ const CaseArbitrage = () => {
         });
     }, [containers, sortKey, sortDir]);
 
+    // Accounts: every account in the inventory scan; collections: those of the
+    // containers listed here. Each counts the containers it holds.
+    const accountOptions = useMemo(() => {
+        const known = new Set();
+        for (const entry of Object.values(byHash || {})) {
+            for (const inst of entry.instances || []) known.add(inst.account_name);
+        }
+        return buildOptions(containers, r => (byHash?.[r.name]?.instances || []).map(i => i.account_name), known, filters.accounts);
+    }, [containers, byHash, filters.accounts]);
+    const collectionOptions = useMemo(
+        () => buildOptions(containers, r => (byHash?.[r.name]?.instances || []).map(i => i.collection), [], filters.collections),
+        [containers, byHash, filters.collections]);
+
     const filtered = useMemo(() => {
         const q = deferredSearch.trim();
         const min = parseFloat(minProfit);
         const hasMin = !Number.isNaN(min);
+        const accounts = filters.accounts.length ? new Set(filters.accounts) : null;
+        const cols = filters.collections.length ? new Set(filters.collections) : null;
         return sorted.filter(r => {
             if (q && !matchesSearchQuery([r.name, r.type], q)) return false;
+            if (!priceInRange(filters.priceSide === 'sell' ? r.flip?.net_sell : r.cheapest, filters)) return false;
+            // Account and collection must hold for the same copy, as on the Arbitrage tab.
+            if ((accounts || cols) && !(byHash?.[r.name]?.instances || []).some(i =>
+                (!accounts || accounts.has(i.account_name)) && (!cols || cols.has(i.collection)))) return false;
             if (hasMin && !((r.flip?.profit_pct ?? -Infinity) >= min)) return false;
             if (profitableOnly && !(r.flip && r.flip.profit > 0)) return false;
             if (hotOnly && !r.hot_today) return false;
             return true;
         });
-    }, [sorted, deferredSearch, minProfit, profitableOnly, hotOnly]);
+    }, [sorted, deferredSearch, minProfit, profitableOnly, hotOnly, filters, byHash]);
 
     const visible = useMemo(() => filtered.slice(0, visibleCount), [filtered, visibleCount]);
 
@@ -373,6 +405,17 @@ const CaseArbitrage = () => {
                     <Flame size={12} /> Hot only
                 </button>
 
+                <ArbitrageFilters
+                    filters={filters}
+                    onChange={setFilters}
+                    accountOptions={accountOptions}
+                    collectionOptions={collectionOptions}
+                    hasScan={!!byHash}
+                    priceSides={PRICE_SIDES}
+                    countTitle="Containers listed here it holds"
+                    accountsEmptyHint="No account holds anything yet."
+                />
+
                 {/* layout toggle */}
                 <div className="flex items-center gap-1 ml-auto p-0.5 rounded-lg bg-black/30 border border-white/10 shrink-0">
                     <button type="button" onClick={() => setLayout('chips')}
@@ -396,6 +439,8 @@ const CaseArbitrage = () => {
                     <RefreshCw size={12} className={loading ? 'animate-spin' : ''} /> Refresh
                 </button>
             </div>
+
+            <ActiveFilterChips filters={filters} onChange={setFilters} priceSides={PRICE_SIDES} />
 
             {showAlerts && <CaseAlertsPanel />}
 
@@ -442,7 +487,9 @@ const CaseArbitrage = () => {
 
                 {visible.length === 0 && !loading && (
                     <div className="py-16 text-center text-slate-600 text-sm">
-                        {data ? 'No containers match — loosen the filters or search.' : 'Loading containers…'}
+                        {!data ? 'Loading containers…'
+                            : activeFilterCount(filters) ? 'No containers match. Remove a chip above, or loosen the other filters or search.'
+                                : 'No containers match — loosen the filters or search.'}
                     </div>
                 )}
 

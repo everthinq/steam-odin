@@ -4,6 +4,8 @@ import InfoTip from './gjallarhorn/InfoTip';
 import ProfilePicker from './arbitrage/ProfilePicker';
 import PriceCell from './arbitrage/PriceCell';
 import CsfloatBuyOrdersPanel from './arbitrage/CsfloatBuyOrdersPanel';
+import ArbitrageFilters, { ActiveFilterChips } from './arbitrage/ArbitrageFilters';
+import { activeFilterCount, buildOptions, collectionByName, priceInRange, useStoredFilters } from '../utils/arbitrageFilters';
 import SteamMarketLink from './SteamMarketLink';
 import BuffMarketLink from './BuffMarketLink';
 import LisSkinsMarketLink from './LisSkinsMarketLink';
@@ -38,6 +40,14 @@ const savePrefs = (prefs) => {
     try { localStorage.setItem(STORE_KEY, JSON.stringify(prefs)); } catch { /* private window: not remembered */ }
 };
 
+// Filters (price / account / collection), as on the Arbitrage tab. "Buy" is what
+// you paid for the lot, "Sell" what the market pays now after its fee.
+const FILTERS_KEY = 'huginn.harvestFilters';
+const PRICE_SIDES = [
+    ['buy', 'Paid', 'What you paid for the lot', 'Paid'],
+    ['sell', 'Sell price', 'What the market pays now, after its fee', 'Sell'],
+];
+
 const COLUMNS = [
     { key: 'item', label: 'Item', get: (r) => r.item_name },
     { key: 'qty', label: 'Qty', get: (r) => r.qty, right: true },
@@ -65,7 +75,7 @@ const Badge = ({ className, title, children }) => (
     <span title={title} className={`px-1 rounded border text-[10px] ${className}`}>{children}</span>
 );
 
-const Harvest = () => {
+const Harvest = ({ byHash }) => {
     const [prefs] = useState(loadPrefs);
     const [options, setOptions] = useState(null);
     const [account, setAccount] = useState(prefs.account || 'all');
@@ -73,6 +83,7 @@ const Harvest = () => {
     const [profitableOnly, setProfitableOnly] = useState(prefs.profitableOnly ?? true);
     const [minPct, setMinPct] = useState('');
     const [query, setQuery] = useState('');
+    const [filters, setFilters] = useStoredFilters(FILTERS_KEY);
     const [data, setData] = useState(null);
     const [loading, setLoading] = useState(false);
     const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
@@ -138,12 +149,28 @@ const Harvest = () => {
     }, [warming, data, fetchData]);
 
     const allRows = useMemo(() => data?.rows || [], [data]);
+    const collections = useMemo(() => collectionByName(byHash), [byHash]);
+
+    // Accounts are Draupnir portfolios (the lot's account); collections come from
+    // the inventory scan, so an item never scanned has none.
+    const accountOptions = useMemo(
+        () => buildOptions(allRows, (r) => [r.account], options?.accounts.map((a) => a.name), filters.accounts),
+        [allRows, options, filters.accounts]);
+    const collectionOptions = useMemo(
+        () => buildOptions(allRows, (r) => [collections.get(r.item_name)], collections.values(), filters.collections),
+        [allRows, collections, filters.collections]);
+
     const rows = useMemo(() => {
         const q = deferredQuery.trim().toLowerCase();
+        const accounts = filters.accounts.length ? new Set(filters.accounts) : null;
+        const cols = filters.collections.length ? new Set(filters.collections) : null;
         const shown = allRows.filter((r) => (!profitableOnly || r.total_profit > 0)
-            && (!q || r.item_name.toLowerCase().includes(q) || r.platform.toLowerCase().includes(q)));
+            && (!q || r.item_name.toLowerCase().includes(q) || r.platform.toLowerCase().includes(q))
+            && priceInRange(filters.priceSide === 'sell' ? r.best.net : r.paid, filters)
+            && (!accounts || accounts.has(r.account))
+            && (!cols || cols.has(collections.get(r.item_name))));
         return sortRows(shown, sortKey, sortDir, ACCESSORS);
-    }, [allRows, profitableOnly, deferredQuery, sortKey, sortDir]);
+    }, [allRows, profitableOnly, deferredQuery, filters, collections, sortKey, sortDir]);
     const visibleRows = rows.slice(0, visibleCount);
 
     const summary = data?.summary;
@@ -247,11 +274,23 @@ const Harvest = () => {
                             className="w-16 bg-black/30 border border-white/10 rounded px-1.5 py-1 text-slate-200 outline-none focus:border-amber-500/40"
                         />
                     </div>
+                    <ArbitrageFilters
+                        filters={filters}
+                        onChange={(f) => { setFilters(f); setVisibleCount(PAGE_SIZE); }}
+                        accountOptions={accountOptions}
+                        collectionOptions={collectionOptions}
+                        hasScan={!!byHash}
+                        priceSides={PRICE_SIDES}
+                        countTitle="Lots of this profile it matches"
+                        accountsEmptyHint="No account holds anything in Draupnir yet."
+                        accountsNeedScan={false}
+                    />
                     <span className="text-sm text-slate-500 shrink-0">
                         showing {Math.min(visibleCount, rows.length)} of {rows.length}
                         {rows.length !== allRows.length && ` (${allRows.length} total)`}
                     </span>
                 </div>
+                <ActiveFilterChips filters={filters} onChange={(f) => { setFilters(f); setVisibleCount(PAGE_SIZE); }} priceSides={PRICE_SIDES} />
                 <div className={`shrink-0 ${GRID} px-4 py-2 border-b border-white/5 text-[11px] font-bold tracking-wider text-slate-400 uppercase bg-black/20`}>
                     {COLUMNS.map((c) => (
                         <button
@@ -346,6 +385,7 @@ const Harvest = () => {
                             {warming ? 'Loading prices…'
                                 : status === 'no_token' ? 'Set a tradeon_token to price markets.'
                                     : failed ? harvestErrorText(data)
+                                    : allRows.length && activeFilterCount(filters) ? 'Nothing matches these filters. Remove a chip above, or clear them all.'
                                     : profitableOnly && allRows.length ? 'Nothing sells above what you paid on this market right now. Try another profile, or turn off “Profitable only”.'
                                         : 'None of these holdings is bought by this market.'}
                         </div>
