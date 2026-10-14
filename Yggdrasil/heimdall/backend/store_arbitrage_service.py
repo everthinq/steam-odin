@@ -518,6 +518,11 @@ class StoreArbitrageService:
         self.alert_state_path = alert_state_path
         self._notify = notify
         self._alert_lock = threading.Lock()
+        self._board_markets_cache = None
+        self._save_timer_pending = False
+        # Every full pulse table Huginn pulls (the Case Arbitrage refresh and alert polls, the
+        # portfolio valuation, other tabs) also prices the store items it holds: no second download.
+        huginn_service.add_pull_listener(self.take_pull)
 
     # ---- markets -------------------------------------------------------------------------------
 
@@ -646,6 +651,58 @@ class StoreArbitrageService:
                 with self._lock:
                     self._warming.discard(pair)
 
+    def take_pull(self, market_id, side, items, started_at):
+        """A full table Huginn pulled for another feature (Huginn's listener thread): keep the
+        store items' prices as that side's index and in the history, for the board's own
+        markets only, unless this side already holds a download that started later."""
+        pair = (market_id, side)
+        with self._lock:
+            hit = self._indexes.get(pair)
+        if hit and hit[0] >= started_at:
+            return                       # the board's own pull (or a later one) is newer
+        if market_id not in self._board_market_ids():
+            return
+        candidates, _ = split_items(self.catalogue.status().get('items'))
+        names = {item['name'] for item in candidates}
+        if not names:
+            return
+        mine = self.huginn._index_from_pull(
+            [row for row in items if ((row or {}).get('itemName') or {}).get('marketHashName') in names])
+        with self._lock:
+            hit = self._indexes.get(pair)
+            if hit and hit[0] >= started_at:
+                return
+            self._indexes[pair] = (started_at, mine)
+            self._failures.pop(pair, None)
+        self._record({pair: mine}, candidates)
+        self._schedule_history_save()
+        log.info('[STORE-ARBITRAGE] %s %s: %d store items priced from Huginn\'s pull', market_id, side, len(mine))
+
+    def _board_market_ids(self):
+        """The default set (cached a minute: the registry rarely changes)."""
+        now = time.time()
+        cached = self._board_markets_cache
+        if cached and now - cached[0] < 60:
+            return cached[1]
+        ids = set(self.default_market_ids())
+        self._board_markets_cache = (now, ids)
+        return ids
+
+    def _schedule_history_save(self):
+        """Write the history shortly after a throttled save skipped it (one pending timer)."""
+        with self._lock:
+            if not self._history_dirty or self._save_timer_pending:
+                return
+            self._save_timer_pending = True
+
+        def save():
+            with self._lock:
+                self._save_timer_pending = False
+            self._save_history(force=True)
+        timer = threading.Timer(HISTORY_SAVE_MIN_INTERVAL + 1, save)
+        timer.daemon = True
+        timer.start()
+
     def refresh(self, token, market_ids=None, settings=None):
         """Pull the board's markets again now, not waiting for the 10-minute cache (the Refresh
         button, the daily refresh). A side pulled under REFRESH_MIN_AGE seconds ago is left as it is,
@@ -698,8 +755,9 @@ class StoreArbitrageService:
             return {}
         return clean_history(data)
 
-    def _record(self, indexes):
-        candidates, _ = split_items(self.catalogue.status().get('items'))
+    def _record(self, indexes, candidates=None):
+        if candidates is None:
+            candidates, _ = split_items(self.catalogue.status().get('items'))
         costs = {item['name']: item['usd'] for item in candidates}
         today = self._today().isoformat()
         with self._lock:

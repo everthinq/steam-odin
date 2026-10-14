@@ -175,6 +175,10 @@ def test_a_cash_buy_order_far_above_the_buff_listing_is_suspicious():
 class FakeHuginn:
     def __init__(self):
         self.pulled = []
+        self.listeners = []
+
+    def add_pull_listener(self, listener):
+        self.listeners.append(listener)
 
     def market_registry(self, settings=None):
         return [{'id': 'Buff', 'display': 'Buff163', 'hasAutobuy': True, 'fee': 0.015, 'feeKnown': True},

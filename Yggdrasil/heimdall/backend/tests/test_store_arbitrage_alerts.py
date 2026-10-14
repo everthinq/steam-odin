@@ -366,3 +366,113 @@ def test_site_trade_balances_never_make_an_item_worth_a_message():
                    today=TODAY)
     assert row['best']['market'] == 'TradeItTrade'          # the board still shows it, labelled
     assert alert_candidates([row]) == []
+
+
+# ---- prices shared with Huginn's own pulls (the hourly Case Arbitrage refresh) ------------------
+
+def _pulse_row(name, price, count=3):
+    return {'itemName': {'marketHashName': name}, 'secondMarket': {'price': price, 'totalOffersCount': count}}
+
+
+def _huginn(monkeypatch, rows):
+    from huginn_service import HuginnService
+    huginn = HuginnService(steam_service=None, ratatoskr_service=None)
+    monkeypatch.setattr(huginn, '_post_tradeon', lambda url, token, body: rows)
+    return huginn
+
+
+def test_huginn_tells_listeners_which_side_a_pull_is(monkeypatch):
+    huginn = _huginn(monkeypatch, [_pulse_row('Sticker | Flickshot', 0.8)])
+    heard = []
+    huginn.add_pull_listener(lambda market, side, items, started_at: heard.append((market, side, items, started_at)))
+    before = time.time()
+    huginn._pull_market('token', 'Buff', 'Sell')                         # lowest listing
+    huginn._pull_market('token', 'Buff', 'Buy', unfiltered=True)         # buy orders
+    huginn._pull_market('token', 'Buff', 'Buy')                          # a filtered buy-order pull: not ours
+    huginn._pull_market('token', 'Buff', 'Sell')                         # cached: nothing pulled, nothing told
+    huginn.flush_pull_listeners()
+    assert [(m, s) for m, s, _, _ in heard] == [('Buff', 'listing'), ('Buff', 'instant')]
+    assert heard[0][2][0]['secondMarket']['price'] == 0.8 and before <= heard[0][3] <= time.time()
+
+
+def test_listeners_run_after_the_pull_is_cached_and_never_in_the_pulling_thread(monkeypatch):
+    import threading
+    huginn = _huginn(monkeypatch, [_pulse_row('Sticker | Flickshot', 0.8)])
+    seen = []
+    huginn.add_pull_listener(lambda market, side, items, started_at: seen.append(
+        (threading.current_thread().name, ('Buff', 'Sell', False) in huginn._market_pull_cache)))
+    huginn._pull_market('token', 'Buff', 'Sell')
+    huginn.flush_pull_listeners()
+    assert seen[0][0].startswith('huginn-pull-listener') and seen[0][1]
+
+
+def test_the_case_arbitrage_and_valuation_pulls_go_through_one_pull_and_are_announced(monkeypatch):
+    urls = []
+    huginn = _huginn(monkeypatch, [])
+    monkeypatch.setattr(huginn, '_post_tradeon', lambda url, token, body: urls.append(
+        (url, body['secondMarketOptions']['secondMarketPriceType'])) or [_pulse_row('Sticker | Flickshot', 0.8)])
+    heard = []
+    huginn.add_pull_listener(lambda market, side, items, started_at: heard.append((market, side)))
+    huginn._single_container_map('token', 'lisskins')
+    huginn._single_container_map('token', 'tradeon')                      # TradeOnMarket's own side: not announced
+    huginn._single_price_map('token', 'steam')
+    huginn._single_price_map('token', 'lisskins')                         # cached from the Case Arbitrage pull
+    huginn.flush_pull_listeners()
+    assert heard == [('LisSkins', 'listing'), ('Steam', 'listing')]
+    base = 'https://api-pulse.tradeon.space/api/table/counter-strike/TradeOnMarket/'
+    # LisSkins pulled once for both features; the TradeOn side keeps its own (unchanged) request.
+    assert urls == [(base + 'LisSkins/all', 'SellWithoutHold'), (base + 'Steam/all', 'Buy'), (base + 'Steam/all', 'Sell')]
+
+
+def test_every_valuation_market_has_a_registry_id():
+    from huginn_service import _MARKET_BY_ID, HuginnService
+    assert set(HuginnService._PRICE_MARKETS) == set(HuginnService._PRICE_MARKET_IDS)
+    for slug, market_id in HuginnService._PRICE_MARKET_IDS.items():
+        assert _MARKET_BY_ID[market_id]['buy_type'] == HuginnService._PRICE_MARKETS[slug][1]
+        assert HuginnService._PRICE_MARKETS[slug][0].endswith(f'/TradeOnMarket/{market_id}/all')
+
+
+def test_a_failing_listener_or_an_odd_answer_never_breaks_the_pull(monkeypatch):
+    huginn = _huginn(monkeypatch, [_pulse_row('Sticker | Flickshot', 0.8)])
+
+    def broken(market, side, items, started_at):
+        raise RuntimeError('boom')
+    huginn.add_pull_listener(broken)
+    assert huginn._single_price_map('token', 'buff') == {'Sticker | Flickshot': 0.8}
+    monkeypatch.setattr(huginn, '_post_tradeon', lambda url, token, body: {'error': 'not a table'})
+    huginn._announce_pull('Buff', 'Sell', False, {'error': 'not a table'}, time.time())   # ignored, no raise
+    huginn.flush_pull_listeners()
+
+
+def _store_on(huginn, tmp_path):
+    return StoreArbitrageService(huginn, FakeCatalogue(), FakeShop(), FakeDraupnir(),
+                                 history_path=str(tmp_path / 'history.json.gz'), today=lambda: TODAY,
+                                 alert_state_path=str(tmp_path / 'alerts.json'))
+
+
+def test_the_store_board_takes_store_items_from_huginns_pulls(tmp_path, monkeypatch):
+    huginn = _huginn(monkeypatch, [_pulse_row('Sticker | Flickshot', 1.4), _pulse_row('AK-47 | Redline (Field-Tested)', 30)])
+    service = _store_on(huginn, tmp_path)
+    huginn._single_container_map('token', 'buff')                         # the Case Arbitrage refresh
+    huginn.flush_pull_listeners()
+    started_at, index = service._indexes[('Buff', SIDE_LISTING)]
+    assert list(index) == ['Sticker | Flickshot'] and index['Sticker | Flickshot']['price'] == 1.4
+    assert service._history['2026-10-04']['Sticker | Flickshot']['Buff:listing'] == 1.4
+
+
+def test_an_older_download_never_replaces_newer_prices(tmp_path, monkeypatch):
+    huginn = _huginn(monkeypatch, [_pulse_row('Sticker | Flickshot', 1.4)])
+    service = _store_on(huginn, tmp_path)
+    service._indexes[('Buff', SIDE_LISTING)] = (100.0, {'Sticker | Flickshot': {'price': 0.9}})
+    service.take_pull('Buff', SIDE_LISTING, [_pulse_row('Sticker | Flickshot', 1.4)], started_at=50.0)
+    assert service._indexes[('Buff', SIDE_LISTING)][0] == 100.0
+    service.take_pull('Buff', SIDE_LISTING, [_pulse_row('Sticker | Flickshot', 1.4)], started_at=150.0)
+    assert service._indexes[('Buff', SIDE_LISTING)] [1]['Sticker | Flickshot']['price'] == 1.4
+
+
+def test_markets_the_board_does_not_show_are_not_kept(tmp_path, monkeypatch):
+    huginn = _huginn(monkeypatch, [])
+    service = _store_on(huginn, tmp_path)
+    assert 'Skinport' not in service.default_market_ids()                 # no buy orders, not a usual market
+    service.take_pull('Skinport', SIDE_LISTING, [_pulse_row('Sticker | Flickshot', 1.4)], started_at=time.time())
+    assert ('Skinport', SIDE_LISTING) not in service._indexes and service._history == {}

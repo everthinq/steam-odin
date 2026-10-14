@@ -6,6 +6,7 @@ import os
 import socket
 import ssl
 import threading
+from concurrent.futures import ThreadPoolExecutor
 import time
 import urllib.request
 import urllib.error
@@ -598,6 +599,9 @@ class HuginnService:
         self.settings_provider = None
         self._market_pull_cache = {}   # (market_id, price_type) -> (fetched_at, items) for generated pairs
         self._market_pull_lock = threading.Lock()
+        self._pull_listeners = []      # told about every full pulse table pulled (add_pull_listener)
+        # Listeners run here, one at a time, never in the thread (often a web request) that pulled.
+        self._pull_listener_thread = ThreadPoolExecutor(max_workers=1, thread_name_prefix='huginn-pull-listener')
         # Parsed-file caches keyed by (modification time, size): the 16 MB inventory
         # scan and the ~3 MB case price history are re-read only when the file changes.
         self._scan_file_cache = None      # ((mtime_ns, size), parsed scan)
@@ -1315,6 +1319,40 @@ class HuginnService:
             body["counterStrikeItemTypeOptions"]["displaySoldOutItems"] = True
         return body
 
+    def add_pull_listener(self, listener):
+        """listener(market_id, side, items, started_at) is called after every full pulse table
+        this service pulls, with side 'listing' (the market's lowest listing, a filtered pull) or
+        'instant' (its buy orders, an unfiltered pull), the raw rows and when the download
+        started. Listeners run one at a time in their own thread, after the pull is cached, so
+        they never slow the caller. Store Catalogue Arbitrage takes its prices from the Case
+        Arbitrage refresh this way instead of pulling the same tables again."""
+        self._pull_listeners.append(listener)
+
+    def flush_pull_listeners(self, timeout=30):
+        """Wait until every announced pull has been handed to the listeners (tests)."""
+        self._pull_listener_thread.submit(lambda: None).result(timeout=timeout)
+
+    def _announce_pull(self, market_id, price_type, unfiltered, items, started_at):
+        if not self._pull_listeners or not isinstance(items, list):
+            return
+        market = _MARKET_BY_ID.get(market_id)
+        if not market:
+            return
+        if price_type == market['buy_type'] and not unfiltered:
+            side = 'listing'
+        elif market['autobuy'] and price_type == market['autobuy'] and unfiltered:
+            side = 'instant'
+        else:
+            return
+
+        def tell():
+            for listener in list(self._pull_listeners):
+                try:
+                    listener(market_id, side, items, started_at)
+                except Exception as error:
+                    logger.warning(f'[HUGINN] pull listener failed ({market_id} {side}): {error}')
+        self._pull_listener_thread.submit(tell)
+
     def _pull_market(self, token, market_id, price_type, unfiltered=False):
         """Pull TradeOnMarket/{market_id} priced as `price_type`, cached briefly so
         generating several pairs that share a market doesn't re-hit pulse each time.
@@ -1330,6 +1368,11 @@ class HuginnService:
         items = self._post_tradeon(_TRADEON_TABLE_URL.format(market_id), token,
                                    self._body_for_type(price_type, unfiltered))
         self._scale_market_prices(items, market_id)
+        self._cache_pull(key, now, items)
+        self._announce_pull(market_id, price_type, unfiltered, items, now)
+        return items
+
+    def _cache_pull(self, key, now, items):
         with self._market_pull_lock:
             # A raw pull is tens of megabytes and only reused for _MARKET_PULL_TTL
             # seconds, so drop every expired pull on write instead of keeping one per
@@ -1338,7 +1381,6 @@ class HuginnService:
             self._market_pull_cache = {k: v for k, v in self._market_pull_cache.items()
                                        if v[0] >= fresh_cutoff}
             self._market_pull_cache[key] = (now, items)
-        return items
 
     @staticmethod
     def _skinswap_trade_ask_markup(pay_price_trade_dollars):
@@ -2259,13 +2301,15 @@ class HuginnService:
         'dmarket':  (_TRADEON_DMARKET_URL,  'Sell'),
         'lisskins': (_TRADEON_LISSKINS_URL, 'SellWithoutHold'),
     }
+    # The same tables in the market registry (for add_pull_listener).
+    _PRICE_MARKET_IDS = {'steam': 'Steam', 'buff': 'Buff', 'csfloat': 'CsFloat', 'dmarket': 'Dmarket',
+                         'lisskins': 'LisSkins'}
 
     def _single_price_map(self, token, market):
-        url, sell_type = self._PRICE_MARKETS[market]
-        body = copy.deepcopy(_TRADEON_STEAM_BODY)
-        body['secondMarketOptions']['secondMarketPriceType'] = sell_type
+        _, sell_type = self._PRICE_MARKETS[market]
+        # The same table as _pull_market(<market id>, sell_type): shared cache and listeners.
         out = {}
-        for it in self._post_tradeon(url, token, body):
+        for it in self._pull_market(token, self._PRICE_MARKET_IDS[market], sell_type):
             name = (it.get('itemName') or {}).get('marketHashName')
             sm = it.get('secondMarket') or {}
             price = sm.get('price')
@@ -2491,11 +2535,16 @@ class HuginnService:
             url = _TRADEON_STEAM_URL
             side = 'firstMarket'
         else:
-            url, sell_type = self._PRICE_MARKETS[market]
+            _, sell_type = self._PRICE_MARKETS[market]
             body['secondMarketOptions']['secondMarketPriceType'] = sell_type
             side = 'secondMarket'
+        if market == 'tradeon':
+            items = self._post_tradeon(url, token, body)
+        else:
+            # The same table as _pull_market(<market id>, sell_type): shared cache and listeners.
+            items = self._pull_market(token, self._PRICE_MARKET_IDS[market], sell_type)
         out = {}
-        for it in self._post_tradeon(url, token, body):
+        for it in items:
             name = (it.get('itemName') or {}).get('marketHashName')
             if name not in names:
                 continue

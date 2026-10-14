@@ -295,6 +295,17 @@ against the markets. Nothing in it buys anything.
   `store_arbitrage_signal_pct` (100) or more, never for a suspicious offer or an
   unconfirmed item. Ivan's rule: when CSMoney (Trade) pays the store price at
   once, the item is worth buying in the store and selling elsewhere.
+- **Shared pulls.** `HuginnService.add_pull_listener`: every full pulse table
+  Huginn pulls goes through `_pull_market` (the Case Arbitrage refresh and alert
+  polls in `_single_container_map` and the portfolio valuation in
+  `_single_price_map` too, so they also share its 30-second cache) and is
+  announced, after it is cached, as (market id, `listing` or `instant`, rows,
+  download start time) on one listener thread. `take_pull` keeps the store items
+  as that side's prices and in the history, for the board's default markets only,
+  unless that side holds a download that started later. The Case Arbitrage polls (every 10 minutes) keep the
+  listing sides of Buff163, CSFloat, LisSkins, both CSMoney sides and SkinSwap
+  (Market) fresh with no download of their own; the board's worker pulls the
+  rest (buy orders, other markets).
 - **Refresh.** `refresh()` re-queues every side of the board unless pulled in
   the last `REFRESH_MIN_AGE` (60 s); the board reports `refreshing` and
   `pulling` (sides left) while any of its sides is in the queue, and
