@@ -8,6 +8,7 @@ Nothing here touches pulse: every pull is replaced by a fake.
 import pytest
 
 import huginn_service
+import pulse_feed
 from huginn_service import HuginnService
 
 
@@ -189,7 +190,6 @@ def test_skinswap_trade_min_works_as_buy_source_and_min_target(monkeypatch):
     rows = service.fetch_generated_pair('token', 'SkinSwapTrade', 'Steam', 'autobuy', fee=0.0)
     assert rows[0]['firstMarket']['estimated'] is True
     assert rows[0]['firstMarket']['price'] == pytest.approx(29.91, rel=0.01)   # 41.87 / 1.4, estimated
-    service._market_pull_cache.clear()
     rows = service.fetch_generated_pair('token', 'Steam', 'SkinSwapTrade', 'min', fee=0.0)
     assert rows[0]['secondMarket']['estimated'] is True
     assert ('SkinSwapTrade', 'Buy') in bodies
@@ -206,21 +206,22 @@ def test_no_estimate_where_skinswap_does_not_want_the_item(monkeypatch):
 
 
 def test_no_pulse_request_has_a_price_floor():
-    # Every pulse body is a copy of _TRADEON_STEAM_BODY: cheap items (under $0.13
+    # Every pulse body is a copy of pulse_feed.BASE_BODY: cheap items (under $0.13
     # too) must reach every view, so neither market side has a minimum price.
-    body = huginn_service._TRADEON_STEAM_BODY
+    body = pulse_feed.BASE_BODY
     assert body['firstMarketOptions']['firstMarketPriceFilter']['minValue'] is None
     assert body['secondMarketOptions']['secondMarketPriceFilter']['minValue'] is None
     for price_type in ('Sell', 'Buy', 'SellWithoutHold'):
-        for unfiltered in (False, True):
-            pulled = _service()._body_for_type(price_type, unfiltered)
-            assert pulled['firstMarketOptions']['firstMarketPriceFilter']['minValue'] is None
+        pulled = pulse_feed.body_for(price_type)
+        assert pulled['firstMarketOptions']['firstMarketPriceFilter']['minValue'] is None
+        assert pulled['secondMarketOptions']['secondMarketPriceFilter']['minValue'] is None
 
 
-def test_autobuy_index_keeps_items_tradeon_has_sold_out_of(monkeypatch):
-    # Harvest, Cross-Profile and Store Catalogue Arbitrage look up what a market
-    # PAYS for items you hold, so an item Tradeon itself does not list must not
-    # vanish from the autobuy index. Buy-side pulls keep hiding sold-out items.
+def test_every_table_shows_items_tradeon_has_sold_out_of(monkeypatch):
+    # Harvest, Cross-Profile and Store Catalogue Arbitrage look up what a market PAYS for
+    # items you hold, so an item Tradeon itself does not list must not vanish. Every table
+    # is one normalised request with sold-out items shown (on 2026-10-15 the switch changed
+    # no table's item count), so a market's 'Buy' table is downloaded once for everyone.
     service = _service()
     bodies = []
 
@@ -235,10 +236,10 @@ def test_autobuy_index_keeps_items_tradeon_has_sold_out_of(monkeypatch):
     autobuy_body, buy_body = bodies
     assert autobuy_body['counterStrikeItemTypeOptions']['displaySoldOutItems'] is True
     assert autobuy_body['secondMarketOptions']['secondMarketPriceType'] == 'Buy'
-    assert buy_body['counterStrikeItemTypeOptions']['displaySoldOutItems'] is False
+    assert buy_body['counterStrikeItemTypeOptions']['displaySoldOutItems'] is True
+    assert buy_body['secondMarketOptions']['secondMarketPriceType'] == 'Sell'
     # The shared base body is never changed in place.
-    assert huginn_service._TRADEON_STEAM_BODY['counterStrikeItemTypeOptions']['displaySoldOutItems'] is False
-    # A filtered 'Buy' pull of the same market is cached apart, not served the unfiltered one.
+    assert pulse_feed.BASE_BODY['secondMarketOptions']['secondMarketPriceType'] == 'Buy'
+    # The same 'Buy' table asked again (any caller, any flag) comes from the feed.
     service._pull_market('token', 'CsMoneyTrade', 'Buy')
-    assert len(bodies) == 3
-    assert bodies[2]['counterStrikeItemTypeOptions']['displaySoldOutItems'] is False
+    assert len(bodies) == 2

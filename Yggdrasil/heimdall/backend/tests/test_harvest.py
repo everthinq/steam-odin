@@ -44,6 +44,10 @@ class FakeHuginn:
         self.pulls.append(market_id)
         return self.autobuy.get(market_id, {})
 
+    def market_index_at(self, token, market_id, side, max_age=None, names=None):
+        # (when downloaded, index) like HuginnService; a subclass's market_autobuy_index (failures) still applies.
+        return time.time(), self.market_autobuy_index(token, market_id)
+
 
 class FakeDraupnir:
     def open_lots(self):
@@ -267,3 +271,12 @@ def test_open_lots_a_sell_with_no_earlier_buy_is_covered_by_the_next_buy(tmp_pat
         draupnir.add_transaction(pid, raw)
     lots = {lot['item_name']: lot['qty'] for lot in draupnir.open_lots()}
     assert lots == {'Y': 2}   # X nets to zero, Y keeps the two uncovered units
+
+
+def test_the_index_is_stamped_with_when_its_prices_were_downloaded():
+    # The master pulse feed may serve a table up to ten minutes old: Harvest must not call it "now".
+    huginn = FakeHuginn()
+    huginn.market_index_at = lambda token, market_id, side, max_age=None, names=None: (1000.0, {'AK': {'price': 1.0}})
+    service = HarvestService(huginn, FakeDraupnir())
+    service._warm('token', ['CsMoneyTrade'])
+    assert service._indexes['CsMoneyTrade'] == (1000.0, {'AK': {'price': 1.0}})

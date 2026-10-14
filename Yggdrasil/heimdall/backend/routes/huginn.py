@@ -78,6 +78,13 @@ def huginn_scan():
         return jsonify({'error': str(e)}), 500
 
 
+@bp.route('/api/huginn/pulse', methods=['GET'])
+def huginn_pulse_status():
+    """The master pulse feed (pulse_feed.py): every price table, its age, downloads and reads
+    since boot, so you can see how many requests the shared tables saved."""
+    return jsonify(ctx.huginn_service.pulse.status())
+
+
 @bp.route('/api/huginn/morning-routine', methods=['GET'])
 def huginn_morning_routine():
     """Daily "Get all items" + CSFloat sweep: time, next run, last result."""
@@ -250,11 +257,12 @@ def start_csfloat_sweep():
 @bp.route('/api/huginn/tradeon/steam', methods=['GET'])
 def huginn_tradeon_steam():
     """Proxy Tradeon → Steam arbitrage data."""
-    token = ctx.settings_manager.get_settings().get('tradeon_token', '')
+    settings = ctx.settings_manager.get_settings()
+    token = settings.get('tradeon_token', '')
     if not token:
         return jsonify({'error': 'tradeon_token not set in settings'}), 400
     try:
-        data = ctx.huginn_service.fetch_tradeon_steam(token)
+        data = ctx.huginn_service.fetch_tradeon_steam(token, settings)
         return jsonify(data)
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -262,11 +270,12 @@ def huginn_tradeon_steam():
 @bp.route('/api/huginn/tradeon/buff', methods=['GET'])
 def huginn_tradeon_buff():
     """Proxy Tradeon → Buff163 arbitrage data."""
-    token = ctx.settings_manager.get_settings().get('tradeon_token', '')
+    settings = ctx.settings_manager.get_settings()
+    token = settings.get('tradeon_token', '')
     if not token:
         return jsonify({'error': 'tradeon_token not set in settings'}), 400
     try:
-        data = ctx.huginn_service.fetch_tradeon_buff(token)
+        data = ctx.huginn_service.fetch_tradeon_buff(token, settings)
         return jsonify(data)
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -274,11 +283,12 @@ def huginn_tradeon_buff():
 @bp.route('/api/huginn/tradeon/csfloat', methods=['GET'])
 def huginn_tradeon_csfloat():
     """Proxy Tradeon → CSFloat arbitrage data."""
-    token = ctx.settings_manager.get_settings().get('tradeon_token', '')
+    settings = ctx.settings_manager.get_settings()
+    token = settings.get('tradeon_token', '')
     if not token:
         return jsonify({'error': 'tradeon_token not set in settings'}), 400
     try:
-        data = ctx.huginn_service.fetch_tradeon_csfloat(token)
+        data = ctx.huginn_service.fetch_tradeon_csfloat(token, settings)
         return jsonify(data)
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -286,11 +296,12 @@ def huginn_tradeon_csfloat():
 @bp.route('/api/huginn/tradeon/dmarket', methods=['GET'])
 def huginn_tradeon_dmarket():
     """Proxy Tradeon → DMarket (autobuy) arbitrage data."""
-    token = ctx.settings_manager.get_settings().get('tradeon_token', '')
+    settings = ctx.settings_manager.get_settings()
+    token = settings.get('tradeon_token', '')
     if not token:
         return jsonify({'error': 'tradeon_token not set in settings'}), 400
     try:
-        data = ctx.huginn_service.fetch_tradeon_dmarket(token)
+        data = ctx.huginn_service.fetch_tradeon_dmarket(token, settings)
         return jsonify(data)
     except Exception as e:
         return jsonify({'error': str(e)}), 500

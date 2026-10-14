@@ -1,6 +1,8 @@
 """Every fee comes from ONE place: the Fees editor (settings huginn_market_fees),
 read through HuginnService.market_fee — Case Arbitrage, LOOT.Farm and the
 auctions included. Also: Case Arbitrage's new buy-only price sources."""
+import pytest
+
 from huginn_service import HuginnService
 
 
@@ -60,16 +62,15 @@ def test_new_sites_are_buy_only_price_sources(monkeypatch):
     assert set(service._CONTAINER_SELL_MARKETS) == {'steam', 'buff', 'csfloat'}
     pulled = []
 
-    def pull(token, market_id, price_type):
-        pulled.append((market_id, price_type))
+    def post(url, token, body):
+        pulled.append((url.rsplit('/', 2)[1], body['secondMarketOptions']['secondMarketPriceType']))
         return [{'itemName': {'marketHashName': 'Case X'}, 'secondMarket': {'price': 0.8, 'totalOffersCount': 7}},
                 {'itemName': {'marketHashName': 'Some Skin'}, 'secondMarket': {'price': 5.0, 'totalOffersCount': 1}}]
 
-    monkeypatch.setattr(service, '_pull_market', pull)
+    monkeypatch.setattr(service, '_post_tradeon', post)
     monkeypatch.setattr(service, '_container_names', lambda: {'Case X'})
-    assert service._single_container_map('token', 'skinswap') == {'Case X': {'price': 0.8, 'count': 7}}
+    assert service._container_snapshot_at('token', 'skinswap')[1] == {'Case X': {'price': 0.8, 'count': 7}}
     assert pulled == [('SkinSwapMarket', 'Sell')]
-
 
 def test_lootfarm_profiles_default_to_the_fees_editor(monkeypatch):
     service = _service({'LootFarm': 0.03})
@@ -92,3 +93,20 @@ def test_a_case_priced_only_by_a_new_source_records_no_history(monkeypatch):
     row = service._price_rows_recording_history([{'name': 'Case Y'}], snaps, '2026-09-30')[0]
     assert row['cheapest_market'] == 'csmoney_market'      # the table still shows it
     assert 'Case Y' not in history and row['trend_pct'] is None
+
+
+def test_the_tradeon_first_profiles_use_the_fees_editor_not_pulses_profit(monkeypatch):
+    # Pulse's own profit used the fees on the pulse account (DMarket 5% on 2026-10-15) while every
+    # other profile used the Fees editor. Now all four take the Fees editor too.
+    service = _service({'Dmarket': 0.0, 'Steam': 0.13})
+    monkeypatch.setattr(service, '_post_tradeon', lambda url, token, body: [
+        {'itemName': {'marketHashName': 'AK'}, 'firstMarket': {'price': 10.0},
+         'secondMarket': {'price': 12.0}, 'profit': 1.4, 'profitPercent': 14.0},       # pulse: 5% fee
+        {'itemName': {'marketHashName': 'Sold out on Tradeon'}, 'firstMarket': {}, 'secondMarket': {'price': 3.0}}])
+    rows = service.fetch_tradeon_dmarket('token')
+    assert [r['itemName']['marketHashName'] for r in rows] == ['AK']
+    assert rows[0]['profit'] == pytest.approx(2.0) and rows[0]['profitPercent'] == pytest.approx(20.0)
+    steam = service.fetch_tradeon_steam('token')
+    assert steam[0]['profit'] == pytest.approx(12.0 * 0.87 - 10.0)
+    edited = service.fetch_tradeon_dmarket('token', {'huginn_market_fees': {'Dmarket': 0.05}})
+    assert edited[0]['profit'] == pytest.approx(12.0 * 0.95 - 10.0)

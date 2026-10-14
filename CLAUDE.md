@@ -218,6 +218,8 @@ ruff + `pip-audit`, and frontend lint + build, on every push and pull request.
 - What every screen does (human guide): [docs/guide/](docs/guide/README.md)
 - Feature deep dives: [docs/internals/](docs/internals/) — start with
   [storage-shop.md](docs/internals/storage-shop.md) before touching Buy Storage Units or the Store Catalogue
+- Tradeon pulse (every price on every Huginn page): [docs/internals/pulse-api.md](docs/internals/pulse-api.md) —
+  all requests go through the master feed `backend/pulse_feed.py`, never anywhere else
 - Known drift between code, config and docs: [docs/internals/known-issues.md](docs/internals/known-issues.md)
 - Human architecture tour: [ARCHITECTURE.md](ARCHITECTURE.md)
 - Trading domain knowledge: [docs/steam-trading/](docs/steam-trading/) — local only: the

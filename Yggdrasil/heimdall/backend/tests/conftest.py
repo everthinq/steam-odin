@@ -26,3 +26,15 @@ def _no_real_csfloat_lookup_by_name(monkeypatch):
         raise huginn_service._CSFloatNameLookupUnsupported('not available in tests')
 
     monkeypatch.setattr(huginn_service.HuginnService, '_csfloat_name_orders', unsupported)
+
+
+@pytest.fixture(autouse=True)
+def _no_real_pulse_request(monkeypatch):
+    """No test may reach Tradeon pulse: the one transport (HuginnService._post_tradeon, which
+    the master feed calls) fails loudly unless a test replaces it on its service."""
+    import huginn_service
+
+    def refused(self, url, token, body=None):
+        raise AssertionError(f'a test tried to reach pulse ({url}); fake _post_tradeon on the service')
+
+    monkeypatch.setattr(huginn_service.HuginnService, '_post_tradeon', refused)

@@ -89,6 +89,7 @@ Harvest warmers, card-deals scans, `andvari-{kind}` store-purchase jobs,
 | `scheduler.py` | Background auto-confirm loop **+ session keep-alive sweep** + auto-store sweep + auto-confirmed trade alerts |
 | `storage.py` | maFile load/save, encryption (key from `HEIMDALL_SECRET_KEY` or `maFiles/.heimdall_key`), legacy migration, soft delete to `maFiles/.deleted/` |
 | `huginn_service.py` | Tradeon pulse price feed, cross-market prices, market registry + fees, case arbitrage catalog + Telegram board, CSFloat buy-order sweep and key rotation, LOOT.Farm auctions (largest file) |
+| `pulse_feed.py` | **The master price feed: the only code that asks Tradeon pulse for prices.** A table is (market id, price type), one normalised body (`BASE_BODY`: no filters, sold-out items shown); single flight per table, at most 4 downloads at once (each peaks at ~200 MB), freshness chosen by the caller (`FRESH` 10 min, `ON_DEMAND` 1 min), compact storage (~15 MB a table instead of 155 MB), bonus balances scaled once, listeners, `status()` (`GET /api/huginn/pulse`). Anything that keeps its own copy stamps it with the table's download time (`HuginnService.market_index_at`), never "now". API facts and ideas: [docs/internals/pulse-api.md](../../../docs/internals/pulse-api.md) |
 | `cross_arbitrage_service.py` | One board across all accounts: per held item the best buy-minimum market vs the best autobuy market, fee-netted, plus user-defined chains; cached 10 min, warmed in the background |
 | `harvest_service.py` | Harvest (Huginn tab): each purchase lot still held (`DraupnirService.open_lots()`: real price paid, sells use up the oldest buys first) vs the chosen autobuy market's instant offer; per-market index cached 10 min and warmed one market at a time; marks site-balance payouts and cash offers above 1.3× Buff163's listing |
 | `draupnir_service.py` | Portfolio store, moving-average profit/loss, canonical platform names, CSV import/export, combined ledger |
@@ -202,21 +203,24 @@ runs Python 3.9; CI runs 3.11 — write code that works on both.
   `HuginnService.market_fee(market_id)`. That covers the Arbitrage profiles, Case
   Arbitrage, Cross-Profile, Harvest, Store Catalogue Arbitrage, LOOT.Farm and the auctions. Never add a
   per-feature fee constant.
+- **Every pulse request goes through the master feed (`pulse_feed.py`).** Never call
+  `_post_tradeon` or build a pulse body anywhere else: ask `HuginnService._table(token,
+  market, price_type, max_age)` (or `_pull_market` for pulse-shaped rows). Read
+  [docs/internals/pulse-api.md](../../../docs/internals/pulse-api.md) first.
 - **The pulse market registry (`_MARKET_REGISTRY` in `huginn_service.py`) has
-  rules beyond id + fee.** Every generated pair, Cross-Profile, Harvest and Store
-  Catalogue Arbitrage read markets through `_pull_market` / `market_buy_index` /
-  `market_autobuy_index`, so a rule placed there applies everywhere:
+  rules beyond id + fee.** Every feature reads markets through the feed
+  (`_table` / `_pull_market` / `market_buy_index` / `market_autobuy_index`), so a
+  rule placed there applies everywhere:
   - `buy_type` None = sell-only (buy orders, no listings): refused as a buy source
     or min target before pulse is asked.
-  - No pulse request has a price floor (`_TRADEON_STEAM_BODY`, which every body
-    copies; Ivan removed the old $0.13 floor 2026-10-12). Pulls hide items Tradeon
-    has sold out of, a buy-side filter; `market_autobuy_index` pulls `unfiltered`
-    (cached apart) so Harvest, Cross-Profile and Store Catalogue Arbitrage still see
-    what a market pays for those.
+  - No pulse request has a price floor (`pulse_feed.BASE_BODY`, the one body; Ivan
+    removed the old $0.13 floor 2026-10-12). Every table shows items Tradeon has sold
+    out of (on 2026-10-15 that changed no table's item count), so there is one table
+    per (market, price type).
   - `_MARKETS_NOT_IN_PULSE_UI` (SkinSwapTrade, GgSwap, GamerPay): tables answer
     but the pulse website hides them; prices can be months old. UI shows an ⓘ.
   - `_MARKET_PRICE_SCALE`: prices in a bonus balance are turned into real dollars
-    in `_pull_market`. SkinSwap says "Trade = Market × 1.4"; pulse's
+    once, when the feed stores the table. SkinSwap says "Trade = Market × 1.4"; pulse's
     SkinSwapTrade `Buy` is what its Trade page pays, in Trade dollars, so it is
     divided by 1.4 (checked on the live Trade page 2026-10-10: Redline $35.35 →
     $25.25 ≈ Buff). SkinSwapMarket `Sell` is already real dollars. The ×1.4 rule

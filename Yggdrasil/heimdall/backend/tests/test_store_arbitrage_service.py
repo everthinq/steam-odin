@@ -180,6 +180,10 @@ class FakeHuginn:
     def add_pull_listener(self, listener):
         self.listeners.append(listener)
 
+    def market_index_at(self, token, market_id, side, max_age=None, names=None):
+        index = self.market_autobuy_index(token, market_id) if side == SIDE_INSTANT else self.market_buy_index(token, market_id)
+        return __import__('time').time(), {n: q for n, q in index.items() if names is None or n in names}
+
     def market_registry(self, settings=None):
         return [{'id': 'Buff', 'display': 'Buff163', 'hasAutobuy': True, 'fee': 0.015, 'feeKnown': True},
                 {'id': 'Steam', 'display': 'Steam', 'hasAutobuy': True, 'fee': 0.13, 'feeKnown': True},
@@ -319,9 +323,9 @@ def test_one_worker_thread_pulls_everything_in_turn(tmp_path, monkeypatch):
     gate = threading.Event()
     real_fetch = service._fetch_index
 
-    def slow_fetch(token, market_id, side):
+    def slow_fetch(token, market_id, side, max_age=None):
         gate.wait(2)
-        return real_fetch(token, market_id, side)
+        return real_fetch(token, market_id, side, max_age=max_age)
 
     monkeypatch.setattr(service, '_fetch_index', slow_fetch)
     monkeypatch.setattr('store_arbitrage_service.threading.Thread', counting_thread)

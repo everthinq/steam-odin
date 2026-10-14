@@ -89,7 +89,7 @@ def test_huginn_blueprint_registers_all_routes():
                  '/api/huginn/gjallarhorn/news/test',
                  '/api/huginn/arbitrage/cross-profile',
                  '/api/huginn/arbitrage/cross-profile/config',
-                 '/api/huginn/harvest', '/api/huginn/harvest/options', '/api/huginn/morning-routine',
+                 '/api/huginn/harvest', '/api/huginn/harvest/options', '/api/huginn/morning-routine', '/api/huginn/pulse',
                  '/api/huginn/csfloat/connectivity',
                  '/api/huginn/card-deals', '/api/huginn/card-deals/scan',
                  '/api/huginn/card-deals/status', '/api/huginn/card-deals/config',
@@ -106,7 +106,7 @@ def test_huginn_blueprint_registers_all_routes():
     # +7 Andvari card-deals rules: deals, scan, buy-orders, status, config (GET+POST), alerts/test.
     # +5 Team Fortress 2 rules: status, play, check-news, detect, sell-now; +1 card auto-sell status;
     # +3 Buy games: status, plan, run.
-    assert _rule_count(bp, "/api/huginn") == 75
+    assert _rule_count(bp, "/api/huginn") == 76
 
 
 def test_register_blueprints_wires_onto_app():

@@ -144,10 +144,12 @@ class HarvestService:
                     # Shared with Draupnir's valuation (cached for an hour there).
                     index = {name: {'price': price}
                              for name, price in (self.huginn.price_map(token, 'buff') or {}).items() if price}
+                    downloaded_at = time.time()
                 else:
-                    index = self.huginn.market_autobuy_index(token, market_id) or {}
+                    # Stamped with when the prices were downloaded: the feed may serve an older table.
+                    downloaded_at, index = self.huginn.market_index_at(token, market_id, 'instant')
                 with self._lock:
-                    self._indexes[market_id] = (time.time(), index)
+                    self._indexes[market_id] = (downloaded_at, index or {})
                     self._failures.pop(market_id, None)
                 logger.info('[HARVEST] %s autobuy index: %d items in %.0fs',
                             market_id, len(index), time.time() - started)

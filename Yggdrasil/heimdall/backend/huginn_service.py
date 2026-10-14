@@ -1,4 +1,3 @@
-import copy
 import email.utils
 import json
 import logging
@@ -6,13 +5,13 @@ import os
 import socket
 import ssl
 import threading
-from concurrent.futures import ThreadPoolExecutor
 import time
 import urllib.request
 import urllib.error
 import urllib.parse
 from datetime import datetime, timezone, timedelta
 from jsonio import atomic_write_json
+from pulse_feed import COUNT, FRESH, ON_DEMAND, PRICE, PulseFeed
 from notifications import (TELEGRAM_MESSAGE_LIMIT, delete_notification, edit_notification,
                            notification_channel, send_notification, telegram_visible_length)
 
@@ -331,12 +330,6 @@ class CSFloatKeyManager:
                 })
             return out
 
-_TRADEON_STEAM_URL    = 'https://api-pulse.tradeon.space/api/table/counter-strike/TradeOnMarket/Steam/all'
-_TRADEON_BUFF_URL     = 'https://api-pulse.tradeon.space/api/table/counter-strike/TradeOnMarket/Buff/all'
-_TRADEON_CSFLOAT_URL  = 'https://api-pulse.tradeon.space/api/table/counter-strike/TradeOnMarket/CsFloat/all'
-_TRADEON_LISSKINS_URL = 'https://api-pulse.tradeon.space/api/table/counter-strike/TradeOnMarket/LisSkins/all'
-_TRADEON_DMARKET_URL  = 'https://api-pulse.tradeon.space/api/table/counter-strike/TradeOnMarket/Dmarket/all'
-
 # LOOT.Farm publishes its own price + limit feed (first-party, refreshed ~every
 # minute). We read the LootFarm leg straight from here instead of pulse; only the
 # buy side (TradeOnMarket min) still comes from pulse. Feed prices are INTEGER CENTS,
@@ -354,99 +347,8 @@ _LOOTFARM_AUCTION_TTL = 45   # seconds
 # Sell fees (net proceeds = price * (1 - fee)) live in ONE place: the market registry
 # below (defaults) overridden by the Fees editor (settings huginn_market_fees), read
 # through HuginnService.market_fee. Do not add per-feature fee constants.
-_TRADEON_STEAM_BODY = {
-    "templateId": None,
-    "firstMarketOptions": {
-        "firstMarketPriceType": "Sell",
-        "firstMarketPriceFilter": {"minValue": None, "maxValue": None},   # no price floor: cheap items count too
-        "firstMarketCountFilter": {"minValue": None, "maxValue": None},
-        "updateTimeFilter": {"minTime": None, "maxTime": None},
-    },
-    "secondMarketOptions": {
-        "secondMarketPriceType": "Buy",
-        "secondMarketPriceFilter": {"minValue": None, "maxValue": None},
-        "secondMarketCountFilter": {"minValue": None, "maxValue": None},
-        "updateTimeFilter": {"minTime": None, "maxTime": None},
-    },
-    "marketHashNameFilter": None,
-    "profitFilter": None,
-    "profitPercentFilter": {"minValue": None, "maxValue": None},
-    "counterStrikeItemTypeOptions": {
-        "itemTypes": None, "itemQualities": None, "isStatTrack": None,
-        "isSouvenir": None, "isSticker": None, "isGraffiti": None,
-        "indicationOptions": {"isEnabled": True, "colorIndicators": [
-            {"isEnabled": False, "profitPercent": 35, "color": "Green"},
-            {"isEnabled": False, "profitPercent": 36, "color": "Blue"},
-            {"isEnabled": False, "profitPercent": 37, "color": "Red"},
-            {"isEnabled": False, "profitPercent": 38, "color": "Orange"},
-            {"isEnabled": False, "profitPercent": 39, "color": "Purple"},
-        ]},
-        "isOverstock": None, "displaySoldOutItems": False,
-        "displayOnlyOverridenItems": False, "firstMarketTime": None,
-        "secondMarketTime": None, "holdOptions": None,
-    },
-    "dotaItemTypeOptions": {
-        "itemTypes": None, "itemQualities": None, "isStatTrack": None,
-        "isSouvenir": None, "isSticker": None, "isGraffiti": None,
-        "indicationOptions": {"isEnabled": True, "colorIndicators": [
-            {"isEnabled": False, "profitPercent": 35, "color": "Green"},
-            {"isEnabled": False, "profitPercent": 36, "color": "Blue"},
-            {"isEnabled": False, "profitPercent": 37, "color": "Red"},
-            {"isEnabled": False, "profitPercent": 38, "color": "Orange"},
-            {"isEnabled": False, "profitPercent": 39, "color": "Purple"},
-        ]},
-        "isOverstock": None, "displaySoldOutItems": False,
-        "displayOnlyOverridenItems": False, "firstMarketTime": None,
-        "secondMarketTime": None, "holdOptions": None,
-    },
-    "rustItemTypeOptions": {
-        "itemTypes": None, "itemQualities": None, "isStatTrack": None,
-        "isSouvenir": None, "isSticker": None, "isGraffiti": None,
-        "indicationOptions": {"isEnabled": True, "colorIndicators": [
-            {"isEnabled": False, "profitPercent": 35, "color": "Green"},
-            {"isEnabled": False, "profitPercent": 36, "color": "Blue"},
-            {"isEnabled": False, "profitPercent": 37, "color": "Red"},
-            {"isEnabled": False, "profitPercent": 38, "color": "Orange"},
-            {"isEnabled": False, "profitPercent": 39, "color": "Purple"},
-        ]},
-        "isOverstock": None, "displaySoldOutItems": False,
-        "displayOnlyOverridenItems": False, "firstMarketTime": None,
-        "secondMarketTime": None, "holdOptions": None,
-    },
-    "rarityFilter": None,
-    "salesCountPeriod": "Week",
-    "salesCountFilters": [],
-    "holdFilter": None,
-    "isOverstock": None,
-    "displaySoldOutItems": False,
-    "displayOnlyOverridenItems": False,
-    "countFilterMode": "TotalOffersCount",
-    "glowOldListItems": True,
-    "paginationRequest": {
-        "orderParameters": {"key": "profitPercent", "sortOrder": "Descending"},
-        "skipCount": 0,
-        "takeCount": 9999999,
-    },
-}
-
-# Buy-side queries: same body, but the second market is priced as its own sell price
-# (the min you'd pay to buy). These come back un-paywalled even for paid markets.
-_TRADEON_LISSKINS_BODY = copy.deepcopy(_TRADEON_STEAM_BODY)
-_TRADEON_LISSKINS_BODY["secondMarketOptions"]["secondMarketPriceType"] = "SellWithoutHold"
-
-_TRADEON_BUFF_BUY_BODY = copy.deepcopy(_TRADEON_STEAM_BODY)
-_TRADEON_BUFF_BUY_BODY["secondMarketOptions"]["secondMarketPriceType"] = "Sell"
-
-# DMarket as a buy source: its second market is priced as its own lowest listing
-# (Sell) — the min you'd pay to buy there.
-_TRADEON_DMARKET_BUY_BODY = copy.deepcopy(_TRADEON_STEAM_BODY)
-_TRADEON_DMARKET_BUY_BODY["secondMarketOptions"]["secondMarketPriceType"] = "Sell"
-
-# Tradeon (min) => CSFloat (min): CSFloat has no autobuy, so the sell side is its
-# lowest listing (Sell), not a buy order. Direct pulse query — pulse returns the
-# profit itself, so this passes through like the other Tradeon-first profiles.
-_TRADEON_CSFLOAT_BODY = copy.deepcopy(_TRADEON_STEAM_BODY)
-_TRADEON_CSFLOAT_BODY["secondMarketOptions"]["secondMarketPriceType"] = "Sell"
+# Every pulse request is built in ONE place, pulse_feed.py (the master feed): a table is named by
+# (market id, price type) and every table uses the same body (pulse_feed.BASE_BODY).
 
 # --- Generated arbitrage pairs (data-driven market registry) -----------------
 # Every market is reached the free way: as the secondMarket under TradeOnMarket
@@ -579,8 +481,6 @@ def pulse_short_link(market_slug, name):
     return f'https://short-pulse.tradeon.space/short-link/CsGo/{market_slug}/{urllib.parse.quote(name)}'
 
 
-_TRADEON_TABLE_URL = 'https://api-pulse.tradeon.space/api/table/counter-strike/TradeOnMarket/{}/all'
-_MARKET_PULL_TTL = 30   # seconds; reuse a raw TradeOnMarket/{id} pull across generated pairs
 
 
 class HuginnService:
@@ -597,11 +497,10 @@ class HuginnService:
         # Returns the current settings; app.py points it at SettingsManager.get_settings,
         # so every fee below comes from the one Fees editor (huginn_market_fees).
         self.settings_provider = None
-        self._market_pull_cache = {}   # (market_id, price_type) -> (fetched_at, items) for generated pairs
-        self._market_pull_lock = threading.Lock()
-        self._pull_listeners = []      # told about every full pulse table pulled (add_pull_listener)
-        # Listeners run here, one at a time, never in the thread (often a web request) that pulled.
-        self._pull_listener_thread = ThreadPoolExecutor(max_workers=1, thread_name_prefix='huginn-pull-listener')
+        # The master: the one place pulse is asked for a price table (pulse_feed.py). The lambda
+        # reads self._post_tradeon at call time, so tests can replace the transport.
+        self.pulse = PulseFeed(post=lambda url, token, body: self._post_tradeon(url, token, body),
+                               scale=_MARKET_PRICE_SCALE)
         # Parsed-file caches keyed by (modification time, size): the 16 MB inventory
         # scan and the ~3 MB case price history are re-read only when the file changes.
         self._scan_file_cache = None      # ((mtime_ns, size), parsed scan)
@@ -619,7 +518,6 @@ class HuginnService:
         # and is filtered to the container catalog only. Same non-blocking warm pattern.
         self._lootfarm_cache = {}   # game -> (fetched_at_epoch, {name: feed_row})
         self._auction_cache = None  # (fetched_at_epoch, feed_dict)
-        self._buyorder_cache = {}   # market -> (epoch, {name: buy_order_price}) for the LF arb board
         self._auction_lock = threading.Lock()
         self._auction_tracker_started = False
         self._container_cache = {}
@@ -773,9 +671,9 @@ class HuginnService:
         self._scan_file_cache = (signature, data)
         return data
 
-    def _post_tradeon(self, url, token, body=None):
-        """POST a tradeon table query and return the list of items (no caching)."""
-        body_bytes = json.dumps(body or _TRADEON_STEAM_BODY).encode('utf-8')
+    def _post_tradeon(self, url, token, body):
+        """POST one pulse table query and return its rows (no caching). Only PulseFeed calls this."""
+        body_bytes = json.dumps(body).encode('utf-8')
         req = urllib.request.Request(
             url,
             data=body_bytes,
@@ -800,19 +698,26 @@ class HuginnService:
             return next((data[k] for k in ('items', 'data', 'result', 'records') if isinstance(data.get(k), list)), data)
         return data
 
-    def fetch_tradeon_steam(self, token):
-        return self._post_tradeon(_TRADEON_STEAM_URL, token)
+    def _tradeon_first_rows(self, token, market_id, price_type, settings=None):
+        """A curated Tradeon-first profile: buy at Tradeon's lowest listing (the table's first
+        market), sell on `market_id`, profit after YOUR fee for that market (the Fees editor,
+        market_fee), like every other profile. Pulse's own profit (computed with the fees saved
+        on the pulse account: 5% for DMarket on 2026-10-15) is not used."""
+        rows = self._pull_market(token, market_id, price_type, ON_DEMAND)
+        return self._join_direct(rows, self.market_fee(market_id, settings))
 
-    def fetch_tradeon_buff(self, token):
-        return self._post_tradeon(_TRADEON_BUFF_URL, token)
+    def fetch_tradeon_steam(self, token, settings=None):
+        return self._tradeon_first_rows(token, 'Steam', 'Buy', settings)
 
-    def fetch_tradeon_csfloat(self, token):
-        return self._post_tradeon(_TRADEON_CSFLOAT_URL, token, _TRADEON_CSFLOAT_BODY)
+    def fetch_tradeon_buff(self, token, settings=None):
+        return self._tradeon_first_rows(token, 'Buff', 'Buy', settings)
 
-    def fetch_tradeon_dmarket(self, token):
-        # Direct pulse profile: Tradeon min -> DMarket autobuy. DMarket takes no sales
-        # fee, so pulse's profit already reflects the full autobuy price (no fee to net).
-        return self._post_tradeon(_TRADEON_DMARKET_URL, token)
+    def fetch_tradeon_csfloat(self, token, settings=None):
+        # CSFloat has no buy orders on pulse: the sell side is its lowest listing.
+        return self._tradeon_first_rows(token, 'CsFloat', 'Sell', settings)
+
+    def fetch_tradeon_dmarket(self, token, settings=None):
+        return self._tradeon_first_rows(token, 'Dmarket', 'Buy', settings)
 
     def _fetch_lootfarm_feed(self, game='cs'):
         """{market_hash_name: feed_row} from LOOT.Farm's own price feed, cached for
@@ -854,8 +759,8 @@ class HuginnService:
         fee = min(max(fee, 0.0), 20.0)
         net_factor = 1.0 - fee / 100.0
 
-        buy_items = self._post_tradeon(_TRADEON_STEAM_URL, token)   # firstMarket = TradeOnMarket min
         feed = self._fetch_lootfarm_feed('cs')
+        buy_items = self._pull_market(token, 'Steam', 'Buy', ON_DEMAND, names=feed)   # firstMarket = TradeOnMarket min
 
         combined = []
         for it in buy_items:
@@ -904,8 +809,8 @@ class HuginnService:
         fee = min(max(fee, 0.0), 20.0)
         net_factor = 1.0 - fee / 100.0
 
-        buy_items = self._post_tradeon(_TRADEON_LISSKINS_URL, token, _TRADEON_LISSKINS_BODY)
         feed = self._fetch_lootfarm_feed('cs')
+        buy_items = self._pull_market(token, 'LisSkins', 'SellWithoutHold', ON_DEMAND, names=feed)
 
         combined = []
         for it in buy_items:
@@ -970,18 +875,11 @@ class HuginnService:
         return lots
 
     def _pulse_steam_tradeon(self, token):
-        """{name: steam_autobuy_price}, {name: tradeon_min_price} from one pulse pull."""
+        """{name: steam_autobuy_price}, {name: tradeon_min_price} from one pulse table."""
         steam, tradeon = {}, {}
         try:
-            for it in self._post_tradeon(_TRADEON_STEAM_URL, token):
-                nm = (it.get('itemName') or {}).get('marketHashName')
-                if not nm:
-                    continue
-                sm, fm = it.get('secondMarket') or {}, it.get('firstMarket') or {}
-                if sm.get('price') is not None:
-                    steam[nm] = sm['price']
-                if fm.get('price') is not None:
-                    tradeon[nm] = fm['price']
+            table = self._table(token, 'Steam', 'Buy')
+            steam, tradeon = table.prices(), table.prices('first')
         except Exception as e:
             logger.error(f'[HUGINN] auction pulse prices failed: {e}')
         return steam, tradeon
@@ -1163,27 +1061,14 @@ class HuginnService:
 
     # ---- LOOT.Farm arbitrage board (buy balance cheap -> LF item -> sell buy order) ---
 
-    _BUYORDER_MARKETS = {'steam': _TRADEON_STEAM_URL, 'buff': _TRADEON_BUFF_URL}
+    _BUYORDER_MARKETS = {'steam': 'Steam', 'buff': 'Buff'}
     _BUYORDER_TTL = 300   # seconds; buy-order maps cached and reused across requests
 
     def _buyorder_map(self, token, market):
-        """{name: highest buy-order price} for a market, cached _BUYORDER_TTL s. These
-        are instant-sell prices (secondMarketPriceType 'Buy'), unlike the valuation
-        cache which holds listings ('Sell')."""
-        now = time.time()
-        cached = self._buyorder_cache.get(market)
-        if cached and now - cached[0] < self._BUYORDER_TTL:
-            return cached[1]
-        body = copy.deepcopy(_TRADEON_STEAM_BODY)
-        body['secondMarketOptions']['secondMarketPriceType'] = 'Buy'
-        out = {}
-        for it in self._post_tradeon(self._BUYORDER_MARKETS[market], token, body):
-            n = (it.get('itemName') or {}).get('marketHashName')
-            sm = it.get('secondMarket') or {}
-            if n and sm.get('price') is not None:
-                out[n] = sm['price']
-        self._buyorder_cache[market] = (now, out)
-        return out
+        """{name: highest buy-order price} for a market (its 'Buy' table), at most
+        _BUYORDER_TTL s old. These are instant-sell prices, unlike the valuation cache which
+        holds listings ('Sell')."""
+        return self._table(token, self._BUYORDER_MARKETS[market], 'Buy', max_age=self._BUYORDER_TTL).prices()
 
     def lootfarm_arbitrage(self, token='', balance_rate=0.5208, unlocked=True, in_stock=True, settings=None):
         """The core play: buy LOOT.Farm balance cheap (from the USDT OTC trader) → acquire
@@ -1253,22 +1138,21 @@ class HuginnService:
             'priced': bool(steam_bo or buff_bo or csf_bo),
         }
 
-    def _combine_arbitrage(self, token, buy_url, buy_body, sell_url, sell_fee, sell_body=None):
-        """Combine a buy-side market's min prices with a sell-side market's autobuy prices.
+    def _combine_arbitrage(self, token, buy, sell, sell_fee):
+        """Combine a buy-side market's min prices with a sell-side market's prices.
 
-        The buy side is queried so its second market carries its own (un-paywalled) sell
-        price — the min you'd pay to buy. The sell side is the standard autobuy query. We
-        buy low there and sell into the target market's buy orders, netting that market's
-        fee. Items are joined on market_hash_name; only items on both sides are returned.
-        Shaped like the other profiles (firstMarket = buy, secondMarket = sell) so the UI
-        renders it unchanged.
+        *buy* and *sell* are (market id, price type) tables of the master feed: the buy side
+        priced as its own lowest listing (the min you'd pay), the sell side as its buy orders
+        ('Buy'; CSFloat has none, so its lowest listing, 'Sell'). We buy low there and sell into
+        the target, netting that market's fee. Items are joined on market_hash_name; only items on
+        both sides are returned, shaped like the other profiles (firstMarket = buy, secondMarket =
+        sell) so the UI renders it unchanged."""
+        return self._join_tables(self._table(token, *buy, ON_DEMAND), self._table(token, *sell, ON_DEMAND), sell_fee)
 
-        `sell_body` overrides the sell-side query body — used for CSFloat, which has no
-        autobuy, so its sell side is the lowest listing (Sell) rather than a buy order.
-        """
-        buy_items = self._post_tradeon(buy_url, token, buy_body)
-        sell_items = self._post_tradeon(sell_url, token, sell_body or _TRADEON_STEAM_BODY)
-        return self._join_arbitrage(buy_items, sell_items, sell_fee)
+    def _join_tables(self, buy_table, sell_table, sell_fee):
+        """_join_arbitrage over two feed tables, building rows only for the items both have."""
+        both = [name for name in buy_table.entries if name in sell_table.entries]
+        return self._join_arbitrage(buy_table.rows(both), sell_table.rows(both), sell_fee)
 
     def _join_arbitrage(self, buy_items, sell_items, sell_fee):
         """Join a buy-side pull (its secondMarket = the min you'd pay) with a
@@ -1308,79 +1192,41 @@ class HuginnService:
 
     # ---- Generated pairs (any registry market -> any registry market) -------
 
-    def _body_for_type(self, price_type, unfiltered=False):
-        """A standard Tradeon table body with the second market priced as `price_type`.
-        `unfiltered` also shows items Tradeon has sold out of, which only matters
-        for a sell-side lookup (what a market pays for an item you hold): that item
-        must not vanish because Tradeon does not list it."""
-        body = copy.deepcopy(_TRADEON_STEAM_BODY)
-        body["secondMarketOptions"]["secondMarketPriceType"] = price_type
-        if unfiltered:
-            body["counterStrikeItemTypeOptions"]["displaySoldOutItems"] = True
-        return body
-
     def add_pull_listener(self, listener):
-        """listener(market_id, side, items, started_at) is called after every full pulse table
-        this service pulls, with side 'listing' (the market's lowest listing, a filtered pull) or
-        'instant' (its buy orders, an unfiltered pull), the raw rows and when the download
-        started. Listeners run one at a time in their own thread, after the pull is cached, so
-        they never slow the caller. Store Catalogue Arbitrage takes its prices from the Case
-        Arbitrage refresh this way instead of pulling the same tables again."""
-        self._pull_listeners.append(listener)
+        """listener(market_id, side, table) after every table the master feed downloads, with
+        side 'listing' (the market's lowest listing price type) or 'instant' (its buy orders),
+        on the feed's listener thread. Store Catalogue Arbitrage takes the store items this way
+        instead of downloading the same tables again."""
+        def relay(table):
+            market = _MARKET_BY_ID.get(table.market_id)
+            if not market:
+                return
+            if table.price_type == market['buy_type']:
+                side = 'listing'
+            elif market['autobuy'] and table.price_type == market['autobuy']:
+                side = 'instant'
+            else:
+                return
+            listener(table.market_id, side, table)
+        self.pulse.add_listener(relay)
 
     def flush_pull_listeners(self, timeout=30):
-        """Wait until every announced pull has been handed to the listeners (tests)."""
-        self._pull_listener_thread.submit(lambda: None).result(timeout=timeout)
+        """Wait until every download so far has reached the listeners (tests)."""
+        self.pulse.flush_listeners(timeout)
 
-    def _announce_pull(self, market_id, price_type, unfiltered, items, started_at):
-        if not self._pull_listeners or not isinstance(items, list):
-            return
-        market = _MARKET_BY_ID.get(market_id)
-        if not market:
-            return
-        if price_type == market['buy_type'] and not unfiltered:
-            side = 'listing'
-        elif market['autobuy'] and price_type == market['autobuy'] and unfiltered:
-            side = 'instant'
-        else:
-            return
-
-        def tell():
-            for listener in list(self._pull_listeners):
-                try:
-                    listener(market_id, side, items, started_at)
-                except Exception as error:
-                    logger.warning(f'[HUGINN] pull listener failed ({market_id} {side}): {error}')
-        self._pull_listener_thread.submit(tell)
-
-    def _pull_market(self, token, market_id, price_type, unfiltered=False):
-        """Pull TradeOnMarket/{market_id} priced as `price_type`, cached briefly so
-        generating several pairs that share a market doesn't re-hit pulse each time.
-        `unfiltered`: see _body_for_type (cached apart from the filtered pull)."""
+    def _table(self, token, market_id, price_type, max_age=FRESH):
+        """The (market, price type) table from the master feed (pulse_feed.PulseTable)."""
         if price_type == _ESTIMATED_SELL:
-            return self._estimated_listings(token, market_id)
-        key = (market_id, price_type, unfiltered)
-        now = time.time()
-        with self._market_pull_lock:
-            hit = self._market_pull_cache.get(key)
-        if hit and now - hit[0] < _MARKET_PULL_TTL:
-            return hit[1]
-        items = self._post_tradeon(_TRADEON_TABLE_URL.format(market_id), token,
-                                   self._body_for_type(price_type, unfiltered))
-        self._scale_market_prices(items, market_id)
-        self._cache_pull(key, now, items)
-        self._announce_pull(market_id, price_type, unfiltered, items, now)
-        return items
+            raise ValueError(f'{market_id}: estimated listings are not a pulse table (use _pull_market)')
+        return self.pulse.table(token, market_id, price_type, max_age)
 
-    def _cache_pull(self, key, now, items):
-        with self._market_pull_lock:
-            # A raw pull is tens of megabytes and only reused for _MARKET_PULL_TTL
-            # seconds, so drop every expired pull on write instead of keeping one per
-            # (market, price type) forever.
-            fresh_cutoff = time.time() - _MARKET_PULL_TTL
-            self._market_pull_cache = {k: v for k, v in self._market_pull_cache.items()
-                                       if v[0] >= fresh_cutoff}
-            self._market_pull_cache[key] = (now, items)
+    def _pull_market(self, token, market_id, price_type, max_age=FRESH, names=None):
+        """Pulse-shaped rows (fresh dicts) of TradeOnMarket/{market_id} priced as `price_type`,
+        from the master feed (downloaded at most `max_age` seconds ago, shared by every feature);
+        only `names` when given (cheaper than building every row)."""
+        if price_type == _ESTIMATED_SELL:
+            return self._estimated_listings(token, market_id, max_age)
+        return self._table(token, market_id, price_type, max_age).rows(names)
 
     @staticmethod
     def _skinswap_trade_ask_markup(pay_price_trade_dollars):
@@ -1394,15 +1240,15 @@ class HuginnService:
         share = (pay_price_trade_dollars - low_price) / (high_price - low_price)
         return low_markup + share * (high_markup - low_markup)
 
-    def _estimated_listings(self, token, market_id):
+    def _estimated_listings(self, token, market_id, max_age=FRESH):
         """A pull shaped like a listings pull, with each item's lowest listing
         ESTIMATED from the market's buy price (already in real dollars) times the
         measured markup. Every row is flagged 'estimated'. Items outside the measured
         range (_ESTIMATE_MIN_PAY, _ESTIMATE_MIN_PAY_SHARE_OF_MARKET against SkinSwap
         (Market)'s listing) get no estimate."""
-        market_listing = self._index_from_pull(self._pull_market(token, 'SkinSwapMarket', 'Sell'))
+        market_listing = self._table(token, 'SkinSwapMarket', 'Sell', max_age).index()
         out = []
-        for it in self._pull_market(token, market_id, 'Buy'):
+        for it in self._pull_market(token, market_id, 'Buy', max_age):
             market = it.get('secondMarket') or {}
             price = market.get('price')
             name = (it.get('itemName') or {}).get('marketHashName')
@@ -1416,22 +1262,6 @@ class HuginnService:
             out.append({**it, 'secondMarket': {**market, 'price': estimate, 'realPrice': estimate,
                                                'pagePrice': estimate_on_page, 'estimated': True}})
         return out
-
-    @staticmethod
-    def _scale_market_prices(items, market_id):
-        """Turn a bonus-balance market's prices (the pull's second market) into real
-        dollars, in place (_MARKET_PRICE_SCALE), keeping the price as the market's own
-        page shows it in 'pagePrice'. Other markets are left untouched."""
-        scale = _MARKET_PRICE_SCALE.get(market_id)
-        if not scale or not isinstance(items, list):
-            return
-        for it in items:
-            market = it.get('secondMarket') or {}
-            if market.get('price'):
-                market['pagePrice'] = market['price']
-            for field in ('price', 'realPrice'):
-                if market.get(field):
-                    market[field] = round(market[field] * scale, 2)
 
     def _join_direct(self, items, sell_fee):
         """Build rows from a single TradeOnMarket/{sell} pull, where the buy side IS
@@ -1480,11 +1310,14 @@ class HuginnService:
             sell_type = _ESTIMATED_SELL if sell['buy_type'] == _ESTIMATED_SELL else 'Sell'
         if buy_id == 'TradeOnMarket':
             # Tradeon is the pull's own first market — one pull, buy = firstMarket.
-            items = self._pull_market(token, sell_id, sell_type)
+            items = self._pull_market(token, sell_id, sell_type, ON_DEMAND)
             return self._join_direct(items, fee)
-        buy_items = self._pull_market(token, buy_id, buy['buy_type'])
-        sell_items = self._pull_market(token, sell_id, sell_type)
-        return self._join_arbitrage(buy_items, sell_items, fee)
+        if _ESTIMATED_SELL in (sell_type, buy['buy_type']):
+            # An estimated side is built from real tables (_estimated_listings), never asked of pulse.
+            return self._join_arbitrage(self._pull_market(token, buy_id, buy['buy_type'], ON_DEMAND),
+                                        self._pull_market(token, sell_id, sell_type, ON_DEMAND), fee)
+        return self._join_tables(self._table(token, buy_id, buy['buy_type'], ON_DEMAND),
+                                 self._table(token, sell_id, sell_type, ON_DEMAND), fee)
 
     def fetch_generated_csfloat_autobuy(self, token, buy_id, fee=None):
         """Sell into CSFloat's buy orders (from the swept cache) from any buy market.
@@ -1498,13 +1331,11 @@ class HuginnService:
         if buy_id == 'TradeOnMarket':
             # firstMarket of any TradeOnMarket table is TradeOnMarket's min; use the
             # CsFloat table so only CSFloat-listed items are considered (as the curated one does).
-            return self._combine_autobuy(token, _TRADEON_TABLE_URL.format('CsFloat'),
-                                         self._body_for_type('Sell'), buy_side='first', sell_fee=fee)
+            return self._combine_autobuy(token, ('CsFloat', 'Sell'), buy_side='first', sell_fee=fee)
         if buy['buy_type'] == _ESTIMATED_SELL:
-            return self._combine_autobuy(token, None, None, buy_side='second', sell_fee=fee,
-                                         items=self._pull_market(token, buy_id, _ESTIMATED_SELL))
-        return self._combine_autobuy(token, _TRADEON_TABLE_URL.format(buy_id),
-                                     self._body_for_type(buy['buy_type']), buy_side='second', sell_fee=fee)
+            return self._combine_autobuy(token, None, buy_side='second', sell_fee=fee,
+                                         items=self._pull_market(token, buy_id, _ESTIMATED_SELL, ON_DEMAND))
+        return self._combine_autobuy(token, (buy_id, buy['buy_type']), buy_side='second', sell_fee=fee)
 
     def market_ids(self):
         """Set of valid market identifiers (for request validation)."""
@@ -1551,51 +1382,41 @@ class HuginnService:
             })
         return out
 
-    @staticmethod
-    def _index_from_pull(items, side='second'):
-        """{market_hash_name: {price, count, image}} from a pulse pull, reading the
-        chosen market side ('second' = the priced target market, 'first' = TradeOnMarket)."""
-        key = 'firstMarket' if side == 'first' else 'secondMarket'
-        out = {}
-        for it in items:
-            name = (it.get('itemName') or {}).get('marketHashName')
-            mk = it.get(key) or {}
-            price = mk.get('price')
-            if name and price:
-                out[name] = {'price': price,
-                             'count': mk.get('totalOffersCount') or mk.get('count'),
-                             'image': it.get('imageUrl'),
-                             # pulse's own trend marks for this market's price
-                             'rising': bool(mk.get('isRaising')), 'falling': bool(mk.get('isFalling'))}
-        return out
-
-    def market_buy_index(self, token, market_id):
-        """{name: {price,count,image}} of a market's MIN listing (what you'd pay to
-        buy). Empty for an unknown market id. Cached briefly via _pull_market."""
-        m = _MARKET_BY_ID.get(market_id)
-        # Estimated listings stay on the Arbitrage page, where they are marked as
-        # estimates; Cross-Profile and Store Catalogue Arbitrage use real data only.
-        if not m or not m['buy_type'] or m['buy_type'] == _ESTIMATED_SELL:
-            return {}
-        return self._index_from_pull(self._pull_market(token, market_id, m['buy_type']))
-
-    def market_autobuy_index(self, token, market_id):
-        """{name: {price,count,image}} of a market's autobuy / buy-order (what you'd
-        get selling instantly). Empty if the market has no autobuy. CSFloat comes from
-        the swept buy-orders cache (no pulse buy price); every other autobuy market
-        comes from pulse's 'Buy' price type, unfiltered: Harvest, Cross-Profile and
-        Store Catalogue Arbitrage look up items you hold, and ones Tradeon has sold
-        out of can still have buy orders."""
+    def market_index_at(self, token, market_id, side, max_age=FRESH, names=None):
+        """(when the prices were downloaded, {name: {price, count, image, rising, falling}}) of a
+        market's side: 'listing' (its lowest listing) or 'instant' (its buy orders, what you get
+        selling at once). Stamp anything cached from it with that time, never "now": the feed may
+        serve a table up to `max_age` seconds old. CSFloat's buy orders come from the swept cache
+        (no pulse buy price); SkinSwap (Trade)'s estimated listings never reach these real-data
+        indexes (empty)."""
         m = _MARKET_BY_ID.get(market_id)
         if not m:
-            return {}
-        if market_id in _AUTOBUY_VIA_CSFLOAT_SWEEP:
-            cache = self.get_csfloat_buy_orders_cache() or {}
-            return {n: {'price': o['price'], 'count': o.get('qty'), 'image': None}
-                    for n, o in (cache.get('by_name') or {}).items() if o.get('price')}
-        if not m['autobuy']:
-            return {}
-        return self._index_from_pull(self._pull_market(token, market_id, m['autobuy'], unfiltered=True))
+            return time.time(), {}
+        if side == 'instant':
+            if market_id in _AUTOBUY_VIA_CSFLOAT_SWEEP:
+                cache = self.get_csfloat_buy_orders_cache() or {}
+                return time.time(), {name: {'price': order['price'], 'count': order.get('qty'), 'image': None}
+                                     for name, order in (cache.get('by_name') or {}).items()
+                                     if order.get('price') and (names is None or name in names)}
+            price_type = m['autobuy']
+        else:
+            price_type = m['buy_type'] if m['buy_type'] != _ESTIMATED_SELL else None
+        if not price_type:
+            return time.time(), {}
+        table = self._table(token, market_id, price_type, max_age)
+        return table.started_at, table.index(names)
+
+    def market_buy_index(self, token, market_id, max_age=FRESH):
+        """{name: {price,count,image}} of a market's MIN listing (what you'd pay to buy).
+        Empty for an unknown market id or a sell-only one."""
+        return self.market_index_at(token, market_id, 'listing', max_age)[1]
+
+    def market_autobuy_index(self, token, market_id, max_age=FRESH):
+        """{name: {price,count,image}} of a market's autobuy / buy orders (what you'd get
+        selling instantly). Empty if the market has no autobuy. Every table shows items Tradeon
+        has sold out of, so Harvest, Cross-Profile and Store Catalogue Arbitrage see what a
+        market pays for those too."""
+        return self.market_index_at(token, market_id, 'instant', max_age)[1]
 
     def market_display(self, market_id):
         """Human name for a market id (falls back to the id itself)."""
@@ -1603,68 +1424,65 @@ class HuginnService:
         return m['display'] if m else market_id
 
     def fetch_lisskins_steam(self, token, settings=None):
-        return self._combine_arbitrage(token, _TRADEON_LISSKINS_URL, _TRADEON_LISSKINS_BODY,
-                                       _TRADEON_STEAM_URL, self.market_fee('Steam', settings))
+        return self._combine_arbitrage(token, ('LisSkins', 'SellWithoutHold'),
+                                       ('Steam', 'Buy'), self.market_fee('Steam', settings))
 
     def fetch_lisskins_buff(self, token, settings=None):
-        return self._combine_arbitrage(token, _TRADEON_LISSKINS_URL, _TRADEON_LISSKINS_BODY,
-                                       _TRADEON_BUFF_URL, self.market_fee('Buff', settings))
+        return self._combine_arbitrage(token, ('LisSkins', 'SellWithoutHold'),
+                                       ('Buff', 'Buy'), self.market_fee('Buff', settings))
 
     def fetch_lisskins_csfloat(self, token, settings=None):
-        return self._combine_arbitrage(token, _TRADEON_LISSKINS_URL, _TRADEON_LISSKINS_BODY,
-                                       _TRADEON_CSFLOAT_URL, self.market_fee('CsFloat', settings),
-                                       sell_body=_TRADEON_CSFLOAT_BODY)
+        return self._combine_arbitrage(token, ('LisSkins', 'SellWithoutHold'),
+                                       ('CsFloat', 'Sell'), self.market_fee('CsFloat', settings))
 
     def fetch_buff_steam(self, token, settings=None):
-        return self._combine_arbitrage(token, _TRADEON_BUFF_URL, _TRADEON_BUFF_BUY_BODY,
-                                       _TRADEON_STEAM_URL, self.market_fee('Steam', settings))
+        return self._combine_arbitrage(token, ('Buff', 'Sell'),
+                                       ('Steam', 'Buy'), self.market_fee('Steam', settings))
 
     def fetch_buff_csfloat(self, token, settings=None):
-        return self._combine_arbitrage(token, _TRADEON_BUFF_URL, _TRADEON_BUFF_BUY_BODY,
-                                       _TRADEON_CSFLOAT_URL, self.market_fee('CsFloat', settings),
-                                       sell_body=_TRADEON_CSFLOAT_BODY)
+        return self._combine_arbitrage(token, ('Buff', 'Sell'),
+                                       ('CsFloat', 'Sell'), self.market_fee('CsFloat', settings))
 
     def fetch_csfloat_steam(self, token, settings=None):
         # Buy at CSFloat's min listing, sell into Steam's autobuy (13% Steam fee).
-        return self._combine_arbitrage(token, _TRADEON_CSFLOAT_URL, _TRADEON_CSFLOAT_BODY,
-                                       _TRADEON_STEAM_URL, self.market_fee('Steam', settings))
+        return self._combine_arbitrage(token, ('CsFloat', 'Sell'),
+                                       ('Steam', 'Buy'), self.market_fee('Steam', settings))
 
     def fetch_csfloat_buff(self, token, settings=None):
         # Buy at CSFloat's min listing, sell into Buff163's autobuy (1.5% Buff fee).
-        return self._combine_arbitrage(token, _TRADEON_CSFLOAT_URL, _TRADEON_CSFLOAT_BODY,
-                                       _TRADEON_BUFF_URL, self.market_fee('Buff', settings))
+        return self._combine_arbitrage(token, ('CsFloat', 'Sell'),
+                                       ('Buff', 'Buy'), self.market_fee('Buff', settings))
 
     def fetch_lisskins_dmarket(self, token, settings=None):
         # Buy at LisSkins min, sell into DMarket autobuy (no DMarket fee).
-        return self._combine_arbitrage(token, _TRADEON_LISSKINS_URL, _TRADEON_LISSKINS_BODY,
-                                       _TRADEON_DMARKET_URL, self.market_fee('Dmarket', settings))
+        return self._combine_arbitrage(token, ('LisSkins', 'SellWithoutHold'),
+                                       ('Dmarket', 'Buy'), self.market_fee('Dmarket', settings))
 
     def fetch_buff_dmarket(self, token, settings=None):
         # Buy at Buff163 min, sell into DMarket autobuy (no DMarket fee).
-        return self._combine_arbitrage(token, _TRADEON_BUFF_URL, _TRADEON_BUFF_BUY_BODY,
-                                       _TRADEON_DMARKET_URL, self.market_fee('Dmarket', settings))
+        return self._combine_arbitrage(token, ('Buff', 'Sell'),
+                                       ('Dmarket', 'Buy'), self.market_fee('Dmarket', settings))
 
     def fetch_csfloat_dmarket(self, token, settings=None):
         # Buy at CSFloat's min listing, sell into DMarket autobuy (no DMarket fee).
-        return self._combine_arbitrage(token, _TRADEON_CSFLOAT_URL, _TRADEON_CSFLOAT_BODY,
-                                       _TRADEON_DMARKET_URL, self.market_fee('Dmarket', settings))
+        return self._combine_arbitrage(token, ('CsFloat', 'Sell'),
+                                       ('Dmarket', 'Buy'), self.market_fee('Dmarket', settings))
 
     def fetch_dmarket_steam(self, token, settings=None):
         # Buy at DMarket's min listing, sell into Steam's autobuy (13% Steam fee).
-        return self._combine_arbitrage(token, _TRADEON_DMARKET_URL, _TRADEON_DMARKET_BUY_BODY,
-                                       _TRADEON_STEAM_URL, self.market_fee('Steam', settings))
+        return self._combine_arbitrage(token, ('Dmarket', 'Sell'),
+                                       ('Steam', 'Buy'), self.market_fee('Steam', settings))
 
     def fetch_dmarket_buff(self, token, settings=None):
         # Buy at DMarket's min listing, sell into Buff163's autobuy (1.5% Buff fee).
-        return self._combine_arbitrage(token, _TRADEON_DMARKET_URL, _TRADEON_DMARKET_BUY_BODY,
-                                       _TRADEON_BUFF_URL, self.market_fee('Buff', settings))
+        return self._combine_arbitrage(token, ('Dmarket', 'Sell'),
+                                       ('Buff', 'Buy'), self.market_fee('Buff', settings))
 
     def fetch_dmarket_csfloat(self, token, settings=None):
         # Buy at DMarket's min listing, sell at CSFloat's min listing (CSFloat has no
         # autobuy, so the sell side is its lowest listing — 2% CSFloat fee).
-        return self._combine_arbitrage(token, _TRADEON_DMARKET_URL, _TRADEON_DMARKET_BUY_BODY,
-                                       _TRADEON_CSFLOAT_URL, self.market_fee('CsFloat', settings),
-                                       sell_body=_TRADEON_CSFLOAT_BODY)
+        return self._combine_arbitrage(token, ('Dmarket', 'Sell'),
+                                       ('CsFloat', 'Sell'), self.market_fee('CsFloat', settings))
 
     # ---- CSFloat buy orders (autobuy) --------------------------------------
 
@@ -2231,14 +2049,15 @@ class HuginnService:
             result['public_ip'] = detect_public_ip()
         return result
 
-    def _combine_autobuy(self, token, pulse_url, pulse_body, buy_side='second', sell_fee=None, items=None):
+    def _combine_autobuy(self, token, source, buy_side='second', sell_fee=None, items=None):
         """Combine a buy-side market's min price (from pulse) with CSFloat's highest
         buy order (from the cached sweep). `buy_side` selects which pulse market holds
         the buy price: 'first' = Tradeon (the query's first market), 'second' = the
         target market (LisSkins/Buff). Only owned items with a cached CSFloat buy order
         appear. Shaped like the other profiles so the UI renders it unchanged.
         `sell_fee` is the CSFloat seller fee to net (default: its registry fee).
-        `items` is an already-made pull to use instead of asking pulse (estimated listings).
+        `source` is the (market id, price type) table holding the buy price; `items` is an
+        already-made pull to use instead (estimated listings).
         """
         if sell_fee is None:
             sell_fee = self.market_fee('CsFloat')
@@ -2248,7 +2067,7 @@ class HuginnService:
             return []
 
         if items is None:
-            items = self._post_tradeon(pulse_url, token, pulse_body)
+            items = self._pull_market(token, *source, ON_DEMAND, names=by_name)
         key = 'firstMarket' if buy_side == 'first' else 'secondMarket'
         combined = []
         for it in items:
@@ -2274,19 +2093,19 @@ class HuginnService:
         return combined
 
     def fetch_tradeon_csfloat_autobuy(self, token, settings=None):
-        return self._combine_autobuy(token, _TRADEON_CSFLOAT_URL, _TRADEON_CSFLOAT_BODY, buy_side='first',
+        return self._combine_autobuy(token, ('CsFloat', 'Sell'), buy_side='first',
                                      sell_fee=self.market_fee('CsFloat', settings))
 
     def fetch_lisskins_csfloat_autobuy(self, token, settings=None):
-        return self._combine_autobuy(token, _TRADEON_LISSKINS_URL, _TRADEON_LISSKINS_BODY, buy_side='second',
+        return self._combine_autobuy(token, ('LisSkins', 'SellWithoutHold'), buy_side='second',
                                      sell_fee=self.market_fee('CsFloat', settings))
 
     def fetch_buff_csfloat_autobuy(self, token, settings=None):
-        return self._combine_autobuy(token, _TRADEON_BUFF_URL, _TRADEON_BUFF_BUY_BODY, buy_side='second',
+        return self._combine_autobuy(token, ('Buff', 'Sell'), buy_side='second',
                                      sell_fee=self.market_fee('CsFloat', settings))
 
     def fetch_dmarket_csfloat_autobuy(self, token, settings=None):
-        return self._combine_autobuy(token, _TRADEON_DMARKET_URL, _TRADEON_DMARKET_BUY_BODY, buy_side='second',
+        return self._combine_autobuy(token, ('Dmarket', 'Sell'), buy_side='second',
                                      sell_fee=self.market_fee('CsFloat', settings))
 
     # ---- Live price map (portfolio valuation) ------------------------------
@@ -2294,28 +2113,19 @@ class HuginnService:
     # market slug -> (pulse url, second-market price type used as the "current price").
     # We use each market's lowest listing (Sell) — the standard "market price" a
     # portfolio is worth — matching what price-tracker exports call current price.
+    # Valuation slug -> (market id, price type) of the master feed: each market's lowest listing.
     _PRICE_MARKETS = {
-        'steam':    (_TRADEON_STEAM_URL,    'Sell'),
-        'buff':     (_TRADEON_BUFF_URL,     'Sell'),
-        'csfloat':  (_TRADEON_CSFLOAT_URL,  'Sell'),
-        'dmarket':  (_TRADEON_DMARKET_URL,  'Sell'),
-        'lisskins': (_TRADEON_LISSKINS_URL, 'SellWithoutHold'),
+        'steam':    ('Steam',    'Sell'),
+        'buff':     ('Buff',     'Sell'),
+        'csfloat':  ('CsFloat',  'Sell'),
+        'dmarket':  ('Dmarket',  'Sell'),
+        'lisskins': ('LisSkins', 'SellWithoutHold'),
     }
-    # The same tables in the market registry (for add_pull_listener).
-    _PRICE_MARKET_IDS = {'steam': 'Steam', 'buff': 'Buff', 'csfloat': 'CsFloat', 'dmarket': 'Dmarket',
-                         'lisskins': 'LisSkins'}
 
     def _single_price_map(self, token, market):
-        _, sell_type = self._PRICE_MARKETS[market]
-        # The same table as _pull_market(<market id>, sell_type): shared cache and listeners.
-        out = {}
-        for it in self._pull_market(token, self._PRICE_MARKET_IDS[market], sell_type):
-            name = (it.get('itemName') or {}).get('marketHashName')
-            sm = it.get('secondMarket') or {}
-            price = sm.get('price')
-            if name and price is not None and price:
-                out[name] = price
-        return out
+        """{name: lowest listing} on one valuation market. The map is cached an hour and stamped
+        when built, so it asks the feed for a table at most ON_DEMAND old (shared with every page)."""
+        return self._table(token, *self._PRICE_MARKETS[market], ON_DEMAND).prices()
 
     # Portfolio valuation prices are cached this long (per market). Skin prices
     # barely move minute-to-minute, so hour-stale is fine for tracking — and it
@@ -2513,53 +2323,34 @@ class HuginnService:
 
     # --- container market snapshots (price + listing count, non-blocking) ---
 
-    def _single_container_map(self, token, market):
-        """{name: {price, count}} for container names only, on one market. For
-        'tradeon' we read the firstMarket side (TradeOnMarket's own lowest listing),
-        which every pulse row already carries; for the rest we read secondMarket."""
+    def _container_snapshot_at(self, token, market, max_age=FRESH):
+        """{name: {price, count}} for container names only, on one market, from the master
+        feed's table. 'tradeon' reads the first market (Tradeon's own lowest listing), which every
+        table carries; the rest read the market's lowest listing (the registry's buy price type,
+        or the valuation markets' price type)."""
         names = self._container_names()
-        registry_id = self._CONTAINER_REGISTRY_MARKETS.get(market)
-        if registry_id:
-            # The market's cheapest listing (the registry's buy price type), read only
-            # for tracked containers instead of indexing the whole ~17k-item table.
-            out = {}
-            for it in self._pull_market(token, registry_id, _MARKET_BY_ID[registry_id]['buy_type']):
-                name = (it.get('itemName') or {}).get('marketHashName')
-                market_prices = it.get('secondMarket') or {}
-                if name in names and market_prices.get('price'):
-                    out[name] = {'price': market_prices['price'],
-                                 'count': market_prices.get('totalOffersCount') or market_prices.get('count')}
-            return out
-        body = copy.deepcopy(_TRADEON_STEAM_BODY)
         if market == 'tradeon':
-            url = _TRADEON_STEAM_URL
-            side = 'firstMarket'
+            table, position = self._table(token, 'Steam', 'Buy', max_age), 0
         else:
-            _, sell_type = self._PRICE_MARKETS[market]
-            body['secondMarketOptions']['secondMarketPriceType'] = sell_type
-            side = 'secondMarket'
-        if market == 'tradeon':
-            items = self._post_tradeon(url, token, body)
-        else:
-            # The same table as _pull_market(<market id>, sell_type): shared cache and listeners.
-            items = self._pull_market(token, self._PRICE_MARKET_IDS[market], sell_type)
+            registry_id = self._CONTAINER_REGISTRY_MARKETS.get(market)
+            if registry_id:
+                key = (registry_id, _MARKET_BY_ID[registry_id]['buy_type'])
+            else:
+                key = self._PRICE_MARKETS[market]
+            table, position = self._table(token, *key, max_age), 1
         out = {}
-        for it in items:
-            name = (it.get('itemName') or {}).get('marketHashName')
-            if name not in names:
-                continue
-            mk = it.get(side) or {}
-            price = mk.get('price')
-            if not price:
-                continue
-            out[name] = {'price': price, 'count': mk.get('totalOffersCount')}
-        return out
+        for name in names:
+            entry = table.entries.get(name)
+            quote = entry[position] if entry else None
+            if quote and quote[PRICE]:
+                out[name] = {'price': quote[PRICE], 'count': quote[COUNT]}
+        return table.started_at, out
 
     def _refresh_container_bg(self, token, market):
         try:
-            snap = self._single_container_map(token, market)
+            downloaded_at, snap = self._container_snapshot_at(token, market)
             with self._price_lock:
-                self._container_cache[market] = (time.time(), snap)
+                self._container_cache[market] = (downloaded_at, snap)
                 self._container_state[market] = 'ok'
         except Exception as e:
             logger.error(f'[HUGINN] container snapshot refresh failed ({market}): {e}')
@@ -2930,11 +2721,12 @@ class HuginnService:
         except Exception as e:
             logger.error(f'[HUGINN] container snapshot save failed: {e}')
 
-    def _refresh_one(self, token, market):
+    def _refresh_one(self, token, market, max_age=FRESH):
         try:
-            snap = self._single_container_map(token, market)
+            # Stamped with when the prices were downloaded (the feed may serve an older table).
+            downloaded_at, snap = self._container_snapshot_at(token, market, max_age)
             with self._price_lock:
-                self._container_cache[market] = (time.time(), snap)
+                self._container_cache[market] = (downloaded_at, snap)
                 self._container_state[market] = 'ok'
         except Exception as e:
             logger.error(f'[HUGINN] container refresh failed ({market}): {e}')
@@ -2942,19 +2734,19 @@ class HuginnService:
                 self._container_state[market] = 'error'
                 self._container_failed_at[market] = time.time()
 
-    def _refresh_markets(self, token, markets, parallel=False):
+    def _refresh_markets(self, token, markets, parallel=False, max_age=FRESH):
         """Refresh each market's snapshot. parallel=True fetches them concurrently so
         they're captured within the same few seconds — important for the alert markets
         so a cross-market comparison isn't skewed by prices moving between fetches."""
         if parallel and len(markets) > 1:
-            ts = [threading.Thread(target=self._refresh_one, args=(token, m), daemon=True) for m in markets]
+            ts = [threading.Thread(target=self._refresh_one, args=(token, m, max_age), daemon=True) for m in markets]
             for t in ts:
                 t.start()
             for t in ts:
                 t.join()
         else:
             for m in markets:
-                self._refresh_one(token, m)
+                self._refresh_one(token, m, max_age)
 
     def _container_refresh_loop(self, settings_provider, default_interval):
         # Persisted by the previous process, so a reload does not force an
@@ -2975,7 +2767,8 @@ class HuginnService:
                     now = time.time()
                     full = (now - last_full) >= self._CONTAINER_FULL_REFRESH_SEC
                     if full:
-                        self._refresh_markets(token, self._CONTAINER_MARKETS)
+                        # Fresh tables: the alert run below compares them with each other.
+                        self._refresh_markets(token, self._CONTAINER_MARKETS, max_age=ON_DEMAND)
                         try:
                             self.cases_prices(token, None)   # daily history (own once/day guard)
                         except Exception as e:
@@ -2984,7 +2777,8 @@ class HuginnService:
                         self._save_container_snapshots(last_full)
                         logger.info('[HUGINN] full container refresh from pulse')
                     elif alerts_on:
-                        self._refresh_markets(token, self._ALERT_MARKETS, parallel=True)
+                        # Fresh tables for every alert poll; everything else reads them from the feed.
+                        self._refresh_markets(token, self._ALERT_MARKETS, parallel=True, max_age=ON_DEMAND)
                     if alerts_on:
                         try:
                             res = self.run_case_alerts(settings)
@@ -3158,7 +2952,7 @@ class HuginnService:
         if not token:
             return {'ran': False, 'reason': 'no tradeon_token'}
         if refresh:
-            self._refresh_markets(token, self._ALERT_MARKETS, parallel=True)
+            self._refresh_markets(token, self._ALERT_MARKETS, parallel=True, max_age=ON_DEMAND)
         try:
             min_pct = float(settings.get('case_alert_min_pct', 3) or 0)
         except (TypeError, ValueError):

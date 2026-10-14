@@ -71,11 +71,11 @@ def test_container_snapshot_failure_backs_off(monkeypatch):
     service = _service()
     calls = []
 
-    def failing(token, market):
+    def failing(token, market, max_age=None):
         calls.append(market)
         raise RuntimeError('pulse down')
 
-    monkeypatch.setattr(service, '_single_container_map', failing)
+    monkeypatch.setattr(service, '_container_snapshot_at', failing)
     assert service._container_snapshot('token', 'csfloat') == ({}, 'refreshing')
     assert _wait_until(lambda: service._container_state.get('csfloat') == 'error')
     for _ in range(3):
@@ -198,21 +198,6 @@ def test_direct_rate_limit_without_proxy_is_still_rate_limited(monkeypatch):
 
 
 # ---- 3. raw pull cache evicts expired pulls ---------------------------------
-
-def test_market_pull_cache_drops_expired_pulls_on_write(monkeypatch):
-    service = _service()
-    monkeypatch.setattr(service, '_post_tradeon', lambda url, token, body: [{'url': url}])
-    service._pull_market('token', 'Buff', 'Buy')
-    service._pull_market('token', 'Steam', 'Buy')
-    assert len(service._market_pull_cache) == 2
-    # Age both past the TTL; the next write keeps only the new pull.
-    service._market_pull_cache = {k: (v[0] - huginn_service._MARKET_PULL_TTL - 1, v[1])
-                                  for k, v in service._market_pull_cache.items()}
-    service._pull_market('token', 'Dmarket', 'Buy')
-    assert list(service._market_pull_cache) == [('Dmarket', 'Buy', False)]
-
-
-# ---- 4. file caches re-read only on change + locks ----------------------------
 
 def test_scan_cache_is_parsed_once_until_the_file_changes(monkeypatch, tmp_path):
     path = tmp_path / 'scan.json'
@@ -416,7 +401,7 @@ def test_fixed_arbitrage_pairs_use_the_edited_sell_fee(monkeypatch):
     service = HuginnService(None, None)
     seen = []
     monkeypatch.setattr(service, '_combine_arbitrage',
-                        lambda token, buy_url, buy_body, sell_url, sell_fee, sell_body=None: seen.append(sell_fee) or [])
+                        lambda token, buy, sell, sell_fee: seen.append(sell_fee) or [])
     edited = {'huginn_market_fees': {'CsFloat': 0.03, 'Steam': 0.15, 'Buff': 0.02, 'Dmarket': 0.01}}
     service.fetch_lisskins_csfloat('token', edited)
     service.fetch_buff_steam('token', edited)

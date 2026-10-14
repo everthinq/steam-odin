@@ -49,6 +49,7 @@ import time
 
 from harvest_service import HarvestService
 from huginn_service import pulse_short_link
+from pulse_feed import FRESH, ON_DEMAND
 from jsonio import atomic_write_json, read_json
 from notifications import notification_channel, send_notification, telegram_visible_length, TELEGRAM_MESSAGE_LIMIT
 from storage_shop_service import GAME_STORE_CURRENCIES
@@ -564,13 +565,11 @@ class StoreArbitrageService:
         candidates, _ = split_items(self.catalogue.status().get('items'))
         return {item['name'] for item in candidates}
 
-    def _fetch_index(self, token, market_id, side):
-        if side == SIDE_INSTANT:
-            index = self.huginn.market_autobuy_index(token, market_id) or {}
-        else:
-            index = self.huginn.market_buy_index(token, market_id) or {}
-        names = self._names()
-        return {name: quote for name, quote in index.items() if name in names}
+    def _fetch_index(self, token, market_id, side, max_age=FRESH):
+        """(when the prices were downloaded, {store item name: quote}) of one market side, from
+        the master pulse feed (a table at most *max_age* seconds old)."""
+        downloaded_at, index = self.huginn.market_index_at(token, market_id, side, max_age, names=self._names())
+        return downloaded_at, index or {}
 
     def _index_state(self, token, pairs):
         """({pair: index}, status, [failed pairs]). Serves what is cached and queues a warm for
@@ -595,7 +594,7 @@ class StoreArbitrageService:
                     missing.append(pair)
         if ('CsFloat', SIDE_INSTANT) in pairs:
             try:
-                found[('CsFloat', SIDE_INSTANT)] = self._fetch_index(token, 'CsFloat', SIDE_INSTANT)
+                found[('CsFloat', SIDE_INSTANT)] = self._fetch_index(token, 'CsFloat', SIDE_INSTANT)[1]
             except Exception as e:
                 log.info('[STORE-ARBITRAGE] CSFloat buy orders unavailable: %s', e)
         if not token:
@@ -610,13 +609,13 @@ class StoreArbitrageService:
             busy = any(pair in self._warming for pair in pairs)
         return found, ('refreshing' if stale or busy else 'fresh'), failed
 
-    def _queue_warm(self, token, pairs):
-        """Queue pairs for the ONE worker thread (started when none runs): pulse throttles
-        parallel pulls, and each pull is tens of megabytes."""
+    def _queue_warm(self, token, pairs, max_age=FRESH):
+        """Queue pairs for the ONE worker thread (started when none runs). *max_age*: how old a
+        feed table may be (the Refresh button and the daily refresh ask for ON_DEMAND)."""
         with self._lock:
             new = [pair for pair in pairs if pair not in self._warming]
             self._warming.update(new)
-            self._queue.extend((token, pair) for pair in new)
+            self._queue.extend((token, pair, max_age) for pair in new)
             if not new or self._worker_running:
                 return
             self._worker_running = True
@@ -628,17 +627,21 @@ class StoreArbitrageService:
                 if not self._queue:
                     self._worker_running = False
                     break
-                token, pair = self._queue.pop(0)
-            self._warm(token, [pair])
+                token, pair, max_age = self._queue.pop(0)
+            self._warm(token, [pair], max_age)
         self._save_history(force=True)
 
-    def _warm(self, token, pairs):
+    def _warm(self, token, pairs, max_age=FRESH):
         for pair in pairs:
             started = time.time()
             try:
-                index = self._fetch_index(token, *pair)
+                downloaded_at, index = self._fetch_index(token, *pair, max_age=max_age)
                 with self._lock:
-                    self._indexes[pair] = (time.time(), index)
+                    # Stamped with when the prices were downloaded, never "now": a newer download
+                    # announced by the feed (take_pull) must win over an older table read later.
+                    hit = self._indexes.get(pair)
+                    if not hit or hit[0] <= downloaded_at:
+                        self._indexes[pair] = (downloaded_at, index)
                     self._failures.pop(pair, None)
                 self._record({pair: index})
                 log.info('[STORE-ARBITRAGE] %s %s: %d store items priced in %.0fs',
@@ -651,11 +654,12 @@ class StoreArbitrageService:
                 with self._lock:
                     self._warming.discard(pair)
 
-    def take_pull(self, market_id, side, items, started_at):
-        """A full table Huginn pulled for another feature (Huginn's listener thread): keep the
-        store items' prices as that side's index and in the history, for the board's own
+    def take_pull(self, market_id, side, table):
+        """A table the master pulse feed downloaded for any feature (its listener thread): keep
+        the store items' prices as that side's index and in the history, for the board's own
         markets only, unless this side already holds a download that started later."""
         pair = (market_id, side)
+        started_at = table.started_at
         with self._lock:
             hit = self._indexes.get(pair)
         if hit and hit[0] >= started_at:
@@ -666,8 +670,7 @@ class StoreArbitrageService:
         names = {item['name'] for item in candidates}
         if not names:
             return
-        mine = self.huginn._index_from_pull(
-            [row for row in items if ((row or {}).get('itemName') or {}).get('marketHashName') in names])
+        mine = table.index(names)
         with self._lock:
             hit = self._indexes.get(pair)
             if hit and hit[0] >= started_at:
@@ -676,7 +679,7 @@ class StoreArbitrageService:
             self._failures.pop(pair, None)
         self._record({pair: mine}, candidates)
         self._schedule_history_save()
-        log.info('[STORE-ARBITRAGE] %s %s: %d store items priced from Huginn\'s pull', market_id, side, len(mine))
+        log.info('[STORE-ARBITRAGE] %s %s: %d store items priced from the pulse feed', market_id, side, len(mine))
 
     def _board_market_ids(self):
         """The default set (cached a minute: the registry rarely changes)."""
@@ -719,7 +722,7 @@ class StoreArbitrageService:
                      and now - (self._indexes.get(pair) or (0, None))[0] >= REFRESH_MIN_AGE]
             for pair in pairs:
                 self._failures.pop(pair, None)
-        self._queue_warm(token, pairs)
+        self._queue_warm(token, pairs, max_age=ON_DEMAND)
         return {'queued': len(pairs), 'markets': market_ids, 'pairs': pairs}
 
     def wait_idle(self, pairs=None, timeout=WARM_WAIT_SECONDS, step=2.0):
