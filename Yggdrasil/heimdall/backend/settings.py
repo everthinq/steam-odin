@@ -56,6 +56,14 @@ DEFAULT_SETTINGS = {
     # CSFloat ~1min and Steam ~5min, so hourly is too slow to catch cheap-case windows.
     # The full 6-market UI/history refresh still runs hourly regardless.
     "case_poll_interval_sec": 600,      # 10 minutes
+    # --- Store Catalogue Arbitrage (Ratatoskr) ---
+    # The buy signal: CSMoney (Trade)'s instant offer at least this % of the store price.
+    "store_arbitrage_signal_pct": 100.0,
+    # After the daily refresh (morning routine) post the in-game store items that sell for
+    # more than the store price to the shared Huginn bot (telegram_bot_token + telegram_chat_id);
+    # the hourly check posts items that became profitable since (each at most once a day).
+    "store_arbitrage_alerts_enabled": True,
+    "store_arbitrage_alert_min_pct": 0.0,   # only items whose profit is at least this % (0 = any profit)
     # --- Gjallarhorn (event-rotation cockpit) ---
     # Instant-redeploy market whitelist: which markets do NOT lock your balance for
     # days after a sale, so the proceeds can be re-spent on the freshly-limited case

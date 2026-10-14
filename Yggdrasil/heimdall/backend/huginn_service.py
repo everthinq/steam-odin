@@ -571,6 +571,13 @@ _ESTIMATE_MIN_PAY_SHARE_OF_MARKET = 0.6
 # order, gathered by the CSFloat API sweep (see the buy-orders panel). So every buy
 # market can also sell into CSFloat autobuy, sourced from that swept cache, not pulse.
 _AUTOBUY_VIA_CSFLOAT_SWEEP = {'CsFloat'}
+def pulse_short_link(market_slug, name):
+    """pulse's short link that redirects to *name* on that market (slug "Steam": the
+    Steam Community Market listing). Shared by the Case Arbitrage board and the Store
+    Catalogue Arbitrage alerts."""
+    return f'https://short-pulse.tradeon.space/short-link/CsGo/{market_slug}/{urllib.parse.quote(name)}'
+
+
 _TRADEON_TABLE_URL = 'https://api-pulse.tradeon.space/api/table/counter-strike/TradeOnMarket/{}/all'
 _MARKET_PULL_TTL = 30   # seconds; reuse a raw TradeOnMarket/{id} pull across generated pairs
 
@@ -2967,7 +2974,7 @@ class HuginnService:
         slug = self._MARKET_SLUG.get(market_key)
         if not slug:
             return None
-        return f'https://short-pulse.tradeon.space/short-link/CsGo/{slug}/{urllib.parse.quote(name)}'
+        return pulse_short_link(slug, name)
 
     @staticmethod
     def _esc(s):

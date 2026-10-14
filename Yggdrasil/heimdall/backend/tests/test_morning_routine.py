@@ -124,3 +124,41 @@ def test_a_scan_by_hand_after_failed_attempts_still_counts(tmp_path, monkeypatch
     world.last_scan = at(30, 11)                    # then you press "Get all items"
     routine.tick()
     assert world.sweeps == 1 and routine.status()['done_today'] is True
+
+
+def test_after_the_scan_the_store_prices_refresh_starts_once(tmp_path):
+    world = World(at(30, 8, 0), last_scan=at(29, 9))
+    calls = []
+    routine = MorningRoutine(run_scan=world.run_scan, start_sweep=world.start_sweep,
+                             last_scan_at=lambda: world.last_scan, sweep_state=lambda: world.sweep,
+                             state_path=str(tmp_path / 'morning.json'), now=lambda: world.now,
+                             after_scan=lambda: calls.append(1) or 'store prices refresh started')
+    routine.tick()
+    assert calls == [1] and 'store prices refresh started' in routine.status()['last_result']
+    world.now = at(30, 10)
+    routine.tick()
+    assert calls == [1]
+
+
+def test_a_failing_store_refresh_never_breaks_the_morning(tmp_path):
+    world = World(at(30, 8, 0), last_scan=at(29, 9))
+
+    def broken():
+        raise RuntimeError('Ratatoskr down')
+    routine = MorningRoutine(run_scan=world.run_scan, start_sweep=world.start_sweep,
+                             last_scan_at=lambda: world.last_scan, sweep_state=lambda: world.sweep,
+                             state_path=str(tmp_path / 'morning.json'), now=lambda: world.now, after_scan=broken)
+    routine.tick()
+    status = routine.status()
+    assert status['done_today'] and 'store prices not refreshed: Ratatoskr down' in status['last_result']
+
+
+def test_a_scan_done_by_hand_still_starts_the_store_refresh(tmp_path):
+    world = World(at(30, 9, 0), last_scan=at(30, 8, 30))
+    calls = []
+    routine = MorningRoutine(run_scan=world.run_scan, start_sweep=world.start_sweep,
+                             last_scan_at=lambda: world.last_scan, sweep_state=lambda: world.sweep,
+                             state_path=str(tmp_path / 'morning.json'), now=lambda: world.now,
+                             after_scan=lambda: calls.append(1) or 'started')
+    routine.tick()
+    assert world.scans == 0 and calls == [1]

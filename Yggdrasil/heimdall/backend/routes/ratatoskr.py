@@ -323,6 +323,25 @@ def store_arbitrage_board():
         return jsonify({'error': str(e)}), 500
 
 
+@bp.route('/api/ratatoskr/store-arbitrage/refresh', methods=['POST'])
+def store_arbitrage_refresh():
+    """Pull the board's markets again now (the Refresh button); body {markets: [ids]} or none
+    for the default set. A side pulled in the last minute is not pulled again."""
+    settings = ctx.settings_manager.get_settings()
+    body = request.get_json(silent=True) or {}
+    markets = body.get('markets') if isinstance(body.get('markets'), list) else None
+    markets = [m for m in (markets or []) if isinstance(m, str)]
+    result = ctx.store_arbitrage_service.refresh(settings.get('tradeon_token', ''), markets, settings)
+    return jsonify(result), (400 if result.get('error') else 200)
+
+
+@bp.route('/api/ratatoskr/store-arbitrage/alerts/send', methods=['POST'])
+def store_arbitrage_send_alerts():
+    """Post today's profitable store items to the Huginn Telegram bot now ("Send now")."""
+    result = ctx.store_arbitrage_service.send_alerts(ctx.settings_manager.get_settings(), daily=True, force=True)
+    return jsonify(result), (200 if result['sent'] else 400)
+
+
 @bp.route('/api/ratatoskr/store-arbitrage/options', methods=['GET'])
 def store_arbitrage_options():
     """The markets the Arbitrage tab can price against, and its default choice."""

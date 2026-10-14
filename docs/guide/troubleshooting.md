@@ -54,7 +54,11 @@ history on Steam, then press **Deliver again** (it cannot charge twice).
 - "Reading market prices…": each market is read one after another (about 5
   seconds each); wait a minute. After a backend restart the prices are read
   again.
-- "No store prices yet": open the Catalogue tab and press **Read prices again**.
+- "No store prices yet": press **Store prices never read** in the status bar (or
+  **Read prices again** on the Catalogue tab). The morning routine reads them daily.
+- No Telegram post in the morning: **Telegram: daily post** must be ticked and the
+  Huginn bot set (`telegram_bot_token` + `telegram_chat_id`); **Send now** shows the
+  reason when a post fails.
 - "No market prices": the Tradeon token (`tradeon_token` in
   `backend/settings.json`) is missing or expired. Huginn's Arbitrage page needs
   it too.

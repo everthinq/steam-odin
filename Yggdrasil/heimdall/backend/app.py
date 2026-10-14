@@ -153,6 +153,9 @@ morning_routine = MorningRoutine(
     start_sweep=lambda: huginn_routes.start_csfloat_sweep()[:2],
     last_scan_at=_last_scan_at,
     sweep_state=huginn_routes.csfloat_sweep_state,
+    # Ratatoskr anyway: read the store price sheet, re-price the Store Catalogue Arbitrage
+    # markets and post the profitable store items to Telegram.
+    after_scan=lambda: store_arbitrage_service.start_daily_refresh(settings_manager.get_settings),
 )
 ctx.morning_routine = morning_routine
 

@@ -10,7 +10,9 @@ A run:
      Ratatoskr sessions it opened, so ASF farming resumes straight away),
      and rebuilds the CSFloat item dictionary from what you now hold,
   2. starts the CSFloat buy-order sweep, unless one is running or a complete
-     sweep finished within the last SWEEP_FRESH_SECONDS.
+     sweep finished within the last SWEEP_FRESH_SECONDS,
+  3. starts the Store Catalogue daily refresh (after_scan): the game store's price
+     sheet (one more Ratatoskr login), every market again, then the Telegram post.
 A scan that could not reach a single account counts as failed (the previous
 scan and dictionary are kept).
 A failed scan is retried after RETRY_SECONDS, at most MAX_ATTEMPTS a day.
@@ -35,15 +37,17 @@ class MorningRoutine:
 
     def __init__(self, run_scan, start_sweep, last_scan_at, sweep_state,
                  time_of_day='08:00', state_path='cache/morning_routine.json',
-                 now=None, sleep=time.sleep):
+                 now=None, sleep=time.sleep, after_scan=None):
         """run_scan() -> (ok, message) runs the guarded inventory scan (which also
         rebuilds the CSFloat item dictionary); start_sweep() -> (ok, message);
         last_scan_at() -> aware datetime of the latest scan or None;
-        sweep_state() -> {'running', 'complete', 'finished_at' (aware datetime or None)}."""
+        sweep_state() -> {'running', 'complete', 'finished_at' (aware datetime or None)};
+        after_scan() -> short result line, started once the day's scan is done (optional)."""
         self.run_scan = run_scan
         self.start_sweep = start_sweep
         self.last_scan_at = last_scan_at
         self.sweep_state = sweep_state
+        self.after_scan = after_scan
         self.time_of_day = time_of_day
         self.state_path = state_path
         self._now = now or (lambda: datetime.datetime.now().astimezone())
@@ -108,6 +112,12 @@ class MorningRoutine:
 
     def _finish(self, today, result, scanned):
         sweep = self._maybe_start_sweep()
+        if self.after_scan:
+            try:
+                sweep = f'{sweep}; {self.after_scan()}'
+            except Exception as e:
+                logger.warning(f'[MORNING] after-scan step failed: {e}')
+                sweep = f'{sweep}; store prices not refreshed: {e}'
         with self._lock:
             self._state.update({'done_date': today, 'last_error': None,
                                 'last_result': f'{result}; {sweep}'})

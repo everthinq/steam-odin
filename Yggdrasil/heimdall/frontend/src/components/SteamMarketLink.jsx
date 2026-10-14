@@ -1,8 +1,11 @@
 import { getSteamMarketListingUrl } from '../utils/steamMarket';
+import { getTradeonShortLink } from '../utils/tradeonShortLink';
 import steamIcon from '../assets/markets/steam.png';
 
-export default function SteamMarketLink({ itemName, className = '' }) {
-    const href = getSteamMarketListingUrl(itemName);
+// The Steam icon next to an item. `viaPulse` opens it through pulse's short link (which
+// redirects to the Community Market listing), as the price links do.
+export default function SteamMarketLink({ itemName, className = '', viaPulse = false }) {
+    const href = viaPulse ? getTradeonShortLink('Steam', itemName) : getSteamMarketListingUrl(itemName);
     if (!href) return null;
 
     return (

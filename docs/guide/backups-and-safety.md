@@ -48,8 +48,9 @@ That covers portfolios only — **never** put maFiles, keys or the vault in git.
 
 Know what is switched on: auto-confirm (Dashboard → Confirms), card auto-sell
 (Andvari), Team Fortress 2 watcher and auto-sell, Andvari automatic scans,
-Gjallarhorn alarm, auto-store, the morning routine, and the Store Catalogue
-Arbitrage price reader (hourly; it only reads prices). Anything that **sells** only
+Gjallarhorn alarm, auto-store, the morning routine (it also reads the in-game
+store's prices with one Ratatoskr login), and the Store Catalogue Arbitrage price
+reader (hourly; it only reads prices and posts profitable store items to Telegram). Anything that **sells** only
 touches items that arrive after you switch it on, unless you tick the option
 for older ones. Anything that **spends money** (Buy games, Buy Storage Units) only
 runs when you press its button, after a review.

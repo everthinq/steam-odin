@@ -13,7 +13,10 @@ Open it from the Dashboard tile **Huginn**. The switch at the top picks a view.
 Storage Units (up to a minute or so). Many views use it for "My Inventory",
 "Owned" and collection filters. It runs by itself every morning at **08:00**
 (or the first minute the computer is awake after 08:00), followed by the CSFloat
-buy-order check; the header shows "daily HH:MM ✓" when that went well.
+buy-order check and the Store Catalogue refresh (the in-game store's prices, every
+market, then the Telegram post of profitable store items; see
+[ratatoskr.md](ratatoskr.md#arbitrage-tab)); the header shows "daily HH:MM ✓" when
+that went well.
 
 ## Fees — set once, used everywhere
 

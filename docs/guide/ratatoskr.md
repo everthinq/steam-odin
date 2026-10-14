@@ -128,20 +128,41 @@ delivered. The purchase log on every buy page lists every item bought.
 
 http://localhost:3000/store-catalogue/arbitrage (the **Arbitrage** tab on the
 Store Catalogue page). Which store items resell for more than the store
-charges. A recommendation only: nothing is bought or sold here, and **Buy**
-opens the item's guarded buy page.
+charges, laid out like Huginn's Arbitrage. A recommendation only: nothing is
+bought or sold here, and **Buy** opens the item's guarded buy page.
 
-- **Sell on**: pick the markets to compare (default Buff163, Steam, CSFloat,
-  LisSkins, AvanMarket and Market.CSGO). Each item gets two prices, both after
-  the market's fee (Huginn's Fees editor):
-  - **Sell instantly** is the best buy order (money right away);
-  - **List at** is the best lowest listing (you list at that price and wait).
-- **Profit** is the better of the two against the store's US dollar price. A
-  blue line under the store price means one of your wallet currencies is
-  cheaper (at today's exchange rate) and names the accounts.
+- **Profile**: **In-game store → a market**, picked like Huginn's profiles.
+  **autobuy** sells into the market's buy orders (money at once), **min** lists
+  at its lowest listing (you wait for a buyer). Two **Best market** profiles take
+  the best market on that side; **Cash only** leaves out markets that pay in
+  their own balance. The default is **CSMoney (Trade) autobuy**. **Fees** is
+  Huginn's Fees editor.
+- **The CSMoney (Trade) column is the indicator**: what CSMoney (Trade) pays at
+  once, as a share of the store price. At **100% or more** (set it in **BUY
+  signal at … %**) the row shows **BUY**: it is worth buying in the store and
+  selling where the profile's market pays most. CSMoney (Trade) itself pays in
+  its trade balance, not money. **BUY signals** shows only those rows. An
+  unconfirmed item never signals.
+- Each row: picture, name (click to copy), the Steam icon (opens the Steam
+  Community Market through pulse), Buff163 and CSFloat icons, how many you
+  own (Huginn → Get all items), the store price, what the market pays after its
+  fee (the price links to the market through pulse), profit, profit %, the
+  indicator, the 30-day history and **Buy**. A blue line under the store price
+  means one of your wallet currencies is cheaper (at today's exchange rate).
+- **Profitable only**, a category, and **Filters** (price on the store price or
+  the sell price, accounts and collections from Get all items, with chips) work
+  as on Huginn's tabs.
+- **Refresh** pulls every market on the board again now (a market pulled in the
+  last minute is skipped); the status bar counts the market sides left and says
+  how old the prices are. **Store prices … ago** reads the store's price list
+  again (one account logs in to Ratatoskr for about 15 seconds; nothing is
+  bought).
+- **Every morning** after Get all items, the store's price list and every
+  market are read again, and the profitable items are posted to the Huginn
+  Telegram bot (see [Telegram](telegram.md)). **Telegram: daily post** switches
+  that off; **Send now** posts today's list at once.
 - **Steam pays into the Steam wallet**, which buys more store items, so a Steam
-  profit is a wallet-to-wallet loop, not cash. Tick **Cash only** to judge
-  every item by money-paying markets alone.
+  profit is a wallet-to-wallet loop, not cash.
 - A price far above Buff163's lowest listing is **crossed out**: it is one
   pattern's buy order, or one seller on a thin market asking what nobody pays.
 - **unconfirmed**: markets ask at least 1.5 times the store price now, and did
@@ -151,20 +172,20 @@ opens the item's guarded buy page.
   StatTrak Swap Tool). One purchase settles it. In the web inventory, "Tradable
   After …" means the normal hold and "Not Tradable" means never.
 - **resold before**: you sold this item before (from Draupnir), so store copies
-  can be resold. **Your record** shows how many you bought and sold, and the
-  average sale after fees.
+  can be resold.
 - **30 days**: on how many tracked days the best price (crossed-out prices left
-  out) beat the store price,
-  with a small line of the best price per day (dashes: the store price). The
-  history is read every hour, even while the page is closed, so a spike (like
-  Flickshot in January) shows apart from a gap that lasts.
-- Click a row to see every market and side: price, fee, what you get, profit,
-  how many listings or buy orders there are, and how it pays.
-- **N left out** lists what is not on the board and why:
+  out) beat the store price, with a small line of the best price per day
+  (dashes: the store price). The history is read every hour, even while the
+  page is closed, so a spike (like Flickshot in January) shows apart from a gap
+  that lasts.
+- Click a row to see every market and side (price, fee, what you get, profit,
+  how many listings or buy orders, how it pays), your record (bought, sold,
+  average sale after fees) and which accounts hold it.
+- **N store items left out** lists what is not on the board and why:
   - case keys (keys bought from the store cannot be traded or sold since 2019);
   - the game license and the Armory Pass;
   - items that cannot be traded (Storage Unit, Charm Detachment Pack);
-  - items no chosen market prices.
+  - items no market prices.
 
 > Store purchases cannot be traded for **7 days**, so a price has to hold for a
 > week. The board recommends; it does not know the price next week.

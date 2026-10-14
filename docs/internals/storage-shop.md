@@ -280,8 +280,45 @@ page is the same component (`StorageShop.jsx`) at `/store-catalogue/buy/:item`.
 ## 6b. Store Catalogue Arbitrage (read-only)
 
 `store_arbitrage_service.py` (the catalogue's Arbitrage tab,
-`GET /api/ratatoskr/store-arbitrage?markets=…` and `…/options`) prices every
-tradable catalogue item against the chosen markets. Nothing in it buys anything.
+`GET /api/ratatoskr/store-arbitrage?markets=…`, `POST …/refresh`,
+`POST …/alerts/send` and `GET …/options`) prices every tradable catalogue item
+against the markets. Nothing in it buys anything.
+
+- **Markets.** Without `markets` the board prices the default set
+  (`default_market_ids`): `DEFAULT_MARKETS`, the indicator market and every
+  market with buy orders. The page always asks for that set plus its profile's
+  market, so switching profile reads cached prices. A market without real
+  listings (`listings: false`, SkinSwap (Trade)'s estimated ones) is never
+  pulled on its listing side.
+- **Indicator.** `INDICATOR_MARKET = 'CsMoneyTrade'`: each row's `indicator` is
+  its instant offer as a share of the store price, and `signal` is set at
+  `store_arbitrage_signal_pct` (100) or more, never for a suspicious offer or an
+  unconfirmed item. Ivan's rule: when CSMoney (Trade) pays the store price at
+  once, the item is worth buying in the store and selling elsewhere.
+- **Refresh.** `refresh()` re-queues every side of the board unless pulled in
+  the last `REFRESH_MIN_AGE` (60 s); the board reports `refreshing` and
+  `pulling` (sides left) while any of its sides is in the queue, and
+  `prices_at` (oldest pull).
+- **Daily refresh.** The morning routine's `after_scan` calls
+  `start_daily_refresh` once "Get all items" is done (or was done by hand that
+  morning): the price sheet through Buy Storage Units' `price sheet` job (one
+  Ratatoskr login, skipped when read in the last 6 hours, never beside a
+  purchase), then `refresh()` of the default set, `wait_idle()` (up to 20
+  minutes), then `send_alerts(daily=True)`.
+- **Telegram.** `send_alerts` posts through the shared Huginn bot
+  (`notifications.send_notification`, webhook fallback), never Andvari's. The
+  daily post lists every resellable item whose best real offer paid as money or
+  into the Steam wallet (`WALLET_MARKETS`) beats the store price by
+  `store_arbitrage_alert_min_pct` (or says there is none). Site trade balances
+  never count: on 2026-10-15 TradeIt (Trade) "paid" 1.5–1.8 times Buff163's
+  listing on 53 store items, which posted 57 false items before this rule; the hourly
+  watcher posts only items that were not profitable at the previous check and
+  were not posted in the last 24 hours (its first check only records). Each item:
+  store price (and a cheaper wallet currency), the best offer with its pulse
+  link, the best money offer when the best pays a balance, the indicator, and
+  the Steam Community Market through pulse (`short-link/CsGo/Steam/<name>`).
+  State: `cache/store_arbitrage_alerts.json`. Switch:
+  `store_arbitrage_alerts_enabled` (on).
 
 - **Tradability.** Ratatoskr's `POST /items/store-names` reports `cannotTrade`
   from the item's **own** `attributes."cannot trade"`. It never reads the
@@ -305,7 +342,7 @@ tradable catalogue item against the chosen markets. Nothing in it buys anything.
   `{date: {item name: {"<market>:<instant|listing>": best price that day,
   "store": US dollar price}}}`, 180 days. It is written after each warm, and the
   `store-arbitrage-watch` thread warms the default markets hourly (first run 5
-  minutes after boot). Every pull goes through one worker thread fed by a queue,
+  minutes after boot), then runs the hourly Telegram check. Every pull goes through one worker thread fed by a queue,
   and every write holds a save lock. The 30-day statistics and the unconfirmed
   rule drop each day's suspicious cash prices (`usable_prices`, same 1.3 rule
   against that day's Buff163 listing). An unreadable file is moved aside
