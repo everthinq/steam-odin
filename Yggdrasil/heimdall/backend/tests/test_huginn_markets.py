@@ -231,7 +231,8 @@ def test_every_table_shows_items_tradeon_has_sold_out_of(monkeypatch):
 
     monkeypatch.setattr(service, '_post_tradeon', post)
     assert service.market_autobuy_index('token', 'CsMoneyTrade') == {
-        'Sticker | Cheap': {'price': 0.05, 'count': None, 'image': None, 'rising': False, 'falling': False}}
+        'Sticker | Cheap': {'price': 0.05, 'count': None, 'image': None, 'rising': False, 'falling': False,
+                            'updated': None}}
     service.market_buy_index('token', 'CsMoneyTrade')
     autobuy_body, buy_body = bodies
     assert autobuy_body['counterStrikeItemTypeOptions']['displaySoldOutItems'] is True

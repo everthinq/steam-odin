@@ -261,6 +261,7 @@ def _alert_service(monkeypatch, tmp_path, sends):
         {'name': 'Revolution Case', 'prices': {'csfloat': 1.00, 'lisskins': 0.80}},
     ]})
     monkeypatch.setattr(service, 'get_cache', lambda: {})
+    service._container_cache = {market: (time.time(), {}) for market in service._ALERT_MARKETS}   # fresh snapshots
 
     def fake_send(settings, text, html=None):
         return sends.pop(0)

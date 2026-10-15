@@ -1,4 +1,5 @@
 import { getTradeonShortLink } from '../../utils/tradeonShortLink';
+import { isStale, staleTip } from '../../utils/priceAge';
 
 const ESTIMATE_TIP = 'Estimated, not real data: what SkinSwap Trade pays, plus the markup we measured on its Trade page.';
 
@@ -6,13 +7,16 @@ const ESTIMATE_TIP = 'Estimated, not real data: what SkinSwap Trade pays, plus t
 // short-link for the item; otherwise it's plain text. An `estimated` price gets
 // an amber "≈" and a tooltip saying so. With `pagePrice` (SkinSwap Trade) the
 // price is shown as that market's own page shows it (`pageLabel`), and `price`,
-// the real-dollar value every profit uses, goes in grey under it. From Arbitrage.jsx.
-const PriceCell = ({ market, itemName, price, className, estimated = false, pagePrice, pageLabel }) => {
+// the real-dollar value every profit uses, goes in grey under it. With `updated`
+// (the market's own update time, epoch seconds) and `now` (utils/priceAge
+// useNowSeconds), a price older than a day is greyed out with a tooltip. From Arbitrage.jsx.
+const PriceCell = ({ market, itemName, price, className, estimated = false, pagePrice, pageLabel, updated, now }) => {
     const onPage = pagePrice != null && pageLabel;
+    const stale = isStale(updated, now);
     const pageTip = onPage
         ? `$${pagePrice.toFixed(2)} as the ${pageLabel} shows it (Trade dollars); $${price?.toFixed(2)} in real dollars (divided by 1.4), which profit uses.`
         : '';
-    const tip = [estimated ? ESTIMATE_TIP : '', pageTip].filter(Boolean).join(' ');
+    const tip = [stale ? staleTip(updated, now) : '', estimated ? ESTIMATE_TIP : '', pageTip].filter(Boolean).join(' ');
     const shown = onPage ? pagePrice : price;
     const amount = <>{estimated && <span className="text-amber-400/80">≈</span>}${shown?.toFixed(2)}</>;
     const text = onPage
@@ -23,8 +27,9 @@ const PriceCell = ({ market, itemName, price, className, estimated = false, page
             </span>
         )
         : amount;
+    const classes = `${className}${stale ? ' opacity-40' : ''}`;
     const href = market ? getTradeonShortLink(market, itemName) : null;
-    if (!href) return <span className={className} title={tip || undefined}>{text}</span>;
+    if (!href) return <span className={classes} title={tip || undefined}>{text}</span>;
     return (
         <a
             href={href}
@@ -32,7 +37,7 @@ const PriceCell = ({ market, itemName, price, className, estimated = false, page
             rel="noopener noreferrer"
             title={`${tip ? `${tip} ` : ''}Open on ${market === 'TradeOnMarket' ? 'Tradeon' : market}`}
             onClick={(e) => e.stopPropagation()}
-            className={`${className} hover:text-amber-300 hover:underline transition-colors`}
+            className={`${classes} hover:text-amber-300 hover:underline transition-colors`}
         >
             {text}
         </a>

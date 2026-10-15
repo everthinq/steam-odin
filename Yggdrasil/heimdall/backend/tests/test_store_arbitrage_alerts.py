@@ -3,7 +3,7 @@ refresh after "Get all items" and the Telegram post of profitable store items.""
 import time
 
 from notifications import telegram_visible_length
-from store_arbitrage_service import (INDICATOR_MARKET, SIDE_INSTANT, SIDE_LISTING, StoreArbitrageService,
+from store_arbitrage_service import (INDICATOR_MARKET, STORE_JOB, SIDE_INSTANT, SIDE_LISTING, StoreArbitrageService,
                                      alert_candidates, fit_alert, indicator_of, item_row, make_offer,
                                      pulse_link, render_alert, signal_percent)
 from test_store_arbitrage_service import (FEES, FLICKSHOT, MARKETS, NAME_TAG, TODAY, FakeCatalogue, FakeDraupnir,
@@ -152,7 +152,7 @@ def test_refresh_pulls_again_but_never_a_side_pulled_in_the_last_minute(tmp_path
     service._indexes = {('Buff', SIDE_LISTING): (time.time(), {}),           # just pulled: left alone
                         ('Steam', SIDE_LISTING): (time.time() - 120, {})}    # two minutes old: pulled again
     queued = []
-    service._queue_warm = lambda token, pairs, max_age=None: queued.extend(pairs)
+    service._queue_warm = lambda token, pairs, max_age=None, job=None: queued.extend(pairs)
     result = service.refresh('token', ['Buff', 'Steam'])
     assert result['queued'] == 3
     assert sorted(queued) == [('Buff', SIDE_INSTANT), ('Steam', SIDE_INSTANT), ('Steam', SIDE_LISTING)]
@@ -224,7 +224,7 @@ def test_a_failed_send_is_not_remembered(tmp_path):
 def test_prices_still_loading_send_nothing(tmp_path):
     sent = []
     service = _service(tmp_path, sent=sent)
-    service._queue_warm = lambda token, pairs, max_age=None: None
+    service._queue_warm = lambda token, pairs, max_age=None, job=None: None
     assert service.send_alerts(SETTINGS)['error'] == 'prices not ready (warming)' and sent == []
 
 
@@ -234,9 +234,12 @@ def test_the_daily_refresh_reads_the_price_sheet_pulls_every_market_then_posts(t
     service = _service(tmp_path, catalogue=catalogue, sent=sent)
     order = []
     real_refresh = service.refresh
-    service.refresh = lambda token, ids=None, settings=None: order.append('markets') or real_refresh(token, ids, settings)
+    jobs = []
+    service.refresh = lambda token, ids=None, settings=None, job=None: (order.append('markets'), jobs.append(job)) \
+        and real_refresh(token, ids, settings, job)
     service._daily_refresh(lambda: SETTINGS)
     assert catalogue.refreshes == 1 and order == ['markets']
+    assert jobs == [STORE_JOB]                     # a background job: switched-off tables are skipped
     assert len(sent) == 1 and 'Sticker | Flickshot' in sent[0][0]
     # A sheet read in the last six hours is not read again.
     service._daily_refresh(lambda: SETTINGS)
@@ -249,7 +252,7 @@ def test_the_daily_refresh_reports_a_busy_price_sheet_and_still_prices_the_marke
     service = _service(tmp_path, catalogue=catalogue)
     assert service._read_price_sheet() == 'store price sheet not read: a purchase is already running'
     queued = []
-    service.refresh = lambda token, ids=None, settings=None: queued.append(token) or {'queued': 0}
+    service.refresh = lambda token, ids=None, settings=None, job=None: queued.append(token) or {'queued': 0}
     service.wait_idle = lambda timeout=0: True
     service._daily_refresh(lambda: SETTINGS)
     assert queued == ['token']
@@ -271,7 +274,7 @@ def test_wait_idle_returns_once_the_worker_is_done(tmp_path):
 def test_listing_pairs_are_named_for_the_board(tmp_path):
     # The refresh route's market list is cleaned like the board's: unknown ids are dropped.
     service = _service(tmp_path)
-    service._queue_warm = lambda token, pairs, max_age=None: None
+    service._queue_warm = lambda token, pairs, max_age=None, job=None: None
     assert service.refresh('token', ['Unknown', 'LisSkins'])['markets'] == ['LisSkins']
     assert (('LisSkins', SIDE_LISTING) in service._sides(['LisSkins']))
 
@@ -332,7 +335,7 @@ def test_the_daily_post_goes_out_with_what_has_loaded(tmp_path):
     sent = []
     service = _warmed(_service(tmp_path, sent=sent))
     del service._indexes[('LisSkins', SIDE_LISTING)]                    # one side still missing
-    service._queue_warm = lambda token, pairs, max_age=None: None
+    service._queue_warm = lambda token, pairs, max_age=None, job=None: None
     assert service.board('token', None)['status'] == 'warming'
     assert service.send_alerts(SETTINGS, daily=True)['error'] == 'prices not ready (warming)'
     assert service.send_alerts(SETTINGS, daily=True, partial=True)['sent'] and len(sent) == 1
@@ -465,3 +468,35 @@ def test_markets_the_board_does_not_show_are_not_kept(tmp_path, monkeypatch):
     assert 'Skinport' not in service.default_market_ids()                 # no buy orders, not a usual market
     service.take_pull('Skinport', SIDE_LISTING, _table('Skinport', 'Sell', time.time(), [_pulse_row('Sticker | Flickshot', 1.4)]))
     assert ('Skinport', SIDE_LISTING) not in service._indexes and service._history == {}
+
+
+def test_a_price_its_market_has_not_updated_for_a_day_never_signals():
+    now = 1800000000
+    indexes = _indexes()
+    indexes[(INDICATOR_MARKET, SIDE_INSTANT)] = {'Sticker | Flickshot': {'price': 1.50, 'updated': now - 25 * 3600}}
+    row = item_row(FLICKSHOT, MARKETS + [CSMONEY], indexes, FEES, {}, {}, [], {}, {}, today=TODAY, now=now)
+    offer = next(o for o in row['offers'] if o['market'] == INDICATOR_MARKET)
+    assert offer['stale'] and offer['suspicious'] and offer['updated'] == now - 25 * 3600
+    assert row['indicator']['signal'] is False
+    assert row['best'] is None or row['best']['market'] != INDICATOR_MARKET or row['best']['suspicious']
+    indexes[(INDICATOR_MARKET, SIDE_INSTANT)]['Sticker | Flickshot']['updated'] = now - 3600     # an hour: fine
+    fresh = item_row(FLICKSHOT, MARKETS + [CSMONEY], indexes, FEES, {}, {}, [], {}, {}, today=TODAY, now=now)
+    assert fresh['indicator']['signal'] is True
+
+
+def test_a_stale_buff_listing_is_not_the_reference_that_marks_other_prices_suspicious():
+    now = 1800000000
+    indexes = _indexes()
+    indexes[('Buff', SIDE_LISTING)] = {'Sticker | Flickshot': {'price': 0.10, 'updated': now - 40 * 86400}}
+    row = item_row(FLICKSHOT, MARKETS, indexes, FEES, {}, {}, [], {}, {}, today=TODAY, now=now)
+    assert row['reference_listing'] != 0.10
+    assert not next(o for o in row['offers'] if o['market'] == 'Buff' and o['side'] == SIDE_INSTANT)['suspicious']
+
+
+def test_a_board_built_inside_the_store_job_queues_its_downloads_as_the_job(tmp_path):
+    service = _service(tmp_path)
+    service.huginn.pulse.current_job = lambda: STORE_JOB
+    service._worker_running = True                                          # keep the queue for the test
+    service._queue_warm('token', [('Buff', SIDE_LISTING)])
+    service._queue_warm('token', [('Steam', SIDE_LISTING)], job='other')
+    assert [entry[3] for entry in service._queue] == [STORE_JOB, 'other']

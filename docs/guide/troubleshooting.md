@@ -32,6 +32,12 @@ The Tradeon token is missing or expired. Get a fresh one
 ([getting-started.md](getting-started.md#4-prices-huginn-and-draupnir)) and
 restart the backend. Draupnir still shows holdings at cost meanwhile.
 
+To see what the price feed is doing, open http://localhost:5001/api/huginn/pulse:
+every price table with its age, downloads, reads and the last error. Every page
+shares these tables, so one failing table explains every page that is missing
+that market. Pages take tables up to 10 minutes old; buttons (Fetch live data,
+Refresh) ask for one under a minute old.
+
 ## HTTP 429 / "Too Many Requests"
 
 Steam is rate-limiting this connection. The app already spaces its calls; wait

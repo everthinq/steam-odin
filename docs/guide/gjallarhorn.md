@@ -30,7 +30,10 @@ alarms on old news, and a known update never alarms twice.
 
 Your holdings (one account or all combined), each with what you paid, what it
 is worth now on the reference market, profit or loss if sold, how many sold on
-the Steam Market in 7 days, the spread and trend, whether it is tradable now,
+the Steam Market in 7 days, the spread (lowest listing vs highest buy order) and
+how far the price is from its 30-day median (all from Tradeon pulse, so Steam's
+rate limits no longer slow this page; items pulse does not know still come from
+Steam, with Steam's 7-day trend), whether it is tradable now,
 and a **score**: high = sell first (deflated, liquid, tradable).
 
 - **Deflated only** shows items worth less than they cost.

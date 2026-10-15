@@ -1,5 +1,7 @@
 """Case Arbitrage Telegram board: every buy market cheaper than CSFloat is listed,
 and the board always fits one Telegram message."""
+import time
+
 import huginn_service
 from huginn_service import HuginnService
 from notifications import TELEGRAM_MESSAGE_LIMIT, telegram_visible_length, trim_telegram_html
@@ -10,6 +12,7 @@ def _service(monkeypatch, tmp_path, containers, held=None):
     service = HuginnService(None, None)
     monkeypatch.setattr(service, 'cases_prices', lambda token, categories: {'containers': containers})
     monkeypatch.setattr(service, 'get_cache', lambda: {'by_hash': held or {}})
+    service._container_cache = {market: (time.time(), {}) for market in service._ALERT_MARKETS}   # fresh snapshots
     return service
 
 
@@ -68,3 +71,15 @@ def test_link_addresses_do_not_count_toward_the_telegram_limit():
     long_board = '\n'.join([line] * 500)
     trimmed = trim_telegram_html(long_board)
     assert trimmed.endswith('(trimmed)') and telegram_visible_length(trimmed) <= TELEGRAM_MESSAGE_LIMIT
+
+
+def test_alerts_never_compare_with_old_snapshots(monkeypatch, tmp_path):
+    # A market switched off on the Pulse feed page keeps its last snapshot: it must not alert.
+    service = _service(monkeypatch, tmp_path, [
+        {'name': 'Recoil Case', 'prices': {'csfloat': 0.25, 'lisskins': 0.20, 'buff': 0.21}}])
+    service._container_cache['lisskins'] = (time.time() - 3 * 3600, {})
+    _run(monkeypatch, service)
+    assert service._load_alert_state()['active'] == ['Recoil Case|buff']
+    service._container_cache['csfloat'] = (time.time() - 3 * 3600, {})
+    sent = _run(monkeypatch, service)
+    assert sent == []                                                       # CSFloat too old: no run

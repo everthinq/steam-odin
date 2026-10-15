@@ -49,7 +49,7 @@ import time
 
 from harvest_service import HarvestService
 from huginn_service import pulse_short_link
-from pulse_feed import FRESH, ON_DEMAND
+from pulse_feed import FRESH, ON_DEMAND, is_stale
 from jsonio import atomic_write_json, read_json
 from notifications import notification_channel, send_notification, telegram_visible_length, TELEGRAM_MESSAGE_LIMIT
 from storage_shop_service import GAME_STORE_CURRENCIES
@@ -136,14 +136,21 @@ def history_key(market_id, side):
     return f'{market_id}:{side}'
 
 
+# A price its market has not updated for a day or more (pulse_feed.is_stale) is shown but handled
+# like a suspicious one: never the best, the reference, the BUY signal or a Telegram post.
+# The master pulse feed's background job for the hourly watch and the daily refresh (Pulse feed page).
+STORE_JOB = 'store-arbitrage'
+
+
 def make_offer(market_id, display, side, gross, fee, cost, count=None, balance=None, suspicious=False,
-               rising=False, falling=False):
+               rising=False, falling=False, updated=None, stale=False):
     net = gross * (1 - fee)
     profit = net - cost
     return {'market': market_id, 'display': display, 'side': side, 'gross': round(gross, 3), 'fee': fee,
             'net': round(net, 3), 'profit': round(profit, 3),
             'profit_pct': round(profit / cost * 100, 1) if cost > 0 else None,
-            'count': count, 'balance': balance, 'suspicious': bool(suspicious),
+            'count': count, 'balance': balance, 'suspicious': bool(suspicious or stale),
+            'stale': bool(stale), 'updated': updated,
             'rising': bool(rising), 'falling': bool(falling)}
 
 
@@ -268,11 +275,14 @@ def indicator_of(offers, cost, signal_pct=DEFAULT_SIGNAL_PCT):
 
 
 def item_row(item, markets, indexes, fees, ledger, history, wallets, rates, sheet_prices, today=None,
-             signal_pct=DEFAULT_SIGNAL_PCT):
+             signal_pct=DEFAULT_SIGNAL_PCT, now=None):
     """One board row for a catalogue item. *markets*: [{id, display, balance}]; *indexes*:
     {(market id, side): {name: {price, count, rising, falling}}}."""
     name, cost = item['name'], item['usd']
-    reference = reference_price(indexes, markets, name)
+    # The reference (Buff163's listing) only from a price its market still updates.
+    fresh = {key: {name: quote} for key, index in indexes.items()
+             for quote in [(index or {}).get(name)] if quote and not is_stale(quote.get('updated'), now)}
+    reference = reference_price(fresh, markets, name)
     offers = []
     for market in markets:
         for side in (SIDE_INSTANT, SIDE_LISTING):
@@ -283,7 +293,8 @@ def item_row(item, markets, indexes, fees, ledger, history, wallets, rates, shee
                               and quote['price'] > reference * SUSPICIOUS_RATIO)
             offers.append(make_offer(market['id'], market['display'], side, quote['price'], fees.get(market['id'], 0.0), cost,
                                      quote.get('count'), market.get('balance'), suspicious,
-                                     quote.get('rising'), quote.get('falling')))
+                                     quote.get('rising'), quote.get('falling'), quote.get('updated'),
+                                     is_stale(quote.get('updated'), now)))
     instant = best_offer([o for o in offers if o['side'] == SIDE_INSTANT])
     listing = best_offer([o for o in offers if o['side'] == SIDE_LISTING])
     record = (ledger or {}).get(name)
@@ -296,7 +307,7 @@ def item_row(item, markets, indexes, fees, ledger, history, wallets, rates, shee
     # The best price paid out as money (not Steam wallet or a site balance), instant or listing.
     cash = best_offer([o for o in offers if not o['balance'] and not o['suspicious']])
     offers.sort(key=lambda o: o['net'], reverse=True)
-    unconfirmed = is_unconfirmed([o['gross'] for o in offers if o['side'] == SIDE_LISTING],
+    unconfirmed = is_unconfirmed([o['gross'] for o in offers if o['side'] == SIDE_LISTING and not o['stale']],
                                  cost, tracked, wide, resold_before)
     indicator = indicator_of(offers, cost, signal_pct)
     if indicator and unconfirmed:
@@ -583,7 +594,7 @@ class StoreArbitrageService:
                 hit = self._indexes.get(pair)
                 if hit:
                     found[pair] = hit[1]
-                    if now - hit[0] < INDEX_TTL:
+                    if now - hit[0] < INDEX_TTL or self._holds_newest(pair, hit[0]):
                         continue
                 failure = self._failures.get(pair)
                 if failure and now - failure[0] < RETRY_AFTER_FAILURE:
@@ -609,13 +620,26 @@ class StoreArbitrageService:
             busy = any(pair in self._warming for pair in pairs)
         return found, ('refreshing' if stale or busy else 'fresh'), failed
 
-    def _queue_warm(self, token, pairs, max_age=FRESH):
+    def _holds_newest(self, pair, started_at):
+        """True when the index already comes from the newest table the feed holds (a table kept
+        fresh every 30 or 60 minutes is older than INDEX_TTL, yet nothing newer exists)."""
+        try:
+            key = self.huginn.pulse_table_of(*pair)
+            table = key and self.huginn.pulse.peek(*key)
+            return bool(table) and table.started_at <= started_at
+        except Exception:
+            return False
+
+    def _queue_warm(self, token, pairs, max_age=FRESH, job=None):
         """Queue pairs for the ONE worker thread (started when none runs). *max_age*: how old a
-        feed table may be (the Refresh button and the daily refresh ask for ON_DEMAND)."""
+        feed table may be (the Refresh button and the daily refresh ask for ON_DEMAND); *job*: the
+        pulse feed's background job (STORE_JOB for the hourly and daily runs: a table switched off
+        on the Pulse feed page is not downloaded for them)."""
+        job = job or self.huginn.pulse.current_job()   # a board built inside a job (its alert post)
         with self._lock:
             new = [pair for pair in pairs if pair not in self._warming]
             self._warming.update(new)
-            self._queue.extend((token, pair, max_age) for pair in new)
+            self._queue.extend((token, pair, max_age, job) for pair in new)
             if not new or self._worker_running:
                 return
             self._worker_running = True
@@ -627,8 +651,9 @@ class StoreArbitrageService:
                 if not self._queue:
                     self._worker_running = False
                     break
-                token, pair, max_age = self._queue.pop(0)
-            self._warm(token, [pair], max_age)
+                token, pair, max_age, job = self._queue.pop(0)
+            with self.huginn.pulse.job(job):
+                self._warm(token, [pair], max_age)
         self._save_history(force=True)
 
     def _warm(self, token, pairs, max_age=FRESH):
@@ -706,7 +731,7 @@ class StoreArbitrageService:
         timer.daemon = True
         timer.start()
 
-    def refresh(self, token, market_ids=None, settings=None):
+    def refresh(self, token, market_ids=None, settings=None, job=None):
         """Pull the board's markets again now, not waiting for the 10-minute cache (the Refresh
         button, the daily refresh). A side pulled under REFRESH_MIN_AGE seconds ago is left as it is,
         so pressing it again and again never floods pulse. Returns {queued, markets}."""
@@ -722,8 +747,21 @@ class StoreArbitrageService:
                      and now - (self._indexes.get(pair) or (0, None))[0] >= REFRESH_MIN_AGE]
             for pair in pairs:
                 self._failures.pop(pair, None)
-        self._queue_warm(token, pairs, max_age=ON_DEMAND)
+        self._queue_warm(token, pairs, max_age=ON_DEMAND, job=job)
         return {'queued': len(pairs), 'markets': market_ids, 'pairs': pairs}
+
+    def job_tables(self, settings=None):
+        """The pulse tables the hourly watch and the daily refresh fetch (the Pulse feed page):
+        each default market's listing and buy orders (CSFloat's buy orders are the sweep, not pulse)."""
+        registry = {m['id']: m for m in self.huginn.market_registry(settings)}
+        out = []
+        for market_id, side in self._sides(self.clean_markets(None, settings), settings):
+            if (market_id, side) == ('CsFloat', SIDE_INSTANT):
+                continue
+            key = self.huginn.pulse_table_of(market_id, side)
+            if key and market_id in registry:
+                out.append(key)
+        return out
 
     def wait_idle(self, pairs=None, timeout=WARM_WAIT_SECONDS, step=2.0):
         """Block until *pairs* are pulled (None: everything queued), or *timeout*; True when done.
@@ -807,9 +845,10 @@ class StoreArbitrageService:
                     token = settings.get('tradeon_token', '')
                     if token and self.catalogue.status().get('items'):
                         pairs = self._sides(self.clean_markets(None, settings), settings)
-                        self._queue_warm(token, pairs)
+                        self._queue_warm(token, pairs, job=STORE_JOB)
                         if self.wait_idle(pairs):
-                            self.send_alerts(settings_provider() or {}, daily=False)
+                            with self.huginn.pulse.job(STORE_JOB):     # its board re-queues as the job
+                                self.send_alerts(settings_provider() or {}, daily=False)
                         else:
                             log.warning('[STORE-ARBITRAGE] hourly check: prices still loading after %s s, no post this hour',
                                         WARM_WAIT_SECONDS)
@@ -831,7 +870,8 @@ class StoreArbitrageService:
 
         def run():
             try:
-                self._daily_refresh(settings_provider)
+                with self.huginn.pulse.job(STORE_JOB):     # everything it queues reads as the job
+                    self._daily_refresh(settings_provider)
             except Exception:
                 log.exception('[STORE-ARBITRAGE] daily refresh failed')
             finally:
@@ -865,7 +905,7 @@ class StoreArbitrageService:
         if not token or not self.catalogue.status().get('items'):
             log.info('[STORE-ARBITRAGE] daily refresh: no Tradeon token or no store prices, markets not pulled')
             return
-        queued = self.refresh(token, None, settings)
+        queued = self.refresh(token, None, settings, job=STORE_JOB)
         log.info('[STORE-ARBITRAGE] daily refresh: %s market sides queued', queued.get('queued'))
         if not self.wait_idle(queued.get('pairs') or []):
             log.warning('[STORE-ARBITRAGE] daily refresh: markets still loading after %s s, posting what has loaded',

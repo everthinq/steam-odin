@@ -15,6 +15,8 @@ from flask import Blueprint, jsonify, request
 from context import ctx
 from huginn_service import load_csfloat_keys, load_csfloat_proxy, classify_proxy_error, detect_public_ip
 from notifications import notification_channel, send_notification
+import pulse_views
+from pulse_feed import KEEP_FRESH_MINUTES, ON_DEMAND
 
 bp = Blueprint('huginn', __name__)
 logger = logging.getLogger(__name__)
@@ -82,7 +84,96 @@ def huginn_scan():
 def huginn_pulse_status():
     """The master pulse feed (pulse_feed.py): every price table, its age, downloads and reads
     since boot, so you can see how many requests the shared tables saved."""
-    return jsonify(ctx.huginn_service.pulse.status())
+    status = ctx.huginn_service.pulse.status()
+    status['choices'] = pulse_views.pulse_choices()
+    status['token_set'] = bool(ctx.settings_manager.get_settings().get('tradeon_token'))
+    return jsonify(status)
+
+
+@bp.route('/api/huginn/pulse/kept', methods=['POST'])
+def huginn_pulse_kept():
+    """Save automatic fetching: the tables the feed keeps fresh itself and how often, and the
+    tables background jobs may not download:
+    {"tables": ["Steam:Sell", ...], "minutes": 10, "switched_off": ["Buff:Sell", ...]}."""
+    body = request.get_json(silent=True) or {}
+    try:
+        keys = pulse_views.parse_kept(body.get('tables') or [])
+        switched_off = pulse_views.parse_switched_off(body.get('switched_off') or [], ctx.huginn_service)
+        minutes = int(body.get('minutes') or 10)
+    except (TypeError, ValueError) as e:
+        return jsonify({'error': str(e)}), 400
+    if minutes not in KEEP_FRESH_MINUTES:
+        return jsonify({'error': f'minutes must be one of {list(KEEP_FRESH_MINUTES)}'}), 400
+    as_text = lambda pairs: [f'{market}:{price_type}' for market, price_type in pairs]  # noqa: E731
+    saved = ctx.settings_manager.save_settings({
+        'pulse_kept_tables': as_text(keys), 'pulse_keep_minutes': minutes,
+        'pulse_switched_off_tables': as_text(switched_off)})
+    if not saved:
+        return jsonify({'error': 'Failed to save settings'}), 500
+    pulse_views.apply_kept_settings(ctx.huginn_service, ctx.settings_manager.get_settings())
+    return jsonify({'tables': as_text(keys), 'minutes': minutes, 'switched_off': as_text(switched_off)})
+
+
+@bp.route('/api/huginn/pulse/download', methods=['POST'])
+def huginn_pulse_download():
+    """Download one pulse table now ({"market", "price_type"}), unless it is under a minute old."""
+    body = request.get_json(silent=True) or {}
+    token = ctx.settings_manager.get_settings().get('tradeon_token', '')
+    if not token:
+        return jsonify({'error': 'tradeon_token not set in settings'}), 400
+    try:
+        market, price_type = pulse_views.downloadable(body.get('market'), body.get('price_type'), ctx.huginn_service)
+    except (TypeError, ValueError) as e:
+        return jsonify({'error': str(e)}), 400
+    try:
+        table = ctx.huginn_service._table(token, market, price_type, ON_DEMAND)
+    except Exception as e:                      # pulse's fault, not the request's
+        return jsonify({'error': str(e)}), 502
+    return jsonify({'market': market, 'price_type': price_type, 'items': len(table),
+                    'downloaded_at': table.started_at})
+
+
+@bp.route('/api/huginn/price-dips/markets', methods=['GET'])
+def huginn_price_dips_markets():
+    """The markets Price dips offers (those with 30-day prices on pulse)."""
+    return jsonify({'markets': pulse_views.price_dips_markets(ctx.huginn_service),
+                    'bases': list(pulse_views.STATISTICS_BASES), 'stale_seconds': pulse_views.STALE_SECONDS})
+
+
+@bp.route('/api/huginn/price-dips', methods=['GET'])
+def huginn_price_dips():
+    """One market's lowest listings against their 30-day median (or average), with weekly sales.
+    ?market=Steam&basis=Median30d&fresh=1 (fresh: not older than a minute, for the Refresh button)."""
+    token = ctx.settings_manager.get_settings().get('tradeon_token', '')
+    if not token:
+        return jsonify({'error': 'tradeon_token not set in settings'}), 400
+    max_age = ON_DEMAND if request.args.get('fresh') else pulse_views.FRESH
+    try:
+        return jsonify(pulse_views.price_dips(ctx.huginn_service, token, request.args.get('market', 'Steam'),
+                                              request.args.get('basis', 'Median30d'), max_age))
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+    except Exception as e:
+        return jsonify({'error': str(e)}), 502
+
+
+@bp.route('/api/huginn/check-live', methods=['GET'])
+def huginn_check_live():
+    """One Arbitrage row checked on pulse right now (two ~0.5 s lookups):
+    ?name=...&buy=LisSkins&sell=Steam&mode=autobuy."""
+    token = ctx.settings_manager.get_settings().get('tradeon_token', '')
+    if not token:
+        return jsonify({'error': 'tradeon_token not set in settings'}), 400
+    name = (request.args.get('name') or '').strip()
+    if not name:
+        return jsonify({'error': 'name is required'}), 400
+    try:
+        return jsonify(pulse_views.check_live(ctx.huginn_service, token, name, request.args.get('buy', ''),
+                                              request.args.get('sell', ''), request.args.get('mode', 'autobuy')))
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+    except Exception as e:
+        return jsonify({'error': str(e)}), 502
 
 
 @bp.route('/api/huginn/morning-routine', methods=['GET'])

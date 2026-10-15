@@ -67,9 +67,10 @@ they all reduced to (market, price type), with this body.
 | Endpoint | What it is | Use |
 |----------|-----------|-----|
 | `POST .../TradeOnMarket/{m}/count` | `{"totalTableItems": n}` for the same body, 0.5 s | cheap check without downloading the table |
-| `marketHashNameFilter: {"value": "…"}` in the body | substring search (`Flickshot` → sticker, slab, graffiti), one value per request, ~5 KB | a few items fresh, without the 59 MB table |
-| `POST .../{first}/{second}/all/v2` with `viewTemplateId` | a **view template**: rows come back as blocks, one of which, `ExtraPrices`, is a list of `{market, priceType, price}` | **one request could carry every market's price** (section 4) |
-| `GET /api/options/template/counter-strike/all` | saved view templates (Ivan's account: only "Default") | |
+| `marketHashNameFilter: {"value": "…"}` in the body | substring search (`AK-47 \| Redline (Field-Tested)` also returns the StatTrak and Souvenir ones), one value per request, ~0.5 s, ~5 KB | `PulseFeed.lookup` ("Check live" on an Arbitrage row) |
+| `POST .../{first}/{second}/all/v2` with `viewTemplateId` | a **view template** table: rows come back as blocks (section 6); at most **300 rows per request** (`TakeCountLimitExceeded`) | tested, not used (section 6) |
+| `GET/POST/DELETE /api/table-view/templates[/{id}]` (`?gameType=CsGo` on GET), `/presets`, `/palette`, `/formula-variables`, `/formula/generate` | view templates: create `{name, gameType, blocks}` → `{templateId}`; pulse's own presets ("Цены рынков" has an `extraPrices` block) | section 6 |
+| `GET /api/options/template/counter-strike/all` | saved filter templates (Ivan's account: only "Default"); different from view templates | |
 | `POST /api/item/market-best-prices` `{"marketHashName", "gameType": "CsGo"}` | one item on every market | |
 | `/api/item/info`, `/api/item/info/history`, `/api/item/offers-history/history` | one item's details and price history | |
 | `/api/live-feed/*` | pulse's own alert schemes (triggers, black lists, Telegram notification) | |
@@ -85,8 +86,10 @@ Errors are `{message, responseType}` with types such as `MarketSubscriptionRequi
 
 - **The only code that builds a pulse request.** Huginn (curated profiles, generated pairs,
   LOOT.Farm boards, auctions), Harvest, Cross-Profile, Case Arbitrage (hourly refresh and the
-  10-minute alert polls), the portfolio valuation (Draupnir, Gjallarhorn) and Store Catalogue
-  Arbitrage all read `table(token, market, price_type, max_age)`.
+  10-minute alert polls), the portfolio valuation (Draupnir, Gjallarhorn), Gjallarhorn's
+  liquidity, Price dips, the kept-fresh keeper and Store Catalogue Arbitrage all read
+  `table(token, market, price_type, max_age)`; "Check live" uses `lookup(...)`. The read-only views
+  on top of it live in `backend/pulse_views.py`.
 - **Single flight**: while a table downloads, every other caller of the same table waits for that
   download; at most 4 tables download at once (`MAX_PARALLEL_DOWNLOADS`: each download peaks at
   about 200 MB of memory; the Case Arbitrage alert poll's 7 markets arrive in two waves, about 3
@@ -106,20 +109,62 @@ Errors are `{message, responseType}` with types such as `MarketSubscriptionRequi
   markets with each other), and the portfolio valuation (cached an hour) too. A table is dropped
   `KEEP_SECONDS` (10 minutes, = `FRESH`) after its download.
 - **Compact**: per item `(first quote, second quote, pulse profit, pulse profit percent)` with a
-  quote `(price, count, rising, falling, overstock info, page price)`; names and images stored once
+  quote `(price, count, rising, falling, overstock info, page price, updated)` (`updated` = the
+  market's `offersUpdateTime`, epoch seconds); names and images stored once
   for all tables. About 15 MB a table instead of 155 MB. `rows()` rebuilds fresh pulse-shaped
   dicts (only for `names` when given: pairs build rows for the items both sides have, LOOT.Farm
-  boards for the items in its feed, CSFloat autobuy for swept items); `index()`, `prices()` and
-  `entries` serve the boards without building rows. `EstimatedSell` (SkinSwap (Trade)'s estimated
+  boards for the items in its feed, CSFloat autobuy for swept items); `index()` (`{price, count,
+  image, rising, falling, updated}`), `prices()` and `entries` serve the boards without building
+  rows; `rows()` market dicts carry `offersUpdateTime` when pulse gave one. `EstimatedSell` (SkinSwap (Trade)'s estimated
   listings) is never a pulse table: `_table` refuses it, `_pull_market` builds it from real tables. Fields not
-  kept: `realPrice` and currency, `bestOfferCount`, update times, hold info, `soldOutTime`,
-  `itemPopularity`. Add a field to `_quote` if a feature needs it.
+  kept: `realPrice` and currency, `bestOfferCount`, `historyUpdateTime`, hold info, `soldOutTime`.
+  Add a field to `_quote` if a feature needs it.
+- **Weekly sales** (`weekly_sales(names)`): every row's `itemPopularity` (sales in the last week on
+  Steam, Market.CSGO `Tm`, Tradeon and the table's own market, e.g. Buff in a Buff table) is merged
+  per item and market, newest wins; ~35,000 items after a few tables. Gjallarhorn's liquidity and
+  Price dips read it.
+- **Single items** (`lookup(token, market, price type, name)`): the name filter, exact name kept,
+  not cached, shares the download limit; `status()['lookups']` counts them.
+- **Kept fresh** (`set_kept(keys, minutes)`, `keep_fresh_once`, `start_keeper`): the tables ticked
+  on the Pulse feed page (settings `pulse_kept_tables` as `"Market:PriceType"`, `pulse_keep_minutes`
+  5/10/15/30/60, default none) are downloaded again by the `pulse-keeper` thread (30 s tick, one
+  table at a time, a failed table waits 5 minutes, its downloads are not counted as reads) and are
+  not dropped after `KEEP_SECONDS`. At most `MAX_KEPT_TABLES` (12). A background read (`max_age`
+  `FRESH` or more) of a kept table accepts it up to the kept interval, so boards never download
+  behind the keeper; `ON_DEMAND` reads (buttons) still want it under a minute. `peek()` returns a
+  table only if it is in memory (Gjallarhorn: `steam_liquidity(wait=False)` warms the three Steam
+  tables in the background and answers "warming"; after a failed warm it uses Steam for 5 minutes).
+  "Check live" asks for 500 rows per name (a short name is contained in many) and prices the sell
+  side exactly as `fetch_generated_pair` (`'Sell'` for a "min" target, LisSkins included).
+  `pulse_views.parse_kept` accepts only the tables `pulse_choices()` offers (no Tradeon table, no
+  estimates, no CSFloat sweep). Routes: `POST /api/huginn/pulse/kept`, `POST /api/huginn/pulse/download`.
 - **Bonus balances** become real dollars once, on arrival (`_MARKET_PRICE_SCALE`, SkinSwap (Trade)
   ÷ 1.4), the page price kept as `pagePrice`.
 - **Slaves**: `add_listener(table)` after every download, on one background thread
   (`HuginnService.add_pull_listener` gives `(market, 'listing' | 'instant', table)`); Store
   Catalogue Arbitrage keeps the store items from every table this way.
-- **Status**: `GET /api/huginn/pulse`: per table downloads, reads, age, failures, and the totals.
+- **Jobs and the on/off switch**: the recurring jobs declare themselves (`declare_job(id, label,
+  schedule, tables(), active(), period)` in `app.py`: `case-arbitrage-hourly`,
+  `case-arbitrage-alerts`, `store-arbitrage`) and read inside `with feed.job(id):` (thread-local;
+  Case Arbitrage's parallel alert threads copy it; the store board's queue carries it). A table in
+  settings `pulse_switched_off_tables` is never downloaded for a job (`SwitchedOff`; a copy in
+  memory is still served); reads without a job (pages, buttons) always download. Saved with
+  `POST /api/huginn/pulse/kept {tables, minutes, switched_off}` (`parse_switched_off`: job tables
+  or offered ones). Threads a job starts inherit it (`_refresh_markets`, `_container_snapshot`'s
+  background refresh, the store board's queue defaults to the current job), so no path of a job
+  downloads a switched-off table. Case Arbitrage alerts leave out any market whose snapshot is over
+  30 minutes old (`_ALERT_SNAPSHOT_MAX_AGE_SEC`) and do not run when CSFloat's is, so a
+  switched-off market never alerts on old prices. Live on 2026-10-15 the jobs fetched 33 tables, about 1,600 downloads and 94 GB
+  a day; Store Catalogue Arbitrage alone 32 tables an hour.
+- **Status**: `GET /api/huginn/pulse`: per table downloads, reads, last read, age, failures, kept,
+  the totals, lookups, weekly-sales coverage, `jobs` (declared, with tables and period), per table
+  `jobs` (which read it, when), `declared_jobs`, `switched_off`, plus `choices` (the page's grid)
+  and `token_set`. `served_from_memory` = reads − downloads a reader caused (the keeper's are not
+  reads). "Check live" lookups have their own 2 slots (never behind full downloads). Weekly sales
+  keep the newest count per item and market by download start. A stale price
+  (`pulse_feed.is_stale`, `STALE_SECONDS` a day) is never Harvest's best offer nor the store board's
+  reference, best, signal or Telegram post.
+  The page is Huginn → **Pulse feed** (`/huginn/pulse`).
   Live on 2026-10-15, one pass over every pulse-backed page: 33 table reads, 12 downloads.
 - **Equivalence**: on recorded tables, the old code (git `b3792d5`) and the feed gave the same
   output for all 59 feature outputs checked (curated and generated pairs, LOOT.Farm boards,
@@ -127,23 +172,35 @@ Errors are `{message, responseType}` with types such as `MarketSubscriptionRequi
   (`realPrice`) and a count of 0, which some old paths turned into "none".
 - Tests: `tests/test_pulse_feed.py`; `tests/conftest.py` makes any un-faked pulse request fail.
 
-## 4. Ideas not built yet
+## 4. Ideas: what became of them
 
-1. **One request for every market (view template v2).** A saved view template with an
-   `ExtraPrices` block (market + price type pairs) returns those prices per item in one table.
-   Today a full refresh downloads 13 to 30 tables (59 MB each); one template table could replace
-   most of them. Needs: creating a template on Ivan's pulse account (a write to his account: ask
-   first), checking which markets his subscription allows in ExtraPrices
-   (`MarketSubscriptionRequired`), and the template request format (`/api/options/template/...`).
-2. **Liquidity for free.** `itemPopularity` gives weekly sales counts on Buff, Steam, Tm and
-   Tradeon in every row. Gjallarhorn reads Steam's `pricehistory` for liquidity and fights 429s;
-   pulse already has a weekly count.
-3. **Stale prices.** `offersUpdateTime` per market says how old a price is (GgSwap's are about a
-   year old): pages could grey out prices older than a day instead of a fixed ⓘ per market.
-4. **Spike check.** `Median30d` / `Average30d` as a price type: "lowest listing now vs its 30-day
-   median" for Store Catalogue Arbitrage and Case Arbitrage, without our own history.
-5. **Small lookups.** The name filter fetches one item in ~0.5 s and 5 KB, for single-item views
-   (a Buy page, one held item) instead of a whole table.
+1. **One request for every market (view template v2): tested 2026-10-15, not used.** See section 6:
+   300 rows per request, so a full sweep is ~107 requests (~85 s, ~95 MB) carrying prices only
+   (no counts, no update times, no LOOT.Farm overstock), against 13 full tables (~770 MB, ~40 s
+   four at a time) with everything. Revisit if pulse's bandwidth or Ivan's ever matters more than
+   counts, or for a price-only background sweep.
+2. **Liquidity for free: done (2026-10-15).** `PulseFeed.weekly_sales`; Gjallarhorn's sell list
+   takes Steam's weekly sales, lowest listing, highest buy order and 30-day median from pulse
+   (`pulse_views.steam_liquidity`) for every held item (494 on 2026-10-15, 0.15 s, no Steam call);
+   `SteamMarketService` only for items pulse lacks. The "7d trend" column became "vs 30-day
+   median" (Steam's own 7-day trend only for those fallback items); spread is now lowest listing
+   vs highest buy order.
+3. **Stale prices: done (2026-10-15).** Measured: almost every price minutes old; some Steam
+   listings 600+ days. A price whose market has not updated it for a day is greyed out on Arbitrage
+   (`PriceCell` `updated`/`now`, `utils/priceAge.js`), flagged on Harvest, hidden by default on
+   Price dips, and on Store Catalogue Arbitrage treated like a suspicious one (never best, BUY
+   signal or Telegram post: `store_arbitrage_service.is_stale`).
+4. **Spike check: done (2026-10-15)** as Huginn → **Price dips** (`pulse_views.price_dips`,
+   `GET /api/huginn/price-dips?market=&basis=Median30d|Average30d`): a market's lowest listing vs
+   its 30-day median or average, weekly sales, highest buy order, "back to usual" after the fee,
+   My Inventory. Markets with statistics: `pulse_views.STATISTICS_MARKETS` (pulse market-info
+   `isSupportHistory`; Buff163 and WhiteMarket need the Table subscription; CSFloat answers but is
+   not listed, so left out). Buff163's medians are noisy (an AK-47 Redline (Field-Tested) showed a
+   $43.5 median against a $25.3 listing); Steam's are sane (listing / median: middle 1.02).
+5. **Small lookups: done (2026-10-15)** as "Check live" on each Arbitrage row
+   (`pulse_views.check_live`, `GET /api/huginn/check-live?name=&buy=&sell=&mode=`): both sides by
+   name, profit with the Fees editor's fee; not for LOOT.Farm as the target, CSFloat buy orders
+   or estimates.
 6. **Fees: done (2026-10-15).** The four curated Tradeon-first profiles (Tradeon → Steam,
    Buff163, CSFloat, DMarket) used to show pulse's own `profit`, computed with the fees saved on
    the pulse account; they now compute it with the Fees editor like every other profile
@@ -164,3 +221,28 @@ scrapers are a separate project.
 The master feed is already the seam for that: features ask `table(market, price type, max_age)`
 and never see where the table came from, so another source can plug in behind the same interface
 without touching the pages.
+
+## 6. View templates, measured (2026-10-15)
+
+Ivan allowed one test on his account; the template was created, used and deleted the same minute
+(his account lists no view templates afterwards).
+
+- **Create**: `POST /api/table-view/templates` `{name, gameType: "CsGo", blocks}` → `{templateId}`;
+  blocks need `kind`, `category`, `leftBound`/`rightBound`/`width` on a 24-column row without
+  overlap; `action` and `itemName` are required. `DELETE /api/table-view/templates/{id}`.
+- **Extra prices per row**: an `extraPrices` block (at most 4 `{market, priceType}`) plus the
+  `itemName` block's `marketPricesExtraInfo` (at most 9): 13 extra prices + Tradeon + the second
+  market = 15 prices per item. Also available as blocks: `salesCount`, `salesGraphic` (price points,
+  `medianPrice30d`, `volatility` for one market), `ordersCup` (one market's order book),
+  `updateTime`, `formula` / `flag` (pulse computes your expression).
+- **Request**: the normal body plus `viewTemplateId` to `.../TradeOnMarket/{market}/all/v2`;
+  `takeCount` above 300 → 400 `TakeCountLimitExceeded "TakeCount is limited by 300 rows"`. Page
+  with `skipCount`, ordered by `marketHashName` (stable; `profitPercent` order moves while you page;
+  key `name` → HTTP 500). `/count` answered 31,833 rows for Steam.
+- **Speed**: 300 rows ≈ 0.78 s and 0.9 MB; a whole Steam table ≈ 107 requests, ~85 s, ~95 MB.
+- **Answer**: per row `marketHashName`, `imageUrl`, `itemName`, and `blocks`; extra prices are
+  `{market, priceType, price}` only (no count, no update time); a missing price is `null` or
+  `0.0` (Waxpeer), so treat 0 as none.
+- **Accuracy**: ordered by name, 1,200 rows compared with the normal tables a minute apart: Steam
+  Sell 1,194 identical (6 moved), Buff Sell 1,199, DMarket Buy 1,200, CSMoney (Trade) Buy 1,061 (the
+  rest present on one side only, most as `0.0`).

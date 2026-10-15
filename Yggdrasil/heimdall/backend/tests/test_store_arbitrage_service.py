@@ -1,4 +1,5 @@
 """Store Catalogue Arbitrage: store items against what markets pay, net of fees."""
+import contextlib
 import datetime
 
 from store_arbitrage_service import (SIDE_INSTANT, SIDE_LISTING, StoreArbitrageService, best_offer,
@@ -172,10 +173,24 @@ def test_a_cash_buy_order_far_above_the_buff_listing_is_suspicious():
 
 # ---- the service --------------------------------------------------------------------------
 
+class _FakeFeed:
+    """The master feed's job context (pulse_feed.PulseFeed.job), recording the jobs used."""
+    def __init__(self):
+        self.jobs = []
+
+    def job(self, job_id):
+        self.jobs.append(job_id)
+        return contextlib.nullcontext()
+
+    def current_job(self):
+        return None
+
+
 class FakeHuginn:
     def __init__(self):
         self.pulled = []
         self.listeners = []
+        self.pulse = _FakeFeed()
 
     def add_pull_listener(self, listener):
         self.listeners.append(listener)

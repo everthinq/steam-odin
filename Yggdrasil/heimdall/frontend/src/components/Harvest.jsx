@@ -11,6 +11,7 @@ import BuffMarketLink from './BuffMarketLink';
 import LisSkinsMarketLink from './LisSkinsMarketLink';
 import CSFloatMarketLink from './CSFloatMarketLink';
 import { useColumnSort, sortRows } from './draupnir/columnSort';
+import { useNowSeconds, isStale, staleTip } from '../utils/priceAge';
 
 // Harvest tab (Huginn Arbitrage page): what you can sell RIGHT NOW for more than
 // you paid. Laid out like the Arbitrage profiles: a profile is "account (portfolio)
@@ -77,6 +78,7 @@ const Badge = ({ className, title, children }) => (
 
 const Harvest = ({ byHash }) => {
     const [prefs] = useState(loadPrefs);
+    const now = useNowSeconds();
     const [options, setOptions] = useState(null);
     const [account, setAccount] = useState(prefs.account || 'all');
     const [market, setMarket] = useState(prefs.market || 'CsMoneyTrade');
@@ -333,7 +335,12 @@ const Harvest = ({ byHash }) => {
                                         </div>
                                         <div className="flex items-center gap-1.5 text-[11px] text-slate-500">
                                             {r.buff_listing != null && <span>Buff163 listing {money(r.buff_listing)}</span>}
-                                            {best.suspicious && (
+                                            {isStale(best.updated, now) && (
+                                                <Badge className="bg-slate-500/10 border-slate-400/30 text-slate-300/90" title={staleTip(best.updated, now)}>
+                                                    stale price
+                                                </Badge>
+                                            )}
+                                            {best.suspicious && !best.stale && (
                                                 <Badge className="bg-red-500/10 border-red-500/30 text-red-300/90"
                                                     title="Far above Buff163's cheapest listing: most likely a buy order for one float or pattern, not for any copy. Left out of the totals.">
                                                     check

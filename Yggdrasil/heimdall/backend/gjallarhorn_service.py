@@ -6,7 +6,9 @@ into the freshly-limited item before the spike finishes. This service assembles
 the one screen that makes that decision fast:
 
 * the **sell list** — each held item joined with its average cost + current
-  price (Draupnir), its Steam turnover/spread (SteamMarketService), and a live
+  price (Draupnir), its Steam turnover/spread (from Tradeon pulse: Steam sales in the last
+  week, lowest listing vs highest buy order, 30-day median; SteamMarketService only for items
+  pulse does not know, so Steam's rate limits are no longer hit for the rest), and a live
   "tradable now vs locked" overlay (Ratatoskr inventory), scored so the most
   liquid dead capital surfaces first;
 * the **market whitelist** — which markets do not lock your balance after a
@@ -20,6 +22,8 @@ It is read-mostly: it computes and advises, it never executes a trade.
 import logging
 import math
 from datetime import datetime, timezone
+
+from pulse_views import steam_liquidity
 
 logger = logging.getLogger(__name__)
 
@@ -62,7 +66,7 @@ class GjallarhornService:
         # a single portfolio is itself the holder (its own name).
         holders = self._holders(transactions) if portfolio_id in (None, '', 'combined') else {}
         default_holder = None if portfolio_id in (None, '', 'combined') else ledger.get('name')
-        liquidity, liquidity_status = self.market.liquidity(self._liquidity_names(holdings))
+        liquidity, liquidity_status = self._liquidity(token, holdings, names)
         overlay = self._tradable_overlay(steamid, names) if steamid else {}
 
         rows = [self._row(h, liquidity.get(h['item_name']), overlay.get(h['item_name']),
@@ -80,6 +84,37 @@ class GjallarhornService:
             'portfolio': portfolio_id,
             'overlayAccount': steamid,
         }
+
+    def _liquidity(self, token, holdings, names):
+        """({name: liquidity view}, status). Pulse first: every held item, free, no Steam call
+        (Steam sales in the last week from pulse's itemPopularity, Steam lowest listing, highest
+        buy order and 30-day median). Steam's own endpoints (rate-limited, SteamMarketService)
+        only for the items pulse has no Steam data for, capped as before."""
+        from_pulse = {}
+        if token:
+            try:
+                # Never waits on a download: missing tables warm in the background ("warming",
+                # the page polls), and Steam is not asked meanwhile.
+                from_pulse = steam_liquidity(self.huginn, token, names, wait=False)
+                if from_pulse is None:
+                    return {}, 'warming'
+            except Exception as error:
+                logger.warning('[GJALLARHORN] pulse liquidity unavailable, using Steam: %s', error)
+        views = {name: {'volume7d': view['volume7d'], 'spreadPct': view['spreadPct'],
+                        'lowest': view['lowest'], 'median': view['median30d'],
+                        'highestBuy': view['highest_buy'], 'vsMedianPct': view['vsMedianPct'],
+                        'tmVolume7d': view['tm_volume7d'], 'source': 'pulse'}
+                 for name, view in from_pulse.items()}
+        missing = [h for h in holdings if h['item_name'] not in views]
+        status = 'pulse' if views else 'fresh'
+        if missing:
+            from_steam, steam_status = self.market.liquidity(self._liquidity_names(missing))
+            for name, view in from_steam.items():
+                if view is not None:
+                    views[name] = {**view, 'source': 'steam'}
+            if steam_status == 'warming':
+                status = 'warming'
+        return views, status
 
     @staticmethod
     def _liquidity_names(holdings):
@@ -192,9 +227,13 @@ class GjallarhornService:
             'volume7d': volume7d,
             'volume30d': liquidity.get('volume30d'),
             'trend7d_pct': liquidity.get('trend7dPct'),
+            'vs_median_pct': liquidity.get('vsMedianPct'),
             'spread_pct': liquidity.get('spreadPct'),
             'steam_lowest': liquidity.get('lowest'),
             'steam_median': liquidity.get('median'),
+            'steam_highest_buy': liquidity.get('highestBuy'),
+            'tm_volume7d': liquidity.get('tmVolume7d'),
+            'liquidity_source': liquidity.get('source'),
             'liquidity_score': liquidity_score,
             'tradable': overlay,
             'rotation_score': self._score(liquidity_score, deflation_pct, overlay),

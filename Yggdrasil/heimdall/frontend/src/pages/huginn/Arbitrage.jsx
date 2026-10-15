@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useDeferredValue } from 'react';
 import { Link } from 'react-router-dom';
-import { LayoutDashboard, RefreshCw, AlertTriangle, Search, ChevronDown, Coins, Boxes, Repeat, Gavel, Users, Wheat } from 'lucide-react';
+import { LayoutDashboard, RefreshCw, AlertTriangle, Search, ChevronDown, Coins, Boxes, Repeat, Gavel, Users, Wheat, TrendingDown, Radio, RotateCw } from 'lucide-react';
 import { matchesSearchQuery } from '../../utils/transferItems';
 import SteamMarketLink from '../../components/SteamMarketLink';
 import BuffMarketLink from '../../components/BuffMarketLink';
@@ -20,6 +20,8 @@ import ProfilePicker from '../../components/arbitrage/ProfilePicker';
 import FeeEditor from '../../components/arbitrage/FeeEditor';
 import CsfloatBuyOrdersPanel from '../../components/arbitrage/CsfloatBuyOrdersPanel';
 import SkinSwapBalanceNote from '../../components/arbitrage/SkinSwapBalanceNote';
+import PriceDips from '../../components/PriceDips';
+import { useNowSeconds } from '../../utils/priceAge';
 
 // Render results in capped pages — the datasets are ~17k rows and painting them all
 // at once freezes the page. Rows are sorted best-profit-first, so the first page is
@@ -64,6 +66,13 @@ const PROFILES = [
     { id: 'dmarket-csfloat-autobuy', from: 'DMarket',  fromSub: 'min', to: 'CSFloat', toSub: 'autobuy', buyMarket: 'Dmarket',       sellMarket: 'CsFloat', fetchEndpoint: '/api/huginn/tradeon/dmarket-csfloat-autobuy', autobuy: true },
 ];
 
+// "Check live" re-reads one row on pulse now (two ~0.5 s name lookups): only pairs whose both
+// sides are pulse prices. Not LOOT.Farm as the target (its own feed), not CSFloat buy orders
+// (the CSFloat sweep), not an estimated side (SkinSwap Trade).
+const canCheckLive = (profile) => !!profile.buyMarket && !!profile.sellMarket
+    && profile.sellMarket !== 'LootFarm' && !profile.autobuy
+    && !profile.fromEstimated && !profile.toEstimated;
+
 const formatTs = (ts) => {
     if (!ts) return null;
     const diffMin = Math.round((Date.now() - new Date(ts).getTime()) / 60000);
@@ -103,6 +112,10 @@ const HuginnArbitrage = () => {
     const [filters, setFilters] = useStoredFilters(FILTERS_KEY);
     const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
     const [copiedName, setCopiedName] = useState('');
+    // "Check live" answers per profile and item: {loading} | {result} | {error}.
+    const [liveChecks, setLiveChecks] = useState({});
+    // One clock for the page: prices the market has not refreshed for a day are greyed out.
+    const now = useNowSeconds();
     // Filtering ~17k rows on every keystroke is heavy; defer it so typing stays snappy.
     const deferredSearch = useDeferredValue(itemSearch);
 
@@ -248,12 +261,29 @@ const HuginnArbitrage = () => {
             if (!res.ok) throw new Error(data.error || 'Fetch failed');
             if (!Array.isArray(data)) throw new Error('Unexpected response format');
             setProfileData(profile.id, data);
+            // A re-fetch is newer than any earlier live check of this profile.
+            setLiveChecks(prev => Object.fromEntries(Object.entries(prev).filter(([key]) => !key.startsWith(`${profile.id}|`))));
             setTradeonError(null);
             setUploadOpen(false);
         } catch (err) {
             setTradeonError(err.message);
         } finally {
             setTradeonFetching(false);
+        }
+    };
+
+    const checkLive = async (profile, name) => {
+        const key = `${profile.id}|${name}`;
+        setLiveChecks(prev => ({ ...prev, [key]: { loading: true } }));
+        try {
+            const params = new URLSearchParams({ name, buy: profile.buyMarket, sell: profile.sellMarket,
+                mode: profile.toSub === 'autobuy' ? 'autobuy' : 'min' });
+            const res = await fetch(`/api/huginn/check-live?${params}`);
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || 'Check failed');
+            setLiveChecks(prev => ({ ...prev, [key]: { result: data } }));
+        } catch (err) {
+            setLiveChecks(prev => ({ ...prev, [key]: { error: err.message } }));
         }
     };
 
@@ -403,6 +433,14 @@ const HuginnArbitrage = () => {
                     </button>
                     <button
                         type="button"
+                        onClick={() => setView('dips')}
+                        title="Items listed under (or over) their 30-day median price, with weekly sales"
+                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${view === 'dips' ? 'bg-amber-600 text-white' : 'text-slate-400 hover:text-white'}`}
+                    >
+                        <TrendingDown size={13} /> Price dips
+                    </button>
+                    <button
+                        type="button"
                         onClick={() => setView('auctions')}
                         className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${view === 'auctions' ? 'bg-amber-600 text-white' : 'text-slate-400 hover:text-white'}`}
                     >
@@ -416,6 +454,11 @@ const HuginnArbitrage = () => {
                         <Coins size={13} /> LF Arbitrage
                     </button>
                 </div>
+
+                <Link to="/huginn/pulse" title="Every pulse price table: age, downloads, and which ones stay fresh by themselves"
+                    className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-white/10 text-xs text-slate-400 hover:text-white hover:border-white/20 transition-colors">
+                    <Radio size={13} /> Pulse feed
+                </Link>
 
                 {view === 'arbitrage' && (
                     <div className="ml-auto flex items-center gap-4">
@@ -449,7 +492,7 @@ const HuginnArbitrage = () => {
             </div>
 
             <div className="flex-1 flex flex-col gap-3 p-6 overflow-hidden max-w-7xl w-full mx-auto">
-                {view === 'lfarb' ? <LootfarmArbitrage byHash={byHash} /> : view === 'auctions' ? <AuctionBoard /> : view === 'crossprofile' ? <CrossProfileArbitrage byHash={byHash} /> : view === 'harvest' ? <Harvest byHash={byHash} /> : view === 'cases' ? <CaseArbitrage byHash={byHash} /> : (<>
+                {view === 'lfarb' ? <LootfarmArbitrage byHash={byHash} /> : view === 'auctions' ? <AuctionBoard /> : view === 'crossprofile' ? <CrossProfileArbitrage byHash={byHash} /> : view === 'harvest' ? <Harvest byHash={byHash} /> : view === 'cases' ? <CaseArbitrage byHash={byHash} /> : view === 'dips' ? <PriceDips byHash={byHash} /> : (<>
                 {scanError && (
                     <div className="shrink-0 bg-red-500/20 border border-red-500/30 text-red-300 px-4 py-3 rounded-lg text-sm">
                         {scanError}
@@ -594,7 +637,7 @@ const HuginnArbitrage = () => {
                             </span>
                         </div>
                         <ActiveFilterChips filters={filters} onChange={setFilters} />
-                        <div className="shrink-0 grid grid-cols-[minmax(0,2.5fr)_64px_88px_88px_84px_96px_88px_minmax(0,1fr)] gap-2 px-4 py-2 border-b border-white/5 text-[11px] font-bold tracking-wider text-slate-400 uppercase bg-black/20">
+                        <div className="shrink-0 grid grid-cols-[minmax(0,2.5fr)_64px_88px_88px_84px_96px_88px_44px_minmax(0,1fr)] gap-2 px-4 py-2 border-b border-white/5 text-[11px] font-bold tracking-wider text-slate-400 uppercase bg-black/20">
                             <span>Item</span>
                             <span className="text-right">Owned</span>
                             <span className="text-right">Buy</span>
@@ -602,12 +645,20 @@ const HuginnArbitrage = () => {
                             <span className="text-right">Overstock</span>
                             <span className="text-right" title={(activeProfile.fromPageLabel || activeProfile.toPageLabel) ? 'In real dollars: SkinSwap Trade page prices divided by 1.4 (the grey value under each price)' : undefined}>Profit</span>
                             <span className="text-right">Profit %</span>
+                            <span className="text-center" title="Check this row on pulse right now (about a second)">Live</span>
                             <span>Accounts</span>
                         </div>
                         <div className="flex-1 overflow-y-auto custom-scrollbar min-h-0">
                             {visibleResults.map((item, idx) => {
                                 const mhn = item.itemName.marketHashName;
                                 const owned = byHash?.[mhn] ?? null;
+                                // A live check replaces the row's prices and profit until the next fetch.
+                                const live = liveChecks[`${activeProfile.id}|${mhn}`];
+                                const fresh = live?.result?.found ? live.result : null;
+                                const buySide = fresh ? fresh.buy : item.firstMarket;
+                                const sellSide = fresh ? fresh.sell : item.secondMarket;
+                                const profit = fresh ? fresh.profit : item.profit;
+                                const profitPercent = fresh ? fresh.profitPercent : item.profitPercent;
                                 const hasHold = owned?.instances.some(i => i.on_trade_hold) ?? false;
                                 // Group instances per account, with a per-location breakdown for the tooltip.
                                 const accountSummary = owned
@@ -623,7 +674,7 @@ const HuginnArbitrage = () => {
                                 return (
                                     <div
                                         key={`${mhn}-${idx}`}
-                                        className="grid grid-cols-[minmax(0,2.5fr)_64px_88px_88px_84px_96px_88px_minmax(0,1fr)] gap-2 items-center px-4 py-2.5 border-b border-white/5 hover:bg-white/[0.03] transition-colors"
+                                        className="grid grid-cols-[minmax(0,2.5fr)_64px_88px_88px_84px_96px_88px_44px_minmax(0,1fr)] gap-2 items-center px-4 py-2.5 border-b border-white/5 hover:bg-white/[0.03] transition-colors"
                                     >
                                         <div className="flex items-center gap-2.5 min-w-0">
                                             {item.imageUrl && (
@@ -660,13 +711,29 @@ const HuginnArbitrage = () => {
                                         </div>
 
                                         <span className="text-base text-right font-bold text-amber-400 tabular-nums">{owned ? owned.count : <span className="text-slate-600">—</span>}</span>
-                                        <PriceCell market={activeProfile.buyMarket} itemName={mhn} price={item.firstMarket?.price} estimated={!!item.firstMarket?.estimated} pagePrice={item.firstMarket?.pagePrice} pageLabel={activeProfile.fromPageLabel} className="text-base text-right text-slate-300 tabular-nums" />
+                                        <PriceCell market={activeProfile.buyMarket} itemName={mhn} price={buySide?.price} estimated={!!buySide?.estimated} pagePrice={buySide?.pagePrice} pageLabel={activeProfile.fromPageLabel} updated={buySide?.offersUpdateTime} now={now} className={`text-base text-right tabular-nums ${fresh ? 'text-emerald-200' : 'text-slate-300'}`} />
                                         {activeProfile.sellMarket === 'LootFarm'
                                             ? <LootfarmSellCell itemName={mhn} price={item.secondMarket?.price} rate={item.secondMarket?.rate} />
-                                            : <PriceCell market={activeProfile.sellMarket} itemName={mhn} price={item.secondMarket?.price} estimated={!!item.secondMarket?.estimated} pagePrice={item.secondMarket?.pagePrice} pageLabel={activeProfile.toPageLabel} className="text-base text-right text-slate-300 tabular-nums" />}
+                                            : <PriceCell market={activeProfile.sellMarket} itemName={mhn} price={sellSide?.price} estimated={!!sellSide?.estimated} pagePrice={sellSide?.pagePrice} pageLabel={activeProfile.toPageLabel} updated={sellSide?.offersUpdateTime} now={now} className={`text-base text-right tabular-nums ${fresh ? 'text-emerald-200' : 'text-slate-300'}`} />}
                                         <OverstockCell info={item.secondMarket?.overstockInfo} className="text-sm text-right tabular-nums" />
-                                        <span className={`text-base text-right tabular-nums ${(item.profit ?? 0) <= 0 ? 'text-red-400' : 'text-emerald-400'}`}>${item.profit?.toFixed(2)}</span>
-                                        <span className={`text-base text-right font-semibold tabular-nums ${(item.profitPercent ?? 0) <= 0 ? 'text-red-400' : 'text-emerald-400'}`}>{item.profitPercent?.toFixed(0)}%</span>
+                                        <span className={`text-base text-right tabular-nums ${(profit ?? 0) <= 0 ? 'text-red-400' : 'text-emerald-400'}`}>${profit?.toFixed(2)}</span>
+                                        <span className={`text-base text-right font-semibold tabular-nums ${(profitPercent ?? 0) <= 0 ? 'text-red-400' : 'text-emerald-400'}`}>{profitPercent?.toFixed(0)}%</span>
+                                        <span className="flex justify-center">
+                                            {canCheckLive(activeProfile) ? (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => checkLive(activeProfile, mhn)}
+                                                    disabled={!!live?.loading}
+                                                    title={live?.error ? `Check failed: ${live.error}`
+                                                        : live?.result && !live.result.found ? 'Checked live: one of the two markets no longer has it. Click to check again.'
+                                                        : fresh ? `Checked live at ${new Date(fresh.checked_at * 1000).toLocaleTimeString()} (prices and profit above are live). Click to check again.`
+                                                        : 'Check this row on pulse right now (about a second)'}
+                                                    className={`p-1 rounded transition-colors disabled:opacity-50 ${live?.error || (live?.result && !live.result.found) ? 'text-red-400 hover:text-red-300' : fresh ? 'text-emerald-400 hover:text-emerald-300' : 'text-slate-500 hover:text-amber-300'}`}
+                                                >
+                                                    <RotateCw size={13} className={live?.loading ? 'animate-spin' : ''} />
+                                                </button>
+                                            ) : <span className="text-slate-700" title="This pair cannot be checked live (LOOT.Farm feed, CSFloat buy orders or an estimate)">—</span>}
+                                        </span>
 
                                         <div className="flex flex-wrap gap-1">
                                             {accountSummary.map((a) => (

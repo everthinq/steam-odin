@@ -588,7 +588,7 @@ const StoreArbitrage = () => {
                                             </span>
                                             {sell ? (
                                                 <span className="flex flex-col items-end leading-tight min-w-0"
-                                                    title={`${sell.display} ${SIDE_LABEL[sell.side]}: ${money(sell.gross, 3)} before its ${(sell.fee * 100).toFixed(1)}% fee${sell.balance ? `, paid in ${sell.balance}` : ''}${sell.suspicious ? '. Far above Buff163’s listing: probably not a price you can sell at' : ''}`}>
+                                                    title={`${sell.display} ${SIDE_LABEL[sell.side]}: ${money(sell.gross, 3)} before its ${(sell.fee * 100).toFixed(1)}% fee${sell.balance ? `, paid in ${sell.balance}` : ''}${sell.stale ? '. The market has not updated this price for a day or more: probably no longer there' : sell.suspicious ? '. Far above Buff163’s listing: probably not a price you can sell at' : ''}`}>
                                                     <PriceCell market={sell.market} itemName={r.name} price={sell.net}
                                                         className={`text-base tabular-nums ${sell.suspicious ? 'text-slate-500 line-through' : 'text-slate-300'}`} />
                                                     <span className="text-[10px] text-slate-500 truncate max-w-full">
@@ -642,7 +642,8 @@ const StoreArbitrage = () => {
                                                                 <td className={`text-right tabular-nums ${o.suspicious ? '' : tone(o.profit)}`}>{money(o.profit, 3)} <span className="opacity-70">{percent(o.profit_pct)}</span></td>
                                                                 <td className="text-right tabular-nums">{o.count ?? '—'}</td>
                                                                 <td className="pl-4">
-                                                                    {o.suspicious ? <span title="Far above Buff163's lowest listing: one pattern's buy order, or one seller asking what nobody pays">not a real price</span>
+                                                                    {o.stale ? <span title="The market has not updated this price for a day or more: probably no longer there. Never the BUY signal, never posted to Telegram.">stale price</span>
+                                                                        : o.suspicious ? <span title="Far above Buff163's lowest listing: one pattern's buy order, or one seller asking what nobody pays">not a real price</span>
                                                                         : o.balance || 'money'}
                                                                 </td>
                                                             </tr>

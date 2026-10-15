@@ -5,7 +5,9 @@ from steam_service import SteamService
 from settings import SettingsManager
 from scheduler import ConfirmationScheduler
 from ratatoskr_service import RatatoskrService
-from huginn_service import HuginnService
+from huginn_service import CASE_ALERTS_JOB, CASE_FULL_JOB, HuginnService
+from notifications import notification_channel
+from pulse_views import apply_kept_settings
 from draupnir_service import DraupnirService
 from draupnir_backup_service import BackupService
 from mimir_service import MimirService
@@ -20,7 +22,7 @@ from team_fortress_service import TeamFortressService
 from card_seller_service import CardSellerService
 from store_purchase_service import StorePurchaseService
 from storage_shop_service import StorageShopService
-from store_arbitrage_service import StoreArbitrageService
+from store_arbitrage_service import STORE_JOB, StoreArbitrageService
 from store_catalogue_service import StoreCatalogueService
 from morning_routine import MorningRoutine
 from telegram_caller import TelegramCaller
@@ -45,6 +47,8 @@ ratatoskr_service = RatatoskrService()
 huginn_service = HuginnService(steam_service, ratatoskr_service)
 # Every fee comes from the one Fees editor (settings huginn_market_fees).
 huginn_service.settings_provider = settings_manager.get_settings
+# The Pulse feed page's choice of tables to keep fresh (downloaded by the keeper thread below).
+apply_kept_settings(huginn_service, settings_manager.get_settings())
 draupnir_service = DraupnirService(huginn_service)
 # Draupnir point-in-time backups: snapshot portfolios.json on every change +
 # once daily, with GFS retention and safe restore.
@@ -101,6 +105,27 @@ store_arbitrage_service = StoreArbitrageService(huginn_service, store_catalogue_
 
 # Expose the singletons to the route blueprints (read from context.ctx at
 # request time — see context.py and the routes/ package).
+# The recurring jobs that fetch pulse tables, so the Pulse feed page can show and switch them.
+def _case_alerts_on():
+    settings = settings_manager.get_settings()
+    return bool(settings.get('tradeon_token') and settings.get('case_alerts_enabled')
+                and notification_channel(settings) is not None)
+
+
+huginn_service.pulse.declare_job(
+    CASE_FULL_JOB, 'Case Arbitrage', 'every hour',
+    lambda: huginn_service.case_job_tables(alerts=False),
+    active=lambda: bool(settings_manager.get_settings().get('tradeon_token')))
+huginn_service.pulse.declare_job(
+    CASE_ALERTS_JOB, 'Case Arbitrage alerts',
+    lambda: f"every {max(60, int(settings_manager.get_settings().get('case_poll_interval_sec') or 600)) // 60} minutes",
+    lambda: huginn_service.case_job_tables(alerts=True), active=_case_alerts_on,
+    period=lambda: max(60, int(settings_manager.get_settings().get('case_poll_interval_sec') or 600)))
+huginn_service.pulse.declare_job(
+    STORE_JOB, 'Store Catalogue Arbitrage', 'every hour, and after the 08:00 Get all items',
+    lambda: store_arbitrage_service.job_tables(settings_manager.get_settings()),
+    active=lambda: bool(settings_manager.get_settings().get('tradeon_token')))
+
 ctx.settings_manager = settings_manager
 ctx.steam_service = steam_service
 ctx.ratatoskr_service = ratatoskr_service
@@ -196,6 +221,8 @@ if _should_start_background_scheduler():
     morning_routine.start_background()
     # Store Catalogue Arbitrage: warm the default markets hourly so the price history grows.
     store_arbitrage_service.start_background(lambda: settings_manager.get_settings())
+    # Master pulse feed: keep the tables ticked on the Pulse feed page fresh (nothing when none).
+    huginn_service.pulse.start_keeper(lambda: settings_manager.get_settings().get('tradeon_token', ''))
 
 # Ensure all errors return JSON, not HTML
 @app.errorhandler(404)

@@ -39,7 +39,8 @@ real Pay / Buy / Sell / Approve button while testing; use the dry-run paths.
 | `/` | `pages/Dashboard.jsx` | The only eager page; account cards + tool tiles |
 | `/add-account` | `pages/AddAccount.jsx` | maFile import |
 | `/accounts/:steamid/confirmations` | `pages/Confirmations.jsx` | |
-| `/huginn` | `pages/huginn/Arbitrage.jsx` | Views: Arbitrage, Harvest, Case Arbitrage, Cross-Profile, LF Auctions, LF Arbitrage |
+| `/huginn` | `pages/huginn/Arbitrage.jsx` | Views: Arbitrage (per-row "check live" ↻), Harvest, Case Arbitrage, Cross-Profile, Price dips (`components/PriceDips.jsx`), LF Auctions, LF Arbitrage; header link to Pulse feed |
+| `/huginn/pulse` | `pages/huginn/PulseFeed.jsx` | The switchboard of the master pulse feed: job cards (schedule, running, tables on, traffic, All on / All off), a switch per market × price type (amber = a job fetches it, red dashed = switched off, blue = kept by you, grey = only when asked), traffic estimate, save bar, activity table (`POST /api/huginn/pulse/kept {tables, minutes, switched_off}`) |
 | `/huginn/gjallarhorn` | `pages/huginn/Gjallarhorn.jsx` | |
 | `/huginn/card-deals` | `pages/huginn/CardDeals.jsx` | Andvari; `#buy` opens Buy games |
 | `/huginn/team-fortress` | `pages/huginn/TeamFortress.jsx` | |
@@ -77,13 +78,13 @@ path prefix — add your page there. No catch-all route, no Settings page.
 - **localStorage** is for per-browser conveniences only (layout, filters),
   every access wrapped in `try`/`catch`. Keys in use: `heimdall-dashboard-layout`,
   `draupnir-portfolio-layout`, `huginn.harvest`, `andvari.valuation`,
-  `andvari.buy.apps`, `huginn.arbitrageFilters`, `huginn.harvestFilters`, `huginn.caseArbitrageFilters`, `huginn.crossProfileFilters`, `ratatoskr.storeArbitrage`, `ratatoskr.storeArbitrageFilters`, `huginn.skinswapNoteOpen`, `lf_balance_pct`, `lf_unlocked`.
+  `andvari.buy.apps`, `huginn.arbitrageFilters`, `huginn.harvestFilters`, `huginn.caseArbitrageFilters`, `huginn.crossProfileFilters`, `ratatoskr.storeArbitrage`, `ratatoskr.storeArbitrageFilters`, `huginn.priceDips`, `huginn.skinswapNoteOpen`, `lf_balance_pct`, `lf_unlocked`.
 - **Shared pieces:** `components/gjallarhorn/InfoTip.jsx` (prop `tip`) for
   tooltips; `components/draupnir/columnSort.js` (`useColumnSort`, `sortRows`) with the header `components/ratatoskr/SortHeader.jsx`;
   `components/arbitrage/ArbitrageFilters.jsx` (price / account / collection filters + chips on Arbitrage, Harvest, Case Arbitrage, Cross-Profile and Store Catalogue Arbitrage; each tab names its price sides via `priceSides`; helpers, `useStoredFilters` and `buildOptions` in `utils/arbitrageFilters.js`; the page passes its inventory scan down as `byHash`, the only source of collections);
   `utils/transferItems.js` (`matchesSearchQuery`, wear shorthand fn/mw/ft/ww/bs);
   per-market link builders in `utils/*Market.js` + `*MarketLink.jsx` (`SteamMarketLink viaPulse` opens the Steam Market through pulse's short link);
-  `utils/tradeonShortLink.js`. Item images: `api.steamapis.com/image/item/730/<name>`.
+  `utils/tradeonShortLink.js`; `utils/priceAge.js` (`useNowSeconds` — one clock per page, passed down —, `isStale`, `staleTip`: a price whose market has not updated it for a day; `PriceCell` greys it with `updated` + `now`). Item images: `api.steamapis.com/image/item/730/<name>`.
 - **Huginn Arbitrage profiles** are generated in `pages/huginn/Arbitrage.jsx`
   from `/api/huginn/markets` (every buy × sell pair, modes autobuy/min) and
   carry the registry flags: `fromNotInPulseUi`/`toNotInPulseUi` + `*PriceNote`

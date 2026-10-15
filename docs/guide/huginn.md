@@ -21,7 +21,8 @@ that went well.
 ## Fees — set once, used everywhere
 
 **Fees** (Arbitrage view) holds each market's sell fee. Every profit figure in
-Huginn, Harvest and Gjallarhorn uses these numbers. Your number always wins.
+Huginn (the four built-in "Tradeon → …" profiles included, since 2026-10-15),
+Harvest, Gjallarhorn and the Store Catalogue Arbitrage uses these numbers. Your number always wins.
 A market you never changed uses our confirmed fee, or else Tradeon pulse's own
 fee for it, tagged **pulse**; **yours** marks a fee you changed. ⚡ marks a
 market with buy orders (you can sell there instantly). After changing fees,
@@ -42,6 +43,13 @@ fetch the profile again.
 2. Press **Fetch live data**.
 3. The table lists items with buy price, sell price, profit and profit %, how
    many you own and on which accounts, and links to each market.
+4. **Live** (↻ on a row): checks that one item on both markets right now, in about
+   a second, and puts the live prices and profit in the row (green icon; red when
+   one market no longer has it). Use it before you buy. Not for LOOT.Farm as the
+   sell market, CSFloat buy orders or estimated SkinSwap (Trade) prices.
+
+A **greyed-out price** is one its market has not updated for a day or more (hover
+it for how long): it is probably gone.
 
 Filters: search (wear shorthand works: `fn`, `mw`, `ft`, `ww`, `bs`), **My
 Inventory**, **Hide Unstable** (LOOT.Farm overstock), and the **Filters** button:
@@ -146,6 +154,52 @@ CS.MONEY trade → CSFloat).
 The **Filters** button works as on Arbitrage and narrows the chain tables too:
 **Price** on the buy or the sell price (a chain's first buy and last sell),
 **Accounts** from Draupnir holders, **Collections** from Get all items.
+
+## Price dips
+
+One market's lowest listing against the price the item usually had over the last
+30 days (pulse's 30-day median, or average), with how many sold last week.
+
+- **Market**: Steam, Buff163, CSMoney, DMarket, Market.CSGO, Waxpeer and the
+  others pulse keeps price history for. Steam's medians are the most reliable;
+  Buff163's are noisy.
+- **Under (dips)**: listed below its usual price, deepest first: candidates to
+  buy. **Over (spikes)**: listed above it; with **My Inventory**, what you hold
+  that sells above its usual price right now.
+- **at least %**, **sold / week ≥** (on that market; Steam's count where pulse
+  has none), **price ≥ $** and **Hide stale** (on by default) narrow the list.
+- **Back to usual**: what you would make buying at the listing and selling at the
+  usual price, after the market's fee from the Fees editor. **Sells now** is the
+  market's highest buy order.
+
+A median lags: an item that has been falling for a month looks like a dip. Check
+the weekly sales and the price chart (Steam icon) before buying. Refresh gets
+prices under a minute old.
+
+## Pulse feed
+
+The **Pulse feed** button (top right of Huginn, or /huginn/pulse) is the switchboard
+for every price download. Each pulse table (one market × one price type, about
+59 MB) is one switch:
+
+- **Amber, ticked**: a recurring job fetches it, named on the switch: **Case**
+  (Case Arbitrage, every hour), **Alerts** (Case Arbitrage alerts, every 10
+  minutes while they are on), **Store** (Store Catalogue Arbitrage, every hour
+  and after the 08:00 Get all items).
+- **Red, dashed**: switched off. Those jobs no longer download it (they use the
+  copy in memory if a page just downloaded it). Buttons you press still do.
+- **Blue, ticked**: kept fresh by you, every 5 to 60 minutes (at most 12 tables).
+  Boards and jobs then read it from memory instead of downloading it.
+- **Grey**: downloaded only when a page or a button asks.
+
+The job cards on top show each job's schedule, whether it runs, how many of its
+tables are on and its traffic, with **All on** / **All off**. The overview shows
+how much is fetched automatically and the traffic a day (on 2026-10-15: 33 tables,
+about 94 GB a day, most of it the 10-minute alert poll and Store Catalogue
+Arbitrage's 32 tables). After a change, the bar at the bottom shows how the
+traffic changes before you press **Save**; jobs use it from their next run.
+**Activity since start** lists every table read or downloaded, with a download
+button.
 
 ## LF Auctions and LF Arbitrage
 

@@ -125,7 +125,8 @@ def test_index_prices_and_names():
     assert table.prices() == {'Sticker | A': 2.0, 'Sticker | B': 3.0}
     assert table.prices('first') == {'Sticker | A': 0.9}
     assert table.index(['Sticker | B', 'Not there']) == {
-        'Sticker | B': {'price': 3.0, 'count': 7, 'image': 'image of Sticker | B', 'rising': True, 'falling': False}}
+        'Sticker | B': {'price': 3.0, 'count': 7, 'image': 'image of Sticker | B', 'rising': True, 'falling': False,
+                        'updated': None}}
     assert [row['itemName']['marketHashName'] for row in table.rows(['Sticker | B'])] == ['Sticker | B']
 
 
@@ -228,3 +229,158 @@ def test_at_most_four_downloads_run_at_once():
     for thread in threads:
         thread.join(10)
     assert peak[0] == pulse_feed.MAX_PARALLEL_DOWNLOADS == 4
+
+
+def test_each_price_keeps_the_markets_own_update_time():
+    feed, _ = _feed(rows=[_row('Sticker | A', offersUpdateTime=1700000000)])
+    table = feed.table('token', 'Steam', 'Sell')
+    assert table.index()['Sticker | A']['updated'] == 1700000000
+    assert table.rows()[0]['secondMarket']['offersUpdateTime'] == 1700000000
+    assert 'offersUpdateTime' not in table.rows()[0]['firstMarket']      # none given, none invented
+
+
+def test_weekly_sales_are_kept_per_item_and_market_from_every_table():
+    rows = {'Steam': [{**_row('Case'), 'itemPopularity': [{'market': 'Steam', 'salesCount': 900},
+                                                          {'market': 'Tm', 'salesCount': 40}]}],
+            'Buff': [{**_row('Case'), 'itemPopularity': [{'market': 'Buff', 'salesCount': 70},
+                                                         {'market': 'Steam', 'salesCount': 910}]}]}
+    feed = PulseFeed(post=lambda url, token, body: rows[url.rsplit('/', 2)[1]])
+    feed.table('token', 'Steam', 'Sell')
+    assert feed.weekly_sales() == {'Case': {'Steam': 900, 'Tm': 40}}
+    feed.table('token', 'Buff', 'Sell')
+    assert feed.weekly_sales(['Case', 'Unknown']) == {'Case': {'Steam': 910, 'Tm': 40, 'Buff': 70}}
+    feed.weekly_sales()['Case']['Steam'] = 0                                  # a copy
+    assert feed.weekly_sales()['Case']['Steam'] == 910
+    assert feed.status()['weekly_sales_items'] == 1
+
+
+def test_a_lookup_asks_for_one_name_and_returns_only_the_exact_item():
+    seen = []
+
+    def post(url, token, body):
+        seen.append(body)
+        return [_row('StatTrak™ AK-47 | Redline (Field-Tested)', second=90.0),
+                _row('AK-47 | Redline (Field-Tested)', second=31.5, first=26.2)]
+    feed = PulseFeed(post=post)
+    answer = feed.lookup('token', 'Steam', 'Buy', 'AK-47 | Redline (Field-Tested)')
+    assert answer['second']['price'] == 31.5 and answer['first']['price'] == 26.2
+    assert seen[0]['marketHashNameFilter'] == {'value': 'AK-47 | Redline (Field-Tested)'}
+    assert seen[0]['paginationRequest']['takeCount'] == pulse_feed.LOOKUP_ROWS
+    assert seen[0]['secondMarketOptions']['secondMarketPriceType'] == 'Buy'
+    assert feed.lookup('token', 'Steam', 'Buy', 'AK-47 | Redline') is None   # substring matches are not it
+    assert feed.status()['lookups']['count'] == 2 and feed.status()['downloads'] == 0
+
+
+def test_kept_tables_are_downloaded_again_by_the_keeper_and_outlive_keep_seconds():
+    clock = Clock()
+    feed, requests = _feed(clock=clock)
+    feed.set_kept([('Steam', 'Sell'), ('Steam', 'Sell'), ('Buff', 'Buy')], minutes=15)
+    assert feed.kept() == ([('Steam', 'Sell'), ('Buff', 'Buy')], 15)
+    assert feed.keep_fresh_once('token') == 2
+    assert feed.keep_fresh_once('token') == 0                                 # both fresh: nothing
+    clock.now += 15 * 60
+    assert feed.keep_fresh_once('token') == 2 and len(requests) == 4
+    clock.now += KEEP_SECONDS + 60                                            # past KEEP_SECONDS, still kept
+    status = {(t['market'], t['price_type']): t for t in feed.status()['tables']}
+    assert status[('Steam', 'Sell')]['items'] == 1 and status[('Steam', 'Sell')]['kept']
+
+
+def test_a_kept_table_that_fails_waits_before_the_keeper_tries_again():
+    clock = Clock()
+    calls = []
+
+    def post(url, token, body):
+        calls.append(url)
+        raise OSError('pulse down')
+    feed = PulseFeed(post=post, clock=clock)
+    feed.set_kept([('Steam', 'Sell')])
+    assert feed.keep_fresh_once('token') == 0 and len(calls) == 1
+    clock.now += 60
+    feed.keep_fresh_once('token')
+    assert len(calls) == 1                                                    # still waiting
+    clock.now += pulse_feed.KEEPER_RETRY_AFTER
+    feed.keep_fresh_once('token')
+    assert len(calls) == 2
+
+
+def test_status_lists_kept_tables_never_read():
+    feed, _ = _feed()
+    feed.set_kept([('Dmarket', 'Buy')], minutes=30)
+    status = feed.status()
+    assert status['kept_minutes'] == 30
+    assert [(t['market'], t['price_type'], t['kept'], t['reads']) for t in status['tables']] == [('Dmarket', 'Buy', True, 0)]
+
+
+def test_a_background_read_of_a_kept_table_accepts_it_up_to_the_kept_interval():
+    clock = Clock()
+    feed, requests = _feed(clock=clock)
+    feed.set_kept([('Steam', 'Sell')], minutes=30)
+    feed.keep_fresh_once('token')
+    clock.now += 20 * 60                                                      # older than FRESH, kept for 30
+    feed.table('token', 'Steam', 'Sell')                                      # a board: from memory
+    assert len(requests) == 1
+    feed.table('token', 'Steam', 'Sell', max_age=ON_DEMAND)                   # a button: fresh
+    assert len(requests) == 2
+    assert feed.peek('Steam', 'Sell') is not None and feed.peek('Buff', 'Buy') is None
+
+
+def test_the_keepers_downloads_are_not_reads():
+    feed, _ = _feed()
+    feed.set_kept([('Steam', 'Sell')])
+    feed.keep_fresh_once('token')
+    table = feed.status()['tables'][0]
+    assert (table['downloads'], table['reads'], table['last_read_at']) == (1, 0, None)
+
+
+def test_more_than_the_maximum_kept_tables_is_refused():
+    feed, _ = _feed()
+    with pytest.raises(ValueError):
+        feed.set_kept([(f'Market{i}', 'Sell') for i in range(pulse_feed.MAX_KEPT_TABLES + 1)])
+
+
+def test_a_background_job_never_downloads_a_switched_off_table_but_a_button_does():
+    feed, requests = _feed()
+    feed.set_switched_off([('Buff', 'Sell')])
+    with feed.job('case-arbitrage-hourly'):
+        with pytest.raises(pulse_feed.SwitchedOff):
+            feed.table('token', 'Buff', 'Sell')
+    assert requests == []
+    table = feed.table('token', 'Buff', 'Sell', max_age=ON_DEMAND)          # a button: allowed
+    with feed.job('case-arbitrage-hourly'):
+        assert feed.table('token', 'Buff', 'Sell') is table                  # what is in memory: fine
+    assert feed.table('token', 'Steam', 'Sell', job='store-arbitrage') is not None
+    assert requests == [('Buff', 'Sell'), ('Steam', 'Sell')]
+    status = {(t['market'], t['price_type']): t for t in feed.status()['tables']}
+    assert status[('Buff', 'Sell')]['switched_off'] and 'case-arbitrage-hourly' in status[('Buff', 'Sell')]['jobs']
+    assert feed.current_job() is None
+
+
+def test_declared_jobs_appear_in_the_status_with_their_tables_and_period():
+    feed, _ = _feed()
+    feed.declare_job('case-arbitrage-alerts', 'Case Arbitrage alerts', lambda: 'every 10 minutes',
+                     lambda: [('CsFloat', 'Sell'), ('CsFloat', 'Sell'), ('Steam', 'Buy')], active=lambda: True,
+                     period=lambda: 600)
+    status = feed.status()
+    assert status['jobs'] == [{'id': 'case-arbitrage-alerts', 'label': 'Case Arbitrage alerts',
+                               'schedule': 'every 10 minutes', 'period_seconds': 600, 'active': True,
+                               'tables': [['CsFloat', 'Sell'], ['Steam', 'Buy']]}]
+    declared = {(t['market'], t['price_type']): t['declared_jobs'] for t in status['tables']}
+    assert declared[('Steam', 'Buy')] == ['case-arbitrage-alerts']
+
+
+def test_served_from_memory_never_counts_the_keepers_downloads():
+    feed, _ = _feed()
+    feed.set_kept([('Steam', 'Sell'), ('Buff', 'Buy')])
+    feed.keep_fresh_once('token')
+    feed.table('token', 'Steam', 'Sell')
+    status = feed.status()
+    assert (status['downloads'], status['reads'], status['served_from_memory']) == (2, 1, 1)
+
+
+def test_an_older_download_finishing_late_never_replaces_newer_weekly_sales():
+    feed, _ = _feed()
+    with feed._lock:
+        feed._merge_sales({'Case': {'Steam': 900}}, at=2000)
+        feed._merge_sales({'Case': {'Steam': 100, 'Tm': 5}}, at=1000)
+    assert feed.weekly_sales() == {'Case': {'Steam': 900, 'Tm': 5}}
+    assert feed._sales_at == 2000

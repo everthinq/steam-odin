@@ -154,6 +154,16 @@ DEFAULT_SETTINGS = {
     # Team Fortress 2 mode stops by itself after this many hours (0 = never), so a
     # release at night does not keep card farming paused on every account for days.
     "team_fortress_auto_stop_hours": 24,
+    # --- Pulse feed page (Huginn -> Pulse feed) ---
+    # Tables the master pulse feed keeps fresh in the background ("Steam:Sell", "Buff:Buy", ...),
+    # each downloaded again every pulse_keep_minutes (5, 10, 15, 30 or 60). Empty: nothing is
+    # downloaded unless a page or a job asks for it.
+    "pulse_kept_tables": [],
+    "pulse_keep_minutes": 10,
+    # Tables the recurring jobs (Case Arbitrage hourly and alert polls, Store Catalogue Arbitrage
+    # hourly and daily) may NOT download ("Steam:Sell", ...): unticked on the Pulse feed page.
+    # Buttons you press still download them.
+    "pulse_switched_off_tables": [],
 }
 
 # How many auto-store move records to keep in the history log.

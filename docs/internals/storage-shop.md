@@ -343,6 +343,10 @@ against the markets. Nothing in it buys anything.
   Buff163's lowest listing is "suspicious". Live, a $0.99 sticker was listed
   at $8.37 on LisSkins while it sold under $1 everywhere else. Balance markets
   (Steam wallet, CSMoney Trade, LOOT.Farm, TradeIt Trade) are not checked.
+- **Stale.** Any price (balance markets too) whose market has not updated it
+  for a day (pulse `offersUpdateTime`, `is_stale`, 2026-10-15) is marked
+  `stale` and handled like a suspicious one: shown as "stale price", never the
+  best offer, the BUY signal or part of a Telegram post.
 - **Unconfirmed.** The cheapest listing is at least 1.5 times the store price,
   and the history shows the gap open on 80% or more of the tracked days (or
   there are fewer than 3 days). It is never set when Draupnir shows you resold

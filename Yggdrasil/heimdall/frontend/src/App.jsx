@@ -19,6 +19,7 @@ const HuginnArbitrage = lazy(() => import('./pages/huginn/Arbitrage'));
 const HuginnGjallarhorn = lazy(() => import('./pages/huginn/Gjallarhorn'));
 const HuginnCardDeals = lazy(() => import('./pages/huginn/CardDeals'));
 const HuginnTeamFortress = lazy(() => import('./pages/huginn/TeamFortress'));
+const HuginnPulseFeed = lazy(() => import('./pages/huginn/PulseFeed'));
 const DraupnirPortfolios = lazy(() => import('./pages/draupnir/Portfolios'));
 const DraupnirPortfolio = lazy(() => import('./pages/draupnir/Portfolio'));
 const MimirVault = lazy(() => import('./pages/mimir/Vault'));
@@ -37,6 +38,7 @@ function TitleManager() {
     else if (pathname.startsWith('/huginn/gjallarhorn')) title = 'Gjallarhorn';
     else if (pathname.startsWith('/huginn/card-deals')) title = 'Andvari';
     else if (pathname.startsWith('/huginn/team-fortress')) title = 'Team Fortress 2';
+    else if (pathname.startsWith('/huginn/pulse')) title = 'Pulse feed';
     else if (pathname.startsWith('/huginn')) title = 'Huginn';
     else if (pathname.startsWith('/draupnir')) title = 'Draupnir';
     else if (pathname.startsWith('/mimir')) title = 'Mímir';
@@ -84,6 +86,7 @@ function App() {
           <Route path="/huginn/gjallarhorn" element={<HuginnGjallarhorn />} />
           <Route path="/huginn/card-deals" element={<HuginnCardDeals />} />
           <Route path="/huginn/team-fortress" element={<HuginnTeamFortress />} />
+          <Route path="/huginn/pulse" element={<HuginnPulseFeed />} />
 
           {/* Draupnir Routes (portfolio tracker) */}
           <Route path="/draupnir" element={<DraupnirPortfolios />} />

@@ -280,3 +280,14 @@ def test_the_index_is_stamped_with_when_its_prices_were_downloaded():
     service = HarvestService(huginn, FakeDraupnir())
     service._warm('token', ['CsMoneyTrade'])
     assert service._indexes['CsMoneyTrade'] == (1000.0, {'AK': {'price': 1.0}})
+
+
+def test_a_price_its_market_has_not_updated_for_a_day_is_never_the_best_offer():
+    huginn = FakeHuginn()
+    huginn.autobuy['Buff']['AK'] = {'price': 30.0, 'count': 1, 'updated': time.time() - 3 * 86400}
+    service = HarvestService(huginn, FakeDraupnir(), today=lambda: datetime.date(2026, 9, 29))
+    service._warm('token', ['CsMoneyTrade', 'Buff', HarvestService.REFERENCE])
+    ak = rows_by_key(service.board('token', market_ids=['CsMoneyTrade', 'Buff']))[('everthinklol', 'AK')]
+    assert ak['best']['market'] == 'CsMoneyTrade'
+    stale = next(o for o in ak['offers'] if o['market'] == 'Buff')
+    assert stale['stale'] and stale['suspicious']

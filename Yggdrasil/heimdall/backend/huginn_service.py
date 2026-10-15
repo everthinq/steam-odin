@@ -11,7 +11,7 @@ import urllib.error
 import urllib.parse
 from datetime import datetime, timezone, timedelta
 from jsonio import atomic_write_json
-from pulse_feed import COUNT, FRESH, ON_DEMAND, PRICE, PulseFeed
+from pulse_feed import COUNT, FRESH, ON_DEMAND, PRICE, PulseFeed, SwitchedOff
 from notifications import (TELEGRAM_MESSAGE_LIMIT, delete_notification, edit_notification,
                            notification_channel, send_notification, telegram_visible_length)
 
@@ -423,6 +423,9 @@ _MARKET_REGISTRY = [
     {'id': 'GamerPay',       'display': 'GamerPay',          'buy_type': 'Sell',            'autobuy': None,  'fee': 0.0,   'premium': False},
 ]
 _MARKET_BY_ID = {m['id']: m for m in _MARKET_REGISTRY}
+# Background jobs of the master pulse feed (pulse_feed.PulseFeed.job / declare_job, the Pulse feed page).
+CASE_FULL_JOB = 'case-arbitrage-hourly'
+CASE_ALERTS_JOB = 'case-arbitrage-alerts'
 # Markets whose sell-side fee is confirmed; the rest default to pulse's fee (flagged in the UI).
 _MARKET_FEE_CONFIRMED = {'Steam', 'Buff', 'CsFloat', 'Dmarket', 'LootFarm'}
 # Markets the pulse website does not list (its market-info leaves them out) whose
@@ -1406,6 +1409,20 @@ class HuginnService:
         table = self._table(token, market_id, price_type, max_age)
         return table.started_at, table.index(names)
 
+    def pulse_table_of(self, market_id, side):
+        """The (market id, price type) pulse table behind a market's 'listing' or 'instant' side,
+        or None (no such side, CSFloat's swept buy orders, SkinSwap (Trade)'s estimates)."""
+        m = _MARKET_BY_ID.get(market_id)
+        if not m:
+            return None
+        if side == 'instant':
+            if market_id in _AUTOBUY_VIA_CSFLOAT_SWEEP or not m['autobuy']:
+                return None
+            return (market_id, m['autobuy'])
+        if not m['buy_type'] or m['buy_type'] == _ESTIMATED_SELL:
+            return None
+        return (market_id, m['buy_type'])
+
     def market_buy_index(self, token, market_id, max_age=FRESH):
         """{name: {price,count,image}} of a market's MIN listing (what you'd pay to buy).
         Empty for an unknown market id or a sell-only one."""
@@ -2329,15 +2346,8 @@ class HuginnService:
         table carries; the rest read the market's lowest listing (the registry's buy price type,
         or the valuation markets' price type)."""
         names = self._container_names()
-        if market == 'tradeon':
-            table, position = self._table(token, 'Steam', 'Buy', max_age), 0
-        else:
-            registry_id = self._CONTAINER_REGISTRY_MARKETS.get(market)
-            if registry_id:
-                key = (registry_id, _MARKET_BY_ID[registry_id]['buy_type'])
-            else:
-                key = self._PRICE_MARKETS[market]
-            table, position = self._table(token, *key, max_age), 1
+        key = self.container_table_key(market)
+        table, position = self._table(token, *key, max_age), (0 if market == 'tradeon' else 1)
         out = {}
         for name in names:
             entry = table.entries.get(name)
@@ -2346,12 +2356,33 @@ class HuginnService:
                 out[name] = {'price': quote[PRICE], 'count': quote[COUNT]}
         return table.started_at, out
 
-    def _refresh_container_bg(self, token, market):
+    def container_table_key(self, market):
+        """The (market id, price type) pulse table a Case Arbitrage market is read from: 'tradeon'
+        is the first market of Steam's buy-order table (which every refresh pulls anyway)."""
+        if market == 'tradeon':
+            return ('Steam', 'Buy')
+        registry_id = self._CONTAINER_REGISTRY_MARKETS.get(market)
+        if registry_id:
+            return (registry_id, _MARKET_BY_ID[registry_id]['buy_type'])
+        return self._PRICE_MARKETS[market]
+
+    def case_job_tables(self, alerts=False):
+        """The tables the Case Arbitrage loop fetches: every container market hourly, the alert
+        markets on every poll (for the Pulse feed page)."""
+        markets = self._ALERT_MARKETS if alerts else self._CONTAINER_MARKETS
+        return [self.container_table_key(market) for market in markets]
+
+    def _refresh_container_bg(self, token, market, job=None):
         try:
-            downloaded_at, snap = self._container_snapshot_at(token, market)
+            with self.pulse.job(job):        # the caller's background job, if any (the switch)
+                downloaded_at, snap = self._container_snapshot_at(token, market)
             with self._price_lock:
                 self._container_cache[market] = (downloaded_at, snap)
                 self._container_state[market] = 'ok'
+        except SwitchedOff as e:
+            logger.info(f'[HUGINN] container snapshot skipped ({market}): {e}')
+            with self._price_lock:
+                self._container_state[market] = 'ok' if self._container_cache.get(market) else None
         except Exception as e:
             logger.error(f'[HUGINN] container snapshot refresh failed ({market}): {e}')
             with self._price_lock:
@@ -2377,7 +2408,7 @@ class HuginnService:
             if state != 'refreshing' and not backing_off:
                 self._container_state[market] = 'refreshing'
                 threading.Thread(target=self._refresh_container_bg,
-                                 args=(token, market), daemon=True).start()
+                                 args=(token, market, self.pulse.current_job()), daemon=True).start()
                 state = 'refreshing'
         if state == 'error':
             return (cached[1] if cached else {}), 'error'
@@ -2728,6 +2759,8 @@ class HuginnService:
             with self._price_lock:
                 self._container_cache[market] = (downloaded_at, snap)
                 self._container_state[market] = 'ok'
+        except SwitchedOff as e:
+            logger.info(f'[HUGINN] container refresh skipped ({market}): {e}')   # last prices stay
         except Exception as e:
             logger.error(f'[HUGINN] container refresh failed ({market}): {e}')
             with self._price_lock:
@@ -2739,7 +2772,12 @@ class HuginnService:
         they're captured within the same few seconds — important for the alert markets
         so a cross-market comparison isn't skewed by prices moving between fetches."""
         if parallel and len(markets) > 1:
-            ts = [threading.Thread(target=self._refresh_one, args=(token, m, max_age), daemon=True) for m in markets]
+            job = self.pulse.current_job()       # each thread reads as the same background job
+
+            def refresh(market):
+                with self.pulse.job(job):
+                    self._refresh_one(token, market, max_age)
+            ts = [threading.Thread(target=refresh, args=(m,), daemon=True) for m in markets]
             for t in ts:
                 t.start()
             for t in ts:
@@ -2768,20 +2806,23 @@ class HuginnService:
                     full = (now - last_full) >= self._CONTAINER_FULL_REFRESH_SEC
                     if full:
                         # Fresh tables: the alert run below compares them with each other.
-                        self._refresh_markets(token, self._CONTAINER_MARKETS, max_age=ON_DEMAND)
-                        try:
-                            self.cases_prices(token, None)   # daily history (own once/day guard)
-                        except Exception as e:
-                            logger.error(f'[HUGINN] history record failed: {e}')
+                        with self.pulse.job(CASE_FULL_JOB):
+                            self._refresh_markets(token, self._CONTAINER_MARKETS, max_age=ON_DEMAND)
+                            try:
+                                self.cases_prices(token, None)   # daily history (own once/day guard)
+                            except Exception as e:
+                                logger.error(f'[HUGINN] history record failed: {e}')
                         last_full = now
                         self._save_container_snapshots(last_full)
                         logger.info('[HUGINN] full container refresh from pulse')
                     elif alerts_on:
                         # Fresh tables for every alert poll; everything else reads them from the feed.
-                        self._refresh_markets(token, self._ALERT_MARKETS, parallel=True, max_age=ON_DEMAND)
+                        with self.pulse.job(CASE_ALERTS_JOB):
+                            self._refresh_markets(token, self._ALERT_MARKETS, parallel=True, max_age=ON_DEMAND)
                     if alerts_on:
                         try:
-                            res = self.run_case_alerts(settings)
+                            with self.pulse.job(CASE_ALERTS_JOB):
+                                res = self.run_case_alerts(settings)
                             if res.get('new'):
                                 logger.info(f"[HUGINN] case alerts: {res['new']} new, sent={res.get('sent')}")
                             if res.get('send_error'):
@@ -2801,6 +2842,8 @@ class HuginnService:
     _ALERT_BUY_MARKETS = ('lisskins', 'buff', 'tradeon', 'csmoney_market', 'csmoney_trade', 'skinswap')
     # Re-pulled every alert poll, together, so the comparison is near-simultaneous.
     _ALERT_MARKETS = ('csfloat',) + _ALERT_BUY_MARKETS
+    # An alert compares only snapshots younger than this (the poll refreshes them every 10 minutes).
+    _ALERT_SNAPSHOT_MAX_AGE_SEC = 30 * 60
     _ALERT_MARKET_LABEL = {'lisskins': 'LisSkins', 'buff': 'Buff', 'tradeon': 'Tradeon',
                            'csmoney_market': 'CS.MONEY Market', 'csmoney_trade': 'CS.MONEY Trade',
                            'skinswap': 'SkinSwap (Market)'}
@@ -2959,6 +3002,15 @@ class HuginnService:
             min_pct = 3.0
         cats = settings.get('case_alert_categories') or ['case']
         data = self.cases_prices(token, cats)
+        # Never compare with old prices (a market switched off on the Pulse feed page keeps its
+        # last snapshot): a market whose snapshot is too old is left out, CSFloat's stops the run.
+        now = time.time()
+        with self._price_lock:
+            too_old = {m for m in self._ALERT_MARKETS
+                       if not self._container_cache.get(m)
+                       or now - self._container_cache[m][0] > self._ALERT_SNAPSHOT_MAX_AGE_SEC}
+        if 'csfloat' in too_old:
+            return {'ran': False, 'reason': 'CSFloat prices are too old (switched off on the Pulse feed page?)'}
         active = {}
         for r in data['containers']:
             prices = r.get('prices') or {}
@@ -2966,6 +3018,8 @@ class HuginnService:
             if not cf:
                 continue
             for m in self._ALERT_BUY_MARKETS:
+                if m in too_old:
+                    continue
                 p = prices.get(m)
                 if not p or p >= cf:
                     continue

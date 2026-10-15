@@ -18,6 +18,8 @@ import logging
 import threading
 import time
 
+from pulse_feed import is_stale
+
 logger = logging.getLogger(__name__)
 
 
@@ -235,9 +237,13 @@ class HarvestService:
                 'fee_known': known.get(market_id, False),
                 'balance': balance,
                 'net': round(net, 2), 'count': entry.get('count'), 'image': entry.get('image'),
+                'updated': entry.get('updated'),
                 'profit': round(net - cost, 3),
-                'suspicious': bool(not balance and listing
-                                   and entry['price'] > listing * self.SUSPICIOUS_RATIO),
+                # Not updated by its market for a day: shown, never counted (like a suspicious one).
+                'stale': is_stale(entry.get('updated')),
+                'suspicious': bool((not balance and listing
+                                    and entry['price'] > listing * self.SUSPICIOUS_RATIO)
+                                   or is_stale(entry.get('updated'))),
             })
         if not offers:
             return None

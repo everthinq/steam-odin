@@ -3,7 +3,7 @@ import { ArrowUpDown, Lock, Unlock, Info } from 'lucide-react';
 import InfoTip from './InfoTip';
 
 // The sell list. Each held item scored for how well it funds a rotation into a
-// freshly-limited case: liquidity-first (Steam 7-day turnover), deflation shown
+// freshly-limited case: liquidity-first (Steam 7-day turnover, from Tradeon pulse), deflation shown
 // as its own column, tradable-now overlaid when an account is picked. Sorting is
 // client-side; the backend pre-sorts by rotation score.
 const money = (v) => (v == null ? '—' : `$${Number(v).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`);
@@ -25,9 +25,9 @@ const COLUMNS = [
     { key: 'current_price', label: 'Now', align: 'right' },
     { key: 'deflation_pct', label: 'Δ vs cost', align: 'right', hint: 'Current price vs your average buy cost. Negative = deflated (below what you paid).' },
     { key: 'realized_if_sold', label: 'P/L if sold', align: 'right', hint: 'Profit or loss you would realize selling the whole position now at the current price.' },
-    { key: 'volume7d', label: '7d sold', align: 'right', hint: 'Units sold on the Steam market in the last 7 days (turnover / liquidity). Hover a cell for 24h.' },
-    { key: 'spread_pct', label: 'Spread', align: 'right', hint: 'Steam median vs lowest listing — a tight spread means a liquid item; a wide one means selling now costs you.' },
-    { key: 'trend7d_pct', label: '7d trend', align: 'right', hint: 'Change in Steam median price over the last 7 days — confirms whether it is still bleeding.' },
+    { key: 'volume7d', label: '7d sold', align: 'right', hint: 'Units sold on the Steam market in the last 7 days (turnover / liquidity), from Tradeon pulse — no Steam request, so no Steam rate limits. Hover a cell for Market.CSGO\'s week too.' },
+    { key: 'spread_pct', label: 'Spread', align: 'right', hint: 'Steam lowest listing vs highest buy order — a tight spread means a liquid item; a wide one means selling now (into the buy orders) costs you.' },
+    { key: 'vs_median_pct', label: 'vs 30-day median', align: 'right', hint: 'Steam lowest listing now vs its 30-day median price (pulse). Negative = cheaper than its usual month — it is still bleeding, or the dip is temporary. Items pulse does not know show Steam\'s own 7-day trend instead, marked "7d".' },
     { key: 'tradable', label: 'Tradable', align: 'center', hint: 'From the picked account’s live inventory: how many are tradable now vs still trade-locked (Steam holds sale funds on locked items).' },
     { key: 'rotation_score', label: 'Score', align: 'right', hint: SCORE_HINT },
 ];
@@ -123,9 +123,11 @@ const RotationTable = ({ rows, overlayActive, deflatedOnly }) => {
                             <td className="px-3 py-2 text-right tabular-nums text-slate-200">{money(r.current_price)}</td>
                             <td className={`px-3 py-2 text-right tabular-nums ${signClass(r.deflation_pct)}`}>{pct(r.deflation_pct)}</td>
                             <td className={`px-3 py-2 text-right tabular-nums ${signClass(r.realized_if_sold)}`}>{r.realized_if_sold == null ? '—' : money(r.realized_if_sold)}</td>
-                            <td className="px-3 py-2 text-right tabular-nums text-slate-300" title={r.volume24h != null ? `${num(r.volume24h)} in 24h` : ''}>{num(r.volume7d)}</td>
-                            <td className="px-3 py-2 text-right tabular-nums text-slate-400">{r.spread_pct == null ? '—' : `${r.spread_pct.toFixed(1)}%`}</td>
-                            <td className={`px-3 py-2 text-right tabular-nums ${signClass(r.trend7d_pct)}`}>{pct(r.trend7d_pct)}</td>
+                            <td className="px-3 py-2 text-right tabular-nums text-slate-300" title={[r.volume24h != null && `${num(r.volume24h)} in 24h`, r.tm_volume7d != null && `Market.CSGO: ${num(r.tm_volume7d)} in 7 days`, r.liquidity_source === 'steam' && 'From Steam (pulse does not know this item)'].filter(Boolean).join('\n')}>{num(r.volume7d)}</td>
+                            <td className="px-3 py-2 text-right tabular-nums text-slate-400" title={r.steam_highest_buy != null ? `Lowest listing ${money(r.steam_lowest)} · highest buy order ${money(r.steam_highest_buy)}` : ''}>{r.spread_pct == null ? '—' : `${r.spread_pct.toFixed(1)}%`}</td>
+                            {r.vs_median_pct != null
+                                ? <td className={`px-3 py-2 text-right tabular-nums ${signClass(r.vs_median_pct)}`} title={r.steam_median != null ? `30-day median ${money(r.steam_median)}` : ''}>{pct(r.vs_median_pct)}</td>
+                                : <td className={`px-3 py-2 text-right tabular-nums ${signClass(r.trend7d_pct)}`} title="Steam's own 7-day trend (pulse does not know this item)">{r.trend7d_pct == null ? '—' : <>{pct(r.trend7d_pct)} <span className="text-[10px] text-slate-500">7d</span></>}</td>}
                             <td className="px-3 py-2 text-center"><TradableCell overlay={r.tradable} active={overlayActive} /></td>
                             <td className="px-3 py-2 text-right">
                                 {r.rotation_score == null ? <span className="text-slate-600">—</span> : (
