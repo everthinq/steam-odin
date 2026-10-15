@@ -276,7 +276,7 @@ class HarvestService:
 
     @staticmethod
     def _summary(rows, lots, unpriced):
-        to_check = [r for r in rows if r['best']['suspicious']]
+        to_check = [r for r in rows if r['best']['suspicious'] and not r['best'].get('stale')]
         winners = [r for r in rows if r['total_profit'] > 0 and not r['best']['suspicious']]
         cash = [r for r in winners if not r['best']['balance']]
         return {

@@ -291,3 +291,14 @@ def test_a_price_its_market_has_not_updated_for_a_day_is_never_the_best_offer():
     assert ak['best']['market'] == 'CsMoneyTrade'
     stale = next(o for o in ak['offers'] if o['market'] == 'Buff')
     assert stale['stale'] and stale['suspicious']
+
+
+def test_a_stale_best_offer_is_not_listed_as_a_price_to_check():
+    huginn = FakeHuginn()
+    stale = time.time() - 3 * 86400
+    huginn.autobuy = {'CsMoneyTrade': {'AK': {'price': 12.0, 'count': 3, 'updated': stale}}}
+    service = HarvestService(huginn, FakeDraupnir(), today=lambda: datetime.date(2026, 9, 29))
+    service._warm('token', ['CsMoneyTrade', HarvestService.REFERENCE])
+    board = service.board('token', market_ids=['CsMoneyTrade'])
+    assert board['summary']['to_check'] == 0
+    assert all(row['best']['stale'] for row in board['rows'] if row['item_name'] == 'AK')

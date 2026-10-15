@@ -384,3 +384,21 @@ def test_an_older_download_finishing_late_never_replaces_newer_weekly_sales():
         feed._merge_sales({'Case': {'Steam': 100, 'Tm': 5}}, at=1000)
     assert feed.weekly_sales() == {'Case': {'Steam': 900, 'Tm': 5}}
     assert feed._sales_at == 2000
+
+
+def test_the_keeper_downloads_on_time_even_at_long_intervals():
+    clock = Clock()
+    feed, requests = _feed(clock=clock)
+    feed.set_kept([('Steam', 'Sell')], minutes=30)
+    feed.keep_fresh_once('token')
+    clock.now += 30 * 60 - pulse_feed.KEEPER_TICK + 1                        # the keeper's turn
+    assert feed.keep_fresh_once('token') == 1 and len(requests) == 2
+
+
+def test_a_refused_or_failed_read_is_not_served_from_memory():
+    feed, _ = _feed()
+    feed.set_switched_off([('Buff', 'Sell')])
+    for _ in range(3):
+        with pytest.raises(pulse_feed.SwitchedOff):
+            feed.table('token', 'Buff', 'Sell', job='case-arbitrage-alerts')
+    assert feed.status()['served_from_memory'] == 0

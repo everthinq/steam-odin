@@ -49,7 +49,7 @@ import time
 
 from harvest_service import HarvestService
 from huginn_service import pulse_short_link
-from pulse_feed import FRESH, ON_DEMAND, is_stale
+from pulse_feed import FRESH, ON_DEMAND, SwitchedOff, is_stale
 from jsonio import atomic_write_json, read_json
 from notifications import notification_channel, send_notification, telegram_visible_length, TELEGRAM_MESSAGE_LIMIT
 from storage_shop_service import GAME_STORE_CURRENCIES
@@ -671,6 +671,10 @@ class StoreArbitrageService:
                 self._record({pair: index})
                 log.info('[STORE-ARBITRAGE] %s %s: %d store items priced in %.0fs',
                          pair[0], pair[1], len(index), time.time() - started)
+            except SwitchedOff as e:
+                # Not a failure: only the background job may not download it. A page's next poll
+                # queues the side again on its own and downloads it.
+                log.info('[STORE-ARBITRAGE] %s %s skipped: %s', pair[0], pair[1], e)
             except Exception as e:
                 log.warning('[STORE-ARBITRAGE] %s %s prices failed: %s', pair[0], pair[1], e)
                 with self._lock:

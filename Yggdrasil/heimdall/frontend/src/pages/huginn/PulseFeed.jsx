@@ -128,7 +128,7 @@ const PulseFeed = () => {
         return () => { clearTimeout(first); clearInterval(timer); };
     }, [load]);
 
-    const tablesByKey = useMemo(() => Object.fromEntries((status?.tables || []).map(t => [keyOf(t.market, t.price_type), t])), [status]);
+    const tablesByKey = useMemo(() => Object.fromEntries((status?.tables || []).map(table => [keyOf(table.market, table.price_type), table])), [status]);
     const jobs = useMemo(() => status?.jobs || [], [status]);
     const jobsByKey = useMemo(() => {
         const out = {};
@@ -136,8 +136,8 @@ const PulseFeed = () => {
         return out;
     }, [jobs]);
     const saved = useMemo(() => ({
-        kept: new Set((status?.tables || []).filter(t => t.kept).map(t => keyOf(t.market, t.price_type))),
-        off: new Set((status?.tables || []).filter(t => t.switched_off).map(t => keyOf(t.market, t.price_type))),
+        kept: new Set((status?.tables || []).filter(table => table.kept).map(table => keyOf(table.market, table.price_type))),
+        off: new Set((status?.tables || []).filter(table => table.switched_off).map(table => keyOf(table.market, table.price_type))),
         minutes: status?.kept_minutes ?? 10,
     }), [status]);
     const current = draft || saved;
@@ -155,7 +155,7 @@ const PulseFeed = () => {
             if (next.off.has(key)) next.off.delete(key); else next.off.add(key);
         } else if (next.kept.has(key)) {
             next.kept.delete(key);
-        } else if ([...next.kept].filter(k => !jobsByKey[k]).length < maxKept) {
+        } else if ([...next.kept].filter(kept => !jobsByKey[kept]).length < maxKept) {
             next.kept.add(key);
         }
         return next;
@@ -182,7 +182,7 @@ const PulseFeed = () => {
     const draftCost = useMemo(() => costOf(current), [costOf, current]);
     const changes = useMemo(() => {
         if (!draft) return 0;
-        const diff = (a, b) => [...a].filter(x => !b.has(x)).length + [...b].filter(x => !a.has(x)).length;
+        const diff = (before, after) => [...before].filter(key => !after.has(key)).length + [...after].filter(key => !before.has(key)).length;
         return diff(draft.kept, saved.kept) + diff(draft.off, saved.off) + (draft.minutes !== saved.minutes ? 1 : 0);
     }, [draft, saved]);
 
@@ -233,13 +233,13 @@ const PulseFeed = () => {
         const q = query.trim().toLowerCase();
         const out = (status?.choices || []).map(choice => {
             const cells = COLUMNS.map(column => {
-                const priceType = choice.price_types.find(o => column.types.includes(o.price_type))?.price_type;
+                const priceType = choice.price_types.find(option => column.types.includes(option.price_type))?.price_type;
                 return priceType ? { priceType, key: keyOf(choice.market, priceType) } : null;
             });
             const involved = cells.some(cell => cell && (jobsByKey[cell.key] || saved.kept.has(cell.key) || current.kept.has(cell.key)));
             return { ...choice, cells, involved };
         }).filter(row => !q || row.display.toLowerCase().includes(q) || row.market.toLowerCase().includes(q));
-        return out.sort((a, b) => Number(b.involved) - Number(a.involved));
+        return out.sort((first, second) => Number(second.involved) - Number(first.involved));
     }, [status, query, jobsByKey, saved, current]);
     const visibleRows = showAll || query ? rows : rows.filter(row => row.involved);
     const hiddenCount = rows.length - visibleRows.length;
@@ -349,9 +349,9 @@ const PulseFeed = () => {
                                 </div>
                                 <label className="flex items-center gap-2 text-xs text-slate-400">
                                     every
-                                    <select value={current.minutes} onChange={e => edit(prev => ({ ...prev, minutes: Number(e.target.value) }))}
+                                    <select value={current.minutes} onChange={event => edit(prev => ({ ...prev, minutes: Number(event.target.value) }))}
                                         className="bg-black/30 border border-white/10 rounded-md px-1.5 py-1 text-sm text-white focus:outline-none focus:border-sky-400/40">
-                                        {(status?.keep_fresh_choices || [5, 10, 15, 30, 60]).map(m => <option key={m} value={m}>{m} minutes</option>)}
+                                        {(status?.keep_fresh_choices || [5, 10, 15, 30, 60]).map(choice => <option key={choice} value={choice}>{choice} minutes</option>)}
                                     </select>
                                     <span className="ml-auto tabular-nums">{keptByYou.length} of {maxKept}</span>
                                 </label>
@@ -368,7 +368,7 @@ const PulseFeed = () => {
                             <h2 className="text-[11px] font-bold tracking-widest text-slate-400 uppercase">Markets</h2>
                             <div className="relative">
                                 <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500" />
-                                <input value={query} onChange={e => setQuery(e.target.value)} placeholder="Find a market"
+                                <input value={query} onChange={event => setQuery(event.target.value)} placeholder="Find a market"
                                     className="w-48 bg-black/30 border border-white/10 rounded-lg pl-8 pr-3 py-1.5 text-sm text-white placeholder:text-slate-600 focus:outline-none focus:border-amber-500/40" />
                             </div>
                             <div className="flex flex-wrap items-center gap-3 text-[11px] text-slate-400 ml-auto">
@@ -447,22 +447,22 @@ const PulseFeed = () => {
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {(status?.tables || []).filter(t => t.reads || t.downloads)
-                                        .sort((a, b) => (b.last_download_at || 0) - (a.last_download_at || 0)).map(t => {
-                                            const key = keyOf(t.market, t.price_type);
-                                            const busy = downloading[key] === true || t.downloading;
-                                            const failed = typeof downloading[key] === 'string' ? downloading[key] : t.last_error;
-                                            const [market, label] = labelOf[key] || [t.market, t.price_type];
+                                    {(status?.tables || []).filter(table => table.reads || table.downloads)
+                                        .sort((first, second) => (second.last_download_at || 0) - (first.last_download_at || 0)).map(table => {
+                                            const key = keyOf(table.market, table.price_type);
+                                            const busy = downloading[key] === true || table.downloading;
+                                            const failed = typeof downloading[key] === 'string' ? downloading[key] : table.last_error;
+                                            const [market, label] = labelOf[key] || [table.market, table.price_type];
                                             return (
                                                 <tr key={key} className="border-t border-white/5 hover:bg-white/[0.02]">
                                                     <td className="px-4 py-1.5 whitespace-nowrap"><span className="text-slate-200">{market}</span> <span className="text-slate-500">· {label}</span></td>
-                                                    <td className="px-3 py-1.5 text-right tabular-nums text-slate-300">{t.items != null ? t.items.toLocaleString() : '—'}</td>
-                                                    <td className="px-3 py-1.5 text-right tabular-nums text-slate-300">{busy ? 'downloading…' : (formatAge(t.age_seconds) || '—')}</td>
-                                                    <td className="px-3 py-1.5 text-right tabular-nums text-slate-300">{t.downloads}</td>
-                                                    <td className="px-3 py-1.5 text-right tabular-nums text-slate-300">{t.reads}</td>
-                                                    <td className="px-3 py-1.5 text-xs text-red-300/80 max-w-[18rem] truncate" title={failed || ''}>{failed || (t.failures ? `${t.failures} failed earlier` : '')}</td>
+                                                    <td className="px-3 py-1.5 text-right tabular-nums text-slate-300">{table.items != null ? table.items.toLocaleString() : '—'}</td>
+                                                    <td className="px-3 py-1.5 text-right tabular-nums text-slate-300">{busy ? 'downloading…' : (formatAge(table.age_seconds) || '—')}</td>
+                                                    <td className="px-3 py-1.5 text-right tabular-nums text-slate-300">{table.downloads}</td>
+                                                    <td className="px-3 py-1.5 text-right tabular-nums text-slate-300">{table.reads}</td>
+                                                    <td className="px-3 py-1.5 text-xs text-red-300/80 max-w-[18rem] truncate" title={failed || ''}>{failed || (table.failures ? `${table.failures} failed earlier` : '')}</td>
                                                     <td className="px-3 py-1.5 text-right">
-                                                        <button type="button" onClick={() => downloadNow(t.market, t.price_type)} disabled={busy || !status?.token_set}
+                                                        <button type="button" onClick={() => downloadNow(table.market, table.price_type)} disabled={busy || !status?.token_set}
                                                             title="Download this table now (unless it is under a minute old)"
                                                             className="p-1 rounded text-slate-400 hover:text-amber-300 disabled:opacity-40">
                                                             <Download size={13} className={busy ? 'animate-pulse' : ''} />

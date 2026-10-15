@@ -58,7 +58,8 @@ MAX_PARALLEL_DOWNLOADS = 4
 WAIT_FOR_DOWNLOAD = 600         # seconds a caller waits on another caller's download (queue included)
 # Kept-fresh tables: every how many minutes they may be downloaded again (the Pulse feed page).
 KEEP_FRESH_MINUTES = (5, 10, 15, 30, 60)
-MAX_KEPT_TABLES = 12            # each kept table is ~59 MB per download and ~15 MB of memory
+MAX_KEPT_TABLES = 12
+JOB_STATUS_SECONDS = 30         # how long the declared jobs' tables are cached for status()            # each kept table is ~59 MB per download and ~15 MB of memory
 KEEPER_TICK = 30                # seconds between the keeper's checks
 KEEPER_RETRY_AFTER = 5 * 60     # a kept table that failed is tried again after this
 MAX_PARALLEL_LOOKUPS = 2        # "Check live" has its own slots: never waits behind 59 MB tables
@@ -242,9 +243,10 @@ class _Flight:
 
 
 def _new_counts():
-    # read_downloads: downloads a reader caused (not the keeper's), so served_from_memory = reads - read_downloads.
+    # read_downloads: downloads a reader caused (not the keeper's); from_memory: reads answered with a
+    # table already held (served_from_memory is their sum; a refused or failed read is neither).
     return {'downloads': 0, 'reads': 0, 'failures': 0, 'last_error': None,
-            'last_read_at': None, 'last_download_at': None, 'read_downloads': 0, 'jobs': {}}
+            'last_read_at': None, 'last_download_at': None, 'read_downloads': 0, 'from_memory': 0, 'jobs': {}}
 
 
 class PulseFeed:
@@ -278,7 +280,7 @@ class PulseFeed:
 
     # ---- the one request ---------------------------------------------------------------------
 
-    def table(self, token, market_id, price_type, max_age=FRESH, count_read=True, job=None):
+    def table(self, token, market_id, price_type, max_age=FRESH, count_read=True, job=None, keeper=False):
         """The (market id, price type) table, downloaded at most *max_age* seconds ago. A background
         read (*max_age* FRESH or more) of a kept-fresh table accepts it up to the kept interval
         (the Pulse feed page's choice), so it never downloads behind the keeper's back; a button's
@@ -299,11 +301,14 @@ class PulseFeed:
                 # Switched off on the Pulse feed page: a background job never downloads it; it may
                 # still read what a page or a button downloaded.
                 if cached:
+                    counts['from_memory'] += 1
                     return cached
                 raise SwitchedOff(f'pulse {market_id} {price_type} is switched off for automatic fetching')
-            if cached and key in self._kept and max_age >= FRESH:
-                max_age = max(max_age, self._kept_seconds)
+            if cached and key in self._kept and max_age >= FRESH and not keeper:
+                max_age = max(max_age, self._kept_seconds)     # never for the keeper's own read
             if cached and now - cached.started_at < max_age:
+                if count_read:
+                    counts['from_memory'] += 1
                 return cached
             flight = self._flights.get(key)
             leader = flight is None
@@ -316,6 +321,9 @@ class PulseFeed:
                 raise flight.error
             if flight.table is None:
                 raise RuntimeError(f'pulse {market_id} {price_type}: the download was interrupted')
+            if count_read:
+                with self._lock:
+                    counts['from_memory'] += 1        # shared another caller's download
             return flight.table
         try:
             table = self._download(token, market_id, price_type)
@@ -419,21 +427,26 @@ class PulseFeed:
         Pulse feed page."""
         self._jobs[job_id] = {'label': label, 'schedule': schedule, 'tables': tables, 'active': active,
                               'period': period}
+        self._job_status_cache = None
 
     def set_switched_off(self, keys):
         with self._lock:
-            self._switched_off = {(str(m), str(p)) for m, p in keys}
+            self._switched_off = {(str(market_id), str(price_type)) for market_id, price_type in keys}
 
     def switched_off(self):
         with self._lock:
             return sorted(self._switched_off)
 
     def _job_status(self):
-        """Each declared job with its tables (computed outside the lock: tables() may read settings)."""
+        """Each declared job with its tables (computed outside the lock: tables() may read settings),
+        cached JOB_STATUS_SECONDS: the Pulse feed page polls every 5 seconds."""
+        cached = getattr(self, '_job_status_cache', None)
+        if cached and self._clock() - cached[0] < JOB_STATUS_SECONDS:
+            return cached[1]
         out = []
         for job_id, job in list(self._jobs.items()):
             try:
-                tables = [list(key) for key in dict.fromkeys(tuple(k) for k in (job['tables']() or []))]
+                tables = [list(key) for key in dict.fromkeys(tuple(table) for table in (job['tables']() or []))]
             except Exception as error:
                 logger.warning('[PULSE] job %s tables: %s', job_id, error)
                 tables = []
@@ -451,7 +464,17 @@ class PulseFeed:
                 period = 3600
             out.append({'id': job_id, 'label': job['label'], 'schedule': schedule, 'period_seconds': period,
                         'active': active, 'tables': tables})
+        self._job_status_cache = (self._clock(), out)
         return out
+
+    def declared_tables(self):
+        """{(market id, price type)} that a declared job fetches."""
+        return {tuple(key) for job in self._job_status() for key in job['tables']}
+
+    def seen_tables(self):
+        """{(market id, price type)} read, downloaded, kept or switched off since start."""
+        with self._lock:
+            return set(self._counts) | set(self._kept) | set(self._switched_off)
 
     # ---- one item --------------------------------------------------------------------------------
 
@@ -499,7 +522,7 @@ class PulseFeed:
         """{name: {market: sales in the last week}} from every table downloaded since boot (pulse's
         itemPopularity: Steam, Market.CSGO ('Tm'), Tradeon, plus each table's own market)."""
         with self._lock:
-            wanted = self._sales if names is None else {n: self._sales[n] for n in names if n in self._sales}
+            wanted = self._sales if names is None else {name: self._sales[name] for name in names if name in self._sales}
             return {name: {market: count for market, (count, _) in sales.items()} for name, sales in wanted.items()}
 
     # ---- kept fresh ------------------------------------------------------------------------------
@@ -539,7 +562,7 @@ class PulseFeed:
             if key in failed and now - failed[key] < KEEPER_RETRY_AFTER:
                 continue
             try:
-                self.table(token, key[0], key[1], max_age=seconds - KEEPER_TICK, count_read=False)
+                self.table(token, key[0], key[1], max_age=seconds - KEEPER_TICK, count_read=False, keeper=True)
                 done += 1
                 with self._lock:
                     self._keeper_failed.pop(key, None)
@@ -619,9 +642,9 @@ class PulseFeed:
                                'keeper_failed_at': self._keeper_failed.get(key)})
             downloads = sum(counts['downloads'] for counts in self._counts.values())
             reads = sum(counts['reads'] for counts in self._counts.values())
-            read_downloads = sum(counts['read_downloads'] for counts in self._counts.values())
+            from_memory = sum(counts['from_memory'] for counts in self._counts.values())
             return {'since': self._started, 'now': now, 'downloads': downloads, 'reads': reads,
-                    'served_from_memory': max(0, reads - read_downloads),
+                    'served_from_memory': from_memory,
                     'tables_in_memory': sum(1 for table in tables if table['items'] is not None),
                     'fresh_seconds': FRESH, 'on_demand_seconds': ON_DEMAND, 'keep_seconds': KEEP_SECONDS,
                     'kept_minutes': self._kept_seconds // 60, 'keep_fresh_choices': list(KEEP_FRESH_MINUTES),

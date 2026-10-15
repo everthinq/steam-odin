@@ -52,7 +52,7 @@ const PriceDips = ({ byHash }) => {
 
     useEffect(() => {
         fetch('/api/huginn/price-dips/markets')
-            .then(r => (r.ok ? r.json() : null))
+            .then(response => (response.ok ? response.json() : null))
             .then(answer => { if (answer?.markets) setMarkets(answer.markets); })
             .catch(() => {});
     }, []);
@@ -116,13 +116,13 @@ const PriceDips = ({ byHash }) => {
             {/* Controls */}
             <div className="shrink-0 flex flex-wrap items-center gap-2 bg-odin-blue/30 border border-white/5 rounded-xl px-4 py-3">
                 <span className="text-[10px] font-bold tracking-widest text-slate-600 uppercase">Market</span>
-                <select value={settings.market} onChange={e => update({ market: e.target.value })}
+                <select value={settings.market} onChange={event => update({ market: event.target.value })}
                     className="bg-black/30 border border-white/10 rounded-lg px-2 py-1.5 text-sm text-white focus:outline-none focus:border-amber-500/40">
-                    {(markets.length ? markets : [{ id: 'Steam', display: 'Steam' }]).map(m => (
-                        <option key={m.id} value={m.id}>{m.display}{m.premium ? ' (pulse subscription)' : ''}</option>
+                    {(markets.length ? markets : [{ id: 'Steam', display: 'Steam' }]).map(market => (
+                        <option key={market.id} value={market.id}>{market.display}{market.premium ? ' (pulse subscription)' : ''}</option>
                     ))}
                 </select>
-                <select value={settings.basis} onChange={e => update({ basis: e.target.value })}
+                <select value={settings.basis} onChange={event => update({ basis: event.target.value })}
                     className="bg-black/30 border border-white/10 rounded-lg px-2 py-1.5 text-sm text-white focus:outline-none focus:border-amber-500/40">
                     <option value="Median30d">vs 30-day median</option>
                     <option value="Average30d">vs 30-day average</option>
@@ -141,17 +141,17 @@ const PriceDips = ({ byHash }) => {
                 </div>
                 <label className="flex items-center gap-1 text-xs text-slate-400" title="How far from its usual price, at least">
                     at least
-                    <input value={settings.minAway} onChange={e => update({ minAway: e.target.value })} inputMode="decimal"
+                    <input value={settings.minAway} onChange={event => update({ minAway: event.target.value })} inputMode="decimal"
                         className="w-12 bg-black/30 border border-white/10 rounded px-1.5 py-1 text-sm text-white text-right" />%
                 </label>
                 <label className="flex items-center gap-1 text-xs text-slate-400" title="Sold in the last week on this market (Steam's count when pulse has none for it), at least">
                     sold / week ≥
-                    <input value={settings.minSales} onChange={e => update({ minSales: e.target.value })} inputMode="numeric"
+                    <input value={settings.minSales} onChange={event => update({ minSales: event.target.value })} inputMode="numeric"
                         className="w-14 bg-black/30 border border-white/10 rounded px-1.5 py-1 text-sm text-white text-right" />
                 </label>
                 <label className="flex items-center gap-1 text-xs text-slate-400" title="Lowest listing, at least (US dollars)">
                     price ≥ $
-                    <input value={settings.minPrice} onChange={e => update({ minPrice: e.target.value })} inputMode="decimal"
+                    <input value={settings.minPrice} onChange={event => update({ minPrice: event.target.value })} inputMode="decimal"
                         className="w-14 bg-black/30 border border-white/10 rounded px-1.5 py-1 text-sm text-white text-right" />
                 </label>
                 <button type="button" onClick={() => update({ hideStale: !settings.hideStale })}
@@ -178,10 +178,10 @@ const PriceDips = ({ byHash }) => {
                 <div className="shrink-0 flex items-center gap-3 px-4 py-3 border-b border-white/5 bg-black/10">
                     <div className="relative flex-1 max-w-sm">
                         <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500" size={14} />
-                        <input type="text" placeholder="Search items (e.g. ak redline ft)" value={search} onChange={e => setSearch(e.target.value)}
+                        <input type="text" placeholder="Search items (e.g. ak redline ft)" value={search} onChange={event => setSearch(event.target.value)}
                             className="w-full bg-black/30 border border-white/10 rounded-lg pl-8 pr-3 py-2 text-base text-white focus:outline-none focus:border-amber-500/40 placeholder:text-slate-600" />
                     </div>
-                    <button type="button" onClick={() => setMyInventory(v => !v)} disabled={!byHash}
+                    <button type="button" onClick={() => setMyInventory(on => !on)} disabled={!byHash}
                         title={byHash ? 'Only items you hold (from "Get all items")' : 'Press "Get all items" first'}
                         className={`shrink-0 px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors disabled:opacity-40 ${myInventory ? 'bg-sky-500/20 border-sky-500/40 text-sky-300' : 'bg-black/20 border-white/10 text-slate-400 hover:text-white hover:border-white/20'}`}>
                         My Inventory

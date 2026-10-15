@@ -273,3 +273,19 @@ def test_a_case_snapshot_refreshed_in_the_background_keeps_the_callers_job(monke
     assert asked == [] and service._container_state.get('csfloat') != 'error'
     service._refresh_container_bg('token', 'csfloat')                         # a page: downloads
     assert asked == [('CsFloat', 'Sell', None)]
+
+
+def test_gjallarhorn_shows_the_last_pulse_figures_while_the_tables_download_again(monkeypatch):
+    service, _ = _service(monkeypatch, {
+        ('Steam', 'Sell'): [_row('Case', 1.00, sales={'Steam': 5000})],
+        ('Steam', 'Buy'): [_row('Case', 0.95)],
+        ('Steam', 'Median30d'): [_row('Case', 1.25)],
+    })
+    gjallarhorn = GjallarhornService(None, service, _SteamMarketThatMustNotBeAsked(), None, None)
+    pulse_views.steam_liquidity(service, 'token', ['Case'])
+    holdings = [{'item_name': 'Case', 'current_price': 1.0}]
+    gjallarhorn._liquidity('token', holdings, ['Case'])                      # remembered
+    service.pulse._tables.clear()                                            # dropped after 10 minutes
+    monkeypatch.setattr(pulse_views, '_warm_steam_liquidity', lambda *args: None)
+    views, status = gjallarhorn._liquidity('token', holdings, ['Case'])
+    assert status == 'warming' and views['Case']['volume7d'] == 5000

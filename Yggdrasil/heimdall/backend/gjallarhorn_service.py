@@ -47,6 +47,7 @@ class GjallarhornService:
         self.market = steam_market_service
         self.rat = ratatoskr_service
         self.steam = steam_service
+        self._last_pulse_views = {}      # name -> the last liquidity view pulse gave (served while warming)
 
     # ---- rotation sell list ------------------------------------------------
 
@@ -97,7 +98,9 @@ class GjallarhornService:
                 # the page polls), and Steam is not asked meanwhile.
                 from_pulse = steam_liquidity(self.huginn, token, names, wait=False)
                 if from_pulse is None:
-                    return {}, 'warming'
+                    # The Steam tables are downloading: the last figures meanwhile, never a blank list.
+                    last = {name: self._last_pulse_views[name] for name in names if name in self._last_pulse_views}
+                    return last, 'warming'
             except Exception as error:
                 logger.warning('[GJALLARHORN] pulse liquidity unavailable, using Steam: %s', error)
         views = {name: {'volume7d': view['volume7d'], 'spreadPct': view['spreadPct'],
@@ -105,6 +108,7 @@ class GjallarhornService:
                         'highestBuy': view['highest_buy'], 'vsMedianPct': view['vsMedianPct'],
                         'tmVolume7d': view['tm_volume7d'], 'source': 'pulse'}
                  for name, view in from_pulse.items()}
+        self._last_pulse_views.update(views)
         missing = [h for h in holdings if h['item_name'] not in views]
         status = 'pulse' if views else 'fresh'
         if missing:

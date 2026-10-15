@@ -224,63 +224,51 @@ def pulse_choices():
     return out
 
 
+def _offered():
+    return {(choice['market'], option['price_type']) for choice in pulse_choices() for option in choice['price_types']}
+
+
+def _parse_keys(values, allowed, what):
+    """["Steam:Sell", ["Buff", "Buy"], ...] → [(market id, price type)] in *allowed*, without repeats;
+    ValueError naming the first value that is not one."""
+    out = []
+    for value in values or []:
+        if isinstance(value, str):
+            key = tuple(value.split(':', 1))
+        elif isinstance(value, (list, tuple)):
+            key = tuple(value)
+        else:
+            raise ValueError(f'not a pulse table: {value!r}')
+        if len(key) != 2 or not all(isinstance(part, str) for part in key) or key not in allowed:
+            raise ValueError(f'not a pulse table {what}: {value}')
+        if key not in out:
+            out.append(key)
+    return out
+
+
 def downloadable(market_id, price_type, huginn):
-    """A table the page may download now: one it offers, or one a page or job has read since start."""
+    """A table the page may download now: one it offers, or one a page or job has used since start."""
     key = (market_id, price_type)
     if not all(isinstance(part, str) and part for part in key):
         raise ValueError('market and price_type are required')
-    offered = {(choice['market'], option['price_type'])
-               for choice in pulse_choices() for option in choice['price_types']}
-    seen = {(table['market'], table['price_type']) for table in huginn.pulse.status()['tables']}
-    if key not in offered and key not in seen:
+    if key not in _offered() and key not in huginn.pulse.seen_tables():
         raise ValueError(f'not a pulse table Heimdall uses: {market_id} {price_type}')
     return key
 
 
 def parse_kept(values):
     """["Steam:Sell", ...] or [["Steam", "Sell"], ...] → [(market id, price type)], only the tables
-    pulse_choices() offers; ValueError naming the first one it does not."""
-    allowed = {(choice['market'], option['price_type'])
-               for choice in pulse_choices() for option in choice['price_types']}
-    out = []
-    for value in values or []:
-        if isinstance(value, str):
-            key = tuple(value.split(':', 1))
-        elif isinstance(value, (list, tuple)):
-            key = tuple(value)
-        else:
-            raise ValueError(f'not a pulse table: {value!r}')
-        if not all(isinstance(part, str) for part in key) or key not in allowed:
-            raise ValueError(f'not a pulse table Heimdall offers: {value}')
-        if key not in out:
-            out.append(key)
+    pulse_choices() offers, at most MAX_KEPT_TABLES; ValueError otherwise."""
+    out = _parse_keys(values, _offered(), 'Heimdall offers')
     if len(out) > MAX_KEPT_TABLES:
         raise ValueError(f'at most {MAX_KEPT_TABLES} tables can be kept fresh ({len(out)} chosen)')
     return out
 
 
-def job_tables(huginn):
-    """Every table a declared background job fetches."""
-    return {tuple(key) for job in huginn.pulse.status()['jobs'] for key in job['tables']}
-
-
 def parse_switched_off(values, huginn):
-    """["Steam:Sell", ...] → [(market id, price type)]: only tables a background job fetches or
-    the page offers (switching off anything else would mean nothing)."""
-    allowed = job_tables(huginn) | {(c['market'], o['price_type']) for c in pulse_choices() for o in c['price_types']}
-    out = []
-    for value in values or []:
-        if isinstance(value, str):
-            key = tuple(value.split(':', 1))
-        elif isinstance(value, (list, tuple)):
-            key = tuple(value)
-        else:
-            raise ValueError(f'not a pulse table: {value!r}')
-        if key not in allowed:
-            raise ValueError(f'not a pulse table Heimdall fetches: {value}')
-        if key not in out:
-            out.append(key)
-    return out
+    """["Steam:Sell", ...] → [(market id, price type)]: only tables a background job fetches or the
+    page offers (switching off anything else would mean nothing)."""
+    return _parse_keys(values, huginn.pulse.declared_tables() | _offered(), 'Heimdall fetches')
 
 
 def apply_kept_settings(huginn, settings):
@@ -294,11 +282,12 @@ def apply_kept_settings(huginn, settings):
     minutes = settings.get('pulse_keep_minutes') or 10
     if minutes not in KEEP_FRESH_MINUTES:
         minutes = 10
+    offered = _offered()
     keys = []
     for value in settings.get('pulse_kept_tables') or []:
         try:
-            keys += [key for key in parse_kept([value]) if key not in keys]
-        except (TypeError, ValueError):
+            keys += [key for key in _parse_keys([value], offered, 'Heimdall offers') if key not in keys]
+        except ValueError:
             continue
     keys = keys[:MAX_KEPT_TABLES]
     huginn.pulse.set_kept(keys, minutes)
