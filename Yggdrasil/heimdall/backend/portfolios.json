@@ -4,7 +4,7 @@
       "id": "fbf692611b3c",
       "name": "everthinklol",
       "created_at": "2026-07-21T13:40:18.177768+00:00",
-      "updated_at": "2026-10-17T21:30:42.813979+00:00",
+      "updated_at": "2026-10-17T22:36:41.993107+00:00",
       "transactions": [
         {
           "id": "3ea474874554",
@@ -11143,6 +11143,32 @@
           "fee_percent": 0.0,
           "is_arbitrage": true,
           "created_at": "2026-10-17T11:53:10.289895+00:00"
+        },
+        {
+          "id": "aafe0477aaaa",
+          "item_name": "Sticker | SAW (Gold) | Copenhagen 2024",
+          "type": "buy",
+          "qty": 1,
+          "price": 7.38,
+          "platform": "buff.market",
+          "date": "2026-10-18",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": true,
+          "created_at": "2026-10-17T22:22:17.810846+00:00"
+        },
+        {
+          "id": "e8c4869a7e80",
+          "item_name": "Sticker | SAW (Gold) | Copenhagen 2024",
+          "type": "sell",
+          "qty": 1,
+          "price": 7.77,
+          "platform": "cs.money.trade",
+          "date": "2026-10-18",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": true,
+          "created_at": "2026-10-17T22:22:33.702929+00:00"
         }
       ]
     },
