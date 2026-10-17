@@ -43,6 +43,12 @@ read-only. Container port 3000, published on host **127.0.0.1:3001**.
   password from Mímir). One login per account at a time (409); a healthy
   existing session is reused. Steam Guard prompts become 401 (never a console
   wait); 30 s without the Game Coordinator → 504.
+- Codes made from `sharedSecret` use **Steam's clock** (`steamGuardCode`:
+  `ITwoFactorService/QueryTime` with a 5 s timeout, asked again after a minute), never the container's
+  alone: Docker's clock on a Mac falls behind while the Mac sleeps, and on
+  2026-10-16 that made 20 of 21 morning logins "Steam Guard code rejected". A
+  rejected code is tried once more after asking Steam's time again (only when the
+  new code differs).
 - On login it plays app 730 and hands the web cookies back to Heimdall
   (`/api/accounts/update-session`); on disconnect it tells Heimdall to clear them.
 - Idle sweep every 60 s: a session idle past the timeout is logged off unless

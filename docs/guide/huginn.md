@@ -18,6 +18,12 @@ market, then the Telegram post of profitable store items; see
 [ratatoskr.md](ratatoskr.md#arbitrage-tab)); the header shows "daily HH:MM ✓" when
 that went well.
 
+An account Get all items cannot log into keeps its items from the last scan that
+reached it, so the Accounts filter and "My Inventory" never shrink to the accounts
+that answered. An amber note above the table then names those accounts and when
+their items were read; Mímir shows each one's login error. Press Get all items again
+once the problem is gone.
+
 ## Fees — set once, used everywhere
 
 **Fees** (Arbitrage view) holds each market's sell fee. Every profit figure in

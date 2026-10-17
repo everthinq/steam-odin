@@ -23,8 +23,10 @@ A restart logs every account out of Ratatoskr; press **Connect** again.
 ## "Steam Guard code rejected"
 
 The same 30-second code was used twice (for example two logins in one window).
-Wait for the next code and retry. If it keeps failing, check the computer's
-clock is correct — codes depend on it.
+Wait for the next code and retry. Codes are timed by Steam's own clock, and a
+rejected code is tried once more after asking Steam for the time again, so a clock
+that fell behind while the Mac slept no longer breaks logins. If it keeps failing,
+the account's shared secret (maFile) is the likely problem.
 
 ## Prices do not load (Huginn, Draupnir)
 

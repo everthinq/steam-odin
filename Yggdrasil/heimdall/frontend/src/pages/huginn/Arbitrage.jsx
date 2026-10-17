@@ -338,6 +338,18 @@ const HuginnArbitrage = () => {
         return { accountOptions: toOptions(accounts), collectionOptions: toOptions(collections) };
     }, [byHash, sortedResults, filters.accounts, filters.collections]);
 
+    // Accounts the last scan could not log into (their items come from an earlier scan,
+    // or are missing in a scan made before account_scans existed).
+    const missedAccounts = useMemo(() => {
+        const count = scanData?.accounts_skipped || 0;
+        if (!count) return null;
+        const names = Object.entries(scanData.account_scans || {})
+            .filter(([, info]) => info.carried_over)
+            .map(([name, info]) => ({ name, at: info.scanned_at }))
+            .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
+        return { count, total: count + (scanData.accounts_scanned || 0), names };
+    }, [scanData]);
+
     // How many arbitrage rows you own — memoized (was recomputed 3x per render).
     const ownedCount = useMemo(() => {
         if (!byHash) return 0;
@@ -496,6 +508,21 @@ const HuginnArbitrage = () => {
                 {scanError && (
                     <div className="shrink-0 bg-red-500/20 border border-red-500/30 text-red-300 px-4 py-3 rounded-lg text-sm">
                         {scanError}
+                    </div>
+                )}
+                {missedAccounts && (
+                    <div className="shrink-0 bg-amber-500/10 border border-amber-500/30 text-amber-200 px-4 py-3 rounded-lg text-sm">
+                        <span className="font-medium">
+                            The last "Get all items" could not log into {missedAccounts.count} of {missedAccounts.total} accounts.
+                        </span>{' '}
+                        {missedAccounts.names.length > 0 ? (
+                            <>Their items are from an earlier scan: {missedAccounts.names.map(({ name, at }) => (
+                                `${name} (${at ? formatTs(at) : 'never scanned'})`
+                            )).join(', ')}.</>
+                        ) : (
+                            <>Their items are missing from the filters and the matches.</>
+                        )}{' '}
+                        Press "Get all items" again; Mímir shows each account's login error.
                     </div>
                 )}
                 {scanning && (

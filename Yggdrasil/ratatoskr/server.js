@@ -289,8 +289,69 @@ const enqueueMoves = (steamID, jobs, resetCounters) => {
     return getMoveQueueStatus(steamID);
 };
 
+// Steam Guard codes are timed by Steam's clock, never this container's alone: Docker's
+// clock on a Mac falls behind while the Mac sleeps, and a code made on a wrong clock is
+// rejected for every account (2026-10-16: 20 of 21 logins refused after a night's sleep).
+// The offset is asked again after a minute, and always when Steam rejects a code.
+const STEAM_TIME_MAX_AGE_MS = 60 * 1000;
+let steamTimeOffset = null; // seconds to add to this container's clock
+let steamTimeCheckedAt = 0;
+
+const STEAM_TIME_TIMEOUT_MS = 5000;
+
+// Steam's time from ITwoFactorService/QueryTime. Not SteamTotp.getTimeOffset: it has no
+// timeout (a login would wait forever, its account stuck at 409) and on a malformed
+// answer it calls back twice or throws inside the response handler.
+const querySteamTime = () => new Promise((resolve, reject) => {
+    const req = require('https').request({
+        hostname: 'api.steampowered.com',
+        path: '/ITwoFactorService/QueryTime/v1/',
+        method: 'POST',
+        headers: { 'Content-Length': 0 },
+        timeout: STEAM_TIME_TIMEOUT_MS,
+    }, (res) => {
+        let body = '';
+        res.on('data', (chunk) => { body += chunk; });
+        res.on('end', () => {
+            try {
+                const serverTime = Number(JSON.parse(body).response.server_time);
+                if (res.statusCode !== 200 || !Number.isFinite(serverTime) || serverTime <= 0) {
+                    throw new Error(`HTTP ${res.statusCode}`);
+                }
+                resolve(serverTime);
+            } catch (err) {
+                reject(new Error(`malformed answer (${err.message})`));
+            }
+        });
+    });
+    req.on('timeout', () => req.destroy(new Error('timed out')));
+    req.on('error', reject);
+    req.end();
+});
+
+const steamTimeOffsetSeconds = async (force = false) => {
+    if (!force && steamTimeOffset !== null && Math.abs(Date.now() - steamTimeCheckedAt) < STEAM_TIME_MAX_AGE_MS) {
+        return steamTimeOffset;
+    }
+    try {
+        const offset = (await querySteamTime()) - SteamTotp.time();
+        if (steamTimeOffset === null || Math.abs(offset - steamTimeOffset) >= 2) {
+            console.log(`[LOGIN] Steam's clock is ${offset} s from this container's`);
+        }
+        steamTimeOffset = offset;
+        steamTimeCheckedAt = Date.now();
+    } catch (err) {
+        // Steam unreachable: keep the last offset we had (or this clock).
+        console.error(`[LOGIN] Could not ask Steam for its time: ${err.message}`);
+    }
+    return steamTimeOffset || 0;
+};
+
+const steamGuardCode = async (sharedSecret, force = false) =>
+    SteamTotp.generateAuthCode(sharedSecret, await steamTimeOffsetSeconds(force));
+
 // Login Endpoint
-app.post('/login', (req, res) => {
+app.post('/login', async (req, res) => {
     const { accountName, password, twoFactorCode, sharedSecret } = req.body;
 
     if (!accountName || !password) {
@@ -320,7 +381,12 @@ app.post('/login', (req, res) => {
     if (twoFactorCode) {
         logOnOptions.twoFactorCode = twoFactorCode;
     } else if (sharedSecret) {
-        logOnOptions.twoFactorCode = SteamTotp.generateAuthCode(sharedSecret);
+        try {
+            logOnOptions.twoFactorCode = await steamGuardCode(sharedSecret);
+        } catch (err) {
+            loginsInProgress.delete(key);
+            return res.status(400).json({ error: 'Could not make a Steam Guard code', details: err.message });
+        }
     }
 
     let isResponded = false;
@@ -335,8 +401,26 @@ app.post('/login', (req, res) => {
 
     // Steam wants a Steam Guard code we did not have (or rejected ours). Without
     // this listener steam-user would wait for a console prompt that never comes.
-    user.on('steamGuard', (domain, callback, lastCodeWrong) => {
-        respond(401, { error: lastCodeWrong ? 'Steam Guard code rejected' : 'Steam Guard code required' });
+    // A rejected code made here from the shared secret is tried once more on Steam's
+    // clock asked again right now; a code that comes out the same was not a clock problem.
+    let guardRetried = false;
+    user.on('steamGuard', async (domain, callback, lastCodeWrong) => {
+        const reason = lastCodeWrong ? 'Steam Guard code rejected' : 'Steam Guard code required';
+        if (sharedSecret && !twoFactorCode && !guardRetried && !isResponded) {
+            guardRetried = true;
+            try {
+                const code = await steamGuardCode(sharedSecret, true);
+                if (code !== logOnOptions.twoFactorCode && !isResponded) {
+                    console.warn(`[LOGIN] ${key}: ${reason}; trying again on Steam's clock`);
+                    logOnOptions.twoFactorCode = code;
+                    return callback(code);
+                }
+            } catch (err) {
+                console.error(`[LOGIN] ${key}: could not make a new Steam Guard code: ${err.message}`);
+            }
+        }
+        console.error(`[LOGIN] ${key}: ${reason}`);
+        respond(401, { error: reason });
         user.logOff();
     });
 

@@ -364,9 +364,13 @@ class SteamService:
                 count += 1
         return count
 
-    def _query_time(self):
+    def _query_time(self, force=False):
+        """Seconds to add to this clock to get Steam's. Asked again every 5 minutes, when
+        this clock moved backwards, and on `force` (Steam rejected a code): Docker's clock on
+        a Mac falls behind while the Mac sleeps, so an old offset can be wrong."""
         current_time = time.time()
-        if self.time_offset is None or (current_time - self.last_time_sync) > 300:
+        if (force or self.time_offset is None
+                or abs(current_time - self.last_time_sync) > 300):
             try:
                 resp = requests.post(
                     'https://api.steampowered.com/ITwoFactorService/QueryTime/v0001',
@@ -953,12 +957,26 @@ class SteamService:
                 if not shared_secret:
                     return {'success': False, 'message': 'Guard required but no secret found.'}
 
-                update_data = {'client_id': client_id, 'steamid': steamid, 'code': self.generate_code(shared_secret), 'code_type': '3'}
+                code = self.generate_code(shared_secret)
+                update_data = {'client_id': client_id, 'steamid': steamid, 'code': code, 'code_type': '3'}
                 guard_resp = session.post('https://api.steampowered.com/IAuthenticationService/UpdateAuthSessionWithSteamGuardCode/v1/', data=update_data, timeout=30)
                 self._log_steam_response('UpdateAuthSessionWithSteamGuardCode', guard_resp)
                 if self._is_transient_status(guard_resp.status_code):
                     return transient_failure('Steam Guard code', status_code=guard_resp.status_code)
                 eresult = guard_resp.headers.get('x-eresult')
+                if str(eresult) == '88':
+                    # Code mismatch: ask Steam for its time again and try once more, but
+                    # only when the new code differs (else it was not a clock problem).
+                    self._query_time(force=True)
+                    retry_code = self.generate_code(shared_secret)
+                    if retry_code != code:
+                        logger.warning(f'[AUTH] Steam Guard code rejected for {username}; trying again on Steam\'s clock')
+                        update_data['code'] = retry_code
+                        guard_resp = session.post('https://api.steampowered.com/IAuthenticationService/UpdateAuthSessionWithSteamGuardCode/v1/', data=update_data, timeout=30)
+                        self._log_steam_response('UpdateAuthSessionWithSteamGuardCode', guard_resp)
+                        if self._is_transient_status(guard_resp.status_code):
+                            return transient_failure('Steam Guard code', status_code=guard_resp.status_code)
+                        eresult = guard_resp.headers.get('x-eresult')
                 if guard_resp.status_code != 200 or (eresult is not None and str(eresult) != '1'):
                     # Rejected code (wrong shared_secret or clock) — polling would
                     # only wait out 30 s for nothing.

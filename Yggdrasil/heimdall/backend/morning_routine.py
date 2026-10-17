@@ -14,7 +14,8 @@ A run:
   3. starts the Store Catalogue daily refresh (after_scan): the game store's price
      sheet (one more Ratatoskr login), every market again, then the Telegram post.
 A scan that could not reach a single account counts as failed (the previous
-scan and dictionary are kept).
+scan and dictionary are kept); accounts a scan could not reach keep their items
+from the previous scan (HuginnService.scan).
 A failed scan is retried after RETRY_SECONDS, at most MAX_ATTEMPTS a day.
 State lives in cache/morning_routine.json so reloads never repeat a run.
 """

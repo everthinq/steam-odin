@@ -312,9 +312,45 @@ def test_rejected_steam_guard_code_fails_fast_without_polling(service, monkeypat
     })
     monkeypatch.setattr(requests, 'Session', lambda: session)
     monkeypatch.setattr(time, 'sleep', lambda seconds: pytest.fail('must not poll'))
+    # Steam's clock agrees with ours: the code would come out the same, so no retry.
+    monkeypatch.setattr(requests, 'post', lambda url, **kwargs: _FakeResponse(
+        payload={'response': {'server_time': str(int(time.time()))}}))
     result = service.begin_auth_session('alpha', 'password')
     assert result['success'] is False and 'Steam Guard code' in result['message']
     assert not any('PollAuthSessionStatus' in url for url in session.calls)
+    assert sum('UpdateAuthSessionWithSteamGuardCode' in url for url in session.calls) == 1
+
+
+def test_rejected_code_is_tried_again_on_steams_clock(service, monkeypatch):
+    """Docker's clock on a Mac falls behind while the Mac sleeps (2026-10-16): a rejected
+    code asks Steam for its time again and tries once more with the new code."""
+    service.storage.save_account(STEAMID, {'shared_secret': base64.b64encode(b'x' * 20).decode(),
+                                           'account_name': 'alpha'})
+    session = _ScriptedSession({
+        'GetPasswordRSAPublicKey': _rsa_answer(),
+        'BeginAuthSessionViaCredentials': _FakeResponse(payload={'response': {
+            'client_id': '1', 'request_id': 'cg==', 'steamid': STEAMID,
+            'allowed_confirmations': [{'confirmation_type': 3}]}}),
+        'UpdateAuthSessionWithSteamGuardCode': _FakeResponse(payload={'response': {}},
+                                                             headers={'x-eresult': '88'}),
+    })
+    monkeypatch.setattr(requests, 'Session', lambda: session)
+    monkeypatch.setattr(time, 'sleep', lambda seconds: pytest.fail('must not poll'))
+    monkeypatch.setattr(requests, 'post', lambda url, **kwargs: _FakeResponse(
+        payload={'response': {'server_time': str(int(time.time()) + 600)}}))
+    result = service.begin_auth_session('alpha', 'password')
+    assert sum('UpdateAuthSessionWithSteamGuardCode' in url for url in session.calls) == 2
+    assert result['success'] is False and 'eresult 88' in result['message']
+    assert abs(service.time_offset - 600) <= 1          # the fake server time is whole seconds
+
+
+def test_steam_time_is_asked_again_when_this_clock_moved_backwards(service, monkeypatch):
+    asked = []
+    monkeypatch.setattr(requests, 'post', lambda url, **kwargs: asked.append(url) or _FakeResponse(
+        payload={'response': {'server_time': str(int(time.time()))}}))
+    service.last_time_sync = time.time() + 3600          # synced "in the future"
+    service._query_time()
+    assert len(asked) == 1
 
 
 def test_login_rate_limit_is_flagged_transient(service, monkeypatch):

@@ -612,6 +612,13 @@ class HuginnService:
         accounts = self.steam.get_all_accounts_data()
         by_hash = {}
         scanned = 0
+        now = datetime.now(timezone.utc).isoformat()
+        # When each account's items were read; an account that cannot be logged into keeps
+        # its items from the last scan that reached it (`carried_over`), so one bad morning
+        # (2026-10-16: Steam Guard codes on a clock that fell behind while the Mac slept)
+        # never shrinks the inventory to the one account that answered.
+        account_scans = {}
+        skipped = []
 
         for account in accounts:
             steam_id = str(account['steamid'])
@@ -620,10 +627,12 @@ class HuginnService:
 
             if not self._ensure_session(steam_id, account_data, opened):
                 logger.warning(f'[HUGINN] Skipping {account_name} — no session')
+                skipped.append((steam_id, account_name))
                 continue
 
             logger.info(f'[HUGINN] Scanning {account_name}…')
             scanned += 1
+            account_scans[account_name] = {'scanned_at': now, 'carried_over': False}
 
             inv = self.rat.get_inventory(steam_id)
             inv_items = [i for i in (inv.get('items') or []) if i.get('def_index') != 1201]
@@ -644,17 +653,48 @@ class HuginnService:
             # last good scan instead of replacing it with an empty inventory.
             raise RuntimeError(f'No account could be scanned ({len(accounts)} skipped); '
                                f'the previous scan is kept')
+        if skipped:
+            self._carry_over(by_hash, account_scans, skipped)
         result = {
-            'scan_timestamp': datetime.now(timezone.utc).isoformat(),
+            'scan_timestamp': now,
             'total_items': sum(v['count'] for v in by_hash.values()),
             'by_hash': by_hash,
             'accounts_scanned': scanned,
-            'accounts_skipped': len(accounts) - scanned,
+            'accounts_skipped': len(skipped),
+            'account_scans': account_scans,
         }
 
         atomic_write_json(CACHE_PATH, result, indent=None)
 
         return result
+
+    def _carry_over(self, by_hash, account_scans, skipped):
+        """Copy the items of the accounts this scan could not log into from the previous
+        scan, with the time that scan read them. An account no scan ever reached is listed
+        with `scanned_at` None."""
+        try:
+            previous = self.get_cache() or {}
+        except (OSError, ValueError) as e:
+            logger.warning(f'[HUGINN] Previous scan unreadable, skipped accounts stay empty: {e}')
+            previous = {}
+        previous_at = previous.get('scan_timestamp')
+        previous_scans = previous.get('account_scans') or {}
+        wanted = {steam_id for steam_id, _ in skipped}
+        found = set()
+        for name, entry in (previous.get('by_hash') or {}).items():
+            for inst in entry.get('instances') or []:
+                if str(inst.get('steam_id')) not in wanted:
+                    continue
+                found.add(str(inst.get('steam_id')))
+                target = by_hash.setdefault(name, {'count': 0, 'instances': []})
+                target['count'] += 1
+                target['instances'].append(inst)
+        for steam_id, account_name in skipped:
+            earlier = previous_scans.get(account_name) or {}
+            scanned_at = earlier.get('scanned_at') or (previous_at if steam_id in found else None)
+            account_scans[account_name] = {'scanned_at': scanned_at, 'carried_over': True}
+        logger.warning(f'[HUGINN] {len(skipped)} account(s) not reachable, items kept from the previous scan: '
+                       + ', '.join(name for _, name in skipped))
 
     def get_cache(self):
         """The last inventory scan, or None. The file is ~16 MB, so the parsed result

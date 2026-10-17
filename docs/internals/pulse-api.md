@@ -159,8 +159,13 @@ Errors are `{message, responseType}` with types such as `MarketSubscriptionRequi
 - **Status**: `GET /api/huginn/pulse`: per table downloads, reads, last read, age, failures, kept,
   the totals, lookups, weekly-sales coverage, `jobs` (declared, with tables and period), per table
   `jobs` (which read it, when), `declared_jobs`, `switched_off`, plus `choices` (the page's grid)
-  and `token_set`. `served_from_memory` = reads − downloads a reader caused (the keeper's are not
-  reads). "Check live" lookups have their own 2 slots (never behind full downloads). Weekly sales
+  and `token_set`. The jobs' tables are cached `JOB_STATUS_SECONDS` (30); downloads and saves
+  validate with `seen_tables()` / `declared_tables()`. `served_from_memory` counts only reads
+  answered with a table already held (`from_memory`; refused or failed reads are not counted, the
+  keeper's downloads are not reads). The keeper's own read is never stretched to the kept interval
+  (`keeper=True`), so it refreshes on time at 15/30/60 minutes. A `SwitchedOff` hit by the store
+  board's job is not recorded as a failure (the page's own request still downloads). Gjallarhorn
+  serves the last pulse liquidity while the Steam tables download again (`_last_pulse_views`). "Check live" lookups have their own 2 slots (never behind full downloads). Weekly sales
   keep the newest count per item and market by download start. A stale price
   (`pulse_feed.is_stale`, `STALE_SECONDS` a day) is never Harvest's best offer nor the store board's
   reference, best, signal or Telegram post.
