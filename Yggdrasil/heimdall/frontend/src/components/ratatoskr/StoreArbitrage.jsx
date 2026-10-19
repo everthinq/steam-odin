@@ -40,7 +40,7 @@ const ago = (epochSeconds, now) => {
 };
 const imageOf = (name) => `https://api.steamapis.com/image/item/730/${encodeURIComponent(name)}`;
 const SIDE_LABEL = { instant: 'sell instantly', listing: 'list' };
-const REASON_ORDER = ['cannot_trade', 'keys', 'passes', 'no_price'];
+const REASON_ORDER = ['cannot_trade', 'store_copies', 'keys', 'passes', 'no_price'];
 const GRID = 'grid grid-cols-[minmax(0,2.4fr)_52px_84px_100px_76px_76px_128px_104px_64px] gap-2';
 
 const DEFAULT_PROFILE = 'CsMoneyTrade|instant';

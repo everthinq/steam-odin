@@ -168,8 +168,8 @@ bought or sold here, and **Buy** opens the item's guarded buy page.
 - **unconfirmed**: markets ask at least 1.5 times the store price now, and did
   on most days tracked (or there is little history yet). These items are
   listed after all the others. If store copies could be resold, traders would
-  have closed that gap, so they probably cannot be (today: the Name Tag and the
-  StatTrak Swap Tool). One purchase settles it. In the web inventory, "Tradable
+  have closed that gap, so they probably cannot be (today: the StatTrak Swap
+  Tool). One purchase settles it. In the web inventory, "Tradable
   After …" means the normal hold and "Not Tradable" means never.
 - **resold before**: you sold this item before (from Draupnir), so store copies
   can be resold.
@@ -185,6 +185,8 @@ bought or sold here, and **Buy** opens the item's guarded buy page.
   - case keys (keys bought from the store cannot be traded or sold since 2019);
   - the game license and the Armory Pass;
   - items that cannot be traded (Storage Unit, Charm Detachment Pack);
+  - the Name Tag: Valve stopped Name Tags bought in the store from being traded
+    (2026);
   - items no market prices.
 
 > Store purchases cannot be traded for **7 days**, so a price has to hold for a

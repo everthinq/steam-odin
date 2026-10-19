@@ -335,7 +335,9 @@ against the markets. Nothing in it buys anything.
   tradable sticker or music kit when bought. Flagged on 2026-10-04: `casket`,
   `Remove Keychain Tool Pack`, `XpShopTicket1`. Keys are left out by category
   (store keys are untradable since 2019, a server rule not in the item files),
-  and so are passes.
+  and so are passes. Store copies of the Name Tag are untradable too (a Valve
+  change in 2026, Ivan, 2026-10-19), left out by entry
+  (`STORE_COPIES_CANNOT_TRADE`, reason `store_copies`).
 - **Prices.** Pulse pulls through Huginn (`market_buy_index` = lowest listing,
   `market_autobuy_index` = buy orders; CSFloat's buy orders come from the sweep
   cache). They are taken one market and side at a time in one thread, filtered

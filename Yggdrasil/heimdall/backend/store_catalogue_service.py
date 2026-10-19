@@ -34,6 +34,9 @@ NOT_ON_MARKET = {'casket', 'Game License', 'XpShopTicket1'}
 # Entries whose own item definition says "cannot trade", for item names read before Ratatoskr
 # reported that flag (``cannotTrade``); the game license is not an item at all.
 CANNOT_TRADE = {'casket', 'Remove Keychain Tool Pack', 'XpShopTicket1', 'Game License'}
+# Tradable items whose store copies cannot be traded: a server rule, not in the item files (like
+# keys). Ivan, 2026-10-19: Valve recently stopped Name Tags bought in the store from being traded.
+STORE_COPIES_CANNOT_TRADE = {'Name Tag'}
 
 CATEGORY_TOOLS = 'Tools'
 CATEGORY_KEYS = 'Case keys'

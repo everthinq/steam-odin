@@ -53,7 +53,7 @@ from pulse_feed import FRESH, ON_DEMAND, SwitchedOff, is_stale
 from jsonio import atomic_write_json, read_json
 from notifications import notification_channel, send_notification, telegram_visible_length, TELEGRAM_MESSAGE_LIMIT
 from storage_shop_service import GAME_STORE_CURRENCIES
-from store_catalogue_service import CANNOT_TRADE, CATEGORY_KEYS, CATEGORY_PASSES
+from store_catalogue_service import CANNOT_TRADE, CATEGORY_KEYS, CATEGORY_PASSES, STORE_COPIES_CANNOT_TRADE
 from store_purchase_service import to_usd
 
 log = logging.getLogger(__name__)
@@ -107,6 +107,7 @@ EXCLUDED_REASONS = {
     'keys': 'case keys bought from the store cannot be traded or sold (since 2019)',
     'passes': 'a pass or license, not an item you can trade',
     'cannot_trade': 'the item itself cannot be traded',
+    'store_copies': 'copies bought from the store cannot be traded (Valve changed it in 2026)',
     'no_price': 'none of the chosen markets has a price for it',
 }
 EXCLUDED_CATEGORIES = {CATEGORY_KEYS: 'keys', CATEGORY_PASSES: 'passes'}
@@ -122,6 +123,8 @@ def split_items(items):
         # Rows saved before the catalogue knew the flag: the known untradable entries.
         if not reason and item.get('cannot_trade', item.get('entry') in CANNOT_TRADE):
             reason = 'cannot_trade'
+        if not reason and item.get('entry') in STORE_COPIES_CANNOT_TRADE:
+            reason = 'store_copies'
         if not reason and not item.get('usd'):
             continue                     # no US dollar price: nothing to compare
         if reason:

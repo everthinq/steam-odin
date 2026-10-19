@@ -14,10 +14,13 @@ FLICKSHOT = {'entry': 'coupon - flickshot', 'name': 'Sticker | Flickshot', 'cate
              'usd': 0.99, 'definition_index': 20056, 'cannot_trade': False}
 NAME_TAG = {'entry': 'Name Tag', 'name': 'Name Tag', 'category': 'Tools', 'usd': 1.99,
             'definition_index': 1200, 'cannot_trade': False}
+# The StatTrak Swap Tool, read live on 2026-10-18: every market far above the store price.
+SWAP_TOOL = {'entry': 'stattrak_swap_tool', 'name': 'StatTrak™ Swap Tool', 'category': 'Tools', 'usd': 0.49,
+             'cannot_trade': False}
 STORAGE_UNIT = {'entry': 'casket', 'name': 'Storage Unit', 'category': 'Tools', 'usd': 1.99, 'cannot_trade': True}
 KEY = {'entry': 'community_35_key', 'name': 'Fever Case Key', 'category': 'Case keys', 'usd': 2.49}
 PASS = {'entry': 'XpShopTicket1', 'name': 'Armory Pass', 'category': 'Passes and licenses', 'usd': 15.99}
-CATALOGUE = [FLICKSHOT, NAME_TAG, STORAGE_UNIT, KEY, PASS]
+CATALOGUE = [FLICKSHOT, NAME_TAG, SWAP_TOOL, STORAGE_UNIT, KEY, PASS]
 
 MARKETS = [{'id': 'Buff', 'display': 'Buff163', 'balance': None},
            {'id': 'Steam', 'display': 'Steam', 'balance': 'Steam wallet'}]
@@ -26,9 +29,10 @@ FEES = {'Buff': 0.015, 'Steam': 0.13}
 
 def test_keys_passes_and_untradable_items_are_left_out_with_a_reason():
     candidates, excluded = split_items(CATALOGUE)
-    assert [item['name'] for item in candidates] == ['Sticker | Flickshot', 'Name Tag']
+    assert [item['name'] for item in candidates] == ['Sticker | Flickshot', 'StatTrak™ Swap Tool']
     assert {row['name']: row['reason'] for row in excluded} == {
-        'Storage Unit': 'cannot_trade', 'Fever Case Key': 'keys', 'Armory Pass': 'passes'}
+        'Name Tag': 'store_copies', 'Storage Unit': 'cannot_trade', 'Fever Case Key': 'keys',
+        'Armory Pass': 'passes'}
 
 
 def test_an_offer_is_net_of_the_market_fee():
@@ -109,10 +113,14 @@ def test_recording_keeps_the_best_price_of_the_day_and_the_store_price():
 
 def _indexes():
     return {
-        ('Buff', SIDE_INSTANT): {'Sticker | Flickshot': {'price': 0.612, 'count': 40}, 'Name Tag': {'price': 3.192}},
-        ('Buff', SIDE_LISTING): {'Sticker | Flickshot': {'price': 0.761, 'count': 44}, 'Name Tag': {'price': 3.475}},
-        ('Steam', SIDE_INSTANT): {'Sticker | Flickshot': {'price': 0.94}, 'Name Tag': {'price': 4.26}},
-        ('Steam', SIDE_LISTING): {'Sticker | Flickshot': {'price': 1.27, 'rising': True}, 'Name Tag': {'price': 5.13}},
+        ('Buff', SIDE_INSTANT): {'Sticker | Flickshot': {'price': 0.612, 'count': 40}, 'Name Tag': {'price': 3.192},
+                               'StatTrak™ Swap Tool': {'price': 0.85}},
+        ('Buff', SIDE_LISTING): {'Sticker | Flickshot': {'price': 0.761, 'count': 44}, 'Name Tag': {'price': 3.475},
+                               'StatTrak™ Swap Tool': {'price': 1.23}},
+        ('Steam', SIDE_INSTANT): {'Sticker | Flickshot': {'price': 0.94}, 'Name Tag': {'price': 4.26},
+                               'StatTrak™ Swap Tool': {'price': 1.18}},
+        ('Steam', SIDE_LISTING): {'Sticker | Flickshot': {'price': 1.27, 'rising': True}, 'Name Tag': {'price': 5.13},
+                               'StatTrak™ Swap Tool': {'price': 1.40}},
     }
 
 
@@ -258,8 +266,8 @@ def test_the_board_warms_in_the_background_then_serves_rows(tmp_path):
     assert sorted(service.huginn.pulled) == sorted([('Buff', 'instant'), ('Buff', 'listing'), ('Steam', 'instant'),
                                                     ('Steam', 'listing'), ('LisSkins', 'listing')])
     names = [row['name'] for row in board['rows']]
-    assert names == ['Sticker | Flickshot', 'Name Tag']                       # unconfirmed last
-    assert board['summary']['unconfirmed'] == 1 and board['summary']['excluded'] == 3
+    assert names == ['Sticker | Flickshot', 'StatTrak™ Swap Tool']            # unconfirmed last
+    assert board['summary']['unconfirmed'] == 1 and board['summary']['excluded'] == 4
     flickshot = next(row for row in board['rows'] if row['name'] == 'Sticker | Flickshot')
     assert flickshot['cheapest_wallet']['accounts'] == ['a']
     assert flickshot['listing']['market'] == 'Steam'
@@ -360,4 +368,4 @@ def test_unconfirmed_rows_rank_below_confirmed_ones(tmp_path):
     service = _service(tmp_path)
     service._indexes = {pair: (__import__('time').time(), index) for pair, index in _indexes().items()}
     rows = service.board('token', ['Buff', 'Steam'])['rows']
-    assert [row['name'] for row in rows] == ['Sticker | Flickshot', 'Name Tag']
+    assert [row['name'] for row in rows] == ['Sticker | Flickshot', 'StatTrak™ Swap Tool']
