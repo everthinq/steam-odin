@@ -241,6 +241,14 @@ runs Python 3.9; CI runs 3.11 — write code that works on both.
     pulse (`fetch_generated_pair` and `fetch_generated_csfloat_autobuy` route it);
     `market_buy_index` returns `{}` for it so Cross-Profile and Store Catalogue
     Arbitrage stay real-data only. More Trade-page prices → update the markup points.
+  - `_MARKET_RELIABILITY`: our own check of a market's pulse prices per side (`listings`,
+    `buyOrders`): `unreliable` or `believable` with the reason (2026-10-19: Skinport
+    listings and WhiteMarket buy orders unreliable; Buff163, Market.CSGO, DMarket,
+    CSMoney (Market) buy orders believable; Buff.market, CSFloat, Steam both sides
+    believable on Ivan's word). A mark only: never filter on it. Shown as
+    `reliability` (registry, Harvest options) and `ReliabilityMark.jsx` in the UI.
+    Haloskins, ShadowPay, C5Game and Youpine have no buy orders in pulse: a pair asked
+    for in autobuy mode against them is priced on their lowest listing.
   - `market_registry()` exposes these to the UI as `hasListings`, `notInPulseUi`,
     `priceNote`, `listingsEstimated`, `pagePriceLabel`, plus fee `feeSource` / `feeEdited`.
   - Pulse discovery: `GET /api/table/supported-features/counter-strike/market-info`

@@ -432,6 +432,44 @@ _MARKET_FEE_CONFIRMED = {'Steam', 'Buff', 'CsFloat', 'Dmarket', 'LootFarm'}
 # tables still answer. Their prices can be stale: on 2026-10-10 GgSwap's were a year
 # old and GamerPay's five months; SkinSwap (Trade)'s buy orders were fresh.
 _MARKETS_NOT_IN_PULSE_UI = {'SkinSwapTrade', 'GgSwap', 'GamerPay'}
+# Our own check of a market's pulse prices, per side: 'listings' (its lowest listing, the
+# min) and 'buyOrders' (its highest buy order, the autobuy). 'unreliable' or 'believable',
+# with why. Only a mark for the UI and for us: nothing is left out or recomputed because of
+# it. Checked 2026-10-19: every buy market against every market with buy orders, live checks,
+# and Skinport's own price list. A market or side not named here was not checked.
+_BUY_ORDERS_CHECKED = ("Checked 2026-10-19 on about 10,000 items: like real cash bids, its buy orders "
+                       "sit below the cheapest listing on LisSkins, CSFloat and Buff163 for most items")
+_MARKET_RELIABILITY = {
+    'Skinport': {'listings': ('unreliable', (
+        "Pulse's Skinport prices are wrong: on 2026-10-19 they were 15-45% below Skinport's own price "
+        "list for the same listings (P90 | Asiimov (Field-Tested) $114.48 in pulse, $159.05 on Skinport; "
+        "AK-47 | Head Shot (Battle-Scarred) $13.34 against $23.29). Check Skinport itself."))},
+    'WhiteMarket': {'buyOrders': ('unreliable', (
+        "WhiteMarket's buy orders in pulse jump around: on 2026-10-19 two different items both showed "
+        "exactly $128.68, and one item's order went from $89.86 to $128.68 within minutes. "
+        "Check WhiteMarket before counting on one."))},
+    'Buff': {'buyOrders': ('believable', f'{_BUY_ORDERS_CHECKED} (typically 0.81 of it).')},
+    'Tm': {'buyOrders': ('believable', f'{_BUY_ORDERS_CHECKED} (typically 0.91 of it), with order '
+                                       "counts, under Steam's 30-day median.")},
+    'Dmarket': {'buyOrders': ('believable', f'{_BUY_ORDERS_CHECKED} (typically 0.88 of it).')},
+    'CsMoneyMarket': {'buyOrders': ('believable', f'{_BUY_ORDERS_CHECKED} (typically 0.89 of it).')},
+    # Ivan's word, 2026-10-19 (not tested in the sweep).
+    'BuffMarket': {side: ('believable', (
+        "Ivan sold items there and the prices matched Huginn. Where only lowball bids exist, its highest "
+        "buy order really is that low (a $0.02 order on a Dragon Lore)."))
+        for side in ('listings', 'buyOrders')},
+    'CsFloat': {side: ('believable', "Ivan: reliable. Its buy orders come from CSFloat's own API (the sweep).")
+                for side in ('listings', 'buyOrders')},
+    'Steam': {side: ('believable', "Ivan: reliable. Steam's own market; a sale pays into the Steam wallet.")
+              for side in ('listings', 'buyOrders')},
+}
+
+
+def market_reliability(market_id):
+    """{side: {'status', 'note'}} for the sides of *market_id* we checked (see
+    _MARKET_RELIABILITY); empty when none was."""
+    return {side: {'status': status, 'note': note}
+            for side, (status, note) in _MARKET_RELIABILITY.get(market_id, {}).items()}
 # Markets whose pulse prices are in a bonus balance, not real dollars: the factor
 # turns them into real dollars as they are pulled, so every profit compares like
 # with like. SkinSwap says "Trade balance = Market balance x 1.4, always" (its 40%
@@ -1411,6 +1449,8 @@ class HuginnService:
                 'premium': m['premium'],
                 'notInPulseUi': m['id'] in _MARKETS_NOT_IN_PULSE_UI,
                 'priceNote': _MARKET_PRICE_NOTE.get(m['id']),
+                # Our check of its listings / buy orders: a mark only (_MARKET_RELIABILITY).
+                'reliability': market_reliability(m['id']),
                 # Rows carry 'pagePrice', the price as this page shows it (SkinSwap Trade).
                 'pagePriceLabel': _MARKET_PAGE_LABEL.get(m['id']),
                 # Its lowest listing is an estimate, not pulse data (SkinSwap Trade).

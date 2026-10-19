@@ -38,6 +38,21 @@ def test_your_edited_fee_wins_over_pulse():
     assert _service().market_fee('Waxpeer', {'huginn_market_fees': {'Waxpeer': 0.04}}) == pytest.approx(0.04)
 
 
+def test_markets_we_checked_are_marked_per_side_and_nothing_else_changes():
+    registry = _registry()
+    marked = {(i, side, mark['status']) for i, m in registry.items() for side, mark in m['reliability'].items()}
+    assert marked == {('Skinport', 'listings', 'unreliable'), ('WhiteMarket', 'buyOrders', 'unreliable'),
+                      ('Buff', 'buyOrders', 'believable'), ('Tm', 'buyOrders', 'believable'),
+                      ('Dmarket', 'buyOrders', 'believable'), ('CsMoneyMarket', 'buyOrders', 'believable'),
+                      ('BuffMarket', 'listings', 'believable'), ('BuffMarket', 'buyOrders', 'believable'),
+                      ('CsFloat', 'listings', 'believable'), ('CsFloat', 'buyOrders', 'believable'),
+                      ('Steam', 'listings', 'believable'), ('Steam', 'buyOrders', 'believable')}
+    assert '$159.05' in registry['Skinport']['reliability']['listings']['note']
+    assert registry['LisSkins']['reliability'] == {}
+    # A mark only: the marked markets stay in the registry with their sides.
+    assert registry['Skinport']['hasListings'] and registry['WhiteMarket']['hasAutobuy']
+
+
 def test_markets_not_on_the_pulse_website_are_flagged():
     registry = _registry()
     assert {i for i, m in registry.items() if m['notInPulseUi']} == {'SkinSwapTrade', 'GgSwap', 'GamerPay'}

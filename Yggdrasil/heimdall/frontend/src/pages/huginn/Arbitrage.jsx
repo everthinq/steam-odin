@@ -244,7 +244,16 @@ const HuginnArbitrage = () => {
                 }
             }
         }
-        return [...PROFILES, ...generated];
+        // Our check of each side's prices (registry `reliability`): the buy side is the
+        // market's lowest listing; the sell side its buy orders (autobuy) or listing (min).
+        const byId = Object.fromEntries(markets.map(m => [m.id, m]));
+        const mark = (id, side) => byId[id]?.reliability?.[side] || null;
+        return [...PROFILES, ...generated].map(p => ({
+            ...p,
+            fromReliability: mark(p.buyMarket, 'listings'),
+            toReliability: mark(p.sellMarket, p.toSub === 'autobuy' ? 'buyOrders' : 'listings'),
+            toReliabilitySide: p.toSub === 'autobuy' ? 'buyOrders' : 'listings',
+        }));
     }, [markets]);
 
     const activeProfile = allProfiles.find(p => p.id === profileId) ?? PROFILES[0];

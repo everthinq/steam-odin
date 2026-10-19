@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
-import { Percent, ChevronDown, Zap } from 'lucide-react';
+import { Percent, ChevronDown, Zap, AlertTriangle, ShieldCheck } from 'lucide-react';
 import NotInPulseNote from './NotInPulseNote';
+import ReliabilityMark from './ReliabilityMark';
 
 // Sell-side fee editor. Fees are entered as percent and stored as fractions via
 // POST /api/huginn/markets/fees (persisted in settings.json). This is the ONE place
@@ -75,6 +76,9 @@ const FeeEditor = ({ markets, onSaved }) => {
                         <span className="text-amber-400/70"> yours</span> = you changed it).
                         <Zap size={10} className="inline text-emerald-400/70 mx-0.5" />= has buy orders
                         (sells instantly). Re-fetch a profile to apply changes.
+                        <AlertTriangle size={10} className="inline text-red-400/80 mx-0.5" />/
+                        <ShieldCheck size={10} className="inline text-emerald-400/70 mx-0.5" />= we checked its
+                        prices: unreliable / believable (hover for why; a mark only, nothing is left out).
                     </div>
                     <div className="max-h-[50vh] overflow-y-auto custom-scrollbar py-1">
                         {editable.map(m => (
@@ -87,6 +91,8 @@ const FeeEditor = ({ markets, onSaved }) => {
                                         </span>
                                     )}
                                     {m.notInPulseUi && <NotInPulseNote size={11} extra={m.priceNote} />}
+                                    <ReliabilityMark mark={m.reliability?.listings} side="listings" size={11} />
+                                    <ReliabilityMark mark={m.reliability?.buyOrders} side="buyOrders" size={11} />
                                 </span>
                                 {m.feeEdited ? (
                                     <span title={`Your fee. Default: ${feeToPct(m.feeDefault)}% (${m.feeSource === 'pulse' ? 'Tradeon pulse' : 'confirmed'})`} className="text-[9px] uppercase tracking-wider text-amber-400/70">yours</span>

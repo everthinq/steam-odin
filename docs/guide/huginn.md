@@ -34,6 +34,16 @@ fee for it, tagged **pulse**; **yours** marks a fee you changed. ⚡ marks a
 market with buy orders (you can sell there instantly). After changing fees,
 fetch the profile again.
 
+**Checked markets.** Some markets' prices were checked against live data and the
+markets' own sites (on 2026-10-19). The Fees list and the profile picker mark them;
+hover the mark for why. It is a mark only: nothing is hidden or left out.
+
+- Red triangle, **unreliable**: Skinport's lowest listings (pulse showed them 15-45%
+  below Skinport's own prices) and WhiteMarket's buy orders (they jump around).
+- Green shield, **believable**: buy orders on Buff163, Market.CSGO, DMarket and
+  CSMoney (Market); listings and buy orders on Buff.market, CSFloat and Steam.
+- No mark: not checked yet.
+
 ## Arbitrage
 
 1. Pick a **profile** — a buy market → sell market pair (for example "Buff163 →

@@ -116,6 +116,7 @@ const Harvest = ({ byHash }) => {
             ...options.accounts.map((a) => ({ id: a.id, name: a.name, sub: 'portfolio' }))];
         return accounts.flatMap((a) => options.markets.map((m) => ({
             id: `${a.id}|${m.id}`, from: a.name, fromSub: a.sub, to: m.display, toSub: 'autobuy',
+            toReliability: m.reliability || null, toReliabilitySide: 'buyOrders',
         })));
     }, [options]);
 

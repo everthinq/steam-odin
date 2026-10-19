@@ -30,7 +30,8 @@ class FakeHuginn:
     def market_registry(self, settings=None):
         return [
             {'id': 'CsMoneyTrade', 'display': 'CSMoney (Trade)', 'hasAutobuy': True, 'fee': 0.0, 'feeKnown': False},
-            {'id': 'Buff', 'display': 'Buff163', 'hasAutobuy': True, 'fee': 0.1, 'feeKnown': True},
+            {'id': 'Buff', 'display': 'Buff163', 'hasAutobuy': True, 'fee': 0.1, 'feeKnown': True,
+             'reliability': {'buyOrders': {'status': 'believable', 'note': 'checked'}}},
             {'id': 'LisSkins', 'display': 'LisSkins', 'hasAutobuy': False, 'fee': 0.0, 'feeKnown': False},
         ]
 
@@ -142,6 +143,11 @@ def test_unknown_or_non_autobuy_markets_fall_back_to_the_default():
     service, _ = warmed()
     assert service.clean_markets(['LisSkins', 'Nope']) == ['CsMoneyTrade']
     assert service.clean_markets(['Buff', 'Buff', 'CsMoneyTrade']) == ['Buff', 'CsMoneyTrade']
+
+
+def test_each_market_carries_our_mark_on_its_buy_orders():
+    marks = {m['id']: m['reliability'] for m in HarvestService(FakeHuginn(), FakeDraupnir()).autobuy_markets()}
+    assert marks == {'CsMoneyTrade': None, 'Buff': {'status': 'believable', 'note': 'checked'}}
 
 
 def test_cold_board_warms_in_the_background_without_blocking():

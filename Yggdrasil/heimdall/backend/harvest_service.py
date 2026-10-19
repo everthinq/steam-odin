@@ -69,7 +69,9 @@ class HarvestService:
     def autobuy_markets(self, settings=None):
         """Markets you can sell into instantly, with their effective fee."""
         return [{'id': m['id'], 'display': m['display'], 'fee': m['fee'], 'fee_known': m['feeKnown'],
-                 'balance': self.BALANCE_PAYOUT.get(m['id'])}
+                 'balance': self.BALANCE_PAYOUT.get(m['id']),
+                 # Our check of its buy orders, a mark only (HuginnService._MARKET_RELIABILITY).
+                 'reliability': (m.get('reliability') or {}).get('buyOrders')}
                 for m in self.huginn.market_registry(settings) if m['hasAutobuy']]
 
     def clean_markets(self, ids, settings=None):

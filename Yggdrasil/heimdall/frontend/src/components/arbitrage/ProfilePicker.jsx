@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { ArrowRight, ChevronDown, Search, Zap } from 'lucide-react';
 import MarketBadge from './MarketBadge';
 import NotInPulseNote from './NotInPulseNote';
+import ReliabilityMark from './ReliabilityMark';
 
 // Group profiles by their buy market ("from"), preserving array order, so the picker
 // can show tidy sections instead of one long flat list as profiles multiply.
@@ -9,7 +10,7 @@ const groupProfiles = (profiles) => {
     const groups = [];
     const byFrom = {};
     for (const p of profiles) {
-        if (!byFrom[p.from]) { byFrom[p.from] = { from: p.from, notInPulseUi: !!p.fromNotInPulseUi, priceNote: p.fromPriceNote, items: [] }; groups.push(byFrom[p.from]); }
+        if (!byFrom[p.from]) { byFrom[p.from] = { from: p.from, notInPulseUi: !!p.fromNotInPulseUi, priceNote: p.fromPriceNote, reliability: p.fromReliability, items: [] }; groups.push(byFrom[p.from]); }
         byFrom[p.from].items.push(p);
     }
     return groups;
@@ -82,6 +83,7 @@ const ProfilePicker = ({ profiles, value, onChange, groupLabel = (from) => `Buy 
                 <ArrowRight size={12} className={isActive ? 'text-amber-500/60 shrink-0' : 'text-slate-600 shrink-0'} />
                 <MarketBadge name={p.to} sub={p.toSub} dim={!isActive} />
                 {p.toNotInPulseUi && <NotInPulseNote extra={p.toPriceNote} />}
+                <ReliabilityMark mark={p.toReliability} side={p.toReliabilitySide} />
                 {isActive && <span className="ml-auto w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0" />}
             </button>
         );
@@ -96,10 +98,12 @@ const ProfilePicker = ({ profiles, value, onChange, groupLabel = (from) => `Buy 
             >
                 <MarketBadge name={active.from} sub={active.fromSub} />
                 {active.fromNotInPulseUi && <NotInPulseNote extra={active.fromPriceNote} />}
+                <ReliabilityMark mark={active.fromReliability} side="listings" />
                 <ArrowRight size={13} className="text-amber-500/60 shrink-0" />
                 {hasBothKinds && isInstant(active) && <Zap size={12} className="text-emerald-400/70 shrink-0" />}
                 <MarketBadge name={active.to} sub={active.toSub} />
                 {active.toNotInPulseUi && <NotInPulseNote extra={active.toPriceNote} />}
+                <ReliabilityMark mark={active.toReliability} side={active.toReliabilitySide} />
                 <ChevronDown size={13} className={`text-slate-500 ml-1 transition-transform ${open ? 'rotate-180' : ''}`} />
             </button>
 
@@ -141,6 +145,7 @@ const ProfilePicker = ({ profiles, value, onChange, groupLabel = (from) => `Buy 
                                     <div className="flex items-center gap-1.5 px-3 pt-2.5 pb-1 text-[10px] font-bold uppercase tracking-wider text-slate-500">
                                         {groupLabel(group.from)}
                                         {group.notInPulseUi && <NotInPulseNote size={11} extra={group.priceNote} />}
+                                        <ReliabilityMark mark={group.reliability} side="listings" size={11} />
                                     </div>
                                     {split ? (
                                         <>
