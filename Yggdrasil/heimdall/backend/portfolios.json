@@ -4,7 +4,7 @@
       "id": "fbf692611b3c",
       "name": "everthinklol",
       "created_at": "2026-07-21T13:40:18.177768+00:00",
-      "updated_at": "2026-10-20T07:38:42.415712+00:00",
+      "updated_at": "2026-10-20T20:48:19.707938+00:00",
       "transactions": [
         {
           "id": "3ea474874554",
@@ -11208,6 +11208,19 @@
           "fee_percent": 0.0,
           "is_arbitrage": false,
           "created_at": "2026-10-19T16:31:48.598669+00:00"
+        },
+        {
+          "id": "041f7ce522be",
+          "item_name": "Kilowatt Case",
+          "type": "buy",
+          "qty": 20,
+          "price": 0.08,
+          "platform": "cs.money.trade",
+          "date": "2026-10-20",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": false,
+          "created_at": "2026-10-20T20:48:19.707917+00:00"
         }
       ]
     },
