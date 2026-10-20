@@ -4,7 +4,7 @@
       "id": "fbf692611b3c",
       "name": "everthinklol",
       "created_at": "2026-07-21T13:40:18.177768+00:00",
-      "updated_at": "2026-10-19T17:07:07.339723+00:00",
+      "updated_at": "2026-10-20T07:38:42.415712+00:00",
       "transactions": [
         {
           "id": "3ea474874554",
@@ -11109,10 +11109,10 @@
           "id": "4a0e7d65c71f",
           "item_name": "AK-47 | Olive Polycam (Well-Worn)",
           "type": "buy",
-          "qty": 2,
+          "qty": 5,
           "price": 0.06,
           "platform": "csfloat",
-          "date": "2026-10-15",
+          "date": "2026-10-20",
           "note": "",
           "fee_percent": 0.0,
           "is_arbitrage": false,
