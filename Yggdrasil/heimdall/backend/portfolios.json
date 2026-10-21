@@ -4,7 +4,7 @@
       "id": "fbf692611b3c",
       "name": "everthinklol",
       "created_at": "2026-07-21T13:40:18.177768+00:00",
-      "updated_at": "2026-10-21T17:08:30.080246+00:00",
+      "updated_at": "2026-10-21T22:55:36.134075+00:00",
       "transactions": [
         {
           "id": "3ea474874554",
@@ -11221,6 +11221,45 @@
           "fee_percent": 0.0,
           "is_arbitrage": false,
           "created_at": "2026-10-20T20:48:19.707917+00:00"
+        },
+        {
+          "id": "e6679699aee1",
+          "item_name": "Dreams & Nightmares Case",
+          "type": "buy",
+          "qty": 700,
+          "price": 0.73,
+          "platform": "cs.money.trade",
+          "date": "2026-10-22T01:30:00",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": false,
+          "created_at": "2026-10-21T22:46:52.294158+00:00"
+        },
+        {
+          "id": "f6f8e2610314",
+          "item_name": "Dreams & Nightmares Case",
+          "type": "sell",
+          "qty": 109,
+          "price": 0.83,
+          "platform": "csfloat",
+          "date": "2026-10-22T01:50:00",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": false,
+          "created_at": "2026-10-21T22:51:51.471367+00:00"
+        },
+        {
+          "id": "6b144ac30362",
+          "item_name": "Dreams & Nightmares Case",
+          "type": "sell",
+          "qty": 215,
+          "price": 0.82,
+          "platform": "csfloat",
+          "date": "2026-10-22T01:51:00",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": false,
+          "created_at": "2026-10-21T22:55:36.134055+00:00"
         }
       ]
     },
@@ -13166,7 +13205,7 @@
       "id": "99c18756f9ee",
       "name": "everthinklol1",
       "created_at": "2026-07-21T14:49:46.392883+00:00",
-      "updated_at": "2026-10-12T21:25:16.707420+00:00",
+      "updated_at": "2026-10-21T22:59:44.502660+00:00",
       "transactions": [
         {
           "id": "ed83a19ba6bc",
@@ -17386,6 +17425,19 @@
           "fee_percent": 0.0,
           "is_arbitrage": true,
           "created_at": "2026-10-12T21:25:00.504268+00:00"
+        },
+        {
+          "id": "001efd453860",
+          "item_name": "Dreams & Nightmares Case",
+          "type": "sell",
+          "qty": 210,
+          "price": 0.82,
+          "platform": "csfloat",
+          "date": "2026-10-21T02:00:00",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": false,
+          "created_at": "2026-10-21T22:59:40.589654+00:00"
         }
       ]
     },
