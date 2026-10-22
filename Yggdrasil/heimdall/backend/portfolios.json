@@ -4,7 +4,7 @@
       "id": "fbf692611b3c",
       "name": "everthinklol",
       "created_at": "2026-07-21T13:40:18.177768+00:00",
-      "updated_at": "2026-10-21T23:20:42.407654+00:00",
+      "updated_at": "2026-10-22T06:32:26.829626+00:00",
       "transactions": [
         {
           "id": "3ea474874554",
@@ -11213,7 +11213,7 @@
           "id": "041f7ce522be",
           "item_name": "Kilowatt Case",
           "type": "buy",
-          "qty": 20,
+          "qty": 23,
           "price": 0.08,
           "platform": "cs.money.trade",
           "date": "2026-10-20",
@@ -11286,6 +11286,58 @@
           "fee_percent": 0.0,
           "is_arbitrage": false,
           "created_at": "2026-10-21T23:20:42.407626+00:00"
+        },
+        {
+          "id": "ea03a63b31be",
+          "item_name": "Sticker | aizy | MLG Columbus 2016",
+          "type": "buy",
+          "qty": 1,
+          "price": 2.19,
+          "platform": "csfloat",
+          "date": "2026-10-22T09:23:00",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": true,
+          "created_at": "2026-10-22T06:23:22.587247+00:00"
+        },
+        {
+          "id": "642780363118",
+          "item_name": "Sticker | aizy | MLG Columbus 2016",
+          "type": "sell",
+          "qty": 1,
+          "price": 2.62,
+          "platform": "cs.money.trade",
+          "date": "2026-10-22T09:23:00",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": true,
+          "created_at": "2026-10-22T06:23:45.185998+00:00"
+        },
+        {
+          "id": "8521144d56d0",
+          "item_name": "Revolution Case",
+          "type": "buy",
+          "qty": 2,
+          "price": 0.14,
+          "platform": "buff.market",
+          "date": "2026-10-22T09:29:00",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": false,
+          "created_at": "2026-10-22T06:29:08.464596+00:00"
+        },
+        {
+          "id": "b8702dc524bc",
+          "item_name": "Fracture Case",
+          "type": "buy",
+          "qty": 1,
+          "price": 0.3,
+          "platform": "buff.market",
+          "date": "2026-10-22T09:30:00",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": false,
+          "created_at": "2026-10-22T06:32:26.829580+00:00"
         }
       ]
     },
