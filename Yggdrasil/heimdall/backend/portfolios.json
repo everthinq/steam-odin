@@ -4,7 +4,7 @@
       "id": "fbf692611b3c",
       "name": "everthinklol",
       "created_at": "2026-07-21T13:40:18.177768+00:00",
-      "updated_at": "2026-10-23T09:28:35.474224+00:00",
+      "updated_at": "2026-10-23T10:16:42.583570+00:00",
       "transactions": [
         {
           "id": "3ea474874554",
@@ -11507,6 +11507,19 @@
           "fee_percent": 0.0,
           "is_arbitrage": true,
           "created_at": "2026-10-23T09:28:35.474202+00:00"
+        },
+        {
+          "id": "624c96708194",
+          "item_name": "StatTrak\u2122 MAC-10 | Ultraviolet (Well-Worn)",
+          "type": "buy",
+          "qty": 1,
+          "price": 2.76,
+          "platform": "steam",
+          "date": "2026-10-23T13:00:00",
+          "note": "ev1 arbitrage",
+          "fee_percent": 0.0,
+          "is_arbitrage": true,
+          "created_at": "2026-10-23T10:16:28.826852+00:00"
         }
       ]
     },
@@ -13452,7 +13465,7 @@
       "id": "99c18756f9ee",
       "name": "everthinklol1",
       "created_at": "2026-07-21T14:49:46.392883+00:00",
-      "updated_at": "2026-10-21T23:32:51.448448+00:00",
+      "updated_at": "2026-10-23T10:42:32.149806+00:00",
       "transactions": [
         {
           "id": "ed83a19ba6bc",
@@ -17685,6 +17698,71 @@
           "fee_percent": 0.0,
           "is_arbitrage": false,
           "created_at": "2026-10-21T22:59:40.589654+00:00"
+        },
+        {
+          "id": "0399c3fe3508",
+          "item_name": "StatTrak\u2122 MAC-10 | Ultraviolet (Well-Worn)",
+          "type": "sell",
+          "qty": 1,
+          "price": 2.7,
+          "platform": "cs.money.trade",
+          "date": "2026-10-23T13:00:00",
+          "note": "everthiklol arbitrage",
+          "fee_percent": 0.0,
+          "is_arbitrage": true,
+          "created_at": "2026-10-23T10:17:33.757864+00:00"
+        },
+        {
+          "id": "0bb006a7f0ad",
+          "item_name": "UMP-45 | Oscillator (Field-Tested)",
+          "type": "buy",
+          "qty": 1,
+          "price": 0.2,
+          "platform": "dmarket",
+          "date": "2026-10-23T13:40:00",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": true,
+          "created_at": "2026-10-23T10:38:31.994835+00:00"
+        },
+        {
+          "id": "c24dd755ddb9",
+          "item_name": "UMP-45 | Oscillator (Field-Tested)",
+          "type": "sell",
+          "qty": 1,
+          "price": 0.21,
+          "platform": "csfloat",
+          "date": "2026-10-23T13:40:00",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": true,
+          "created_at": "2026-10-23T10:38:44.410717+00:00"
+        },
+        {
+          "id": "c9d865cea1d4",
+          "item_name": "AUG | Tom Cat (Field-Tested)",
+          "type": "buy",
+          "qty": 1,
+          "price": 0.26,
+          "platform": "dmarket",
+          "date": "2026-10-23T13:40:00",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": true,
+          "created_at": "2026-10-23T10:42:24.016260+00:00"
+        },
+        {
+          "id": "59092f1376f6",
+          "item_name": "AUG | Tom Cat (Field-Tested)",
+          "type": "sell",
+          "qty": 1,
+          "price": 0.26,
+          "platform": "csfloat",
+          "date": "2026-10-23T13:40:00",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": true,
+          "created_at": "2026-10-23T10:42:32.149780+00:00"
         }
       ]
     },
