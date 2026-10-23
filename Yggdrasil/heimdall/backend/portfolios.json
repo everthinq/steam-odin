@@ -4,7 +4,7 @@
       "id": "fbf692611b3c",
       "name": "everthinklol",
       "created_at": "2026-07-21T13:40:18.177768+00:00",
-      "updated_at": "2026-10-23T08:55:31.939994+00:00",
+      "updated_at": "2026-10-23T09:28:35.474224+00:00",
       "transactions": [
         {
           "id": "3ea474874554",
@@ -11424,11 +11424,89 @@
           "qty": 48,
           "price": 0.06,
           "platform": "cs.money.trade",
-          "date": "2026-10-23",
+          "date": "2026-10-23T12:01:00",
           "note": "",
           "fee_percent": 0.0,
           "is_arbitrage": false,
           "created_at": "2026-10-23T08:55:31.939977+00:00"
+        },
+        {
+          "id": "02f3af123b37",
+          "item_name": "Sticker | NiKo | Berlin 2019",
+          "type": "buy",
+          "qty": 1,
+          "price": 1.23,
+          "platform": "buff.market",
+          "date": "2026-10-23T12:00:00",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": true,
+          "created_at": "2026-10-23T09:02:22.637924+00:00"
+        },
+        {
+          "id": "cb66f2867c2f",
+          "item_name": "Sticker | NiKo | Berlin 2019",
+          "type": "sell",
+          "qty": 1,
+          "price": 1.26,
+          "platform": "cs.money.trade",
+          "date": "2026-10-23T12:00:00",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": true,
+          "created_at": "2026-10-23T09:02:37.754452+00:00"
+        },
+        {
+          "id": "8819eeaf2646",
+          "item_name": "Sticker | M80 (Holo) | Budapest 2025",
+          "type": "sell",
+          "qty": 1,
+          "price": 1.08,
+          "platform": "cs.money.trade",
+          "date": "2026-10-23T12:00:00",
+          "note": "set a buy order on csfloat",
+          "fee_percent": 0.0,
+          "is_arbitrage": true,
+          "created_at": "2026-10-23T09:06:50.417944+00:00"
+        },
+        {
+          "id": "bfc9b39a2976",
+          "item_name": "Music Kit | TWERL and Ekko & Sidetrack, Under Bright Lights",
+          "type": "buy",
+          "qty": 1,
+          "price": 7.61,
+          "platform": "buff.market",
+          "date": "2026-10-23T12:10:00",
+          "note": "hidey_spidey arbitrage",
+          "fee_percent": 0.0,
+          "is_arbitrage": true,
+          "created_at": "2026-10-23T09:12:52.986309+00:00"
+        },
+        {
+          "id": "dcabfcb064a0",
+          "item_name": "AK-47 | Steel Delta (Minimal Wear)",
+          "type": "buy",
+          "qty": 2,
+          "price": 2.25,
+          "platform": "buff.market",
+          "date": "2026-10-23T12:25:00",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": true,
+          "created_at": "2026-10-23T09:26:22.403713+00:00"
+        },
+        {
+          "id": "2c4ea88387d9",
+          "item_name": "AK-47 | Steel Delta (Minimal Wear)",
+          "type": "sell",
+          "qty": 2,
+          "price": 2.3,
+          "platform": "csfloat",
+          "date": "2026-10-23T12:25:00",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": true,
+          "created_at": "2026-10-23T09:28:35.474202+00:00"
         }
       ]
     },
@@ -18363,7 +18441,7 @@
       "id": "589eb04fc956",
       "name": "hidey_spidey",
       "created_at": "2026-07-21T14:49:46.495709+00:00",
-      "updated_at": "2026-10-21T23:33:24.884278+00:00",
+      "updated_at": "2026-10-23T09:14:28.472798+00:00",
       "transactions": [
         {
           "id": "7567c6dad2c1",
@@ -19863,6 +19941,19 @@
           "fee_percent": 0.0,
           "is_arbitrage": false,
           "created_at": "2026-10-21T23:11:53.483439+00:00"
+        },
+        {
+          "id": "1d2e25269421",
+          "item_name": "Music Kit | TWERL and Ekko & Sidetrack, Under Bright Lights",
+          "type": "sell",
+          "qty": 1,
+          "price": 7.64,
+          "platform": "csfloat",
+          "date": "2026-10-23T12:10:00",
+          "note": "everthinklol arbitrage",
+          "fee_percent": 0.0,
+          "is_arbitrage": true,
+          "created_at": "2026-10-23T09:13:38.467035+00:00"
         }
       ]
     },
