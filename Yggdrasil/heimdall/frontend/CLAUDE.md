@@ -49,6 +49,7 @@ real Pay / Buy / Sell / Approve button while testing; use the dry-run paths.
 | `/buy-storage-units` | `pages/ratatoskr/StorageShop.jsx` | Buy Storage Units, every account; outside the Ratatoskr layout; `/storage-shop` redirects here |
 | `/store-catalogue` | `pages/ratatoskr/StoreCatalogue.jsx` | Every in-game store item with its US dollar price; a Buy button per item |
 | `/store-catalogue/arbitrage` | `pages/ratatoskr/StoreCatalogue.jsx` (`tab="arbitrage"`) → `components/ratatoskr/StoreArbitrage.jsx` | Store Catalogue Arbitrage, laid out like Huginn's Arbitrage: profile In-game store → market (`ProfilePicker`, default CSMoney (Trade) autobuy, plus "Best market"), CSMoney (Trade) indicator column with BUY signal, Refresh, filters, Telegram switch / Send now; Buy links to the guarded buy page (read-only) |
+| `/store-catalogue/boosts` | `pages/ratatoskr/StoreCatalogue.jsx` (`tab="boosts"`) → `components/ratatoskr/StoreBoosts.jsx` | Store Boosts: cards (alarm counts, Steam reader with its read spacing, hourly pulse check + Check now, alert switches + Test message / Test ring), a Tracked panel (pinned items, `TrackButton`, read every 15 minutes), views Moving now / Capsules / All, rows with level, Steam now vs usual, sales vs usual, a 7-day SVG chart and Confirmed; a row opens the 14-day hourly chart (`BoostChart`, hover) and a capsule's stickers with odds and opening value (read-only; Buy links to the guarded buy page) |
 | `/store-catalogue/buy/:item` | `pages/ratatoskr/StorageShop.jsx` | The Buy Storage Units page for any price sheet entry (keyed by it) |
 | `/ratatoskr/:steamid/{inventory,transfer,auto-store}` | `pages/RatatoskrLayout.jsx` + `pages/ratatoskr/` | Layout passes `{steamid, account}` via `<Outlet context>` |
 
@@ -78,7 +79,7 @@ path prefix — add your page there. No catch-all route, no Settings page.
 - **localStorage** is for per-browser conveniences only (layout, filters),
   every access wrapped in `try`/`catch`. Keys in use: `heimdall-dashboard-layout`,
   `draupnir-portfolio-layout`, `huginn.harvest`, `andvari.valuation`,
-  `andvari.buy.apps`, `huginn.arbitrageFilters`, `huginn.harvestFilters`, `huginn.caseArbitrageFilters`, `huginn.crossProfileFilters`, `ratatoskr.storeArbitrage`, `ratatoskr.storeArbitrageFilters`, `huginn.priceDips`, `huginn.skinswapNoteOpen`, `lf_balance_pct`, `lf_unlocked`.
+  `andvari.buy.apps`, `huginn.arbitrageFilters`, `huginn.harvestFilters`, `huginn.caseArbitrageFilters`, `huginn.crossProfileFilters`, `ratatoskr.storeArbitrage`, `ratatoskr.storeArbitrageFilters`, `ratatoskr.storeBoosts`, `huginn.priceDips`, `huginn.skinswapNoteOpen`, `lf_balance_pct`, `lf_unlocked`.
 - **Shared pieces:** `components/gjallarhorn/InfoTip.jsx` (prop `tip`) for
   tooltips; `components/draupnir/columnSort.js` (`useColumnSort`, `sortRows`) with the header `components/ratatoskr/SortHeader.jsx`;
   `components/arbitrage/ArbitrageFilters.jsx` (price / account / collection filters + chips on Arbitrage, Harvest, Case Arbitrage, Cross-Profile and Store Catalogue Arbitrage; each tab names its price sides via `priceSides`; helpers, `useStoredFilters` and `buildOptions` in `utils/arbitrageFilters.js`; the page passes its inventory scan down as `byHash`, the only source of collections);

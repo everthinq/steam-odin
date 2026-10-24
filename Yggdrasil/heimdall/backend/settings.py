@@ -64,6 +64,16 @@ DEFAULT_SETTINGS = {
     # the hourly check posts items that became profitable since (each at most once a day).
     "store_arbitrage_alerts_enabled": True,
     "store_arbitrage_alert_min_pct": 0.0,   # only items whose profit is at least this % (0 = any profit)
+    # --- Store Boosts (Ratatoskr, store_boost_service.py) ---
+    # Watch every store item and the stickers inside store capsules for a Steam price boost:
+    # pulse every hour, Steam's price history one item at a time (at least this many seconds
+    # apart, never under 10). Alerts go to the shared Huginn bot; a boost also rings the phone.
+    "store_boost_enabled": True,
+    "store_boost_alerts_enabled": True,
+    "store_boost_ring_enabled": True,
+    "store_boost_steam_gap_seconds": 30.0,
+    # Items you track on the Boosts tab (any Steam Market name): read every 15 minutes, shown on top.
+    "store_boost_tracked": [],
     # --- Gjallarhorn (event-rotation cockpit) ---
     # Instant-redeploy market whitelist: which markets do NOT lock your balance for
     # days after a sale, so the proceeds can be re-spent on the freshly-limited case

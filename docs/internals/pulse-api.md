@@ -145,7 +145,7 @@ Errors are `{message, responseType}` with types such as `MarketSubscriptionRequi
   Catalogue Arbitrage keeps the store items from every table this way.
 - **Jobs and the on/off switch**: the recurring jobs declare themselves (`declare_job(id, label,
   schedule, tables(), active(), period)` in `app.py`: `case-arbitrage-hourly`,
-  `case-arbitrage-alerts`, `store-arbitrage`) and read inside `with feed.job(id):` (thread-local;
+  `case-arbitrage-alerts`, `store-arbitrage`, `store-boosts`) and read inside `with feed.job(id):` (thread-local;
   Case Arbitrage's parallel alert threads copy it; the store board's queue carries it). A table in
   settings `pulse_switched_off_tables` is never downloaded for a job (`SwitchedOff`; a copy in
   memory is still served); reads without a job (pages, buttons) always download. Saved with

@@ -535,6 +535,9 @@ class StoreArbitrageService:
         self._alert_lock = threading.Lock()
         self._board_markets_cache = None
         self._save_timer_pending = False
+        # {store name: Steam Market name} for items the store names differently ("Bestiary Sticker
+        # Capsule" is "Bestiary Capsule" on every market); app.py points it at Store Boosts' resolver.
+        self.market_names = lambda: {}
         # Every full pulse table Huginn pulls (the Case Arbitrage refresh and alert polls, the
         # portfolio valuation, other tabs) also prices the store items it holds: no second download.
         huginn_service.add_pull_listener(self.take_pull)
@@ -579,11 +582,33 @@ class StoreArbitrageService:
         candidates, _ = split_items(self.catalogue.status().get('items'))
         return {item['name'] for item in candidates}
 
+    def _aliases(self):
+        try:
+            return dict(self.market_names() or {})
+        except Exception:
+            return {}
+
+    def _store_keyed(self, lookup, names):
+        """{store item name: quote} for *names*: *lookup(market names)* is asked for the store's
+        names and their Steam Market names, and a quote found only under the market name is kept
+        under the store's."""
+        aliases = {store: market for store, market in self._aliases().items() if store in names}
+        index = dict(lookup(set(names) | set(aliases.values())) or {})
+        for store, market in aliases.items():
+            if store not in index and market in index:
+                index[store] = index[market]
+        return {name: quote for name, quote in index.items() if name in names}
+
     def _fetch_index(self, token, market_id, side, max_age=FRESH):
         """(when the prices were downloaded, {store item name: quote}) of one market side, from
         the master pulse feed (a table at most *max_age* seconds old)."""
-        downloaded_at, index = self.huginn.market_index_at(token, market_id, side, max_age, names=self._names())
-        return downloaded_at, index or {}
+        got = {}
+
+        def lookup(names):
+            got['at'], index = self.huginn.market_index_at(token, market_id, side, max_age, names=names)
+            return index
+        index = self._store_keyed(lookup, self._names())
+        return got['at'], index
 
     def _index_state(self, token, pairs):
         """({pair: index}, status, [failed pairs]). Serves what is cached and queues a warm for
@@ -702,7 +727,7 @@ class StoreArbitrageService:
         names = {item['name'] for item in candidates}
         if not names:
             return
-        mine = table.index(names)
+        mine = self._store_keyed(table.index, names)
         with self._lock:
             hit = self._indexes.get(pair)
             if hit and hit[0] >= started_at:
@@ -1059,6 +1084,26 @@ class StoreArbitrageService:
             'signal_pct': signal_pct,
             'pulling': self.pulling(pairs),
         }
+
+    def instant_cash_offers(self, names, settings=None):
+        """{name: {market, display, gross, net}}: the best buy order paid as money (not a site
+        balance or the Steam wallet) for each of *names*, after the market's fee, from the prices
+        already held (no pull), through the board's own rules (``item_row``: crossed-out and stale
+        prices never count). Store Boosts uses it to confirm a boost: a cash buy order at or above
+        the store price."""
+        with self._lock:
+            indexes = {pair: hit[1] for pair, hit in self._indexes.items()}
+        listed = self.markets(settings)
+        fees = {m['id']: self.huginn.market_fee(m['id'], settings) for m in listed}
+        out = {}
+        for name in names or []:
+            row = item_row({'entry': name, 'name': name, 'usd': 1.0}, listed, indexes, fees, {}, {}, [], {}, {})
+            best = best_offer([o for o in row['offers'] if o['side'] == SIDE_INSTANT and not o['balance']
+                               and not o['suspicious']])
+            if best:
+                out[name] = {'market': best['market'], 'display': best['display'], 'gross': best['gross'],
+                             'net': best['net']}
+        return out
 
     def pulling(self, pairs):
         """How many of *pairs* are queued or being pulled now."""

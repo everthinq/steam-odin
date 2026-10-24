@@ -51,9 +51,12 @@ def test_ratatoskr_blueprint_registers_all_routes():
                  '/api/ratatoskr/storage-shop/deliver-again', '/api/ratatoskr/store-catalogue',
                  '/api/ratatoskr/store-catalogue/refresh', '/api/ratatoskr/store-arbitrage',
                  '/api/ratatoskr/store-arbitrage/options', '/api/ratatoskr/store-arbitrage/refresh',
-                 '/api/ratatoskr/store-arbitrage/alerts/send']:
+                 '/api/ratatoskr/store-arbitrage/alerts/send', '/api/ratatoskr/store-boosts',
+                 '/api/ratatoskr/store-boosts/item', '/api/ratatoskr/store-boosts/read',
+                 '/api/ratatoskr/store-boosts/check', '/api/ratatoskr/store-boosts/test-alert',
+                 '/api/ratatoskr/store-boosts/track']:
         assert want in rules, f'missing ratatoskr route: {want}'
-    assert _rule_count(bp, '/api/ratatoskr') == 27
+    assert _rule_count(bp, '/api/ratatoskr') == 33
 
 
 def test_accounts_blueprint_registers_all_routes():

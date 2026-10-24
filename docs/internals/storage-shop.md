@@ -368,6 +368,74 @@ against the markets. Nothing in it buys anything.
   like Flickshot's (sold for $1.34–$1.57 in January 2026, store $0.99) are the
   opportunity the history is there to catch.
 
+## 6c. Store Boosts (read-only)
+
+`store_boost_service.py` (the catalogue's Boosts tab, `GET /api/ratatoskr/store-boosts`,
+`GET …/item?name=`, `POST …/read`, `POST …/check`, `POST …/test-alert`) catches a Steam
+price boost of a store item, or of a sticker inside a store capsule, on its first day.
+Nothing in it buys anything.
+
+- **Watched.** The Arbitrage tab's candidates (`split_items`), plus every sticker and patch
+  in the store's sticker capsules and patch packs: Ratatoskr's `POST /items/capsule-contents`
+  walks price sheet entry → `loot_list_name` → capsule → `set supply crate series` →
+  `revolving_loot_lists` → `client_loot_lists` (tier from the list's `_rare` / `_mythical` /
+  `_legendary` / `_ancient` suffix). Read once a day, the last answer kept when Ratatoskr is
+  down. On 2026-10-24: 207 store items, 30 capsules, 575 stickers and patches.
+- **Market names.** The store names some items differently from the Steam Market (live
+  2026-10-25: 10 of them, "Bestiary Sticker Capsule" is "Bestiary Capsule", "… CS:GO" music kits
+  are "… CSGO"; Steam's `pricehistory` answers HTTP 500 for a name it does not know).
+  `resolve_market_names` picks the first of `market_name_candidates` (the capsule's own name from
+  Ratatoskr, the store's name, without colons, "… Box" for "… Music Kit Box") that pulse's Steam
+  listing table holds; rows carry `name` (market) and `store_name`. A store item pulse never priced
+  (the Sticker Slab tool) is not read. The Arbitrage tab uses the same names
+  (`StoreArbitrageService.market_names`, wired in `app.py`; `_store_keyed` asks pulse for both
+  names and keeps the price under the store's), so those items are priced and confirmed; the
+  Catalogue's Steam links still use the store's names (known issue).
+- **Hourly pulse check** (thread `store-boosts-watch`, job `store-boosts` on the Pulse feed
+  page): Steam's listing, buy orders and `Median30d`, and Buff163's listing. `preflag`: buy
+  orders at least 1.3 times the median or the listing 1.5 times, and 3 cents above it (Steam's
+  listing sits 1.3–1.4 times above the sale median on a normal day: 26 of 782 items at a 1.3
+  listing rule, 7 at this one, live 2026-10-24). A flagged item not read in the last hour goes
+  to the front of the Steam queue.
+- **Steam reader** (thread `store-boosts-steam`, first read a minute after boot): the logged-in
+  `pricehistory` (`SteamService.web_session_cookie`), one item at a time,
+  `store_boost_steam_gap_seconds` apart (30, never under 10) and through `community_pacer`.
+  Order: the queue, tracked items (`store_boost_tracked`, any market name, at most 30,
+  `POST …/track {name, tracked}`) every 15 minutes, items at an active level every hour, store items every 3 hours, capsule
+  contents every 12 hours, a failed item after 2 hours. Tracked items never take more than half
+  the reads (`tracked_every`: 15 minutes, or 2 × tracked × gap when longer). A 429 waits 10
+  minutes, doubling to 2 hours, and keeps the item first. Sessions: the first account
+  (`web_session_cookie_for`) not skipped, asked only once an item is due; an account answering
+  in another currency is skipped 6 hours, one whose session Steam refused (HTTP 401/403) 30
+  minutes, and the item keeps its place at the front. A name Steam does not know (HTTP 400 or
+  500, no history) is that item's error, retried after 2 hours, and never pauses the reader; 5
+  network failures in a row (no answer at all) pause it 5 minutes. No web session: waits 5
+  minutes. The gap is 10 seconds to an hour; the queue holds at most 100 items; the hourly
+  check forgets items no longer watched. Status `waiting` between reads (the page polls fast
+  only while something is being read or queued).
+- **Detector** (`analyze`, pure): usual price = median daily sales-weighted price of days 30
+  to 3 ago (at least 5 days priced, else `unknown`); usual sales = median sales a day (at least
+  half the mean, at least 1). `watch` 1.2× price and 3× sales (10+ in 24 h); `boost` 2× and 3×
+  (20+); with a daily peak of 2× usual in the last 14 days, the 24-hour price decides: `boost`
+  at 70% of the peak, `second_wave` 1.3× off the low since the peak and rising, `fading`
+  above 1.2× usual, else `calm`. `started_at`: the start of the run of days at 1.2× usual.
+  Tuned and tested on Flickshot, World Eaters 1 and the Traitor Astartes capsule
+  (`tests/fixtures/store_boost_histories.json.gz`, public Steam prices).
+- **Confirmed.** A store item: `StoreArbitrageService.instant_cash_offers` (best money buy
+  order after fees from the prices it already holds, crossed-out and stale prices left out) at
+  or above the store price. A capsule: `opening_value` on Buff163 listings above the store
+  price (tier odds 80 / 16 / 3.2 / 0.64%, rescaled to the tiers present, equal inside a tier).
+- **Alerts.** `alert_decision` (pure): each active level once an episode, a watch never after a
+  boost, a second wave again only after 2 days; 3 calm days end an episode; a first sight only
+  records unless `started_at` is under 48 hours old. Shared Huginn bot
+  (`store_boost_alerts_enabled`), and a ring through `TelegramCaller` on `boost`
+  (`store_boost_ring_enabled`, its own thread) only for something the store sells (the item or a
+  capsule holding it); a tracked item the store does not sell gets the message only. The alert
+  state is kept in memory and written at most every 30 seconds (at once after a send). A boosting sticker queues its capsule for a
+  read. State: `cache/store_boosts.json.gz` (per item: read time, 14 days of hourly points,
+  analysis; pulse quotes; capsule contents) and `cache/store_boost_alerts.json` (per item
+  episode, the last 50 alerts).
+
 ## 7. Rules for agents (binding)
 
 1. **Money is spent only through the guarded Heimdall routes**

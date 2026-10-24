@@ -23,6 +23,7 @@ from card_seller_service import CardSellerService
 from store_purchase_service import StorePurchaseService
 from storage_shop_service import StorageShopService
 from store_arbitrage_service import STORE_JOB, StoreArbitrageService
+from store_boost_service import BOOST_JOB, StoreBoostService
 from store_catalogue_service import StoreCatalogueService
 from morning_routine import MorningRoutine
 from telegram_caller import TelegramCaller
@@ -102,6 +103,13 @@ store_catalogue_service = StoreCatalogueService(ratatoskr_service, storage_shop_
 # Store Catalogue Arbitrage (the catalogue's Arbitrage tab): store items against what markets pay.
 store_arbitrage_service = StoreArbitrageService(huginn_service, store_catalogue_service,
                                                 storage_shop_service, draupnir_service)
+# Store Boosts (the catalogue's Boosts tab): a Steam price boost of a store item or of a sticker
+# inside a store capsule, caught on its first day; Telegram + a phone ring (read-only).
+store_boost_service = StoreBoostService(huginn_service, store_catalogue_service, ratatoskr_service,
+                                        steam_service, store_arbitrage_service, telegram_caller)
+store_boost_service.set_settings_provider(lambda: settings_manager.get_settings())
+# The Arbitrage tab prices the store items the store names differently under their market names.
+store_arbitrage_service.market_names = store_boost_service.market_names
 
 # Expose the singletons to the route blueprints (read from context.ctx at
 # request time — see context.py and the routes/ package).
@@ -125,6 +133,11 @@ huginn_service.pulse.declare_job(
     STORE_JOB, 'Store Catalogue Arbitrage', 'every hour, and after the 08:00 Get all items',
     lambda: store_arbitrage_service.job_tables(settings_manager.get_settings()),
     active=lambda: bool(settings_manager.get_settings().get('tradeon_token')))
+huginn_service.pulse.declare_job(
+    BOOST_JOB, 'Store Boosts', 'every hour',
+    store_boost_service.job_tables,
+    active=lambda: bool(settings_manager.get_settings().get('tradeon_token')
+                        and settings_manager.get_settings().get('store_boost_enabled', True)))
 
 ctx.settings_manager = settings_manager
 ctx.steam_service = steam_service
@@ -148,6 +161,7 @@ ctx.store_purchase_service = store_purchase_service
 ctx.storage_shop_service = storage_shop_service
 ctx.store_catalogue_service = store_catalogue_service
 ctx.store_arbitrage_service = store_arbitrage_service
+ctx.store_boost_service = store_boost_service
 register_blueprints(app)
 
 # Morning routine: "Get all items" once a day at 08:00 (or the first minute the Mac
@@ -221,6 +235,8 @@ if _should_start_background_scheduler():
     morning_routine.start_background()
     # Store Catalogue Arbitrage: warm the default markets hourly so the price history grows.
     store_arbitrage_service.start_background(lambda: settings_manager.get_settings())
+    # Store Boosts: the hourly pulse check and the Steam price history reader (one item at a time).
+    store_boost_service.start_background(lambda: settings_manager.get_settings())
     # Master pulse feed: keep the tables ticked on the Pulse feed page fresh (nothing when none).
     huginn_service.pulse.start_keeper(lambda: settings_manager.get_settings().get('tradeon_token', ''))
 

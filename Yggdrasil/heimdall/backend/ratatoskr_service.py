@@ -260,6 +260,11 @@ class RatatoskrService:
         Ratatoskr's item definitions (local, no Steam call)."""
         return self._store_call('POST', '/items/store-names', {"names": list(names)})
 
+    def capsule_contents(self, names):
+        """{price sheet entry: {capsule, items: [{name, tier}]}} for the store's sticker capsules and
+        patch packs, from Ratatoskr's item definitions (local, no Steam call)."""
+        return self._store_call('POST', '/items/capsule-contents', {"names": list(names)})
+
     def store_purchase_init(self, steam_id, country, currency, quantity, unit_price, item_definition_index=1201):
         """Open a wallet transaction for *quantity* of an item (Storage Unit 1201 by default;
         nothing paid yet)."""

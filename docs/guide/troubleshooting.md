@@ -57,6 +57,19 @@ Steam is rate-limiting this connection. The app already spaces its calls; wait
 See [ratatoskr.md](ratatoskr.md#buy-storage-units): check the account's purchase
 history on Steam, then press **Deliver again** (it cannot charge twice).
 
+## Store Boosts: "not read yet" or "No Steam web session"
+
+- Steam's price history is read one item at a time, 30 seconds apart: the
+  whole list (about 200 store items and 575 capsule stickers) takes hours the
+  first time. **Read Steam now** on a row puts it first.
+- "No Steam web session": no account holds a fresh web login. Connect any
+  account (Ratatoskr) or wait for the keep-alive; reading resumes on its own.
+- "Steam said slow down": Steam answered 429. It waits 10 minutes, then longer;
+  raise the seconds between reads if it keeps happening.
+- No alert for an item already boosting when you switched it on: an item seen
+  for the first time is only recorded, unless its rise began in the last 48
+  hours.
+
 ## Store Catalogue Arbitrage shows nothing
 
 - "Reading market prices…": each market is read one after another (about 5

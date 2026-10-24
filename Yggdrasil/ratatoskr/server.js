@@ -853,6 +853,67 @@ app.post('/items/store-names', (req, res) => {
     res.json({ success: true, definitions });
 });
 
+// What each store capsule holds: price sheet entry ("coupon - …") → the capsule it delivers → its
+// supply crate series → the loot lists, down to every sticker or patch with its rarity tier (the
+// list name's _rare, _mythical, _legendary or _ancient suffix). Local item files, no Steam call.
+// Pins and anything else are left out (pin capsules hold items, not sticker kits).
+const LOOT_TIERS = ['rare', 'mythical', 'legendary', 'ancient'];
+const LOOT_PREFIX = { sticker: 'Sticker | ', patch: 'Patch | ' };
+let lootIndex = null;
+app.post('/items/capsule-contents', (req, res) => {
+    const names = (req.body || {}).names;
+    if (!Array.isArray(names) || names.length > 500) return res.status(400).json({ error: 'names must be a list (at most 500)' });
+    if (!lootIndex) {
+        const raw = require('./items_game.json').items_game || {};
+        const itemsByName = new Map();
+        for (const item of Object.values(raw.items || {})) if (item && item.name) itemsByName.set(item.name, item);
+        const kitsByName = new Map();
+        for (const kit of Object.values(raw.sticker_kits || {})) if (kit && kit.name) kitsByName.set(kit.name, kit);
+        lootIndex = { itemsByName, kitsByName, client: raw.client_loot_lists || {}, revolving: raw.revolving_loot_lists || {} };
+    }
+    const { itemsByName, kitsByName, client, revolving } = lootIndex;
+    const english = (token) => {
+        const value = token ? itemsProcessor.translation[String(token).replace(/^#/, '').toLowerCase()] : null;
+        return typeof value === 'string' ? value.replace(/^"|"$/g, '') : null;
+    };
+    const walk = (listName, tier, out, depth) => {
+        if (depth > 6) return;
+        for (const key of Object.keys(client[listName] || {})) {
+            if (client[key]) {
+                const own = LOOT_TIERS.find((suffix) => key.endsWith(`_${suffix}`));
+                walk(key, own || tier, out, depth + 1);
+                continue;
+            }
+            const match = /^\[([^\]]+)\](sticker|patch)$/.exec(key);
+            if (!match) continue;
+            const kit = kitsByName.get(match[1]);
+            const name = kit && english(kit.item_name);
+            if (name) out.push({ name: LOOT_PREFIX[match[2]] + name, tier });
+        }
+    };
+    const contents = {};
+    for (const entry of names) {
+        const coupon = itemsByName.get(String(entry));
+        const list = coupon && client[coupon.loot_list_name];
+        if (!list) continue;
+        for (const crateName of Object.keys(list)) {
+            const crate = itemsByName.get(crateName);
+            const series = crate && crate.attributes && crate.attributes['set supply crate series'];
+            const lootList = series && revolving[String(series.value)];
+            if (!lootList) continue;
+            const items = [];
+            walk(lootList, 'rare', items, 0);
+            if (!items.length) continue;
+            // A coupon naming several capsules: their contents together, the first capsule's name.
+            const found = contents[entry] || { capsule: english(crate.item_name), items: [] };
+            const known = new Set(found.items.map((item) => item.name));
+            found.items.push(...items.filter((item) => !known.has(item.name)));
+            contents[entry] = found;
+        }
+    }
+    res.json({ success: true, contents });
+});
+
 // Open a wallet transaction for an item (Storage Units by default). Nothing is paid until Steam approves
 // it (Heimdall does that on checkout.steampowered.com) and it is finalized below.
 app.post('/store/purchase/init', async (req, res) => {

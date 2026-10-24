@@ -201,7 +201,8 @@ for every price download. Each pulse table (one market × one price type, about
 - **Amber, ticked**: a recurring job fetches it, named on the switch: **Case**
   (Case Arbitrage, every hour), **Alerts** (Case Arbitrage alerts, every 10
   minutes while they are on), **Store** (Store Catalogue Arbitrage, every hour
-  and after the 08:00 Get all items).
+  and after the 08:00 Get all items), **Boosts** (Store Boosts, every hour: Steam's
+  listing, buy orders and 30-day median, and Buff163's listing).
 - **Red, dashed**: switched off. Those jobs no longer download it (they use the
   copy in memory if a page just downloaded it). Buttons you press still do.
 - **Blue, ticked**: kept fresh by you, every 5 to 60 minutes (at most 12 tables).

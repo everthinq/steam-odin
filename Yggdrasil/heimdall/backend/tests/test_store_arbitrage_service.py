@@ -369,3 +369,30 @@ def test_unconfirmed_rows_rank_below_confirmed_ones(tmp_path):
     service._indexes = {pair: (__import__('time').time(), index) for pair, index in _indexes().items()}
     rows = service.board('token', ['Buff', 'Steam'])['rows']
     assert [row['name'] for row in rows] == ['Sticker | Flickshot', 'StatTrak™ Swap Tool']
+
+
+def test_the_best_cash_buy_order_leaves_out_wallet_crossed_out_and_stale_prices(tmp_path):
+    service = _service(tmp_path)
+    indexes = _indexes()
+    indexes[('LisSkins', SIDE_INSTANT)] = {'Sticker | Flickshot': {'price': 5.0}}           # far above Buff's listing
+    indexes[('Buff', SIDE_INSTANT)]['Name Tag'] = {'price': 3.192, 'updated': 1.0}       # a year old
+    service._indexes = {pair: (0.0, index) for pair, index in indexes.items()}
+    service.markets = lambda settings=None: [
+        {'id': 'Buff', 'display': 'Buff163', 'balance': None}, {'id': 'Steam', 'display': 'Steam', 'balance': 'Steam wallet'},
+        {'id': 'LisSkins', 'display': 'LisSkins', 'balance': None}]
+    offers = service.instant_cash_offers(['Sticker | Flickshot', 'Name Tag', 'Nothing'])
+    assert offers == {'Sticker | Flickshot': {'market': 'Buff', 'display': 'Buff163', 'gross': 0.612, 'net': 0.603}}
+
+
+
+def test_a_store_item_named_differently_on_the_markets_is_priced_under_its_market_name(tmp_path):
+    service = _service(tmp_path)
+    service.market_names = lambda: {'Sticker | Flickshot': 'Sticker | Flickshot (market)'}
+    table = {'Sticker | Flickshot (market)': {'price': 1.5}, 'Other': {'price': 9}}
+    asked = []
+
+    def lookup(names):
+        asked.append(set(names))
+        return {name: quote for name, quote in table.items() if name in names}
+    assert service._store_keyed(lookup, {'Sticker | Flickshot', 'Name Tag'}) == {'Sticker | Flickshot': {'price': 1.5}}
+    assert asked == [{'Sticker | Flickshot', 'Name Tag', 'Sticker | Flickshot (market)'}]

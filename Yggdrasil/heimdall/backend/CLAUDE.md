@@ -37,7 +37,8 @@ Deep dives on single features live in [docs/internals/](../../../docs/internals/
 | 20 | `StorageShopService(steam, ratatoskr, card_deals)` | Ratatoskr Buy Storage Units ("Storage shop" in the code) |
 | 21 | `StoreCatalogueService(ratatoskr, storage_shop)` | Store Catalogue; sets `storage_shop.on_price_sheet` |
 | 22 | `StoreArbitrageService(huginn, store_catalogue, storage_shop, draupnir)` | Store Catalogue Arbitrage (the Arbitrage tab) |
-| 23 | `MorningRoutine(...)` | wired to `routes.huginn` scan + CSFloat sweep |
+| 23 | `StoreBoostService(huginn, store_catalogue, ratatoskr, steam, store_arbitrage, telegram_caller)` | Store Boosts (the Boosts tab); `set_settings_provider` at once |
+| 24 | `MorningRoutine(...)` | wired to `routes.huginn` scan + CSFloat sweep |
 
 4. hangs the singletons on `context.ctx` and registers the blueprints
    (`routes/__init__.py`: accounts, settings, draupnir, ratatoskr, huginn, mimir);
@@ -69,12 +70,14 @@ Deep dives on single features live in [docs/internals/](../../../docs/internals/
 | `team-fortress-sell` | 15 s | Auto-stop after `team_fortress_auto_stop_hours`; sell step (inventory at most every 5 min) | `team_fortress_auto_sell_enabled` |
 | `andvari-card-sell` | 20 s | Card auto-sell step (each inventory at most every 30 min) | `card_auto_sell_enabled` (off by default) |
 | `store-arbitrage-watch` | 1 h (5 min first wait) | Warms the Store Catalogue Arbitrage default markets, which records the daily price history, then posts newly profitable store items to the shared bot | needs `tradeon_token`; posts need `store_arbitrage_alerts_enabled` |
+| `store-boosts-watch` | 1 h (3 min first wait) | Pulse check of every watched store item and capsule sticker (Steam listing, buy orders, 30-day median; Buff163 listing); flagged items to the front of the Steam queue | `store_boost_enabled`, needs `tradeon_token` |
+| `store-boosts-steam` | one read per `store_boost_steam_gap_seconds` (30, floor 10; 1 min first wait) | Steam `pricehistory` one item at a time (logged-in, `community_pacer`), 429 back-off 10 min doubling to 2 h; analyses each and alerts (shared bot, ring on a boost) | `store_boost_enabled`; alerts `store_boost_alerts_enabled`, ring `store_boost_ring_enabled` |
 | `pulse-keeper` (and the switch) | 30 s tick | Downloads again each table ticked on the Pulse feed page once it is older than `pulse_keep_minutes`, one at a time; a failed table waits 5 minutes | `pulse_kept_tables` (empty by default: does nothing); `pulse_switched_off_tables` stops the Case Arbitrage and Store Catalogue Arbitrage jobs downloading those tables |
 | `morning-routine` | 60 s tick | 08:00 local: "Get all items" scan, then the CSFloat buy-order sweep (unless < 12 h old), then `store-arbitrage-daily` (store price sheet, every market, Telegram post); catches up after the Mac sleeps | always |
 
 On-demand threads: CSFloat sweep, trade-alert sender, market/cross-arbitrage/
 Harvest warmers, card-deals scans, `andvari-{kind}` store-purchase jobs,
-`storage-shop-{kind}` jobs (`plan`, `purchase`, `delivery`, `price sheet`), `store-arbitrage-warm`, `store-arbitrage-daily`, `team-fortress-sell-now`.
+`storage-shop-{kind}` jobs (`plan`, `purchase`, `delivery`, `price sheet`), `store-arbitrage-warm`, `store-arbitrage-daily`, `store-boosts-check`, `store-boosts-ring`, `team-fortress-sell-now`.
 
 **Every one of these restarts when any `.py` file is saved** (see below).
 
@@ -109,6 +112,7 @@ Harvest warmers, card-deals scans, `andvari-{kind}` store-purchase jobs,
 | `storage_shop_service.py` | Ratatoskr Buy Storage Units ("Storage shop" in the code) — Counter-Strike 2 Storage Units, or any other price sheet entry (`item`, default `casket`; per-item price cap list × 1.25; game license and Armory Pass never), through the game store over the Game Coordinator. Full protocol, guards and live findings: [docs/internals/storage-shop.md](../../../docs/internals/storage-shop.md). Plan (wallet, store country, price sheet entry "casket", web-inventory Storage Unit count), guarded purchase (Init with the game store's 0-based currency → Steam's `ClientMicroTxnAuthRequest` must be exactly this order → approval page `approvetxn/<transid>` with `approved=1` → Finalize as a Game Coordinator job, which is when the wallet is charged); dry run cancels; after approval failures read "MAY BE PAID" and "Deliver again" re-sends Finalize; every sheet read goes to `on_price_sheet`, and the `price sheet` job only reads it; state in `cache/storage_shop.json` |
 | `store_catalogue_service.py` | Store Catalogue (read-only): every entry of the game store's price sheet with its US dollar price, category and store-front flag; English names from Ratatoskr's `POST /items/store-names` (the last names known are kept when Ratatoskr is down; two named by hand). Takes every sheet `StorageShopService` reads (`on_price_sheet`); "Read prices again" is that service's `price sheet` job, so it never overlaps a purchase; state in `cache/store_catalogue.json`. Each row has `cannot_trade` (the item's own "cannot trade" from Ratatoskr, or the known list for older names) |
 | `store_arbitrage_service.py` | Store Catalogue Arbitrage (read-only, recommendations only): every tradable catalogue item (keys, passes and "cannot trade" items left out) against the chosen markets' buy orders and lowest listings after `market_fee`, the cheapest wallet currency among the accounts, your Draupnir record (`DraupnirService.item_trades`) and a 180-day daily history (`cache/store_arbitrage_history.json.gz`); cash prices above 1.3× Buff163's listing are suspicious, so is any price its market has not updated for a day (`is_stale`: never best, signal or Telegram), a wide gap that stays open is "unconfirmed". Indicator: CSMoney (Trade)'s instant offer as a share of the store price (`signal` at `store_arbitrage_signal_pct`); `take_pull` (store items from every full table Huginn pulls, `HuginnService.add_pull_listener`, so the Case Arbitrage polls price them for free), `refresh()` (Refresh button), `start_daily_refresh` (morning routine `after_scan`: price sheet, every default market, then `send_alerts`) and the hourly newly-profitable post, through the shared Huginn bot. Deep dive §6b of [storage-shop.md](../../../docs/internals/storage-shop.md) |
+| `store_boost_service.py` | Store Boosts (read-only, an alarm): catches a Steam price boost of a store item or of a sticker inside a store capsule (contents from Ratatoskr's `/items/capsule-contents`) on its first day. Hourly pulse check (`preflag`: Steam buy orders 1.3× or listing 1.5× the 30-day median), a Steam `pricehistory` reader one item at a time (queue, tracked items every 15 minutes (`store_boost_tracked`), active items hourly, store items 3 h, contents 12 h; 429 back-off), the pure detector `analyze` (usual = median day of days 30 to 3 ago; `watch` / `boost` / `second_wave` / `fading`; sales alone never alarm), `opening_value` (rarity odds), `alert_decision` (each level once an episode, first sight only records unless the rise is under 48 h old); confirmation by `StoreArbitrageService.instant_cash_offers`. Shared Huginn bot + `TelegramCaller` ring on a boost. Tuned on Flickshot, World Eaters 1 and its capsule (`tests/fixtures/store_boost_histories.json.gz`). Deep dive §6c of [storage-shop.md](../../../docs/internals/storage-shop.md) |
 | `card_seller_service.py`, `market_seller.py`, `community_pacer.py` | Andvari card auto-sell (off by default): new trading cards listed in the wallet currency at the highest price that still sells — not above the 90th percentile of the last 7 days of sales, at most 3 days of sales queued ahead, one cent under the next wall of listings (`market_seller.patient_target`; price history kept 6 hours) — never under one cent below the lowest listing nor under the highest buy order, only cards that arrived after it was switched on, only their confirmations accepted (exact item name, type 3 or market type 12), retried until confirmed; statistics per account and game in `cache/card_sales.json`. `community_pacer` keeps one 4 s steamcommunity.com gap shared by the card seller, the Team Fortress 2 seller and Buy Storage Units |
 | `jsonio.py` | Crash-safe atomic JSON read/write (`.tmp-*.json` then rename) |
 | `validation.py` | Request-body validation for writes |
@@ -126,8 +130,9 @@ Harvest warmers, card-deals scans, `andvari-{kind}` store-purchase jobs,
 | Gjallarhorn news | Shared bot | `gjallarhorn_chat_id`, else `telegram_chat_id` |
 | Team Fortress 2 releases and auto-stop | Shared bot | `team_fortress_chat_id`, else `telegram_chat_id` |
 | Store Catalogue Arbitrage: profitable in-game store items (daily after the morning refresh, hourly for newly profitable ones) | Shared bot, else `notify_webhook_url` | `telegram_chat_id` (switch `store_arbitrage_alerts_enabled`) |
+| Store Boosts: each new level of a price boost (watch, boost, second wave, fading) | Shared bot, else `notify_webhook_url` | `telegram_chat_id` (switch `store_boost_alerts_enabled`) |
 | **Andvari** deal alerts and card-sale summaries | **Only its own bot** (`card_deals_bot_token`) | `card_deals_chat_id` — silent without them |
-| Phone rings (Gjallarhorn news, Team Fortress 2 release, manual ring) | `TelegramCaller` burner user account | `telegram_caller.json` target |
+| Phone rings (Gjallarhorn news, Team Fortress 2 release, a Store Boosts boost, manual ring) | `TelegramCaller` burner user account | `telegram_caller.json` target |
 
 Buy Storage Units, the Store Catalogue's own tab, Buy games, ASF and Harvest send nothing. **Never route Andvari
 through the shared bot**, and never add a fallback to it (Ivan's rule).
@@ -153,6 +158,7 @@ through the shared bot**, and never add a fallback to it (Ivan's rule).
 `lootfarm_auction_log.json`, `gjallarhorn_liquidity.json.gz`,
 `card_deals.json.gz`, `asf_state.json`, `team_fortress.json`,
 `card_sales.json`, `store_purchases.json`, `storage_shop.json`, `store_catalogue.json`, `store_arbitrage_history.json.gz`, `store_arbitrage_alerts.json`,
+`store_boosts.json.gz`, `store_boost_alerts.json`,
 `storage_shop_approval_page.html`, `morning_routine.json`. Cache files are not
 watched: `docker restart steam-odin-heimdall-backend-1` after editing one by hand.
 
@@ -185,7 +191,7 @@ docker exec steam-odin-heimdall-backend-1 sh -c \
 docker exec steam-odin-heimdall-backend-1 sh -c 'cd /app && ruff check .'
 ```
 
-About 940 tests in 42 files (`tests/`); `conftest.py` stubs CSFloat and refuses
+About 960 tests in 43 files (`tests/`); `conftest.py` stubs CSFloat and refuses
 every pulse request (fake `_post_tradeon` on the service), so no test reaches the
 network. Every feature that spends money or sells has pure helpers
 with tests — extend them, including with bytes captured live.

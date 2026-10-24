@@ -21,6 +21,13 @@ one, delete its line.
 | The setting `csfloat_api_key` is never read | `backend/settings.py` | CSFloat keys come from `csfloat_keys.json` |
 | `system_ops.trigger_restart` is not wired to anything | `backend/system_ops.py` | None |
 
+## Store item names
+
+| Issue | Where | Effect |
+|-------|-------|--------|
+| The game store names 10 items differently from the Steam Market ("Bestiary Sticker Capsule" is "Bestiary Capsule", "Music Kit \| Darude, Moments CS:GO" is "… CSGO") | `store_catalogue_service.py` names from the game's English strings | Store Boosts resolves them (`store_boost_service.resolve_market_names`) and the Arbitrage tab prices them under those names; the Catalogue's Steam links still open an empty listing |
+| Three Steam price history readers, each with its own pacing and 429 back-off | `steam_market_service.py` (Gjallarhorn), `card_deals_service.py` (Andvari), `store_boost_service.py` (Store Boosts) | A 429 seen by one does not slow the others; one shared reader would be safer |
+
 ## Comments that disagree with the code
 
 | Comment says | Code does |

@@ -34,6 +34,7 @@ function TitleManager() {
     else if (pathname.startsWith('/buy-storage-units')) title = 'Buy Storage Units';
     else if (pathname.startsWith('/store-catalogue/buy')) title = 'Buy from the store';
     else if (pathname.startsWith('/store-catalogue/arbitrage')) title = 'Store Catalogue Arbitrage';
+    else if (pathname.startsWith('/store-catalogue/boosts')) title = 'Store Boosts';
     else if (pathname.startsWith('/store-catalogue')) title = 'Store Catalogue';
     else if (pathname.startsWith('/huginn/gjallarhorn')) title = 'Gjallarhorn';
     else if (pathname.startsWith('/huginn/card-deals')) title = 'Andvari';
@@ -100,6 +101,7 @@ function App() {
           <Route path="/storage-shop" element={<Navigate to="/buy-storage-units" replace />} />
           <Route path="/store-catalogue" element={<RatatoskrStoreCatalogue />} />
           <Route path="/store-catalogue/arbitrage" element={<RatatoskrStoreCatalogue tab="arbitrage" />} />
+          <Route path="/store-catalogue/boosts" element={<RatatoskrStoreCatalogue tab="boosts" />} />
           <Route path="/store-catalogue/buy/:item" element={<RatatoskrStorageShop />} />
           <Route path="/ratatoskr/:steamid" element={<RatatoskrLayout />}>
             <Route index element={<Navigate to="inventory" replace />} />

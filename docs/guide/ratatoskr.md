@@ -191,3 +191,101 @@ bought or sold here, and **Buy** opens the item's guarded buy page.
 
 > Store purchases cannot be traded for **7 days**, so a price has to hold for a
 > week. The board recommends; it does not know the price next week.
+
+### Boosts tab
+
+http://localhost:3000/store-catalogue/boosts (the **Boosts** tab on the Store
+Catalogue page). It catches a **price boost** on the Steam Market on its first
+day, for every store item and every sticker inside the store's capsules. An
+alarm and a recommendation only: nothing is bought or sold here, and **Buy**
+opens the item's guarded buy page.
+
+A **price boost** is when someone suddenly buys an item on the Steam Community
+Market in large portions and at higher and higher prices. They are "boosting"
+the price so they can resell the same item on third-party marketplaces, which
+follow Steam's price, at a profit.
+
+For store items this opens a window. The store sells any number of copies at
+one fixed price, so during a boost a store copy is worth far more than it
+costs. Example: Sticker | Flickshot (in the store since 2015 at $0.99) was
+boosted from 11 January 2026, and third-party markets paid around $7.55 a
+week later. A few days after that it was back near the store price.
+
+Store copies cannot be traded for **7 days**. The profit therefore depends on
+buying on the first day of the boost, so the copies unlock while the price is
+still high. Copies bought three days late unlocked after the peak.
+
+A store **sticker capsule** can be boosted in two ways: directly, or through one
+sticker inside it. In October 2026, Sticker | World Eaters 1 from the Warhammer
+40,000 Traitor Astartes capsule ($0.99 in the store) went from about $0.20 to
+over $20 on Steam. The capsule followed about a day later, up to about $3. So
+the tab watches the stickers inside each capsule too.
+
+**How it reads.** Every hour it reads Steam's and Buff163's prices of every
+watched item from pulse. Steam's own price history (hourly prices and sales of
+the last 30 days) is read one item at a time, at least 30 seconds apart:
+first the items pulse flags (Steam's buy orders 1.3 times their 30-day median,
+or the lowest listing 1.5 times) or you ask for, then items in a boost every
+hour, store items every 3 hours, capsule stickers every 12 hours. When Steam
+says "too many requests", it waits 10 minutes, then longer.
+
+**The levels.** "Usual" is the median day of the last 30 days, leaving out the
+last 3. Sales alone never raise the alarm: the Traitor Astartes capsule had
+about 30 sales spikes with no price move before its boost.
+
+- **Watch**: price at least 1.2 times the usual and at least 3 times the usual
+  sales. An early sign.
+- **Boost**: price at least 2 times the usual with at least 3 times the usual
+  sales, or still within 70% of a recent peak. Buy in the store now.
+- **Second wave**: after a peak, the price climbed 1.3 times off its low again.
+- **Fading**: under 70% of the peak, still above the usual price. Sell what you
+  hold before third-party markets follow Steam down.
+
+Tested on the real histories: Flickshot was flagged on 11 January (its first
+day), World Eaters 1 on the evening of 3–4 October, its capsule on 6 October,
+and none of them raised an alarm in the quiet weeks before.
+
+**The page.**
+
+- The four cards at the top: how many items are at each level (and capsules
+  with a moving sticker, items flagged by pulse, confirmed boosts); the Steam
+  reader (what it reads now, how much of the list was read recently, the
+  seconds between reads, which you can change); the hourly pulse check (**Check
+  now**); and the alerts.
+- **Track** (the pin next to any item or capsule sticker) puts it in the
+  **Tracked** panel on top: its Steam history is read every 15 minutes, with
+  its level, price and sales against the usual, Buff163's listing, a 7-day
+  chart and when it is read next (every 15 minutes; longer when you track many,
+  so they never take more than half of Steam's reads). Any Steam Market item
+  can be tracked; one the store does not sell gets messages but never rings
+  the phone. The crossed pin stops tracking.
+- **Moving now** shows items at any level, capsules with a moving sticker and
+  items pulse flagged; **Capsules** and **All** show more. Search finds capsule
+  stickers too.
+- Each row: the level (and the level inside a capsule), the store price,
+  Steam's price of the last 6 hours and how many times its usual it is, the
+  sales of the last 24 hours against the usual, a 7-day chart (price line,
+  sales bars, the store price in amber dashes, the usual price dotted), and
+  **Confirmed**: what a market pays at once in money after its fee (green at
+  or above the store price), or for a capsule its opening value.
+- Click a row: Steam's hourly chart of the last 14 days (hover for any hour),
+  the usual price, peak, low since the peak, when the rise started, **when
+  copies bought now become tradable**, Steam's lowest listing, buy orders and
+  30-day median, Buff163's listing and **Read Steam now**.
+- A capsule's row opens its stickers: rarity, the chance one capsule gives each
+  (High Grade 80%, Remarkable 16%, Exotic 3.2%, Extraordinary 0.64%, shared
+  inside each rarity), its level, Steam price and sales, Buff163's price, and
+  the **opening value**: each sticker's chance times its price, on Buff163
+  listings and on Steam buy orders, against the store price.
+
+**Alerts.** A message to the Huginn Telegram bot for each new level of a boost
+(watch, boost, second wave, fading), each once per boost; a boost ends after 3
+calm days. A **boost** also **rings the phone**, like Gjallarhorn's news alert.
+A sticker's message names its capsule and the capsule's opening value. An item
+seen for the first time is only recorded, unless its rise began in the last 48
+hours, so switching it on does not flood you with old boosts. **Test message**
+and **Test ring** try both. The switches: **Watch for boosts** (everything),
+**Telegram message**, **Ring the phone on a boost**.
+
+> Unknown yet: whether stickers opened from a store capsule keep the 7-day
+> hold. One capsule bought and opened settles it.

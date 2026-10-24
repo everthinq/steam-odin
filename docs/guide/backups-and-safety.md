@@ -50,7 +50,9 @@ Know what is switched on: auto-confirm (Dashboard → Confirms), card auto-sell
 (Andvari), Team Fortress 2 watcher and auto-sell, Andvari automatic scans,
 Gjallarhorn alarm, auto-store, the morning routine (it also reads the in-game
 store's prices with one Ratatoskr login), and the Store Catalogue Arbitrage price
-reader (hourly; it only reads prices and posts profitable store items to Telegram). Anything that **sells** only
+reader (hourly; it only reads prices and posts profitable store items to Telegram), and Store
+Boosts (reads pulse hourly and Steam's price history one item at a time; it messages and rings
+on a price boost, never buys). Anything that **sells** only
 touches items that arrive after you switch it on, unless you tick the option
 for older ones. Anything that **spends money** (Buy games, Buy Storage Units) only
 runs when you press its button, after a review.

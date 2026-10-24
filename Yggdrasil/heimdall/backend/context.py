@@ -32,6 +32,7 @@ class _Context:
     storage_shop_service = None
     store_catalogue_service = None
     store_arbitrage_service = None
+    store_boost_service = None
 
 
 ctx = _Context()
