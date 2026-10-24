@@ -72,7 +72,7 @@ DEFAULT_SETTINGS = {
     "store_boost_alerts_enabled": True,
     "store_boost_ring_enabled": True,
     "store_boost_steam_gap_seconds": 30.0,
-    # Items you track on the Boosts tab (any Steam Market name): read every 15 minutes, shown on top.
+    # Items you track on the Boosts tab (any Steam Market name): shown on top, read on the normal schedule.
     "store_boost_tracked": [],
     # --- Gjallarhorn (event-rotation cockpit) ---
     # Instant-redeploy market whitelist: which markets do NOT lock your balance for

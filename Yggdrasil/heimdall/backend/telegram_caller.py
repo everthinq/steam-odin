@@ -23,6 +23,7 @@ import json
 import logging
 import os
 import secrets
+import threading
 
 logger = logging.getLogger(__name__)
 
@@ -43,6 +44,10 @@ def load_caller_config():
 
 class TelegramCaller:
     """Rings a fixed target from the configured caller account. Best-effort."""
+
+    # One ring at a time across every feature (Gjallarhorn, Team Fortress 2, Store Boosts): two
+    # Telethon clients on the same session at once can get the session revoked.
+    _ring_lock = threading.Lock()
 
     def __init__(self):
         self._cfg = load_caller_config()
@@ -78,13 +83,14 @@ class TelegramCaller:
         repeats = self._REPEATS if repeats is None else max(1, int(repeats))
         gap_seconds = self._GAP_SECONDS if gap_seconds is None else max(0, int(gap_seconds))
         try:
-            loop = asyncio.new_event_loop()
-            try:
-                asyncio.set_event_loop(loop)
-                return loop.run_until_complete(
-                    self._ring_async(cfg, message, ring_seconds, repeats, gap_seconds))
-            finally:
-                loop.close()
+            with self._ring_lock:
+                loop = asyncio.new_event_loop()
+                try:
+                    asyncio.set_event_loop(loop)
+                    return loop.run_until_complete(
+                        self._ring_async(cfg, message, ring_seconds, repeats, gap_seconds))
+                finally:
+                    loop.close()
         except Exception as e:
             logger.error('[TELEGRAM CALLER] ring failed: %s', e)
             return {'ok': False, 'error': str(e)}

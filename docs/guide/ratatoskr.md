@@ -253,10 +253,11 @@ and none of them raised an alarm in the quiet weeks before.
   seconds between reads, which you can change); the hourly pulse check (**Check
   now**); and the alerts.
 - **Track** (the pin next to any item or capsule sticker) puts it in the
-  **Tracked** panel on top: its Steam history is read every 15 minutes, with
-  its level, price and sales against the usual, Buff163's listing, a 7-day
-  chart and when it is read next (every 15 minutes; longer when you track many,
-  so they never take more than half of Steam's reads). Any Steam Market item
+  **Tracked** panel on top, with its level, price and sales against the
+  usual, Buff163's listing, a 7-day chart and when it is read next. It is
+  read on the same schedule as every other item (a sticker in a boost every
+  hour, store items every 3 hours, capsule stickers every 12 hours; **Read
+  Steam now** reads it at once). Any Steam Market item
   can be tracked; one the store does not sell gets messages but never rings
   the phone. The crossed pin stops tracking.
 - **Moving now** shows items at any level, capsules with a moving sticker and

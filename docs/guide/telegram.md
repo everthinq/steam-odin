@@ -39,7 +39,8 @@ A Telegram bot cannot make calls, so rings come from a **spare Telegram user
 account** (a second number) that calls your main account: Gjallarhorn news,
 a Team Fortress 2 case release, a price boost of a store item (Store Catalogue →
 Boosts), and the **Ring test** button. The call has no
-sound content — it is just the ringing, after a message saying why.
+sound content — it is just the ringing, after a message saying why. Rings never overlap:
+a second one waits until the first has finished (about 3 minutes).
 
 Set it up once:
 

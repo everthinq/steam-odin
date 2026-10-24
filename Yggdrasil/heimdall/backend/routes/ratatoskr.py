@@ -381,7 +381,7 @@ _track_lock = threading.Lock()
 
 @bp.route('/api/ratatoskr/store-boosts/track', methods=['POST'])
 def store_boosts_track():
-    """{"name": item, "tracked": bool}: track an item (read every 15 minutes, shown on top) or stop."""
+    """{"name": item, "tracked": bool}: track an item (shown on top, read on the normal schedule) or stop."""
     body = request.get_json(silent=True) or {}
     name, tracked = body.get('name'), body.get('tracked', True)
     if not isinstance(name, str) or not name.strip() or len(name) > 200:

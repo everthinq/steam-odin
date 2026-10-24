@@ -234,7 +234,7 @@ def test_the_alert_names_the_store_price_the_capsule_and_the_unlock_date():
     assert plain.startswith('🚀 Price boost: Sticker | World Eaters 1')
     assert '7.4× its usual $0.20' in plain and '105 sold in 24 h' in plain
     assert f'Inside {CAPSULE} (in-game store $0.99): opening worth about $1.12 on Buff163' in plain
-    unlock = datetime.datetime.fromtimestamp(_utc(2026, 10, 11, 23)).strftime('%d %b %H:%M')
+    unlock = datetime.datetime.fromtimestamp(_utc(2026, 10, 11, 23)).astimezone().strftime('%d %b %H:%M %Z')
     assert f'tradable from {unlock}' in plain                 # local time, 7 days later
     assert 'short-pulse.tradeon.space/short-link/CsGo/Steam/' in body and '<b>' in body
     plain, _ = render_alert('fading', FLICKSHOT, {**analysis, 'peak': 14.23}, {'cost': 0.99},
@@ -538,32 +538,40 @@ def test_five_network_failures_in_a_row_pause_the_reader(tmp_path, histories):
     assert waits == [1, 1, 1, 1, 300] and service._reader['status'] == 'session_failing'
 
 
-def test_a_tracked_item_is_read_every_fifteen_minutes_and_shown_on_top(tmp_path, histories):
+def test_a_tracked_item_is_read_like_any_other_and_shown_on_top(tmp_path, histories):
     service, _, clock = _service(tmp_path, histories, settings={'store_boost_tracked': [WORLD_EATERS, 7, WORLD_EATERS]})
     service._contents = CONTENTS
     assert service.tracked() == [WORLD_EATERS]
-    service._read_step()
-    assert service._reader['last_name'] == WORLD_EATERS
-    clock.now += 10
-    service._read_step()
-    assert service._reader['last_name'] != WORLD_EATERS          # read 10 seconds ago: not due
+    service._pulse = {CAPSULE: {'listing': 0.95}, FLICKSHOT: {'listing': 1.05}}
+    # Tracked or not, a capsule sticker is read on the capsule-contents schedule: store items first.
+    reads = []
+    for _ in range(3):
+        service._read_step()
+        reads.append(service._reader['last_name'])
+        clock.now += 10
+    assert set(reads[:2]) == {CAPSULE, FLICKSHOT} and reads[2] == WORLD_EATERS
+    assert service._items[WORLD_EATERS]['analysis']['level'] == 'boost'      # 2026-10-04 23:30, the boost's first evening
+    service._priority = []                       # (its boost queued the capsule; not what this test is about)
     clock.now += 15 * 60
-    service._read_step()
-    assert service._reader['last_name'] == WORLD_EATERS
+    service._items['Sticker | World Eaters 2'] = {'read_at': clock.now}        # the other sticker: just read
+    assert service._next(clock.now) == (None, None)      # in a boost: every hour, never every 15 minutes
+    clock.now += 46 * 60
+    assert service._next(clock.now)[0] == WORLD_EATERS
     tracked = service.board()['tracked']
     assert [entry['name'] for entry in tracked] == [WORLD_EATERS]
     assert tracked[0]['capsules'] == [{'name': CAPSULE, 'entry': 'coupon - warhammer_traitor_sticker_capsule',
                                        'cost': 0.99}]
-    assert tracked[0]['spark'] and tracked[0]['level'] == 'boost'
+    assert tracked[0]['spark']
 
 
-def test_many_tracked_items_never_take_more_than_half_of_the_reads(tmp_path, histories):
-    names = [f'Sticker | {number}' for number in range(30)]
-    service, _, _ = _service(tmp_path, histories, settings={'store_boost_tracked': names,
-                                                             'store_boost_steam_gap_seconds': 30})
-    assert service.tracked_every() == 30 * 30 / 0.5                  # 30 minutes, not 15
-    one, _, _ = _service(tmp_path, histories, settings={'store_boost_tracked': names[:1]})
-    assert one.tracked_every() == 15 * 60
+def test_a_tracked_item_outside_the_store_is_read_like_a_store_item(tmp_path, histories):
+    service, _, clock = _service(tmp_path, histories, settings={'store_boost_tracked': ['AK-47 | Redline (Field-Tested)']})
+    service._pulse = {CAPSULE: {'listing': 0.95}, FLICKSHOT: {'listing': 1.05},
+                      'AK-47 | Redline (Field-Tested)': {'listing': 31.0}}
+    service._items = {CAPSULE: {'read_at': clock.now}, FLICKSHOT: {'read_at': clock.now}}
+    assert service._next(clock.now) == ('AK-47 | Redline (Field-Tested)', 'store')
+    service._items['AK-47 | Redline (Field-Tested)'] = {'read_at': clock.now}
+    assert service._next(clock.now + 3600) == (None, None)            # every 3 hours, like a store item
 
 
 def test_a_tracked_item_the_store_does_not_sell_never_rings(tmp_path, histories):
@@ -689,3 +697,103 @@ def test_the_queue_has_a_ceiling(tmp_path, histories):
     for number in range(100):
         service.read_now(f'Sticker | {number}')
     assert service.read_now('Sticker | one too many')['queued'] is False
+
+
+def test_the_ring_follows_its_own_switch_and_an_undelivered_alert_is_tried_again(tmp_path, histories):
+    class Caller:
+        rang = []
+
+        def status(self):
+            return {'configured': True}
+
+        def ring(self, message=None):
+            self.rang.append(message)
+    service, sent, clock = _service(tmp_path, histories, settings={'store_boost_alerts_enabled': False})
+    service.telegram_caller = Caller()
+    analysis = {'price_6h': 5.0, 'usual_price': 1.0, 'price_ratio': 5.0, 'sales_24h': 90, 'sales_ratio': 9.0,
+                'usual_sales': 10, 'level': 'boost', 'started_at': clock.now - HOUR}
+    result = service._send('boost', FLICKSHOT, analysis, [])
+    assert result['rang'] and not result['sent'] and sent == []           # messages off, the ring still rings
+    quiet, quiet_sent, _ = _service(tmp_path / 'quiet', histories,
+                                    settings={'store_boost_alerts_enabled': False, 'store_boost_ring_enabled': False})
+    quiet._alerts = {'items': {FLICKSHOT: {'level': 'calm', 'sent': {}}}}
+    quiet._after_analysis(FLICKSHOT, analysis, clock.now)
+    assert 'boost' in quiet._alerts['items'][FLICKSHOT]['sent']           # switched off on purpose: handled
+    assert not quiet._alerts.get('log')                                    # and not logged
+    down, _, _ = _service(tmp_path / 'down', histories, settings={'store_boost_ring_enabled': False})
+    down._notify = lambda settings, text, html=None: {'ok': False, 'error': 'Telegram is down'}
+    down._alerts = {'items': {FLICKSHOT: {'level': 'calm', 'sent': {}}}}
+    down._after_analysis(FLICKSHOT, analysis, clock.now)
+    assert 'boost' not in down._alerts['items'][FLICKSHOT]['sent']        # not delivered: tried on the next read
+
+
+def test_http_400_asks_a_second_account_to_tell_a_bad_session_from_a_bad_name(tmp_path, histories):
+    from store_boost_service import BadRequest
+    used = []
+
+    def answer(name, cookies):
+        used.append((name, cookies['steamLoginSecure']))
+        if name == 'Sticker | unknown' or cookies['steamLoginSecure'] == '765':
+            raise BadRequest('Steam answered HTTP 400')
+        return _payload([])
+    service, _, clock = _service(tmp_path, histories, fetch=answer)
+    service.read_now(FLICKSHOT)
+    service._read_step()
+    assert used == [(FLICKSHOT, '765'), (FLICKSHOT, '766')]                 # one step, two accounts
+    assert service._items[FLICKSHOT]['error'] is None and '765' in service._rejected
+    service._rejected = {}
+    used.clear()
+    service.read_now('Sticker | unknown')
+    clock.now += 10
+    service._read_step()
+    assert used == [('Sticker | unknown', '765'), ('Sticker | unknown', '766')]
+    assert service._items['Sticker | unknown']['error'] and not service._rejected       # the name, no account blamed
+    assert service._priority == []
+
+
+def test_http_400_with_a_single_account_blames_the_name_and_moves_on(tmp_path, histories):
+    from store_boost_service import BadRequest
+
+    def answer(name, cookies):
+        raise BadRequest('Steam answered HTTP 400')
+    service, _, _ = _service(tmp_path, histories, fetch=answer)
+    service._not_dollars = {'766': service._clock()}                       # only 765 is usable
+    service.read_now('Sticker | unknown')
+    assert service._read_step() == 1
+    assert service._items['Sticker | unknown']['error'] and service._priority == [] and not service._rejected
+
+
+def test_only_the_strongest_pulse_flags_are_queued(tmp_path, histories):
+    from store_boost_service import preflag_strength
+    assert preflag_strength({'listing': 3.0, 'buy': 1.5, 'median30d': 1.0}) == 3.0
+    assert preflag_strength({'listing': 3.0}) == 0.0
+
+
+def test_a_market_name_briefly_missing_from_pulse_is_kept(tmp_path, histories):
+    service, _, _ = _service(tmp_path, histories)
+    service._market_names = {FLICKSHOT: 'Sticker | Flickshot (market)'}
+    service.huginn.market_index_at = lambda *arguments, **keywords: (0, {})   # pulse lists neither name
+    service._resolve_market_names('t')
+    assert service.market_names() == {FLICKSHOT: 'Sticker | Flickshot (market)'}
+
+
+def test_a_dropped_second_wave_is_sent_on_the_next_read():
+    now = _utc(2026, 10, 22)
+    state = {'level': 'second_wave', 'episode': now - 10 * DAY, 'sent': {'boost': now - 10 * DAY}}
+    _, send = alert_decision(state, 'second_wave', {}, now)
+    assert send == 'second_wave'
+
+
+def test_a_tracked_item_pulse_has_no_price_for_is_still_read(tmp_path, histories):
+    service, _, clock = _service(tmp_path, histories, settings={'store_boost_tracked': ['Sticker | rare thing']})
+    service._pulse = {CAPSULE: {'listing': 0.95}, FLICKSHOT: {'listing': 1.05}}
+    service._items = {CAPSULE: {'read_at': clock.now}, FLICKSHOT: {'read_at': clock.now}}
+    assert service._next(clock.now) == ('Sticker | rare thing', 'store')
+
+
+def test_a_market_name_of_an_item_that_left_the_store_is_dropped(tmp_path, histories):
+    service, _, _ = _service(tmp_path, histories)
+    service._market_names = {'Gone Sticker Capsule': 'Gone Capsule'}
+    service.huginn.market_index_at = lambda *arguments, **keywords: (0, {})
+    service._resolve_market_names('t')
+    assert service.market_names() == {}

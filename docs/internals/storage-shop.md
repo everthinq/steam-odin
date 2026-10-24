@@ -400,10 +400,13 @@ Nothing in it buys anything.
 - **Steam reader** (thread `store-boosts-steam`, first read a minute after boot): the logged-in
   `pricehistory` (`SteamService.web_session_cookie`), one item at a time,
   `store_boost_steam_gap_seconds` apart (30, never under 10) and through `community_pacer`.
-  Order: the queue, tracked items (`store_boost_tracked`, any market name, at most 30,
-  `POST …/track {name, tracked}`) every 15 minutes, items at an active level every hour, store items every 3 hours, capsule
-  contents every 12 hours, a failed item after 2 hours. Tracked items never take more than half
-  the reads (`tracked_every`: 15 minutes, or 2 × tracked × gap when longer). A 429 waits 10
+  Order: the queue, items at an active level every hour, store items every 3 hours, capsule
+  contents every 12 hours, a failed item after 2 hours. Tracked items (`store_boost_tracked`,
+  any market name, at most 30, `POST …/track {name, tracked}`) are only shown on top and read on
+  that same schedule (Ivan, 2026-10-25); one neither in the store nor in a capsule counts as a
+  store item. At most `PREFLAG_MAX_PER_CHECK` (10) pulse flags are queued an hour, strongest
+  first. A 400 is asked again at once with another account: a second 400 (or no other account) is
+  the item's name, an answer means the first account's session (skipped 30 minutes). A 429 waits 10
   minutes, doubling to 2 hours, and keeps the item first. Sessions: the first account
   (`web_session_cookie_for`) not skipped, asked only once an item is due; an account answering
   in another currency is skipped 6 hours, one whose session Steam refused (HTTP 401/403) 30
@@ -429,9 +432,15 @@ Nothing in it buys anything.
   boost, a second wave again only after 2 days; 3 calm days end an episode; a first sight only
   records unless `started_at` is under 48 hours old. Shared Huginn bot
   (`store_boost_alerts_enabled`), and a ring through `TelegramCaller` on `boost`
-  (`store_boost_ring_enabled`, its own thread) only for something the store sells (the item or a
+  (`store_boost_ring_enabled`, its own switch: it rings with Telegram messages off; a second
+  ring waits for the first, since `TelegramCaller` now rings one at a time for every feature, so a
+  manual Ring test can wait up to about 3 minutes behind a running ring) only for
+  something the store sells (the item or a
   capsule holding it); a tracked item the store does not sell gets the message only. The alert
-  state is kept in memory and written at most every 30 seconds (at once after a send). A boosting sticker queues its capsule for a
+  state is kept in memory and written at most every 30 seconds (at once after a send); a failed
+  Telegram post (neither sent nor rung) is not counted, so the next read tries again; messages
+  switched off on purpose count as handled and are not logged. Market names: a name found
+  before is kept while pulse briefly lacks it. A boosting sticker queues its capsule for a
   read. State: `cache/store_boosts.json.gz` (per item: read time, 14 days of hourly points,
   analysis; pulse quotes; capsule contents) and `cache/store_boost_alerts.json` (per item
   episode, the last 50 alerts).

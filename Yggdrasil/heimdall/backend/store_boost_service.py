@@ -63,7 +63,7 @@ import urllib.request
 import community_pacer
 from card_deals_service import RateLimited, parse_sale_history
 from huginn_service import pulse_short_link
-from jsonio import atomic_write_json, read_json
+from jsonio import atomic_write_bytes, atomic_write_json, read_json
 from notifications import notification_channel, send_notification
 from pulse_feed import FRESH, ON_DEMAND, SwitchedOff, is_stale
 from store_arbitrage_service import TRADE_HOLD_DAYS, split_items
@@ -93,6 +93,7 @@ FADING_FLOOR_RATIO = 1.2
 PREFLAG_RATIO = 1.3
 PREFLAG_LISTING_RATIO = 1.5
 PREFLAG_MIN_GAIN = 0.03
+PREFLAG_MAX_PER_CHECK = 10          # flagged items queued per hourly check, strongest first
 
 LEVELS = ('unknown', 'calm', 'fading', 'watch', 'second_wave', 'boost')
 SEVERITY = {level: index for index, level in enumerate(LEVELS)}
@@ -112,8 +113,6 @@ MAX_STEAM_GAP = 3600.0              # an hour at most (a huge value would stop t
 STORE_ITEM_EVERY = 3 * HOUR         # a store item's history is read again after this
 CONTENT_EVERY = 12 * HOUR           # a capsule sticker's history is read again after this
 ACTIVE_EVERY = HOUR                 # an item in a boost episode is read again after this
-TRACKED_EVERY = 15 * 60             # an item you track (store_boost_tracked) is read again after this
-TRACKED_SHARE = 0.5                 # tracked items never take more than half of the reads: the rest still runs
 NOT_DOLLARS_FORGET = 6 * HOUR       # an account seen answering in another currency is skipped this long
 REJECTED_SESSION_WAIT = 30 * 60     # an account whose session Steam refused is skipped this long
 ALERT_SAVE_MIN_INTERVAL = 30
@@ -292,6 +291,15 @@ def preflag(quote):
             or (listing >= PREFLAG_LISTING_RATIO * median and listing - median >= PREFLAG_MIN_GAIN))
 
 
+def preflag_strength(quote):
+    """How far pulse's Steam prices run ahead of the 30-day median (the larger of the buy order's
+    and the listing's ratio), for ranking flagged items."""
+    median = (quote or {}).get('median30d')
+    if not median:
+        return 0.0
+    return max((quote.get('buy') or 0) / median, (quote.get('listing') or 0) / median)
+
+
 def item_chances(items):
     """{name: chance of getting it from one capsule} for [{name, tier}] (TIER_ODDS, rescaled to the
     tiers present, shared equally inside a tier)."""
@@ -360,7 +368,8 @@ def alert_decision(state, level, analysis, now):
             sent = {}
         state['calm_since'] = None
         if level == 'second_wave':
-            due = state.get('level') != 'second_wave' and now - sent.get('second_wave', 0) >= SECOND_WAVE_REPEAT
+            due = 'second_wave' not in sent or (state.get('level') != 'second_wave'
+                                                and now - sent['second_wave'] >= SECOND_WAVE_REPEAT)
         elif level == 'watch':
             due = 'watch' not in sent and 'boost' not in sent
         else:
@@ -424,7 +433,8 @@ def render_alert(level, name, analysis, store=None, capsules=(), confirm=None, n
         if opening:
             line += f": opening worth about {_dollars(opening['value'])} on Buff163"
         lines.append(line)
-    unlock = datetime.datetime.fromtimestamp(now + TRADE_HOLD_DAYS * DAY).strftime('%d %b %H:%M')
+    # The container shares the Mac's /etc/localtime (docker-compose.yml): local time, zone named.
+    unlock = datetime.datetime.fromtimestamp(now + TRADE_HOLD_DAYS * DAY).astimezone().strftime('%d %b %H:%M %Z')
     if not store and not capsules:
         foot = 'Not sold in the in-game store: tracked on Steam only. Store Catalogue → Boosts.'
     elif level in ('watch', 'boost', 'second_wave'):
@@ -451,10 +461,14 @@ class SessionRejected(RuntimeError):
     """Steam refused the web session (HTTP 401 or 403)."""
 
 
+class BadRequest(RuntimeError):
+    """Steam answered HTTP 400: a session it no longer accepts, or a name it does not know."""
+
+
 def fetch_steam_history(name, cookies, timeout=20):
     """Steam's ``pricehistory`` answer for *name* (logged in), as JSON. Raises RateLimited
-    (card_deals_service's) on 429 and SessionRejected on 401 or 403 (a name Steam does not know answers 400 or 500,
-    which is that item's error)."""
+    (card_deals_service's) on 429, SessionRejected on 401 or 403 and BadRequest on 400 (a refused session or an unknown
+    name: the reader asks another account once to tell which). A 500 is the item's error."""
     url = STEAM_HISTORY_URL + '?' + urllib.parse.urlencode(
         {'country': 'US', 'currency': 1, 'appid': 730, 'market_hash_name': name})
     request = urllib.request.Request(url, headers={
@@ -468,6 +482,8 @@ def fetch_steam_history(name, cookies, timeout=20):
             raise RateLimited('Steam answered 429 (too many requests)') from e
         if e.code in (401, 403):
             raise SessionRejected(f'Steam refused the web session (HTTP {e.code})') from e
+        if e.code == 400:
+            raise BadRequest('Steam answered HTTP 400 (a refused session, or a name it does not know)') from e
         raise
 
 
@@ -499,7 +515,7 @@ class StoreBoostService:
         self._priority = []          # names to read first, oldest request first
         self._dirty = False
         self._saved_at = 0.0
-        self._reader = {'status': 'idle', 'reading': None, 'last_read_at': None, 'last_name': None,
+        self._reader = {'status': 'starting', 'reading': None, 'last_read_at': None, 'last_name': None,
                         'blocked_until': None, 'backoff': 0, 'error': None, 'reads': []}
         self._check = {'running': False, 'checked_at': None, 'error': None, 'started_at': None}
         self._not_dollars = {}       # steamid -> when its web session answered in another currency
@@ -547,13 +563,9 @@ class StoreBoostService:
                          'contents_at': self._contents_at, 'checked_at': self._check['checked_at'],
                          'market_names': dict(self._market_names)}
                 self._dirty, self._saved_at = False, self._clock()
-            snapshot = json.dumps(state, separators=(',', ':'))
-            temporary = f'{self.state_path}.{os.getpid()}.{threading.get_ident()}.tmp'
+            blob = gzip.compress(json.dumps(state, separators=(',', ':')).encode('utf-8'))
             try:
-                os.makedirs(os.path.dirname(self.state_path) or '.', exist_ok=True)
-                with gzip.open(temporary, 'wt', encoding='utf-8') as handle:
-                    handle.write(snapshot)
-                os.replace(temporary, self.state_path)
+                atomic_write_bytes(self.state_path, blob)      # temporary file, fsync, rename
             except OSError as e:
                 log.error('[STORE-BOOSTS] could not save %s: %s', self.state_path, e)
                 with self._lock:
@@ -658,6 +670,14 @@ class StoreBoostService:
         with self.huginn.pulse.job(BOOST_JOB):
             _, known = self.huginn.market_index_at(token, 'Steam', 'listing', max_age, names=candidates)
         found = resolve_market_names(raw, contents, set(known))
+        still_sold = {item['name'] for item in raw}
+        with self._lock:
+            previous = dict(self._market_names)
+        for store, market in previous.items():
+            # Briefly missing from pulse (no Steam listing for an hour): keep the name already found,
+            # unless the store's own name is now the one the market uses.
+            if store not in found and store not in known and store in still_sold:
+                found[store] = market
         with self._lock:
             changed = found != self._market_names
             self._market_names = found
@@ -697,7 +717,7 @@ class StoreBoostService:
                     quote['preflag'] = preflag(quote)
                     # Flagged and not read in the last hour: to the front of the Steam queue.
                     if quote['preflag'] and now - ((self._items.get(name) or {}).get('read_at') or 0) >= ACTIVE_EVERY:
-                        flagged.append(name)
+                        flagged.append((preflag_strength(quote), name))
                     self._pulse[name] = quote
                 # Forget items no longer watched (left the store, untracked, a one-off read).
                 keep = names | set(self._priority)
@@ -706,6 +726,9 @@ class StoreBoostService:
                         del state[name]
                 self._check.update(checked_at=now, error=None)
                 self._dirty = True
+            # The strongest few only: a thin sticker that always sits above the line must not fill
+            # the queue every hour and push the rest of the list back.
+            flagged = [name for _, name in sorted(flagged, reverse=True)[:PREFLAG_MAX_PER_CHECK]]
             for name in flagged:
                 self.read_now(name, reason='pulse')
             log.info('[STORE-BOOSTS] pulse check: %d items, %d flagged for a Steam read', len(names), len(flagged))
@@ -734,21 +757,26 @@ class StoreBoostService:
         return {'queued': True, 'position': self._priority.index(name) + 1 if name in self._priority else 0}
 
     def tracked(self):
-        """The items you track (settings store_boost_tracked): any Steam Market name, read every
-        TRACKED_EVERY seconds and shown on top of the tab."""
+        """The items you track (settings store_boost_tracked): any Steam Market name, shown on top of
+        the tab and read on the same schedule as every other item (Ivan, 2026-10-25)."""
         names = (self._settings_provider() or {}).get('store_boost_tracked') or []
         return [name for name in dict.fromkeys(names) if isinstance(name, str) and name][:TRACKED_MAX]
 
-    def tracked_every(self, settings=None):
-        """Seconds between two reads of a tracked item: TRACKED_EVERY, longer when many are tracked,
-        so they never take more than TRACKED_SHARE of the reads."""
-        settings = settings if settings is not None else (self._settings_provider() or {})
-        return max(TRACKED_EVERY, len(self.tracked()) * steam_gap(settings) / TRACKED_SHARE)
+    def _read_every(self, name, store_names, items):
+        """Seconds between two reads of *name*: ACTIVE_EVERY in a boost, STORE_ITEM_EVERY for a store
+        item or a tracked item the store does not hold, CONTENT_EVERY for a capsule's content,
+        FAILED_RETRY after a failed read."""
+        if (items.get(name) or {}).get('error'):
+            return FAILED_RETRY
+        if ((items.get(name) or {}).get('analysis') or {}).get('level') in ACTIVE_LEVELS:
+            return ACTIVE_EVERY
+        return STORE_ITEM_EVERY if name in store_names else CONTENT_EVERY
 
     def _next(self, now):
-        """The next item to read: the front of the queue, the items you track (every
-        TRACKED_EVERY), items in a boost (ACTIVE_EVERY), then the store item read longest ago
-        (older than STORE_ITEM_EVERY), then the capsule content read longest ago (CONTENT_EVERY)."""
+        """The next item to read: the front of the queue, items in a boost (ACTIVE_EVERY), then the
+        store item read longest ago (older than STORE_ITEM_EVERY), then the capsule content read
+        longest ago (CONTENT_EVERY). Tracked items are read like any other: a tracked name that is
+        neither a store item nor inside a capsule counts as a store item."""
         with self._lock:
             if self._priority:
                 return self._priority.pop(0), 'priority'
@@ -764,9 +792,8 @@ class StoreBoostService:
                 if now - last >= wait:
                     waiting.append((last, name))
             return min(waiting)[1] if waiting else None
-        name = due(self.tracked(), self.tracked_every())
-        if name:
-            return name, 'tracked'
+        watched = set(store_names) | set(content_names)
+        store_names = store_names + [name for name in self.tracked() if name not in watched]
         active = [name for name in store_names + content_names
                   if ((items.get(name) or {}).get('analysis') or {}).get('level') in ACTIVE_LEVELS]
         name = due(active, ACTIVE_EVERY)
@@ -777,8 +804,9 @@ class StoreBoostService:
         with self._lock:
             pulse = dict(self._pulse)
         if pulse:
-            store_names = [name for name in store_names
-                           if any((pulse.get(name) or {}).get(key) for key in ('listing', 'buy', 'median30d'))]
+            tracked = set(self.tracked())
+            store_names = [name for name in store_names if name in tracked
+                           or any((pulse.get(name) or {}).get(key) for key in ('listing', 'buy', 'median30d'))]
         name = due(store_names, STORE_ITEM_EVERY)
         if name:
             return name, 'store'
@@ -798,12 +826,14 @@ class StoreBoostService:
                 'store': {'total': len(store_names), 'fresh': fresh(store_names, STORE_ITEM_EVERY)},
                 'contents': {'total': len(content_names), 'fresh': fresh(content_names, CONTENT_EVERY)}}
 
-    def _session(self):
+    def _session(self, exclude=()):
         """(steamid, cookies) of the first account with a fresh web session that is not known to
-        answer in another currency than US dollars, or None."""
+        answer in another currency than US dollars (and not in *exclude*), or None."""
         storage = getattr(self.steam, 'storage', None) if self.steam else None
         now = self._clock()
         for steamid in (storage.list_accounts() if storage else []):
+            if steamid in exclude:
+                continue
             if now - self._not_dollars.get(steamid, -NOT_DOLLARS_FORGET) < NOT_DOLLARS_FORGET:
                 continue
             if now - self._rejected.get(steamid, -REJECTED_SESSION_WAIT) < REJECTED_SESSION_WAIT:
@@ -870,7 +900,22 @@ class StoreBoostService:
         self._pace()
         started = self._clock()
         try:
-            payload = self._fetch(name, got[1])
+            try:
+                payload = self._fetch(name, got[1])
+            except BadRequest:
+                # A refused session and an unknown name both answer 400: ask once more with another
+                # account. 400 again (or no other account) is the name's fault, raised to the item's
+                # error below; an answer means the first account's session is the one at fault.
+                other = self._session(exclude={got[0]})
+                if not other:
+                    raise
+                self._pace()
+                payload = self._fetch(name, other[1])
+                with self._lock:
+                    self._rejected[got[0]] = self._clock()
+                log.warning('[STORE-BOOSTS] account %s answered 400 where %s did not: its session is skipped',
+                            got[0], other[0])
+                got = other
             if isinstance(payload, dict) and payload.get('success') and not answers_in_dollars(payload):
                 # Another wallet currency: never mix it with dollars; read with another account.
                 with self._lock:
@@ -976,7 +1021,14 @@ class StoreBoostService:
                 if capsule and capsule != name:
                     self.read_now(capsule, reason=f'{name} is {level}')
         if send:
-            self._send(send, name, analysis, holders.get(name, []))
+            result = self._send(send, name, analysis, holders.get(name, []))
+            if not (result.get('sent') or result.get('rang') or result.get('skipped')):
+                # Not delivered (Telegram down): the next read of the same level tries again. Switched
+                # off on purpose counts as handled.
+                with self._alert_lock:
+                    state = self._alerts.get('items', {}).get(name) or {}
+                    (state.get('sent') or {}).pop(send, None)
+                    self._alerts_dirty = True
 
     def _capsule_name(self, entry):
         for item in self._store_items():
@@ -988,8 +1040,7 @@ class StoreBoostService:
         """Post one alert to the shared Huginn bot, and ring the phone for a boost (*ring*: None
         follows store_boost_ring_enabled)."""
         settings = self._settings_provider() or {}
-        if not test and not settings.get('store_boost_alerts_enabled', True):
-            return {'sent': False, 'error': 'alerts are off'}
+        message_on = test or settings.get('store_boost_alerts_enabled', True)
         store_items = {item['name']: item for item in self._store_items()}
         by_entry = {item['entry']: item for item in store_items.values()}
         store = {'cost': store_items[name]['usd']} if name in store_items else None
@@ -1006,7 +1057,9 @@ class StoreBoostService:
         if test:
             plain, body = '🧪 Test — ' + plain, '🧪 <b>Test</b> — ' + body
         result = {'ok': False, 'error': 'no Telegram bot (telegram_bot_token + telegram_chat_id)'}
-        if notification_channel(settings):
+        if not message_on:
+            result = {'ok': False, 'skipped': True, 'error': 'Telegram messages are off'}
+        elif notification_channel(settings):
             result = self._notify(settings, plain, html=body) or {}
         log.info('[STORE-BOOSTS] alert %s %s: %s', level, name, 'sent' if result.get('ok') else result.get('error'))
         rang = False
@@ -1014,9 +1067,12 @@ class StoreBoostService:
             ring = bool(settings.get('store_boost_ring_enabled', True))
         if level == 'boost' and ring and buyable and self.telegram_caller:
             if self.telegram_caller.status().get('configured'):
+                # TelegramCaller rings one call at a time: a second boost waits for the first ring.
                 threading.Thread(target=self.telegram_caller.ring, kwargs={'message': plain},
                                  daemon=True, name='store-boosts-ring').start()
                 rang = True
+        if result.get('skipped') and not rang:
+            return {'sent': False, 'rang': False, 'skipped': True, 'error': result['error']}
         with self._alert_lock:
             log_entries = (self._alerts.get('log') or [])[-49:]
             log_entries.append({'at': self._clock(), 'level': level, 'name': name, 'sent': bool(result.get('ok')),
@@ -1057,7 +1113,7 @@ class StoreBoostService:
             return {'items': dict(self._items), 'pulse': dict(self._pulse), 'contents': dict(self._contents),
                     'priority': set(self._priority), 'reading': self._reader.get('reading')}
 
-    def _summary_of(self, name, now, snapshot=None):
+    def _summary_of(self, name, now, snapshot=None, with_spark=True):
         snapshot = snapshot or self._snapshot()
         entry = snapshot['items'].get(name) or {}
         quote = snapshot['pulse'].get(name)
@@ -1066,7 +1122,7 @@ class StoreBoostService:
         points = [tuple(point) for point in entry.get('points') or []]
         return {'name': name, 'level': analysis.get('level') or ('unknown' if entry else None),
                 'analysis': analysis or None, 'read_at': entry.get('read_at'), 'error': entry.get('error'),
-                'spark': spark(points, int(now)) if points else [], 'pulse': quote, 'queued': queued,
+                'spark': spark(points, int(now)) if points and with_spark else [], 'pulse': quote, 'queued': queued,
                 'reading': snapshot['reading'] == name}
 
     def board(self):
@@ -1090,7 +1146,7 @@ class StoreBoostService:
                 chances = item_chances(capsule['items'])
                 inside = []
                 for content in capsule['items']:
-                    summary = self._summary_of(content['name'], now, snapshot)
+                    summary = self._summary_of(content['name'], now, snapshot, with_spark=False)
                     summary.pop('spark', None)
                     summary.update(tier=content['tier'], tier_label=TIER_LABEL.get(content['tier'], content['tier']),
                                    chance=round(chances.get(content['name'], 0), 4))
@@ -1135,11 +1191,12 @@ class StoreBoostService:
             store_item = store_by_name.get(name)
             summary_of['cost'] = store_item['usd'] if store_item else None
             summary_of['entry'] = store_item['entry'] if store_item else None
-            summary_of['next_read_at'] = (summary_of['read_at'] or now) + self.tracked_every(settings)
+            every = self._read_every(name, {item['name'] for item in store_items} | set(self.tracked()) - set(holders),
+                                     snapshot['items'])
+            summary_of['next_read_at'] = (summary_of['read_at'] or now) + every
             tracked.append(summary_of)
         return {
             'rows': rows, 'summary': summary, 'now': now, 'tracked': tracked,
-            'tracked_every_minutes': round(self.tracked_every(settings) / 60),
             'reader': {**reader, 'gap_seconds': steam_gap(settings), **self.queue_status()},
             'check': {**check, 'next_at': (check['checked_at'] or now) + WATCH_INTERVAL},
             'contents_at': self._contents_at,

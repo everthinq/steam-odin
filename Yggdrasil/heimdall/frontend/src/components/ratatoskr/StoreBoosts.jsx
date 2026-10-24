@@ -189,10 +189,10 @@ const ratioTone = (ratio, threshold) => (ratio == null ? 'text-slate-500'
     : ratio >= threshold * 1.6 ? 'text-emerald-300' : ratio >= threshold ? 'text-amber-300' : 'text-slate-300');
 
 // Everything known about one item, shown under its row.
-// Pin an item: read from Steam every 15 minutes and shown on top (settings store_boost_tracked).
+// Pin an item: shown on top, read on the same schedule as every other item (settings store_boost_tracked).
 const TrackButton = ({ name, tracking, onTrack, size = 12 }) => (
     <button type="button" onClick={(event) => { event.stopPropagation(); onTrack(name, !tracking); }}
-        title={tracking ? 'Stop tracking it' : 'Track it: read from Steam every 15 minutes and shown on top'}
+        title={tracking ? 'Stop tracking it' : 'Track it: shown on top, read like every other item'}
         aria-label={tracking ? `Stop tracking ${name}` : `Track ${name}`} aria-pressed={tracking}
         className={`shrink-0 rounded p-0.5 ${tracking ? 'text-sky-300 hover:text-sky-100' : 'text-slate-600 hover:text-slate-200'}`}>
         <Pin size={size} className={tracking ? 'fill-sky-400/40' : ''} />
@@ -366,6 +366,7 @@ const Coverage = ({ label, part, every }) => (
 );
 
 const READER_STATUS = {
+    starting: ['Starting (the first read a minute after the backend starts)', 'text-slate-300'],
     reading: ['Reading', 'text-emerald-300'],
     waiting: ['Between reads', 'text-emerald-300/80'],
     idle: ['Up to date', 'text-slate-300'],
@@ -434,7 +435,7 @@ const StoreBoosts = () => {
         .then((response) => response.json().then((answer) => ({ ok: response.ok, ...answer })));
     const track = (name, tracked) => post('/api/ratatoskr/store-boosts/track', { name, tracked })
         .then((answer) => setNote(answer.error ? answer.error
-            : tracked ? `Tracking ${name}: read from Steam every 15 minutes, shown on top.` : `Stopped tracking ${name}.`))
+            : tracked ? `Tracking ${name}: shown on top.` : `Stopped tracking ${name}.`))
         .catch(() => setNote('Could not reach the backend.'))
         .finally(load);
     const readNow = (name) => post('/api/ratatoskr/store-boosts/read', { name })
@@ -615,7 +616,7 @@ const StoreBoosts = () => {
             {trackedItems.length > 0 && (
                 <div className="p-3 border-b border-white/10">
                     <div className="text-[10px] font-bold tracking-widest uppercase text-sky-300/90 mb-2 flex items-center gap-1.5">
-                        <Pin size={12} /> Tracked · read from Steam every {data.tracked_every_minutes} minutes
+                        <Pin size={12} /> Tracked · read on the same schedule as every other item
                     </div>
                     <div className="space-y-2">
                         {trackedItems.map((item) => {
@@ -718,7 +719,7 @@ const StoreBoosts = () => {
                     <p><b>Usual</b> = the median day of the last 30 days, leaving out the last 3; sales alone never alarm (a capsule had about 30 sales spikes with no price move).</p>
                     <p><LevelChip level="watch" small /> price ≥ {thresholds.watch_price}× usual and sales ≥ {thresholds.watch_sales}× usual. <LevelChip level="boost" small /> price ≥ {thresholds.boost_price}× usual and sales ≥ {thresholds.boost_sales}× usual, or within {Math.round(thresholds.hold_share * 100)}% of a recent peak. <LevelChip level="second_wave" small /> {thresholds.second_wave_rise}× off the low since the peak. <LevelChip level="fading" small /> under {Math.round(thresholds.hold_share * 100)}% of the peak: sell.</p>
                     <p><b>Confirmed</b>: a cash buy order on another market pays at least the store price, or a capsule&apos;s opening value (each sticker&apos;s chance × its Buff163 price) beats it.</p>
-                    <p><b>Reads</b>: pulse every hour; Steam&apos;s own history one item at a time — flagged items first, then the items you track every {data.tracked_every_minutes} minutes, items in a boost every {thresholds.active_every_hours} hour{thresholds.active_every_hours === 1 ? '' : 's'}, store items every {thresholds.store_item_every_hours} hours, capsule contents every {thresholds.content_every_hours} hours. Tested on Flickshot (January 2026: flagged on day one) and World Eaters 1 with its capsule (October 2026: the sticker warned about a day before the capsule).</p>
+                    <p><b>Reads</b>: pulse every hour; Steam&apos;s own history one item at a time — flagged items first, then items in a boost every {thresholds.active_every_hours} hour{thresholds.active_every_hours === 1 ? '' : 's'}, store items every {thresholds.store_item_every_hours} hours, capsule contents every {thresholds.content_every_hours} hours. Tracked items are read like any other (one the store does not hold, like a store item). Tested on Flickshot (January 2026: flagged on day one) and World Eaters 1 with its capsule (October 2026: the sticker warned about a day before the capsule).</p>
                 </div>
             )}
 
