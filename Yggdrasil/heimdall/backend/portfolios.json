@@ -4,7 +4,7 @@
       "id": "fbf692611b3c",
       "name": "everthinklol",
       "created_at": "2026-07-21T13:40:18.177768+00:00",
-      "updated_at": "2026-10-24T09:37:23.877051+00:00",
+      "updated_at": "2026-10-24T11:46:11.653247+00:00",
       "transactions": [
         {
           "id": "3ea474874554",
@@ -11598,6 +11598,32 @@
           "fee_percent": 0.0,
           "is_arbitrage": false,
           "created_at": "2026-10-24T09:37:23.876842+00:00"
+        },
+        {
+          "id": "ef2c1829530e",
+          "item_name": "Sticker | Hello MAC-10",
+          "type": "sell",
+          "qty": 34,
+          "price": 0.29,
+          "platform": "csfloat",
+          "date": "2026-10-24T14:40:00",
+          "note": "ev1 + ev arbitrage",
+          "fee_percent": 0.0,
+          "is_arbitrage": true,
+          "created_at": "2026-10-24T11:42:18.035182+00:00"
+        },
+        {
+          "id": "e68201e9470f",
+          "item_name": "Sticker | Hello MAC-10",
+          "type": "buy",
+          "qty": 17,
+          "price": 0.29,
+          "platform": "cs.money.market",
+          "date": "2026-10-24T14:40:00",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": true,
+          "created_at": "2026-10-24T11:46:11.653197+00:00"
         }
       ]
     },
@@ -13543,7 +13569,7 @@
       "id": "99c18756f9ee",
       "name": "everthinklol1",
       "created_at": "2026-07-21T14:49:46.392883+00:00",
-      "updated_at": "2026-10-24T09:25:09.444023+00:00",
+      "updated_at": "2026-10-24T11:41:26.515852+00:00",
       "transactions": [
         {
           "id": "ed83a19ba6bc",
@@ -17906,6 +17932,19 @@
           "fee_percent": 0.0,
           "is_arbitrage": true,
           "created_at": "2026-10-24T09:23:27.735329+00:00"
+        },
+        {
+          "id": "b7dae630f764",
+          "item_name": "Sticker | Hello MAC-10",
+          "type": "buy",
+          "qty": 12,
+          "price": 0.28,
+          "platform": "cs.money.trade",
+          "date": "2026-10-24T14:40:00",
+          "note": "everthinklol arbitrage",
+          "fee_percent": 0.0,
+          "is_arbitrage": true,
+          "created_at": "2026-10-24T11:41:19.509446+00:00"
         }
       ]
     },
