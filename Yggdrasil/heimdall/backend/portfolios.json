@@ -4,7 +4,7 @@
       "id": "fbf692611b3c",
       "name": "everthinklol",
       "created_at": "2026-07-21T13:40:18.177768+00:00",
-      "updated_at": "2026-10-24T19:47:41.564212+00:00",
+      "updated_at": "2026-10-24T22:13:45.322225+00:00",
       "transactions": [
         {
           "id": "3ea474874554",
@@ -11689,6 +11689,32 @@
           "fee_percent": 0.0,
           "is_arbitrage": false,
           "created_at": "2026-10-24T19:47:41.564189+00:00"
+        },
+        {
+          "id": "a37f1b621949",
+          "item_name": "Budapest 2025 Challengers Sticker Capsule",
+          "type": "buy",
+          "qty": 126,
+          "price": 0.09,
+          "platform": "csfloat",
+          "date": "2026-10-25T01:01:00",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": false,
+          "created_at": "2026-10-24T22:12:16.867971+00:00"
+        },
+        {
+          "id": "c16687b85296",
+          "item_name": "Sticker | kisserek (Foil) | Cologne 2026",
+          "type": "buy",
+          "qty": 1,
+          "price": 0.09,
+          "platform": "steam",
+          "date": "2026-10-25T01:00:00",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": false,
+          "created_at": "2026-10-24T22:13:45.322199+00:00"
         }
       ]
     },
