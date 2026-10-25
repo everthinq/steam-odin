@@ -405,16 +405,14 @@ Nothing in it buys anything.
   any market name, at most 30, `POST …/track {name, tracked}`) are only shown on top and read on
   that same schedule (Ivan, 2026-10-25); one neither in the store nor in a capsule counts as a
   store item. At most `PREFLAG_MAX_PER_CHECK` (10) pulse flags are queued an hour, strongest
-  first. A 400 puts the item first again, asked on the next step (after the usual gap, never two calls at
-  once) with another account: a second 400 (or no other account) is the item's name, an answer
-  means the first account's session (skipped 30 minutes). Three names in a row refused by two
-  accounts each mean expired sessions everywhere: the reader pauses 5 minutes and says so. A 429 waits 10
+  first. A 400 or 500 (a name Steam does not know) is that item's error, retried after 2 hours, one call
+  per item. Eight failed reads in a row of any kind (expired sessions make Steam answer 400 to
+  everything) pause the reader 5 minutes with "the Steam web sessions may have expired". A 429 waits 10
   minutes, doubling to 2 hours, and keeps the item first. Sessions: the first account
   (`web_session_cookie_for`) not skipped, asked only once an item is due; an account answering
   in another currency is skipped 6 hours, one whose session Steam refused (HTTP 401/403) 30
-  minutes, and the item keeps its place at the front. A name Steam does not know (HTTP 400 or
-  500, no history) is that item's error, retried after 2 hours, and never pauses the reader; 5
-  network failures in a row (no answer at all) pause it 5 minutes. No web session: waits 5
+  minutes, and the item keeps its place at the front. 5 network failures in a row (no answer at
+  all) pause it 5 minutes. No web session: waits 5
   minutes. The gap is 10 seconds to an hour; the queue holds at most 100 items; the hourly
   check forgets items no longer watched. Status `waiting` between reads (the page polls fast
   only while something is being read or queued).
@@ -434,16 +432,16 @@ Nothing in it buys anything.
   boost, a second wave again only after 2 days; 3 calm days end an episode; a first sight only
   records unless `started_at` is under 48 hours old. Shared Huginn bot
   (`store_boost_alerts_enabled`), and a ring through `TelegramCaller` on `boost`
-  (`store_boost_ring_enabled`, its own switch: it rings with Telegram messages off; one Store
-  Boosts ring at a time, a boost during it gets its message only, so boosts never queue rings in
-  front of a Gjallarhorn one; `TelegramCaller` rings one at a time for every feature, so a manual
-  Ring test can wait up to about 3 minutes behind a running ring) only for
+  (`store_boost_ring_enabled`, its own switch: it rings with Telegram messages off; a boost while
+  the phone already rings, for any feature, gets its message only: `TelegramCaller.ring(wait=False)`
+  takes the ring lock or answers busy at once, so boost rings never queue in front of a Gjallarhorn
+  one; Gjallarhorn, Team Fortress 2 and the Test ring wait their turn, up to about 3 minutes) only for
   something the store sells (the item or a
   capsule holding it); a tracked item the store does not sell gets the message only. The alert
   state is kept in memory and written at most every 30 seconds (at once after a send); a failed
-  Telegram post with no ring, or a ring that fails with no message sent, is not counted, so the
-  next read tries again; messages switched off on purpose, or no bot set up, count as handled and
-  are not logged. The hourly log line says how many items were flagged and how many queued. Market names: a name found
+  Telegram post with no ring, or a ring that fails or is busy with no message sent, is not
+  counted, so the next read tries again (not logged); messages switched off on purpose, or no bot
+  set up, with no ring wanted, count as handled and are not logged. The hourly log line says how many items were flagged and how many queued. Market names: a name found
   before is kept while pulse briefly lacks it. A boosting sticker queues its capsule for a
   read. State: `cache/store_boosts.json.gz` (per item: read time, 14 days of hourly points,
   analysis; pulse quotes; capsule contents) and `cache/store_boost_alerts.json` (per item

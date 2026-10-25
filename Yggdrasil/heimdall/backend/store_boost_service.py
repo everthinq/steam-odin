@@ -119,8 +119,8 @@ ALERT_SAVE_MIN_INTERVAL = 30
 TRACKED_MAX = 30
 PRIORITY_MAX = 100                  # items waiting at the front of the Steam queue
 FAILED_RETRY = 2 * HOUR             # an item whose read failed waits this long
-FAILURES_IN_A_ROW = 5               # this many failed reads in a row: the session is suspect, pause
-BAD_NAMES_IN_A_ROW = 3              # this many names in a row refused (400) by two accounts: sessions expired
+FAILURES_IN_A_ROW = 5               # this many network failures in a row: pause
+ITEMS_FAILED_IN_A_ROW = 8           # this many failed reads of any kind in a row: sessions may have expired, pause
 BACKOFF_FIRST, BACKOFF_MAX = 10 * 60, 2 * HOUR
 NO_SESSION_WAIT = 5 * 60
 POINTS_KEPT_DAYS = 14               # hourly points kept per item for the charts
@@ -462,14 +462,10 @@ class SessionRejected(RuntimeError):
     """Steam refused the web session (HTTP 401 or 403)."""
 
 
-class BadRequest(RuntimeError):
-    """Steam answered HTTP 400: a session it no longer accepts, or a name it does not know."""
-
-
 def fetch_steam_history(name, cookies, timeout=20):
     """Steam's ``pricehistory`` answer for *name* (logged in), as JSON. Raises RateLimited
-    (card_deals_service's) on 429, SessionRejected on 401 or 403 and BadRequest on 400 (a refused session or an unknown
-    name: the reader asks another account once to tell which). A 500 is the item's error."""
+    (card_deals_service's) on 429 and SessionRejected on 401 or 403 (the reader skips that account). Any other HTTP error (400
+    or 500: Steam answers so for a name it does not know) is that item's error."""
     url = STEAM_HISTORY_URL + '?' + urllib.parse.urlencode(
         {'country': 'US', 'currency': 1, 'appid': 730, 'market_hash_name': name})
     request = urllib.request.Request(url, headers={
@@ -483,8 +479,6 @@ def fetch_steam_history(name, cookies, timeout=20):
             raise RateLimited('Steam answered 429 (too many requests)') from e
         if e.code in (401, 403):
             raise SessionRejected(f'Steam refused the web session (HTTP {e.code})') from e
-        if e.code == 400:
-            raise BadRequest('Steam answered HTTP 400 (a refused session, or a name it does not know)') from e
         raise
 
 
@@ -524,9 +518,7 @@ class StoreBoostService:
         self._alerts_dirty = False
         self._alerts_saved_at = 0.0
         self._failures_in_row = 0
-        self._bad_names_in_row = 0
-        self._ring_slot = threading.Lock()   # one Store Boosts ring at a time
-        self._retry_with_other = {}  # item name -> the account that got HTTP 400 for it (asked with another next)
+        self._items_failed_in_row = 0
         self._store_cache = (0.0, [])
         state = self._load()
         self._items = state.get('items') or {}        # name -> {read_at, points, analysis, error}
@@ -838,14 +830,12 @@ class StoreBoostService:
                 'store': {'total': len(store_names), 'fresh': fresh(store_names, STORE_ITEM_EVERY)},
                 'contents': {'total': len(content_names), 'fresh': fresh(content_names, CONTENT_EVERY)}}
 
-    def _session(self, exclude=()):
+    def _session(self):
         """(steamid, cookies) of the first account with a fresh web session that is not known to
-        answer in another currency than US dollars (and not in *exclude*), or None."""
+        answer in another currency than US dollars, or None."""
         storage = getattr(self.steam, 'storage', None) if self.steam else None
         now = self._clock()
         for steamid in (storage.list_accounts() if storage else []):
-            if steamid in exclude:
-                continue
             if now - self._not_dollars.get(steamid, -NOT_DOLLARS_FORGET) < NOT_DOLLARS_FORGET:
                 continue
             if now - self._rejected.get(steamid, -REJECTED_SESSION_WAIT) < REJECTED_SESSION_WAIT:
@@ -900,14 +890,8 @@ class StoreBoostService:
         if not name:
             self._set_reader(status='idle', reading=None)
             return 30
-        # The session only once something is due (it decrypts maFiles). An item that got HTTP 400
-        # last time is asked with another account than that one.
-        with self._lock:
-            avoid = self._retry_with_other.pop(name, None)
-        got = self._session(exclude={avoid} if avoid else ())
-        if not got and avoid:
-            got = self._session()                    # no other account any more: ask the same one
-            avoid = None
+        # The session only once something is due (it decrypts maFiles).
+        got = self._session()
         if not got:
             with self._lock:
                 if why == 'priority' and name not in self._priority:
@@ -918,27 +902,7 @@ class StoreBoostService:
         self._pace()
         started = self._clock()
         try:
-            try:
-                payload = self._fetch(name, got[1])
-            except BadRequest:
-                # A refused session and an unknown name both answer 400. The first time, the item is
-                # asked again on the next step (after the usual gap) with another account; a second
-                # 400, or no other account, is the item's name (raised to its error below).
-                if avoid or not self._session(exclude={got[0]}):
-                    raise
-                with self._lock:
-                    self._retry_with_other[name] = got[0]
-                    if name not in self._priority:
-                        self._priority.insert(0, name)
-                    self._reader.update(status='waiting', reading=None, last_read_at=self._clock(),
-                                        error=f'{name}: HTTP 400 from {got[0]}, asking another account')
-                return 1
-            if avoid:
-                # Another account answered where *avoid* got 400: that session is the one refused.
-                with self._lock:
-                    self._rejected[avoid] = self._clock()
-                log.warning('[STORE-BOOSTS] account %s answered 400 where %s did not: its session is skipped',
-                            avoid, got[0])
+            payload = self._fetch(name, got[1])
             if isinstance(payload, dict) and payload.get('success') and not answers_in_dollars(payload):
                 # Another wallet currency: never mix it with dollars; read with another account.
                 with self._lock:
@@ -981,16 +945,17 @@ class StoreBoostService:
                 # after FAILED_RETRY, and never pauses the reader.
                 network = isinstance(e, (urllib.error.URLError, OSError)) and not isinstance(e, urllib.error.HTTPError)
                 self._failures_in_row = self._failures_in_row + 1 if network else 0
-                # Several names in a row refused by two accounts each: the sessions have expired
-                # everywhere (the keep-alive failed), not the names.
-                self._bad_names_in_row = self._bad_names_in_row + 1 if isinstance(e, BadRequest) else 0
-                suspect = self._failures_in_row >= FAILURES_IN_A_ROW or self._bad_names_in_row >= BAD_NAMES_IN_A_ROW
+                # Expired sessions make Steam answer 400 for every item: many items in a row failing
+                # (a few unknown names never line up like that) pauses the reader and says so.
+                self._items_failed_in_row += 1
+                suspect = (self._failures_in_row >= FAILURES_IN_A_ROW
+                           or self._items_failed_in_row >= ITEMS_FAILED_IN_A_ROW)
                 error = f'{name}: {str(e)[:200]}'
-                if self._bad_names_in_row >= BAD_NAMES_IN_A_ROW:
-                    error = ('Steam answered HTTP 400 to several items from two accounts each: the web '
-                             'sessions have probably expired (log an account in, or wait for the keep-alive)')
+                if self._items_failed_in_row >= ITEMS_FAILED_IN_A_ROW:
+                    error = (f'{ITEMS_FAILED_IN_A_ROW} items in a row failed (last: {name}: {str(e)[:120]}): '
+                             'the Steam web sessions may have expired (log an account in, or wait for the keep-alive)')
                 if suspect:
-                    self._failures_in_row = self._bad_names_in_row = 0
+                    self._failures_in_row = self._items_failed_in_row = 0
                 self._reader.update(status='session_failing' if suspect else 'waiting', reading=None,
                                     last_read_at=self._clock(), last_name=name, error=error,
                                     blocked_until=self._clock() + NO_SESSION_WAIT if suspect else None)
@@ -999,7 +964,7 @@ class StoreBoostService:
             return NO_SESSION_WAIT if suspect else 1
         self._take_history(name, payload, started)
         with self._lock:
-            self._failures_in_row = self._bad_names_in_row = 0
+            self._failures_in_row = self._items_failed_in_row = 0
             reads = [read_at for read_at in self._reader['reads'] if self._clock() - read_at < HOUR] + [self._clock()]
             self._reader.update(status='waiting', reading=None, last_read_at=self._clock(), last_name=name,
                                 backoff=0, blocked_until=None, error=None, reads=reads)
@@ -1100,24 +1065,29 @@ class StoreBoostService:
         rang = False
         if ring is None:
             ring = bool(settings.get('store_boost_ring_enabled', True))
-        if level == 'boost' and ring and buyable and self.telegram_caller:
-            if self.telegram_caller.status().get('configured') and self._ring_slot.acquire(blocking=False):
-                # One Store Boosts ring at a time, never a queue of them (TelegramCaller rings one call
-                # at a time for every feature, so a queue would hold a Gjallarhorn ring back). A boost
-                # while one rings gets its message only. A ring that fails, with no message sent
-                # either, makes the next read try the alert again.
-                message_sent = bool(result.get('ok'))
+        caller = self.telegram_caller
+        ring_wanted = bool(level == 'boost' and ring and buyable and caller and caller.status().get('configured'))
+        # A boost while the phone already rings (any feature) gets its message only: boost rings never
+        # queue in front of a Gjallarhorn one. A test always rings (it waits its turn in TelegramCaller).
+        if ring_wanted and (test or not caller.busy()):
+            message_sent = bool(result.get('ok'))
 
-                def ring_once():
-                    try:
-                        answer = self.telegram_caller.ring(message=plain) or {}
-                        if not answer.get('ok') and not message_sent and not test:
-                            log.warning('[STORE-BOOSTS] ring for %s failed: %s', name, answer.get('error'))
-                            self._forget_sent(name, level)
-                    finally:
-                        self._ring_slot.release()
+            def ring_once():
+                # wait=False: if another ring started in the meantime, skip instead of queuing.
+                answer = caller.ring(message=plain, wait=test) or {}
+                if not answer.get('ok') and not message_sent and not test:
+                    # Neither the message nor the ring reached the phone: the next read tries again.
+                    log.warning('[STORE-BOOSTS] ring for %s did not happen: %s', name, answer.get('error'))
+                    self._forget_sent(name, level)
+            try:
                 threading.Thread(target=ring_once, daemon=True, name='store-boosts-ring').start()
                 rang = True
+            except RuntimeError as e:             # no thread left: no ring this time
+                log.warning('[STORE-BOOSTS] could not start the ring: %s', e)
+        if ring_wanted and not rang and result.get('skipped'):
+            # Messages off and the ring did not run: nothing reached the phone. Not logged; the next
+            # read tries again.
+            return {'sent': False, 'rang': False, 'error': 'messages are off and the ring did not run'}
         if result.get('skipped') and not rang:
             return {'sent': False, 'rang': False, 'skipped': True, 'error': result['error']}
         with self._alert_lock:

@@ -59,6 +59,10 @@ class TelegramCaller:
             'target': (cfg or {}).get('target'),
         }
 
+    def busy(self):
+        """True while a ring (any feature's) is in progress."""
+        return self._ring_lock.locked()
+
     @staticmethod
     def _is_ready(cfg):
         return bool(cfg and cfg.get('api_id') and cfg.get('api_hash')
@@ -71,10 +75,12 @@ class TelegramCaller:
     _REPEATS = 5
     _GAP_SECONDS = 3
 
-    def ring(self, message=None, ring_seconds=None, repeats=None, gap_seconds=None):
+    def ring(self, message=None, ring_seconds=None, repeats=None, gap_seconds=None, wait=True):
         """Wake the target: first send `message` (the WHY — so it sits in the same
         chat the call comes from), then ring repeatedly. Reloads config each call
-        so a fresh login is picked up without a restart."""
+        so a fresh login is picked up without a restart. With `wait` False, a ring
+        already in progress makes this return {'ok': False, 'busy': True} at once
+        instead of ringing after it."""
         cfg = load_caller_config()
         self._cfg = cfg
         if not self._is_ready(cfg):
@@ -82,18 +88,21 @@ class TelegramCaller:
         ring_seconds = self._RING_SECONDS if ring_seconds is None else max(1, int(ring_seconds))
         repeats = self._REPEATS if repeats is None else max(1, int(repeats))
         gap_seconds = self._GAP_SECONDS if gap_seconds is None else max(0, int(gap_seconds))
+        if not self._ring_lock.acquire(blocking=wait):
+            return {'ok': False, 'busy': True, 'error': 'another ring is in progress'}
         try:
-            with self._ring_lock:
-                loop = asyncio.new_event_loop()
-                try:
-                    asyncio.set_event_loop(loop)
-                    return loop.run_until_complete(
-                        self._ring_async(cfg, message, ring_seconds, repeats, gap_seconds))
-                finally:
-                    loop.close()
+            loop = asyncio.new_event_loop()
+            try:
+                asyncio.set_event_loop(loop)
+                return loop.run_until_complete(
+                    self._ring_async(cfg, message, ring_seconds, repeats, gap_seconds))
+            finally:
+                loop.close()
         except Exception as e:
             logger.error('[TELEGRAM CALLER] ring failed: %s', e)
             return {'ok': False, 'error': str(e)}
+        finally:
+            self._ring_lock.release()
 
     async def _ring_async(self, cfg, message, ring_seconds, repeats, gap_seconds):
         from telethon import TelegramClient
