@@ -727,7 +727,7 @@ def test_the_ring_follows_its_own_switch_and_an_undelivered_alert_is_tried_again
     assert 'boost' not in down._alerts['items'][FLICKSHOT]['sent']        # not delivered: tried on the next read
 
 
-def test_http_400_asks_a_second_account_to_tell_a_bad_session_from_a_bad_name(tmp_path, histories):
+def test_http_400_asks_a_second_account_after_the_usual_gap(tmp_path, histories):
     from store_boost_service import BadRequest
     used = []
 
@@ -739,16 +739,52 @@ def test_http_400_asks_a_second_account_to_tell_a_bad_session_from_a_bad_name(tm
     service, _, clock = _service(tmp_path, histories, fetch=answer)
     service.read_now(FLICKSHOT)
     service._read_step()
-    assert used == [(FLICKSHOT, '765'), (FLICKSHOT, '766')]                 # one step, two accounts
-    assert service._items[FLICKSHOT]['error'] is None and '765' in service._rejected
+    assert used == [(FLICKSHOT, '765')] and service._priority == [FLICKSHOT]
+    assert service._read_step() == pytest.approx(10)                     # never two Steam calls at once
+    clock.now += 10
+    service._read_step()
+    assert used == [(FLICKSHOT, '765'), (FLICKSHOT, '766')]
+    assert service._items[FLICKSHOT]['error'] is None and '765' in service._rejected   # 765's session is refused
     service._rejected = {}
     used.clear()
     service.read_now('Sticker | unknown')
-    clock.now += 10
-    service._read_step()
+    for _ in range(2):
+        clock.now += 10
+        service._read_step()
     assert used == [('Sticker | unknown', '765'), ('Sticker | unknown', '766')]
     assert service._items['Sticker | unknown']['error'] and not service._rejected       # the name, no account blamed
     assert service._priority == []
+
+
+def test_a_401_on_the_second_account_skips_that_account_not_the_first(tmp_path, histories):
+    from store_boost_service import BadRequest
+
+    def answer(name, cookies):
+        if cookies['steamLoginSecure'] == '765':
+            raise BadRequest('Steam answered HTTP 400')
+        raise SessionRejected('Steam refused the web session (HTTP 401)')
+    service, _, clock = _service(tmp_path, histories, fetch=answer)
+    service.read_now(FLICKSHOT)
+    service._read_step()
+    clock.now += 10
+    service._read_step()
+    assert set(service._rejected) == {'766'}
+
+
+def test_names_refused_by_two_accounts_in_a_row_mean_expired_sessions(tmp_path, histories):
+    from store_boost_service import BadRequest
+
+    def answer(name, cookies):
+        raise BadRequest('Steam answered HTTP 400')
+    service, _, clock = _service(tmp_path, histories, fetch=answer)
+    for number in range(3):
+        service.read_now(f'Sticker | {number}')
+    waits = []
+    for _ in range(6):
+        clock.now += 10
+        waits.append(service._read_step())
+    assert waits[-1] == 300 and service._reader['status'] == 'session_failing'
+    assert 'expired' in service._reader['error']
 
 
 def test_http_400_with_a_single_account_blames_the_name_and_moves_on(tmp_path, histories):
@@ -797,3 +833,65 @@ def test_a_market_name_of_an_item_that_left_the_store_is_dropped(tmp_path, histo
     service.huginn.market_index_at = lambda *arguments, **keywords: (0, {})
     service._resolve_market_names('t')
     assert service.market_names() == {}
+
+
+class _Caller:
+    def __init__(self, answer):
+        self.answer, self.calls = answer, []
+
+    def status(self):
+        return {'configured': True}
+
+    def ring(self, message=None):
+        self.calls.append(message)
+        return self.answer
+
+
+def _wait_for(condition):
+    import time as real_time
+    for _ in range(200):
+        if condition():
+            return True
+        real_time.sleep(0.01)
+    return False
+
+
+def test_a_failed_ring_with_no_message_makes_the_alert_retry(tmp_path, histories):
+    service, _, clock = _service(tmp_path, histories, settings={'store_boost_alerts_enabled': False})
+    service.telegram_caller = _Caller({'ok': False, 'error': 'Telegram unreachable'})
+    analysis = {'price_6h': 5.0, 'usual_price': 1.0, 'price_ratio': 5.0, 'sales_24h': 90, 'sales_ratio': 9.0,
+                'usual_sales': 10, 'level': 'boost', 'started_at': clock.now - HOUR}
+    service._alerts = {'items': {FLICKSHOT: {'level': 'calm', 'sent': {}}}}
+    service._after_analysis(FLICKSHOT, analysis, clock.now)
+    assert _wait_for(lambda: 'boost' not in service._alerts['items'][FLICKSHOT]['sent'])
+    assert _wait_for(lambda: not service._ring_slot.locked())
+
+
+def test_a_second_boost_while_one_rings_gets_its_message_only(tmp_path, histories):
+    import threading as real_threading
+    release = real_threading.Event()
+
+    class SlowCaller(_Caller):
+        def ring(self, message=None):
+            self.calls.append(message)
+            release.wait(5)
+            return {'ok': True}
+    service, sent, clock = _service(tmp_path, histories)
+    service.telegram_caller = SlowCaller({'ok': True})
+    analysis = {'price_6h': 5.0, 'usual_price': 1.0, 'price_ratio': 5.0, 'sales_24h': 90, 'sales_ratio': 9.0,
+                'usual_sales': 10}
+    first = service._send('boost', FLICKSHOT, analysis, [])
+    second = service._send('boost', CAPSULE, analysis, [])
+    release.set()
+    assert first['rang'] and not second['rang'] and second['sent'] and len(sent) == 2
+    assert _wait_for(lambda: len(service.telegram_caller.calls) == 1)
+
+
+def test_no_telegram_bot_is_handled_once_not_retried(tmp_path, histories):
+    service, _, clock = _service(tmp_path, histories, settings={'telegram_bot_token': '', 'telegram_chat_id': '',
+                                                             'store_boost_ring_enabled': False})
+    analysis = {'price_6h': 5.0, 'usual_price': 1.0, 'price_ratio': 5.0, 'sales_24h': 90, 'sales_ratio': 9.0,
+                'usual_sales': 10, 'level': 'boost', 'started_at': clock.now - HOUR}
+    service._alerts = {'items': {FLICKSHOT: {'level': 'calm', 'sent': {}}}}
+    service._after_analysis(FLICKSHOT, analysis, clock.now)
+    assert 'boost' in service._alerts['items'][FLICKSHOT]['sent'] and not service._alerts.get('log')

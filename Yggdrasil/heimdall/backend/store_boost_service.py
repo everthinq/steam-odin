@@ -120,6 +120,7 @@ TRACKED_MAX = 30
 PRIORITY_MAX = 100                  # items waiting at the front of the Steam queue
 FAILED_RETRY = 2 * HOUR             # an item whose read failed waits this long
 FAILURES_IN_A_ROW = 5               # this many failed reads in a row: the session is suspect, pause
+BAD_NAMES_IN_A_ROW = 3              # this many names in a row refused (400) by two accounts: sessions expired
 BACKOFF_FIRST, BACKOFF_MAX = 10 * 60, 2 * HOUR
 NO_SESSION_WAIT = 5 * 60
 POINTS_KEPT_DAYS = 14               # hourly points kept per item for the charts
@@ -523,6 +524,9 @@ class StoreBoostService:
         self._alerts_dirty = False
         self._alerts_saved_at = 0.0
         self._failures_in_row = 0
+        self._bad_names_in_row = 0
+        self._ring_slot = threading.Lock()   # one Store Boosts ring at a time
+        self._retry_with_other = {}  # item name -> the account that got HTTP 400 for it (asked with another next)
         self._store_cache = (0.0, [])
         state = self._load()
         self._items = state.get('items') or {}        # name -> {read_at, points, analysis, error}
@@ -728,10 +732,12 @@ class StoreBoostService:
                 self._dirty = True
             # The strongest few only: a thin sticker that always sits above the line must not fill
             # the queue every hour and push the rest of the list back.
+            all_flagged = len(flagged)
             flagged = [name for _, name in sorted(flagged, reverse=True)[:PREFLAG_MAX_PER_CHECK]]
             for name in flagged:
                 self.read_now(name, reason='pulse')
-            log.info('[STORE-BOOSTS] pulse check: %d items, %d flagged for a Steam read', len(names), len(flagged))
+            log.info('[STORE-BOOSTS] pulse check: %d items, %d flagged, %d queued for a Steam read (at most %d)',
+                     len(names), all_flagged, len(flagged), PREFLAG_MAX_PER_CHECK)
         except SwitchedOff as e:
             with self._lock:
                 self._check['error'] = f'switched off on the Pulse feed page: {e}'
@@ -762,6 +768,15 @@ class StoreBoostService:
         names = (self._settings_provider() or {}).get('store_boost_tracked') or []
         return [name for name in dict.fromkeys(names) if isinstance(name, str) and name][:TRACKED_MAX]
 
+    def _schedule(self, store_items=None):
+        """(names read on the store schedule, capsule content names, tracked names): store items plus
+        tracked names neither in the store nor inside a capsule, then the capsule contents. One
+        answer for the reader (_next) and the board's next-read times."""
+        store_names, content_names, _ = self._watched(store_items)
+        tracked = self.tracked()
+        watched = set(store_names) | set(content_names)
+        return store_names + [name for name in tracked if name not in watched], content_names, tracked
+
     def _read_every(self, name, store_names, items):
         """Seconds between two reads of *name*: ACTIVE_EVERY in a boost, STORE_ITEM_EVERY for a store
         item or a tracked item the store does not hold, CONTENT_EVERY for a capsule's content,
@@ -781,7 +796,7 @@ class StoreBoostService:
             if self._priority:
                 return self._priority.pop(0), 'priority'
             items = dict(self._items)
-        store_names, content_names, _ = self._watched()
+        store_names, content_names, tracked = self._schedule()
 
         def due(names, every):
             waiting = []
@@ -792,8 +807,6 @@ class StoreBoostService:
                 if now - last >= wait:
                     waiting.append((last, name))
             return min(waiting)[1] if waiting else None
-        watched = set(store_names) | set(content_names)
-        store_names = store_names + [name for name in self.tracked() if name not in watched]
         active = [name for name in store_names + content_names
                   if ((items.get(name) or {}).get('analysis') or {}).get('level') in ACTIVE_LEVELS]
         name = due(active, ACTIVE_EVERY)
@@ -804,7 +817,6 @@ class StoreBoostService:
         with self._lock:
             pulse = dict(self._pulse)
         if pulse:
-            tracked = set(self.tracked())
             store_names = [name for name in store_names if name in tracked
                            or any((pulse.get(name) or {}).get(key) for key in ('listing', 'buy', 'median30d'))]
         name = due(store_names, STORE_ITEM_EVERY)
@@ -888,8 +900,14 @@ class StoreBoostService:
         if not name:
             self._set_reader(status='idle', reading=None)
             return 30
-        # The session only once something is due (it decrypts maFiles).
-        got = self._session()
+        # The session only once something is due (it decrypts maFiles). An item that got HTTP 400
+        # last time is asked with another account than that one.
+        with self._lock:
+            avoid = self._retry_with_other.pop(name, None)
+        got = self._session(exclude={avoid} if avoid else ())
+        if not got and avoid:
+            got = self._session()                    # no other account any more: ask the same one
+            avoid = None
         if not got:
             with self._lock:
                 if why == 'priority' and name not in self._priority:
@@ -903,19 +921,24 @@ class StoreBoostService:
             try:
                 payload = self._fetch(name, got[1])
             except BadRequest:
-                # A refused session and an unknown name both answer 400: ask once more with another
-                # account. 400 again (or no other account) is the name's fault, raised to the item's
-                # error below; an answer means the first account's session is the one at fault.
-                other = self._session(exclude={got[0]})
-                if not other:
+                # A refused session and an unknown name both answer 400. The first time, the item is
+                # asked again on the next step (after the usual gap) with another account; a second
+                # 400, or no other account, is the item's name (raised to its error below).
+                if avoid or not self._session(exclude={got[0]}):
                     raise
-                self._pace()
-                payload = self._fetch(name, other[1])
                 with self._lock:
-                    self._rejected[got[0]] = self._clock()
+                    self._retry_with_other[name] = got[0]
+                    if name not in self._priority:
+                        self._priority.insert(0, name)
+                    self._reader.update(status='waiting', reading=None, last_read_at=self._clock(),
+                                        error=f'{name}: HTTP 400 from {got[0]}, asking another account')
+                return 1
+            if avoid:
+                # Another account answered where *avoid* got 400: that session is the one refused.
+                with self._lock:
+                    self._rejected[avoid] = self._clock()
                 log.warning('[STORE-BOOSTS] account %s answered 400 where %s did not: its session is skipped',
-                            got[0], other[0])
-                got = other
+                            avoid, got[0])
             if isinstance(payload, dict) and payload.get('success') and not answers_in_dollars(payload):
                 # Another wallet currency: never mix it with dollars; read with another account.
                 with self._lock:
@@ -958,18 +981,25 @@ class StoreBoostService:
                 # after FAILED_RETRY, and never pauses the reader.
                 network = isinstance(e, (urllib.error.URLError, OSError)) and not isinstance(e, urllib.error.HTTPError)
                 self._failures_in_row = self._failures_in_row + 1 if network else 0
-                suspect = self._failures_in_row >= FAILURES_IN_A_ROW
+                # Several names in a row refused by two accounts each: the sessions have expired
+                # everywhere (the keep-alive failed), not the names.
+                self._bad_names_in_row = self._bad_names_in_row + 1 if isinstance(e, BadRequest) else 0
+                suspect = self._failures_in_row >= FAILURES_IN_A_ROW or self._bad_names_in_row >= BAD_NAMES_IN_A_ROW
+                error = f'{name}: {str(e)[:200]}'
+                if self._bad_names_in_row >= BAD_NAMES_IN_A_ROW:
+                    error = ('Steam answered HTTP 400 to several items from two accounts each: the web '
+                             'sessions have probably expired (log an account in, or wait for the keep-alive)')
                 if suspect:
-                    self._failures_in_row = 0
+                    self._failures_in_row = self._bad_names_in_row = 0
                 self._reader.update(status='session_failing' if suspect else 'waiting', reading=None,
-                                    last_read_at=self._clock(), last_name=name, error=f'{name}: {str(e)[:200]}',
+                                    last_read_at=self._clock(), last_name=name, error=error,
                                     blocked_until=self._clock() + NO_SESSION_WAIT if suspect else None)
                 self._dirty = True
             self._save()
             return NO_SESSION_WAIT if suspect else 1
         self._take_history(name, payload, started)
         with self._lock:
-            self._failures_in_row = 0
+            self._failures_in_row = self._bad_names_in_row = 0
             reads = [read_at for read_at in self._reader['reads'] if self._clock() - read_at < HOUR] + [self._clock()]
             self._reader.update(status='waiting', reading=None, last_read_at=self._clock(), last_name=name,
                                 backoff=0, blocked_until=None, error=None, reads=reads)
@@ -1024,11 +1054,15 @@ class StoreBoostService:
             result = self._send(send, name, analysis, holders.get(name, []))
             if not (result.get('sent') or result.get('rang') or result.get('skipped')):
                 # Not delivered (Telegram down): the next read of the same level tries again. Switched
-                # off on purpose counts as handled.
-                with self._alert_lock:
-                    state = self._alerts.get('items', {}).get(name) or {}
-                    (state.get('sent') or {}).pop(send, None)
-                    self._alerts_dirty = True
+                # off on purpose, or no bot set up, counts as handled.
+                self._forget_sent(name, send)
+
+    def _forget_sent(self, name, level):
+        """An alert that was not delivered: the next read of the same level sends it again."""
+        with self._alert_lock:
+            state = self._alerts.get('items', {}).get(name) or {}
+            (state.get('sent') or {}).pop(level, None)
+            self._alerts_dirty = True
 
     def _capsule_name(self, entry):
         for item in self._store_items():
@@ -1056,7 +1090,8 @@ class StoreBoostService:
         buyable = bool(store or capsules) or test
         if test:
             plain, body = '🧪 Test — ' + plain, '🧪 <b>Test</b> — ' + body
-        result = {'ok': False, 'error': 'no Telegram bot (telegram_bot_token + telegram_chat_id)'}
+        # No bot set up counts like messages switched off: nothing to retry, nothing to log.
+        result = {'ok': False, 'skipped': True, 'error': 'no Telegram bot (telegram_bot_token + telegram_chat_id)'}
         if not message_on:
             result = {'ok': False, 'skipped': True, 'error': 'Telegram messages are off'}
         elif notification_channel(settings):
@@ -1066,10 +1101,22 @@ class StoreBoostService:
         if ring is None:
             ring = bool(settings.get('store_boost_ring_enabled', True))
         if level == 'boost' and ring and buyable and self.telegram_caller:
-            if self.telegram_caller.status().get('configured'):
-                # TelegramCaller rings one call at a time: a second boost waits for the first ring.
-                threading.Thread(target=self.telegram_caller.ring, kwargs={'message': plain},
-                                 daemon=True, name='store-boosts-ring').start()
+            if self.telegram_caller.status().get('configured') and self._ring_slot.acquire(blocking=False):
+                # One Store Boosts ring at a time, never a queue of them (TelegramCaller rings one call
+                # at a time for every feature, so a queue would hold a Gjallarhorn ring back). A boost
+                # while one rings gets its message only. A ring that fails, with no message sent
+                # either, makes the next read try the alert again.
+                message_sent = bool(result.get('ok'))
+
+                def ring_once():
+                    try:
+                        answer = self.telegram_caller.ring(message=plain) or {}
+                        if not answer.get('ok') and not message_sent and not test:
+                            log.warning('[STORE-BOOSTS] ring for %s failed: %s', name, answer.get('error'))
+                            self._forget_sent(name, level)
+                    finally:
+                        self._ring_slot.release()
+                threading.Thread(target=ring_once, daemon=True, name='store-boosts-ring').start()
                 rang = True
         if result.get('skipped') and not rang:
             return {'sent': False, 'rang': False, 'skipped': True, 'error': result['error']}
@@ -1147,7 +1194,6 @@ class StoreBoostService:
                 inside = []
                 for content in capsule['items']:
                     summary = self._summary_of(content['name'], now, snapshot, with_spark=False)
-                    summary.pop('spark', None)
                     summary.update(tier=content['tier'], tier_label=TIER_LABEL.get(content['tier'], content['tier']),
                                    chance=round(chances.get(content['name'], 0), 4))
                     inside.append(summary)
@@ -1183,16 +1229,17 @@ class StoreBoostService:
         can_ring = bool(self.telegram_caller and self.telegram_caller.status().get('configured'))
         store_by_name = {item['name']: item for item in store_items}
         by_entry = {item['entry']: item for item in store_items}
+        schedule_store, _, tracked_names = self._schedule(store_items)
+        schedule_store = set(schedule_store)
         tracked = []
-        for name in self.tracked():
+        for name in tracked_names:
             summary_of = self._summary_of(name, now, snapshot)
             summary_of['capsules'] = [{'name': by_entry[entry]['name'], 'entry': entry, 'cost': by_entry[entry]['usd']}
                                       for entry in holders.get(name, []) if entry in by_entry]
             store_item = store_by_name.get(name)
             summary_of['cost'] = store_item['usd'] if store_item else None
             summary_of['entry'] = store_item['entry'] if store_item else None
-            every = self._read_every(name, {item['name'] for item in store_items} | set(self.tracked()) - set(holders),
-                                     snapshot['items'])
+            every = self._read_every(name, schedule_store, snapshot['items'])
             summary_of['next_read_at'] = (summary_of['read_at'] or now) + every
             tracked.append(summary_of)
         return {
