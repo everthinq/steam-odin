@@ -29,7 +29,7 @@ Yggdrasil/                      The World Tree — holds the deployable realms
 docs/guide/                     User guide for humans: setup, every screen, Telegram, troubleshooting
 docs/internals/                 Deep dives on single features (protocols, live findings)
 docs/steam-trading/             Trading knowledge base + glossary + baselines (local only, gitignored)
-scripts/                        Host-side helpers (ASF setup, portfolio backup launchd job)
+scripts/                        Host-side helpers (ASF setup, portfolio backup launchd job, ui-screenshot.mjs)
 ```
 
 **Tools that live *inside* Heimdall** (each is frontend pages + backend service,
@@ -220,6 +220,8 @@ ruff + `pip-audit`, and frontend lint + build, on every push and pull request.
   [storage-shop.md](docs/internals/storage-shop.md) before touching Buy Storage Units or the Store Catalogue
 - Tradeon pulse (every price on every Huginn page): [docs/internals/pulse-api.md](docs/internals/pulse-api.md) —
   all requests go through the master feed `backend/pulse_feed.py`, never anywhere else
+- Steam Market price history (`pricehistory`: login, wallet currency, errors, store vs market
+  names, who reads it): [docs/internals/steam-pricehistory.md](docs/internals/steam-pricehistory.md)
 - Known drift between code, config and docs: [docs/internals/known-issues.md](docs/internals/known-issues.md)
 - Human architecture tour: [ARCHITECTURE.md](ARCHITECTURE.md)
 - Trading domain knowledge: [docs/steam-trading/](docs/steam-trading/) — local only: the

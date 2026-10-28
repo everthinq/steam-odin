@@ -29,8 +29,11 @@ npm run build
 ```
 
 To check that a change renders, open http://localhost:3000 or drive headless
-Chrome (`--dump-dom --virtual-time-budget=…`, or puppeteer-core). Never click a
-real Pay / Buy / Sell / Approve button while testing; use the dry-run paths.
+Chrome: `--dump-dom --virtual-time-budget=…` for the page text, or
+`node scripts/ui-screenshot.mjs <url> <out.png> ["<JavaScript>"] [height]` (repository root;
+no dependencies, puppeteer-core is not installed) for a screenshot after running JavaScript in
+the page, such as clicking a row open. Never click a real Pay / Buy / Sell / Approve button
+while testing; use the dry-run paths.
 
 ## Routes (`src/App.jsx`)
 
