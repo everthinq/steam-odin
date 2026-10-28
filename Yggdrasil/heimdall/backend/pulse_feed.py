@@ -12,6 +12,10 @@ its answers:
 - **One download per table at a time** (single flight): a caller that asks while that table is
   being downloaded waits for the same download instead of starting another; at most
   ``MAX_PARALLEL_DOWNLOADS`` (4) tables download at once.
+- **Pages first**: background jobs (``job()``, the keeper) take at most
+  ``MAX_BACKGROUND_DOWNLOADS`` (3) of those slots, and a page or a button waiting for a slot goes
+  before them, so a click never queues behind the jobs' downloads (on a slow connection a table
+  takes minutes). A page that joins a job's queued download moves that download to the front.
 - **Freshness is the caller's choice**: ``max_age`` seconds (``FRESH`` = 10 minutes for background
   reads; a button the user pressed asks for ``ON_DEMAND`` = 1 minute). A table is kept
   ``KEEP_SECONDS`` after its download and then dropped.
@@ -55,6 +59,7 @@ KEEP_SECONDS = FRESH            # a table older than this is dropped (nobody ask
 # Each download peaks at ~200 MB (raw bytes, text, parsed rows), so four at most: the Case
 # Arbitrage alert poll's 7 markets arrive in two waves, about 3 seconds apart.
 MAX_PARALLEL_DOWNLOADS = 4
+MAX_BACKGROUND_DOWNLOADS = 3    # the last slot is kept for a page or a button
 WAIT_FOR_DOWNLOAD = 600         # seconds a caller waits on another caller's download (queue included)
 # Kept-fresh tables: every how many minutes they may be downloaded again (the Pulse feed page).
 KEEP_FRESH_MINUTES = (5, 10, 15, 30, 60)
@@ -236,10 +241,11 @@ class SwitchedOff(RuntimeError):
 
 
 class _Flight:
-    def __init__(self):
+    def __init__(self, urgent=False):
         self.done = threading.Event()
         self.table = None
         self.error = None
+        self.urgent = urgent         # a page or a button waits for it: it goes before the jobs
 
 
 def _new_counts():
@@ -262,7 +268,10 @@ class PulseFeed:
         self._items = {}             # name -> (itemName dict, imageUrl), shared by every table
         self._sales = {}             # name -> {market: (sales in the last week, download start)}, newest kept
         self._sales_at = None        # when the newest weekly sales arrived
-        self._downloads = threading.BoundedSemaphore(MAX_PARALLEL_DOWNLOADS)
+        self._slots = threading.Condition()     # download slots (_download_slot)
+        self._running = 0            # downloads running
+        self._running_background = 0  # of them, background jobs' downloads
+        self._urgent_waiting = 0     # pages and buttons waiting for a slot
         self._lookup_slots = threading.BoundedSemaphore(MAX_PARALLEL_LOOKUPS)
         self._listeners = []
         self._listener_thread = ThreadPoolExecutor(max_workers=1, thread_name_prefix='pulse-feed-listener')
@@ -288,6 +297,7 @@ class PulseFeed:
         key = (market_id, price_type)
         now = self._clock()
         job = job or self.current_job()
+        urgent = not job and not keeper              # a page or a button, not a background job
         with self._lock:
             counts = self._counts.setdefault(key, _new_counts())
             if count_read:
@@ -313,7 +323,12 @@ class PulseFeed:
             flight = self._flights.get(key)
             leader = flight is None
             if leader:
-                flight = self._flights[key] = _Flight()
+                flight = self._flights[key] = _Flight(urgent)
+            promoted = urgent and not flight.urgent
+            flight.urgent = flight.urgent or urgent
+        if promoted:
+            with self._slots:
+                self._slots.notify_all()          # a job's queued download is now a page's
         if not leader:
             if not flight.done.wait(WAIT_FOR_DOWNLOAD):
                 raise TimeoutError(f'pulse {market_id} {price_type}: still downloading after {WAIT_FOR_DOWNLOAD} s')
@@ -326,7 +341,7 @@ class PulseFeed:
                     counts['from_memory'] += 1        # shared another caller's download
             return flight.table
         try:
-            table = self._download(token, market_id, price_type)
+            table = self._download(token, market_id, price_type, flight)
             flight.table = table
             if count_read:
                 with self._lock:
@@ -343,8 +358,40 @@ class PulseFeed:
                 self._flights.pop(key, None)
             flight.done.set()
 
-    def _download(self, token, market_id, price_type):
-        with self._downloads:
+    @contextmanager
+    def _download_slot(self, flight):
+        """One of the MAX_PARALLEL_DOWNLOADS slots. A background download waits while
+        MAX_BACKGROUND_DOWNLOADS run or a page waits; a page's (*flight.urgent*, which may turn true
+        while it waits) takes any free slot."""
+        with self._slots:
+            counted = False
+            try:
+                while True:
+                    urgent = flight.urgent
+                    if urgent and not counted:
+                        self._urgent_waiting += 1
+                        counted = True
+                    if self._running < MAX_PARALLEL_DOWNLOADS and (
+                            urgent or (self._running_background < MAX_BACKGROUND_DOWNLOADS
+                                       and not self._urgent_waiting)):
+                        break
+                    self._slots.wait()
+            finally:
+                if counted:
+                    self._urgent_waiting -= 1
+            background = not urgent
+            self._running += 1
+            self._running_background += background
+        try:
+            yield
+        finally:
+            with self._slots:
+                self._running -= 1
+                self._running_background -= background
+                self._slots.notify_all()
+
+    def _download(self, token, market_id, price_type, flight=None):
+        with self._download_slot(flight or _Flight(urgent=True)):
             started = self._clock()
             rows = self._post(TABLE_URL.format(market_id), token, body_for(price_type))
             seconds = self._clock() - started

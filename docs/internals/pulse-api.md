@@ -93,7 +93,11 @@ Errors are `{message, responseType}` with types such as `MarketSubscriptionRequi
 - **Single flight**: while a table downloads, every other caller of the same table waits for that
   download; at most 4 tables download at once (`MAX_PARALLEL_DOWNLOADS`: each download peaks at
   about 200 MB of memory; the Case Arbitrage alert poll's 7 markets arrive in two waves, about 3
-  seconds apart). Parsing happens outside the
+  seconds apart). Background jobs (`job()`, the keeper) take at most 3 of the 4
+  (`MAX_BACKGROUND_DOWNLOADS`) and a waiting page or button goes before them; a page that joins a
+  job's queued download moves it to the front. So Fetch live data never queues behind the jobs:
+  on 2026-10-29 the connection pulled ~0.8 MB/s and a table took 2–5 minutes (1–15 seconds
+  before 27 October), and the clicks waited behind the jobs' queue. Parsing happens outside the
   feed's lock, so readers of other tables never wait for it.
 - **Stamp with the download time, never "now".** A feature that keeps its own copy (Store
   Catalogue Arbitrage indexes, Case Arbitrage snapshots, Harvest) stamps it with

@@ -98,6 +98,7 @@ const HuginnArbitrage = () => {
     const [dataByProfile, setDataByProfile] = useState({});
     const [tradeonError, setTradeonError] = useState(null);
     const [tradeonFetching, setTradeonFetching] = useState(false);
+    const [fetchSeconds, setFetchSeconds] = useState(0);   // how long the running fetch has waited
     const [uploadOpen, setUploadOpen] = useState(true);
 
     const [profileId, setProfileId] = useState(PROFILES[0].id);
@@ -263,6 +264,9 @@ const HuginnArbitrage = () => {
         const profile = activeProfile; // capture — profile could change during the await
         setTradeonFetching(true);
         setTradeonError(null);
+        setFetchSeconds(0);
+        const startedAt = Date.now();
+        const timer = setInterval(() => setFetchSeconds(Math.round((Date.now() - startedAt) / 1000)), 1000);
         try {
             // Every fee, LOOT.Farm's included, comes from the Fees editor server-side.
             const res = await fetch(profile.fetchEndpoint);
@@ -277,6 +281,7 @@ const HuginnArbitrage = () => {
         } catch (err) {
             setTradeonError(err.message);
         } finally {
+            clearInterval(timer);
             setTradeonFetching(false);
         }
     };
@@ -582,10 +587,11 @@ const HuginnArbitrage = () => {
                                 type="button"
                                 onClick={handleApiFetch}
                                 disabled={tradeonFetching}
+                                title={tradeonFetching ? 'Downloading this profile\'s pulse price tables, one at a time. A table usually takes seconds; on a slow connection, minutes.' : undefined}
                                 className="flex items-center gap-1.5 px-3 py-1.5 mr-2 rounded-lg bg-amber-600/70 hover:bg-amber-500 text-white text-xs font-medium disabled:opacity-50 disabled:cursor-not-allowed transition-colors shrink-0"
                             >
                                 <RefreshCw size={12} className={tradeonFetching ? 'animate-spin' : ''} />
-                                {tradeonFetching ? 'Fetching…' : tradeonData ? 'Re-fetch' : 'Fetch live data'}
+                                {tradeonFetching ? `Fetching… ${Math.floor(fetchSeconds / 60)}:${String(fetchSeconds % 60).padStart(2, '0')}` : tradeonData ? 'Re-fetch' : 'Fetch live data'}
                             </button>
                         )}
                     </div>
