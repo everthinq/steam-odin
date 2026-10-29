@@ -1,8 +1,11 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { Link } from 'react-router-dom';
+import { MarketAccessBanner, MarketAccessButton, MarketAccessLine } from '../../components/MarketAccess';
+import useMarketAccess from '../../utils/useMarketAccess';
+import MarketUnlocker from '../../components/MarketUnlocker';
 import {
     LayoutDashboard, KeyRound, Search, Plus, Upload, Download, Eye, EyeOff, Copy, Check,
-    Pencil, Trash2, ShieldCheck, ShieldOff, X, Info, LogIn, Loader2,
+    Pencil, Trash2, ShieldCheck, ShieldOff, X, Info, LogIn, Loader2, Unlock, MapPin,
 } from 'lucide-react';
 
 // Mímir — the credential vault. Login / password / email / comment for every
@@ -26,7 +29,7 @@ const fetchPassword = async (credentialId) => {
     return data.password;
 };
 
-const empty = { login: '', password: '', email: '', comment: '' };
+const empty = { login: '', password: '', email: '', comment: '', billing_address: '' };
 
 const fmtTime = (iso) => {
     if (!iso) return '';
@@ -120,6 +123,9 @@ const MimirVault = () => {
     const [importResult, setImportResult] = useState(null);
     const [importing, setImporting] = useState(false);
     const [testing, setTesting] = useState(null);    // credential id currently being test-logged
+    // Market access: the check starts here (Mímir is the accounts page); the Dashboard shows the result.
+    const marketAccess = useMarketAccess();
+    const [unlockerOpen, setUnlockerOpen] = useState(false);
 
     const load = async () => {
         try {
@@ -175,7 +181,8 @@ const MimirVault = () => {
             ? creds.filter(c =>
                 c.login.toLowerCase().includes(q) ||
                 c.email.toLowerCase().includes(q) ||
-                c.comment.toLowerCase().includes(q))
+                c.comment.toLowerCase().includes(q) ||
+                (c.billing_address || '').toLowerCase().includes(q))
             : creds;
         const byLogin = (a, b) => a.login.localeCompare(b.login);
         return {
@@ -190,7 +197,7 @@ const MimirVault = () => {
     const openNew = () => { editRequest.current += 1; setForm(empty); setEditPasswordState('loaded'); setEditing({ new: true }); };
     const openEdit = async (c) => {
         const request = ++editRequest.current;
-        setForm({ login: c.login, password: '', email: c.email, comment: c.comment });
+        setForm({ login: c.login, password: '', email: c.email, comment: c.comment, billing_address: c.billing_address || '' });
         setEditing(c);
         if (!c.has_password) { setEditPasswordState('loaded'); return; }
         setEditPasswordState('loading');
@@ -350,6 +357,17 @@ const MimirVault = () => {
             </td>
             <td className="px-4 py-3 align-top max-w-[16rem]">
                 <span className="text-slate-500">{c.comment || '—'}</span>
+                {c.billing_address && (
+                    <div className="mt-1 flex items-start gap-1.5 text-[11px] text-slate-500" title="Billing address (Steam asks some accounts for one before a web purchase)">
+                        <MapPin size={11} className="shrink-0 mt-0.5 text-slate-600" />
+                        <span className="whitespace-pre-line">{c.billing_address}</span>
+                    </div>
+                )}
+            </td>
+            <td className="px-4 py-3 align-top min-w-[11rem] max-w-[13rem]">
+                {hasMafile && marketAccess.status?.accounts?.[String(c.linked_steamid)]
+                    ? <MarketAccessLine result={marketAccess.status.accounts[String(c.linked_steamid)]} wrap />
+                    : <span className="text-slate-600">—</span>}
             </td>
             <td className="px-4 py-3 align-top">
                 <div className="flex items-center justify-end gap-1">
@@ -376,7 +394,7 @@ const MimirVault = () => {
 
     const groupHeader = (icon, title, subtitle, count, accent) => (
         <tr className="bg-white/[0.03]">
-            <td colSpan={5} className="px-4 py-2.5">
+            <td colSpan={6} className="px-4 py-2.5">
                 <div className="flex items-center gap-2">
                     <span className={accent}>{icon}</span>
                     <span className={`text-xs font-bold uppercase tracking-wider ${accent}`}>{title}</span>
@@ -432,6 +450,19 @@ const MimirVault = () => {
                             }
                         />
                     </button>
+                    {/* Market access: when each account loses the Steam Community Market */}
+                    <MarketAccessButton
+                        status={marketAccess.status}
+                        onCheck={marketAccess.start}
+                        starting={marketAccess.starting}
+                    />
+                    <button
+                        onClick={() => setUnlockerOpen(true)}
+                        className="flex items-center gap-2 px-3 py-2 rounded-lg text-violet-200 hover:bg-violet-500/10 border border-violet-500/20 hover:border-violet-400/50 text-sm transition-colors"
+                        title="Buy a one-cent in-game item that keeps the Steam Community Market open for a year (dry run first)"
+                    >
+                        <Unlock size={14} /> Market unlocker
+                    </button>
                     {/* 3 · Hide all (tertiary, ghost) — only while a password is revealed */}
                     {Object.keys(revealed).length > 0 && (
                         <button
@@ -469,12 +500,31 @@ const MimirVault = () => {
                         <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={16} />
                         <input
                             type="text"
-                            placeholder="Search login, email, comment…"
+                            placeholder="Search login, email, comment, address…"
                             value={search}
                             onChange={e => setSearch(e.target.value)}
                             className="w-full pl-10 pr-4 py-2.5 glass-panel rounded-lg text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-cyan-500/50 transition-all text-sm"
                         />
                     </div>
+
+                    {unlockerOpen && (
+                        <MarketUnlocker
+                            status={marketAccess.status}
+                            accounts={creds.filter(c => c.linked_steamid)
+                                .map(c => ({ steamid: String(c.linked_steamid), account_name: c.login }))
+                                .sort((a, b) => a.account_name.localeCompare(b.account_name))}
+                            onUnlock={marketAccess.unlock}
+                            starting={marketAccess.starting}
+                            startError={marketAccess.startError}
+                            onClose={() => setUnlockerOpen(false)}
+                        />
+                    )}
+
+                    <MarketAccessBanner
+                        status={marketAccess.status}
+                        accounts={creds.filter(c => c.linked_steamid).map(c => ({ steamid: c.linked_steamid, account_name: c.login }))}
+                        startError={marketAccess.startError}
+                    />
 
                     {error && (
                         <div className="bg-red-500/10 border border-red-500/50 text-red-300 p-3 rounded-lg text-sm">{error}</div>
@@ -498,6 +548,7 @@ const MimirVault = () => {
                                             <th className="text-left font-semibold px-4 py-3">Password</th>
                                             <th className="text-left font-semibold px-4 py-3">Email</th>
                                             <th className="text-left font-semibold px-4 py-3">Comment</th>
+                                            <th className="text-left font-semibold px-4 py-3">Market access</th>
                                             <th className="text-right font-semibold px-4 py-3"></th>
                                         </tr>
                                     </thead>
@@ -552,6 +603,16 @@ const MimirVault = () => {
                                     />
                                 </label>
                             ))}
+                            <label className="flex flex-col gap-1">
+                                <span className="text-[11px] uppercase tracking-wider text-slate-500">billing address</span>
+                                <textarea
+                                    rows={4}
+                                    value={form.billing_address}
+                                    onChange={e => setForm(f => ({ ...f, billing_address: e.target.value }))}
+                                    placeholder={'optional: name, street, city and postal code, country\n(Steam asks some accounts for one before a web purchase)'}
+                                    className="px-3 py-2 rounded-lg bg-black/30 border border-white/10 text-slate-200 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-cyan-500/50"
+                                />
+                            </label>
                         </div>
                         <div className="flex justify-end gap-2 mt-5">
                             <button onClick={closeForm} className="px-4 py-2 rounded-lg text-slate-300 hover:bg-white/5 text-sm">Cancel</button>

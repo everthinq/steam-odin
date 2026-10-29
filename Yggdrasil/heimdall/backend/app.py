@@ -21,6 +21,7 @@ from asf_service import AsfService
 from team_fortress_service import TeamFortressService
 from card_seller_service import CardSellerService
 from store_purchase_service import StorePurchaseService
+from market_access_service import MarketAccessService
 from storage_shop_service import StorageShopService
 from store_arbitrage_service import STORE_JOB, StoreArbitrageService
 from store_boost_service import BOOST_JOB, StoreBoostService
@@ -94,6 +95,9 @@ card_seller_service = CardSellerService(settings_manager, steam_service, asf_ser
 # Andvari "Buy games": plan + buy a card-deal game on many accounts (wallet checkout, price-guarded).
 store_purchase_service = StorePurchaseService(steam_service, card_deals_service, asf_service,
                                               settings_provider=settings_manager.get_settings)
+# Market access (Mímir's button; the Dashboard shows the result): when each account loses the Steam Community Market
+# (a purchase older than 7 days and under a year keeps it open; read-only).
+market_access_service = MarketAccessService(steam_service, card_deals_service)
 # Ratatoskr "Storage shop": buy Counter-Strike 2 Storage Units on many accounts through the
 # game store (Game Coordinator transaction, approved with the account's web session).
 storage_shop_service = StorageShopService(steam_service, ratatoskr_service, card_deals_service)
@@ -162,6 +166,7 @@ ctx.storage_shop_service = storage_shop_service
 ctx.store_catalogue_service = store_catalogue_service
 ctx.store_arbitrage_service = store_arbitrage_service
 ctx.store_boost_service = store_boost_service
+ctx.market_access_service = market_access_service
 register_blueprints(app)
 
 # Morning routine: "Get all items" once a day at 08:00 (or the first minute the Mac

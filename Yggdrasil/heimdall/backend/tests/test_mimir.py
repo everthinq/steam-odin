@@ -53,6 +53,9 @@ def test_add_get_update_delete(vault):
     with pytest.raises(ValueError):
         m.add(login='account_login', password='dup')             # unique login
     m.update(rec['id'], {'password': 'newpw', 'comment': ''})
+    with pytest.raises(ValueError):
+        m.update(rec['id'], {'login': ' ', 'comment': 'changed'})
+    assert m.get(rec['id'])['login'] == 'account_login' and m.get(rec['id'])['comment'] == ''
     assert m.get_by_login('account_login')['password'] == 'newpw'
     assert m.delete(rec['id']) is True
     assert m.get_by_login('account_login') is None
@@ -344,3 +347,18 @@ def test_test_login_with_a_reused_session_is_not_recorded_as_ok(monkeypatch):
     body = response.get_json()
     assert body['ok'] is False and body['untested'] is True
     assert recorded == [] and disconnected == []
+
+
+def test_billing_address_is_stored_trimmed_and_kept_on_other_updates(vault):
+    vault, storage = vault
+    rec = vault.add('address_account', 'pw', 'a@example.com',
+                    billing_address='  Test Person \n\n Example Street 1, Ap. 2 \nTest City 1000\n')
+    assert rec['billing_address'] == 'Test Person\nExample Street 1, Ap. 2\nTest City 1000'
+    vault.update(rec['id'], {'comment': 'note'})
+    assert vault.get(rec['id'])['billing_address'].startswith('Test Person')
+    vault.update(rec['id'], {'billing_address': 'Other Person\nOther Street 3'})
+    reloaded = MimirService(storage)
+    assert reloaded.get(rec['id'])['billing_address'] == 'Other Person\nOther Street 3'
+    assert 'Other Person' not in vault.export_text()          # the text export stays four fields
+    vault.update(rec['id'], {'billing_address': ''})
+    assert vault.get(rec['id'])['billing_address'] == ''

@@ -39,7 +39,7 @@ while testing; use the dry-run paths.
 
 | Path | Page | Notes |
 |------|------|-------|
-| `/` | `pages/Dashboard.jsx` | The only eager page; account cards + tool tiles |
+| `/` | `pages/Dashboard.jsx` | The only eager page; account cards + tool tiles; each card shows its Market access line and a banner lists accounts that need a purchase (the result of Mímir's check, read-only: `utils/useMarketAccess.js`) |
 | `/add-account` | `pages/AddAccount.jsx` | maFile import |
 | `/accounts/:steamid/confirmations` | `pages/Confirmations.jsx` | |
 | `/huginn` | `pages/huginn/Arbitrage.jsx` | Views: Arbitrage (per-row "check live" ↻), Harvest, Case Arbitrage, Cross-Profile, Price dips (`components/PriceDips.jsx`), LF Auctions, LF Arbitrage; header link to Pulse feed |
@@ -48,7 +48,7 @@ while testing; use the dry-run paths.
 | `/huginn/card-deals` | `pages/huginn/CardDeals.jsx` | Andvari; `#buy` opens Buy games |
 | `/huginn/team-fortress` | `pages/huginn/TeamFortress.jsx` | |
 | `/draupnir`, `/draupnir/:portfolioId` | `pages/draupnir/` | |
-| `/mimir` | `pages/mimir/Vault.jsx` | |
+| `/mimir` | `pages/mimir/Vault.jsx` | Credential vault; **Market unlocker** dialog (`components/MarketUnlocker.jsx`: tick accounts, Dry run, Buy for real after typing `BUY <n>`); **Market access** button, banner and column (`components/MarketAccess.jsx`: `MarketAccessButton`, `MarketAccessBanner`, `MarketAccessLine`; `utils/useMarketAccess.js`: `GET /api/mimir/market-access`, polled every 3 s while the check runs, `POST …/check`) |
 | `/buy-storage-units` | `pages/ratatoskr/StorageShop.jsx` | Buy Storage Units, every account; outside the Ratatoskr layout; `/storage-shop` redirects here |
 | `/store-catalogue` | `pages/ratatoskr/StoreCatalogue.jsx` | Every in-game store item with its US dollar price; a Buy button per item |
 | `/store-catalogue/arbitrage` | `pages/ratatoskr/StoreCatalogue.jsx` (`tab="arbitrage"`) → `components/ratatoskr/StoreArbitrage.jsx` | Store Catalogue Arbitrage, laid out like Huginn's Arbitrage: profile In-game store → market (`ProfilePicker`, default CSMoney (Trade) autobuy, plus "Best market"), CSMoney (Trade) indicator column with BUY signal, Refresh, filters, Telegram switch / Send now; Buy links to the guarded buy page (read-only) |

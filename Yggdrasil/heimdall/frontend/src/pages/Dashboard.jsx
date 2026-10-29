@@ -4,6 +4,8 @@ import { Link } from 'react-router-dom';
 import AccountCard from '../components/AccountCard';
 import GlobalConfirmationsModal from '../components/GlobalConfirmationsModal';
 import TypedConfirmDialog from '../components/TypedConfirmDialog';
+import { MarketAccessBanner } from '../components/MarketAccess';
+import useMarketAccess from '../utils/useMarketAccess';
 import {
     loadDashboardLayout,
     saveDashboardLayout,
@@ -30,6 +32,8 @@ const Dashboard = () => {
     // that changes the account list does not change what must be typed.
     const [removeAllCount, setRemoveAllCount] = useState(0);
     const aliveRef = useRef(true);
+    // Market access: the result of the check Mímir runs (read-only here).
+    const { status: marketAccess } = useMarketAccess();
 
     const persistLayout = (next) => {
         setLayout(next);
@@ -363,6 +367,8 @@ const Dashboard = () => {
                     </div>
                 )}
 
+                <MarketAccessBanner status={marketAccess} accounts={accounts} />
+
                 {loading && accounts.length === 0 ? (
                     <div className="flex justify-center items-center h-64">
                         <RefreshCw className="animate-spin text-blue-500" size={40} />
@@ -426,6 +432,7 @@ const Dashboard = () => {
                                                 isPinned={isPinned}
                                                 onTogglePin={() => handleTogglePin(account.steamid)}
                                                 draggable={canReorder}
+                                                marketAccess={marketAccess?.accounts?.[sid]}
                                             />
                                         </div>
                                     );

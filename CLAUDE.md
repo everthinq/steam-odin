@@ -37,10 +37,10 @@ not a separate deployable):
 
 | Tool | Role | Backend service | Frontend pages |
 |------|------|-----------------|----------------|
-| (core) | Steam authenticator: TOTP codes, sessions, mobile confirmations | `steam_service.py`, `scheduler.py` | `Confirmations.jsx`, `AddAccount.jsx` |
+| (core) | Steam authenticator: TOTP codes, sessions, mobile confirmations; the Dashboard shows each account's Market access (result of Mímir's check) | `steam_service.py`, `scheduler.py` | `Confirmations.jsx`, `AddAccount.jsx`, `Dashboard.jsx` |
 | **Draupnir** | Portfolio tracker (buy/sell, moving-average profit/loss, canonical platform names, live valuation, point-in-time backups) | `draupnir_service.py`, `draupnir_backup_service.py` | `pages/draupnir/` |
 | **Huginn** | Cross-market price scout / arbitrage (Tradeon pulse feed, case arbitrage, Price dips vs the 30-day median, "check live" per row, stale prices greyed); **Pulse feed** page: the switchboard of automatic price fetching (which tables the recurring jobs may download, which ones stay fresh, the traffic a day) | `huginn_service.py`, `pulse_feed.py`, `pulse_views.py` | `pages/huginn/` (`PulseFeed.jsx` at `/huginn/pulse`) |
-| **Mímir** | Encrypted credential vault (login / password / email), shares the maFile key | `mimir_service.py` | `pages/mimir/` |
+| **Mímir** | Encrypted credential vault (login / password / email / comment / billing address), shares the maFile key; **Market access** button + column (when each account loses the Steam Community Market: newest store or in-game purchase + 1 year, and Steam's own eligibility check) and the **Market unlocker** (buys Zombie Hunter's one-cent Editor Pack, an in-game purchase that keeps the Market open a year; dry run cancels; price-guarded) | `mimir_service.py`, `market_access_service.py` | `pages/mimir/`, `components/MarketAccess.jsx`, `components/MarketUnlocker.jsx`, `utils/useMarketAccess.js` |
 | **Ratatoskr** | Moves items between Storage Units and inventory; **Buy Storage Units** ("Storage shop" in the code) buys Storage Units on many accounts through the game store (Game Coordinator transaction, approved with the account's web session, price-guarded, dry run cancels); **Store Catalogue** lists every in-game store item with its US dollar price from the same price sheet, and its Buy button buys any of them through the same guarded flow; its **Arbitrage** tab (Store Catalogue Arbitrage) recommends store items that resell above the store price, laid out like Huginn's Arbitrage (profile In-game store → market, autobuy or min), with CSMoney (Trade)'s instant offer as the BUY indicator, a daily price history, a Refresh button, and a daily refresh after the morning "Get all items" that posts profitable items to the Huginn Telegram bot (read-only, never buys); its **Boosts** tab (Store Boosts) catches a Steam price boost of a store item, or of a sticker inside a store capsule, on its first day: an hourly pulse check, Steam's price history one item at a time, levels watch / boost / second wave / fading, a Huginn Telegram message per new level and a phone ring on a boost (read-only, never buys) | `ratatoskr_service.py` → Node service (`store.js`), `storage_shop_service.py`, `store_catalogue_service.py`, `store_arbitrage_service.py`, `store_boost_service.py` | `pages/ratatoskr/` (`StorageShop.jsx` at `/buy-storage-units`, `StoreCatalogue.jsx` at `/store-catalogue`, `/store-catalogue/arbitrage` with `components/ratatoskr/StoreArbitrage.jsx` and `/store-catalogue/boosts` with `components/ratatoskr/StoreBoosts.jsx`) |
 | **Gjallarhorn** (in Huginn) | Event rotation: when Valve limits a case, sell deflated holdings and rotate into it; Counter-Strike 2 news watcher that texts + rings the phone; read-only, never trades | `gjallarhorn_service.py`, `gjallarhorn_news_service.py`, `steam_market_service.py`, `telegram_caller.py` | `pages/huginn/Gjallarhorn.jsx`, `components/gjallarhorn/` |
 | **Cross-Profile** (in Huginn) | Best buy-minimum → autobuy route per held item across every account, plus user-defined market chains | `cross_arbitrage_service.py` | `components/CrossProfileArbitrage.jsx` (Arbitrage page view) |
@@ -186,7 +186,11 @@ ruff + `pip-audit`, and frontend lint + build, on every push and pull request.
 - **Secrets stay untracked.** `*.maFile`, `.heimdall_key`, `.heimdall_salt`,
   `credentials.vault`, `settings.json`, `csfloat_keys.json`, `.env`,
   `Yggdrasil/asf/config/` are gitignored and
-  must never be committed or sent to any external service. See
+  must never be committed or sent to any external service. **Nothing stored in Mímir**
+  (passwords, emails, billing addresses) may ever be committed, written to a tracked file or
+  shown outside the app (Ivan's rule). The pre-commit guard enforces it
+  (`scripts/pre-commit-secret-guard.sh` → `backend/secret_scan.py`; install with
+  `ln -sf ../../scripts/pre-commit-secret-guard.sh .git/hooks/pre-commit`). See
   [SECURITY.md](SECURITY.md).
 - **`portfolios.json` is committed on purpose** (personal holdings, no secrets)
   as a lightweight backup; the on-disk snapshot history under `backups/` is
@@ -196,7 +200,7 @@ ruff + `pip-audit`, and frontend lint + build, on every push and pull request.
   preserved before deleting anything.
 
 - **Money is spent only through the guarded routes** (Andvari "Buy games",
-  Ratatoskr "Buy Storage Units" and its per-item pages), dry run first, and a real purchase only on Ivan's
+  Ratatoskr "Buy Storage Units" and its per-item pages, Mímir's "Market unlocker"), dry run first, and a real purchase only on Ivan's
   explicit word for the accounts and quantity he named. Never call Ratatoskr's
   raw `/store/purchase/*` endpoints or Steam checkout yourself.
 - **Automatic selling handles items that arrive after it is switched on**;
@@ -222,6 +226,8 @@ ruff + `pip-audit`, and frontend lint + build, on every push and pull request.
   all requests go through the master feed `backend/pulse_feed.py`, never anywhere else
 - Steam Market price history (`pricehistory`: login, wallet currency, errors, store vs market
   names, who reads it): [docs/internals/steam-pricehistory.md](docs/internals/steam-pricehistory.md)
+- Steam Community Market access (the one-year purchase rule, what counts, free licenses do not,
+  Purchase History and `eligibilitycheck`): [docs/internals/steam-market-access.md](docs/internals/steam-market-access.md)
 - Known drift between code, config and docs: [docs/internals/known-issues.md](docs/internals/known-issues.md)
 - Human architecture tour: [ARCHITECTURE.md](ARCHITECTURE.md)
 - Trading domain knowledge: [docs/steam-trading/](docs/steam-trading/) — local only: the

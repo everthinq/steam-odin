@@ -13,6 +13,10 @@
     browser), **trash** to remove the account (you must type its name).
 - **Search** filters the cards by account name.
 - **Import** adds accounts (see [getting-started.md](getting-started.md)).
+- **Market access** — each card shows until when the account can use the Steam Community
+  Market (green; amber within 30 days; red once lapsed), and a banner lists the accounts that
+  need a purchase. This only shows the result: the check itself runs from Mímir's **Market
+  access** button (see [mimir.md](mimir.md#market-access)).
 - **Remove All** removes every account; you must type `DELETE <number>`.
   Removed maFiles are moved to `maFiles/.deleted/`, not destroyed — but without
   a backup, treat removal as final.

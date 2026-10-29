@@ -1,8 +1,9 @@
 """Mimir — the credential vault.
 
 Named for the keeper of secret knowledge whose counsel Odin sought at the well
-of wisdom. Mimir stores Steam account credentials (login, password, email and a
-free-form comment) encrypted at rest with the SAME Fernet key that protects the
+of wisdom. Mimir stores Steam account credentials (login, password, email, a
+free-form comment and the billing address Steam asks for before a web purchase)
+encrypted at rest with the SAME Fernet key that protects the
 maFiles — so a password is never stored in weaker terms than the 2FA seed that
 already lives beside it.
 
@@ -200,6 +201,11 @@ class MimirService:
             logger.error('Mimir vault backup failed (%s); saving anyway', e)
 
     @staticmethod
+    def _address(text):
+        """A billing address as trimmed, non-empty lines."""
+        return '\n'.join(line.strip() for line in (text or '').splitlines() if line.strip())
+
+    @staticmethod
     def _normalize(r):
         return {
             'id': r.get('id') or uuid.uuid4().hex,
@@ -207,6 +213,9 @@ class MimirService:
             'password': r.get('password') or '',
             'email': (r.get('email') or '').strip(),
             'comment': (r.get('comment') or '').strip(),
+            # Steam asks some accounts for one before any web purchase (Market unlocker);
+            # kept for reference, never sent to Steam by Heimdall. Not in the text export.
+            'billing_address': MimirService._address(r.get('billing_address')),
             'created_at': r.get('created_at') or _now(),
             'updated_at': r.get('updated_at') or _now(),
             # Login-health, populated by record_login_result after a Ratatoskr
@@ -278,7 +287,7 @@ class MimirService:
 
     # ---- mutations ---------------------------------------------------------
 
-    def add(self, login, password='', email='', comment=''):
+    def add(self, login, password='', email='', comment='', billing_address=''):
         with self._lock:
             self._check_writable()
             login = (login or '').strip()
@@ -286,8 +295,8 @@ class MimirService:
                 raise ValueError('login is required')
             if self._find_by_login(login):
                 raise ValueError(f'a credential for "{login}" already exists')
-            rec = self._normalize({'login': login, 'password': password,
-                                   'email': email, 'comment': comment})
+            rec = self._normalize({'login': login, 'password': password, 'email': email,
+                                   'comment': comment, 'billing_address': billing_address})
             self._records.append(rec)
             self._save()
             return dict(rec)
@@ -298,12 +307,14 @@ class MimirService:
             rec = next((r for r in self._records if r['id'] == rec_id), None)
             if not rec:
                 raise KeyError(rec_id)
+            if 'login' in fields and fields['login'] is not None and not fields['login'].strip():
+                raise ValueError('login cannot be empty')     # before anything changes
             for key in ('login', 'password', 'email', 'comment'):
                 if key in fields and fields[key] is not None:
                     val = fields[key]
                     rec[key] = val.strip() if key != 'password' else val
-            if 'login' in fields and not rec['login'].strip():
-                raise ValueError('login cannot be empty')
+            if fields.get('billing_address') is not None:
+                rec['billing_address'] = self._address(fields['billing_address'])
             rec['updated_at'] = _now()
             self._save()
             return dict(rec)

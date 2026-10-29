@@ -2,8 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Copy, Check, Trash2, Package, Eye, EyeOff, Pin, GripVertical } from 'lucide-react';
 import TypedConfirmDialog from './TypedConfirmDialog';
+import { MarketAccessLine } from './MarketAccess';
 
-const AccountCard = ({ account, onDelete, isPinned = false, onTogglePin, draggable = false }) => {
+const AccountCard = ({ account, onDelete, isPinned = false, onTogglePin, draggable = false, marketAccess = null }) => {
     const { account_name, steamid, code, time_remaining } = account;
     const navigate = useNavigate();
 
@@ -187,6 +188,8 @@ const AccountCard = ({ account, onDelete, isPinned = false, onTogglePin, draggab
                         />
                     </div>
                 </div>
+
+                <MarketAccessLine result={marketAccess} />
 
                 <div className="flex justify-end gap-2 pt-2">
                     <button

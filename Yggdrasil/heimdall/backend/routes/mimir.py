@@ -10,6 +10,10 @@ its password replaced by a ``has_password`` flag, and one password at a time is
 served by ``GET /api/mimir/credentials/<id>/password`` (the Vault page fetches it
 on demand for Reveal / Copy / Edit). The export route is the one deliberate
 exception — it exists to produce the full plaintext backup.
+
+The Market access check (``market_access_service.py``) also lives here: Mímir is
+the accounts page, so its button starts the check and the Dashboard only shows
+the saved result.
 """
 from flask import Blueprint, jsonify, request
 
@@ -79,6 +83,7 @@ def create_credential():
             password=body.get('password', ''),
             email=body.get('email', ''),
             comment=body.get('comment', ''),
+            billing_address=body.get('billing_address', ''),
         )
     except ValueError as e:
         return jsonify({'error': str(e)}), 400
@@ -160,3 +165,30 @@ def test_login(rec_id):
 def export_credentials():
     """Return the whole vault as importable ``login;password;email;comment`` text."""
     return jsonify({'text': ctx.mimir_service.export_text()})
+
+
+@bp.route('/api/mimir/market-access', methods=['GET'])
+def market_access_status():
+    """Each account's Steam Community Market access: last counted purchase, the date
+    access lapses, Steam's own verdict, and the check job's progress."""
+    return jsonify(ctx.market_access_service.status())
+
+
+@bp.route('/api/mimir/market-access/check', methods=['POST'])
+def market_access_check():
+    """Check every account again (background job, one account at a time; read-only)."""
+    result = ctx.market_access_service.start_check()
+    return jsonify(result), (200 if result.get('started') else 409)
+
+
+@bp.route('/api/mimir/market-access/unlock', methods=['POST'])
+def market_access_unlock():
+    """Market unlocker: buy Zombie Hunter's one-cent Editor Pack on the chosen accounts
+    ({steamids: [...], dry_run}). Fails closed: anything but ``dry_run: false`` is a
+    dry run, which cancels on Steam's approval page."""
+    body = request.get_json(silent=True) or {}
+    steamids = body.get('steamids')
+    if not isinstance(steamids, list) or not steamids:
+        return jsonify({'error': 'choose at least one account'}), 400
+    result = ctx.market_access_service.start_unlock(steamids, dry_run=body.get('dry_run') is not False)
+    return jsonify(result), (200 if result.get('started') else 409)

@@ -123,3 +123,11 @@ def test_register_blueprints_wires_onto_app():
                  '/api/ratatoskr/login', '/api/accounts', '/api/settings',
                  '/api/confirmations/check-all']:
         assert want in rules, f'missing after register_blueprints: {want}'
+
+
+def test_mimir_blueprint_holds_the_market_access_routes():
+    from routes.mimir import bp
+    rules = _rules_for(bp)
+    for want in ['/api/mimir/market-access', '/api/mimir/market-access/check',
+                 '/api/mimir/market-access/unlock']:
+        assert want in rules, f'missing mimir route: {want}'
