@@ -6,6 +6,8 @@
   instead of two 59 MB tables), with the profit recomputed with the Fees editor's fee.
 - ``steam_liquidity``: Gjallarhorn's liquidity (Steam sales in the last week, lowest listing,
   highest buy order, 30-day median) from pulse instead of Steam's rate-limited endpoints.
+- ``profile_tables``: the pulse tables an Arbitrage profile reads, for "Keep fresh" on a profile
+  (settings huginn_kept_profiles, every huginn_profile_keep_minutes).
 
 Every price comes through ``HuginnService._table`` / ``HuginnService.pulse``; nothing here builds a
 pulse request.
@@ -15,7 +17,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 
 from huginn_service import _AUTOBUY_VIA_CSFLOAT_SWEEP, _ESTIMATED_SELL, _MARKET_BY_ID
-from pulse_feed import FRESH, KEEP_FRESH_MINUTES, MAX_KEPT_TABLES, STALE_SECONDS
+from pulse_feed import FRESH, KEEP_FRESH_MINUTES, MAX_KEPT_TABLES, MAX_PROFILE_TABLES, STALE_SECONDS
 
 # Markets with price history on pulse (market-info isSupportHistory, 2026-10-15): they have the
 # statistics price types (Median30d, Average30d). Buff163 and WhiteMarket need pulse's Table
@@ -271,9 +273,116 @@ def parse_switched_off(values, huginn):
     return _parse_keys(values, huginn.pulse.declared_tables() | _offered(), 'Heimdall fetches')
 
 
+# ---- Huginn profiles kept fresh -----------------------------------------------------------------
+
+PROFILE_KEEP_MINUTES = 5        # default interval of the tables kept fresh for profiles
+PROFILE_MODES = ('autobuy', 'min')
+
+
+def _estimated_tables(market_id):
+    """The real tables an estimated listing is built from (HuginnService._estimated_listings)."""
+    return [('SkinSwapMarket', 'Sell'), (market_id, 'Buy')]
+
+
+def profile_tables(buy_id, sell_id, mode):
+    """[(market id, price type)] an Arbitrage profile (buy market, sell market, 'autobuy' or 'min')
+    reads from pulse, exactly as its fetch does (fetch_generated_pair, the curated profiles, the
+    LOOT.Farm feed profiles, CSFloat's swept buy orders); ValueError for a profile with none."""
+    buy, sell = _MARKET_BY_ID.get(buy_id), _MARKET_BY_ID.get(sell_id)
+    if not buy or not sell or buy_id == sell_id or mode not in PROFILE_MODES:
+        raise ValueError(f'not an Arbitrage profile: {buy_id} → {sell_id} ({mode})')
+    if not buy['buy_type'] or (mode != 'autobuy' and not sell['buy_type']):
+        raise ValueError(f'{buy_id if not buy["buy_type"] else sell_id} has no listings on pulse')
+    buy_tables = (_estimated_tables(buy_id) if buy['buy_type'] == _ESTIMATED_SELL
+                  else [(buy_id, buy['buy_type'])])
+    if sell_id == 'LootFarm':
+        # LOOT.Farm's own feed is the sell side: only the buy side is pulse (Tradeon is read as
+        # the first market of the Steam buy-orders table: fetch_tradeon_lootfarm).
+        if buy_id not in ('TradeOnMarket', 'LisSkins'):
+            raise ValueError('LOOT.Farm profiles buy on Tradeon or LisSkins')
+        return [('Steam', 'Buy')] if buy_id == 'TradeOnMarket' else buy_tables
+    if sell_id in _AUTOBUY_VIA_CSFLOAT_SWEEP and mode == 'autobuy':
+        # CSFloat's buy orders come from the sweep: only the buy side is pulse.
+        return [('CsFloat', 'Sell')] if buy_id == 'TradeOnMarket' else buy_tables
+    if mode == 'autobuy' and sell['autobuy']:
+        sell_tables = [(sell_id, sell['autobuy'])]
+    elif sell['buy_type'] == _ESTIMATED_SELL:
+        sell_tables = _estimated_tables(sell_id)
+    else:
+        sell_tables = [(sell_id, 'Sell')]
+    if buy_id == 'TradeOnMarket':
+        return sell_tables          # Tradeon is the sell table's own first market
+    return list(dict.fromkeys(buy_tables + sell_tables))
+
+
+def profile_key(buy_id, sell_id, mode):
+    return f'{buy_id}:{sell_id}:{mode}'
+
+
+def profile_label(key):
+    buy_id, sell_id, mode = key.split(':')
+    display = lambda market_id: _MARKET_BY_ID[market_id]['display']  # noqa: E731
+    return f'{display(buy_id)} → {display(sell_id)} ({mode})'
+
+
+def parse_kept_profiles(values):
+    """["LisSkins:CsMoneyTrade:autobuy", ...] → ({profile key: [tables]}, [every table, once]);
+    ValueError naming the first value that is not a profile with pulse tables, or when the
+    profiles need more than MAX_PROFILE_TABLES tables."""
+    profiles = {}
+    for value in values or []:
+        parts = value.split(':') if isinstance(value, str) else []
+        if len(parts) != 3:
+            raise ValueError(f'not an Arbitrage profile: {value!r}')
+        profiles[value] = profile_tables(*parts)
+    tables = list(dict.fromkeys(key for keys in profiles.values() for key in keys))
+    if len(tables) > MAX_PROFILE_TABLES:
+        raise ValueError(f'these profiles need {len(tables)} pulse tables; at most {MAX_PROFILE_TABLES} '
+                         'can be kept fresh for profiles. Switch another profile off first.')
+    return profiles, tables
+
+
+def kept_profiles_status(huginn, settings):
+    """The Huginn profiles kept fresh: {minutes, max_tables, tables_used, profiles: {key: {label,
+    tables: [{market, price_type, age_seconds, downloading}]}}} (the ages straight from memory)."""
+    profiles, tables = parse_kept_profiles_leniently(settings.get('huginn_kept_profiles'))
+    ages = huginn.pulse.ages(tables)
+    _, minutes = huginn.pulse.kept_for_profiles()
+    return {'minutes': minutes, 'choices': list(KEEP_FRESH_MINUTES), 'max_tables': MAX_PROFILE_TABLES,
+            'tables_used': len(tables),
+            'profiles': {key: {'label': profile_label(key),
+                               'tables': [{'market': market_id, 'price_type': price_type,
+                                           'age_seconds': ages[(market_id, price_type)][0],
+                                           'downloading': ages[(market_id, price_type)][1]}
+                                          for market_id, price_type in keys]}
+                         for key, keys in profiles.items()}}
+
+
+def parse_kept_profiles_leniently(values):
+    """parse_kept_profiles for saved settings: a profile no longer valid is skipped, and the
+    profiles past MAX_PROFILE_TABLES tables are left out."""
+    profiles, tables = {}, []
+    for value in values or []:
+        try:
+            keys = parse_kept_profiles([value])[0][value]
+        except (ValueError, KeyError):
+            continue
+        more = [key for key in keys if key not in tables]
+        if len(tables) + len(more) > MAX_PROFILE_TABLES:
+            continue
+        profiles[value], tables = keys, tables + more
+    return profiles, tables
+
+
 def apply_kept_settings(huginn, settings):
     """Hand the saved choice (settings pulse_kept_tables, pulse_keep_minutes,
-    pulse_switched_off_tables) to the master feed; anything no longer offered is skipped."""
+    pulse_switched_off_tables, huginn_kept_profiles, huginn_profile_keep_minutes) to the master
+    feed; anything no longer offered is skipped."""
+    profile_minutes = settings.get('huginn_profile_keep_minutes') or PROFILE_KEEP_MINUTES
+    if profile_minutes not in KEEP_FRESH_MINUTES:
+        profile_minutes = PROFILE_KEEP_MINUTES
+    huginn.pulse.set_kept_for_profiles(parse_kept_profiles_leniently(settings.get('huginn_kept_profiles'))[1],
+                                       profile_minutes)
     switched_off = []
     for value in settings.get('pulse_switched_off_tables') or []:
         if isinstance(value, str) and ':' in value:

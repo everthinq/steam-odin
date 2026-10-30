@@ -56,7 +56,15 @@ hover the mark for why. It is a mark only: nothing is hidden or left out.
    An ⓘ marks GgSwap, GamerPay and SkinSwap (Trade): the pulse website does not
    show them and their prices can be old, so check the market before you trade.
    SkinSwap has two sides; see [SkinSwap](#skinswap-market-trade-and-one-balance) below.
-2. Press **Fetch live data**.
+2. Press **Fetch live data**. Or switch on **Keep fresh** next to the profile: its
+   price tables are then downloaded in the background every 5 minutes (the
+   interval is on the Pulse feed page), and the profile opens by itself in about a
+   second whenever you pick it, with prices at most that old. Kept profiles have a
+   pin and are listed first under **Kept fresh** in the picker. **Fetch live data**
+   still downloads fresh prices (under a minute old).
+   Next to the button, **prices N min old** says how old the shown prices are (hover
+   for each table); **Newer prices ready · show** appears when the background
+   download has replaced them.
 3. The table lists items with buy price, sell price, profit and profit %, how
    many you own and on which accounts, and links to each market.
 4. **Live** (↻ on a row): checks that one item on both markets right now, in about
@@ -196,7 +204,7 @@ prices under a minute old.
 
 The **Pulse feed** button (top right of Huginn, or /huginn/pulse) is the switchboard
 for every price download. Each pulse table (one market × one price type, about
-59 MB) is one switch:
+5 MB compressed) is one switch:
 
 - **Amber, ticked**: a recurring job fetches it, named on the switch: **Case**
   (Case Arbitrage, every hour), **Alerts** (Case Arbitrage alerts, every 10
@@ -207,6 +215,9 @@ for every price download. Each pulse table (one market × one price type, about
   copy in memory if a page just downloaded it). Buttons you press still do.
 - **Blue, ticked**: kept fresh by you, every 5 to 60 minutes (at most 12 tables).
   Boards and jobs then read it from memory instead of downloading it.
+- **Violet, ticked**: kept fresh for a Huginn profile switched to **Keep fresh** on
+  the Arbitrage page (switch it off there). The **Kept for Huginn profiles** card
+  lists them and sets their interval (5 minutes by default, at most 12 tables).
 - **Grey**: downloaded only when a page or a button asks.
 
 The job cards on top show each job's schedule, whether it runs, how many of its

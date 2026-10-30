@@ -133,6 +133,18 @@ Errors are `{message, responseType}` with types such as `MarketSubscriptionRequi
   Price dips read it.
 - **Single items** (`lookup(token, market, price type, name)`): the name filter, exact name kept,
   not cached, shares the download limit; `status()['lookups']` counts them.
+- **Kept for Huginn profiles** (`set_kept_for_profiles(keys, minutes)`, `pulse_views.profile_tables`):
+  an Arbitrage profile switched to "Keep fresh" (settings `huginn_kept_profiles` as
+  `"BuyMarket:SellMarket:autobuy|min"`, `huginn_profile_keep_minutes`, default 5) has its pulse tables
+  kept by the same keeper, at most `MAX_PROFILE_TABLES` (12) on top of the page's own; a table kept
+  both ways is downloaded at the shorter interval. `profile_tables` mirrors each profile's fetch and
+  `tests/test_kept_profiles.py` calls every profile route to prove they match. The profile routes
+  (`@pulse_profile` in routes/huginn.py) take `?kept=1` (the page opening a kept profile by itself:
+  `with feed.reading(accept_kept=True)` accepts a kept table up to its interval even for an
+  `ON_DEMAND` read) and answer an `X-Pulse-Tables` header, `[[market, price type, seconds since its
+  download]]`, from which the page shows "prices N min old". Measured 2026-10-30: LisSkins →
+  CSMoney (Trade) opens from memory in 0.6-1 s (16.5 MB of JSON once Flask stopped indenting it,
+  `app.json.compact`); a fresh download on the slow line took 40 s.
 - **Kept fresh** (`set_kept(keys, minutes)`, `keep_fresh_once`, `start_keeper`): the tables ticked
   on the Pulse feed page (settings `pulse_kept_tables` as `"Market:PriceType"`, `pulse_keep_minutes`
   5/10/15/30/60, default none) are downloaded again by the `pulse-keeper` thread (30 s tick, one

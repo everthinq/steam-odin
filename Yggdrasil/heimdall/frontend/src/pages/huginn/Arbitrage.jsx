@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useDeferredValue } from 'react';
+import React, { useState, useEffect, useMemo, useDeferredValue, useRef, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { LayoutDashboard, RefreshCw, AlertTriangle, Search, ChevronDown, Coins, Boxes, Repeat, Gavel, Users, Wheat, TrendingDown, Radio, RotateCw } from 'lucide-react';
 import { matchesSearchQuery } from '../../utils/transferItems';
@@ -21,8 +21,10 @@ import FeeEditor from '../../components/arbitrage/FeeEditor';
 import CsfloatBuyOrdersPanel from '../../components/arbitrage/CsfloatBuyOrdersPanel';
 import SkinSwapBalanceNote from '../../components/arbitrage/SkinSwapBalanceNote';
 import PriceDips from '../../components/PriceDips';
+import KeepFreshSwitch from '../../components/arbitrage/KeepFreshSwitch';
+import PricesAge from '../../components/arbitrage/PricesAge';
 import { useNowSeconds } from '../../utils/priceAge';
-import { readJson } from '../../utils/readJson';
+import { failureMessage, readJson, readJsonOrThrow } from '../../utils/readJson';
 
 // Render results in capped pages — the datasets are ~17k rows and painting them all
 // at once freezes the page. Rows are sorted best-profit-first, so the first page is
@@ -74,6 +76,23 @@ const canCheckLive = (profile) => !!profile.buyMarket && !!profile.sellMarket
     && profile.sellMarket !== 'LootFarm' && !profile.autobuy
     && !profile.fromEstimated && !profile.toEstimated;
 
+// A profile's key on the backend (settings huginn_kept_profiles): buy market, sell market, autobuy or min.
+const profileKey = (profile) => `${profile.buyMarket}:${profile.sellMarket}:${profile.toSub === 'autobuy' ? 'autobuy' : 'min'}`;
+// ?kept=1: a kept profile opening by itself takes its kept tables from memory (up to their interval old).
+const withKept = (endpoint) => `${endpoint}${endpoint.includes('?') ? '&' : '?'}kept=1`;
+// The pulse tables behind an answer, from its X-Pulse-Tables header: [[market, price type, seconds since download]].
+const pulseTablesOf = (response) => {
+    try {
+        const tables = JSON.parse(response.headers.get('X-Pulse-Tables') || '[]');
+        return Array.isArray(tables) ? tables : [];
+    } catch {
+        return [];
+    }
+};
+// When the oldest table behind shown prices was downloaded (browser milliseconds).
+const downloadedAt = ({ tables, receivedAt }) => receivedAt - Math.max(0, ...tables.map(table => table[2])) * 1000;
+const KEPT_POLL_MILLISECONDS = 15000;   // the kept profiles' table ages (memory only on the backend, cheap)
+
 const formatTs = (ts) => {
     if (!ts) return null;
     const diffMin = Math.round((Date.now() - new Date(ts).getTime()) / 60000);
@@ -93,10 +112,21 @@ const HuginnArbitrage = () => {
     const [scanError, setScanError] = useState(null);
 
     // Fetched arbitrage data is held per-profile in memory for this session only.
-    // Nothing is preloaded from disk — opening the page and switching profiles is
-    // instant. Data loads only when you hit Fetch/Re-fetch (a re-fetch replaces it),
-    // and it's intentionally gone on reload/leaving the page.
+    // Nothing is preloaded from disk. Data loads when you hit Fetch/Re-fetch (a re-fetch
+    // replaces it), or by itself from the backend's memory for a profile switched to
+    // "Keep fresh"; it's intentionally gone on reload/leaving the page.
     const [dataByProfile, setDataByProfile] = useState({});
+    // How old each profile's prices are: {tables (X-Pulse-Tables), receivedAt} per profile id;
+    // the ref is the same, read synchronously so an older answer never replaces newer prices.
+    const [pricesByProfile, setPricesByProfile] = useState({});
+    const pricesRef = useRef({});
+    const uploadedRef = useRef(new Set());                 // profiles showing a JSON file you loaded
+    // Profiles kept fresh (GET /api/huginn/arbitrage/kept-profiles) and when that answer arrived.
+    const [kept, setKept] = useState(null);
+    const [keptBusy, setKeptBusy] = useState(false);
+    const [keptError, setKeptError] = useState(null);
+    const [openingId, setOpeningId] = useState(null);      // a kept profile opening from memory
+    const keptRequest = useRef(0);                         // numbered: only the newest kept-profiles answer counts
     const [tradeonError, setTradeonError] = useState(null);
     const [tradeonFetching, setTradeonFetching] = useState(false);
     const [fetchSeconds, setFetchSeconds] = useState(0);   // how long the running fetch has waited
@@ -186,11 +216,18 @@ const HuginnArbitrage = () => {
 
     const setProfileData = (id, data) => setDataByProfile(prev => ({ ...prev, [id]: data }));
 
+    const setProfilePrices = (id, prices) => {
+        pricesRef.current = { ...pricesRef.current, [id]: prices };
+        setPricesByProfile(pricesRef.current);
+    };
+
     const handleTradeonChange = (raw) => {
-        if (!raw.trim()) { setProfileData(profileId, null); setTradeonError(null); return; }
+        setProfilePrices(profileId, null);      // an uploaded file says nothing about its age
+        if (!raw.trim()) { uploadedRef.current.delete(profileId); setProfileData(profileId, null); setTradeonError(null); return; }
         try {
             const parsed = JSON.parse(raw);
             if (!Array.isArray(parsed)) throw new Error('Expected a JSON array');
+            uploadedRef.current.add(profileId);     // opening from memory never replaces it; Fetch live data does
             setProfileData(profileId, parsed);
             setTradeonError(null);
             setUploadOpen(false);
@@ -260,32 +297,117 @@ const HuginnArbitrage = () => {
 
     const activeProfile = allProfiles.find(p => p.id === profileId) ?? PROFILES[0];
 
-    const handleApiFetch = async () => {
-        if (tradeonFetching) return;
-        const profile = activeProfile; // capture — profile could change during the await
-        setTradeonFetching(true);
+    // Load a profile's deals: fresh (Fetch live data: every table under a minute old) or, for a
+    // kept profile, from the backend's memory (*fromMemory*: its kept tables, up to their interval).
+    const loadProfile = async (profile, { fromMemory = false } = {}) => {
+        let timer = null;
+        if (fromMemory) {
+            setOpeningId(profile.id);
+        } else {
+            setTradeonFetching(true);
+            setFetchSeconds(0);
+            const startedAt = Date.now();
+            timer = setInterval(() => setFetchSeconds(Math.round((Date.now() - startedAt) / 1000)), 1000);
+        }
         setTradeonError(null);
-        setFetchSeconds(0);
-        const startedAt = Date.now();
-        const timer = setInterval(() => setFetchSeconds(Math.round((Date.now() - startedAt) / 1000)), 1000);
         try {
             // Every fee, LOOT.Farm's included, comes from the Fees editor server-side.
-            const res = await fetch(profile.fetchEndpoint);
-            const data = await readJson(res);
-            if (!res.ok) throw new Error(data.error || 'Fetch failed');
+            const response = await fetch(fromMemory ? withKept(profile.fetchEndpoint) : profile.fetchEndpoint);
+            const data = await readJson(response);
+            if (!response.ok) throw new Error(data.error || 'Fetch failed');
             if (!Array.isArray(data)) throw new Error('Unexpected response format');
+            const prices = { tables: pulseTablesOf(response), receivedAt: Date.now() };
+            const shown = pricesRef.current[profile.id];
+            // A copy from memory never replaces newer prices (a Fetch live data that answered first)
+            // or a JSON file you loaded.
+            if (fromMemory && (uploadedRef.current.has(profile.id)
+                || (shown && downloadedAt(shown) > downloadedAt(prices) + 1000))) return;
+            uploadedRef.current.delete(profile.id);
             setProfileData(profile.id, data);
-            // A re-fetch is newer than any earlier live check of this profile.
-            setLiveChecks(prev => Object.fromEntries(Object.entries(prev).filter(([key]) => !key.startsWith(`${profile.id}|`))));
+            setProfilePrices(profile.id, prices);
             setTradeonError(null);
+            // Newer prices than any earlier live check of this profile.
+            setLiveChecks(prev => Object.fromEntries(Object.entries(prev).filter(([key]) => !key.startsWith(`${profile.id}|`))));
             setUploadOpen(false);
-        } catch (err) {
-            setTradeonError(err.message);
+        } catch (error) {
+            setTradeonError(error.message);
         } finally {
-            clearInterval(timer);
-            setTradeonFetching(false);
+            if (timer) {
+                clearInterval(timer);
+                setTradeonFetching(false);
+            }
+            if (fromMemory) setOpeningId(current => (current === profile.id ? null : current));
         }
     };
+
+    const handleApiFetch = () => {
+        if (!tradeonFetching) loadProfile(activeProfile);    // capture: the profile may change during the await
+    };
+
+    // ---- Keep fresh ----------------------------------------------------------------------------
+    const activeKey = profileKey(activeProfile);
+    const loadKept = useCallback(async (preview) => {
+        const request = ++keptRequest.current;
+        const response = await fetch(`/api/huginn/arbitrage/kept-profiles${preview ? `?preview=${encodeURIComponent(preview)}` : ''}`);
+        const data = await readJsonOrThrow(response);
+        if (request === keptRequest.current) setKept({ ...data, receivedAt: Date.now() });
+    }, []);
+    useEffect(() => {
+        if (view !== 'arbitrage') return undefined;
+        const tick = () => loadKept(activeKey).catch(() => {});
+        const first = setTimeout(tick, 0);
+        const timer = setInterval(tick, KEPT_POLL_MILLISECONDS);
+        return () => { clearTimeout(first); clearInterval(timer); };
+    }, [view, activeKey, loadKept]);
+
+    const keptProfile = kept?.profiles?.[activeKey] || null;
+    const activeKept = !!keptProfile;
+    const keptWarming = activeKept && keptProfile.tables.some(table => table.age_seconds == null);
+    // Every kept table in memory and within its interval: opening it downloads nothing. Otherwise
+    // (just switched on, or the background download failed) the page waits for the keeper, and
+    // "Fetch live data" is the way to download now.
+    const keptReady = activeKept && keptProfile.tables.every(table => table.age_seconds != null && table.age_seconds < kept.minutes * 60);
+    const keptIds = useMemo(() => new Set(allProfiles.filter(p => kept?.profiles?.[profileKey(p)]).map(p => p.id)), [allProfiles, kept]);
+
+    // A kept profile with nothing shown yet opens by itself from memory, once its tables are ready
+    // (switched on, first download done). Prices already shown are never swapped without asking:
+    // "Newer prices ready · show" offers the background download's newer copy.
+    useEffect(() => {
+        if (view === 'arbitrage' && keptReady && activeProfile.fetchEndpoint && !tradeonFetching
+            && !dataByProfile[profileId]) loadProfile(activeProfile, { fromMemory: true });
+    }, [view, profileId, keptReady]); // eslint-disable-line react-hooks/exhaustive-deps
+
+    // The background download replaced a table since the prices shown were read: offer them.
+    const shownPrices = pricesByProfile[profileId] || null;
+    const newerReady = useMemo(() => {
+        if (!shownPrices || !keptProfile || !kept) return false;
+        const shownAt = Object.fromEntries(shownPrices.tables.map(([market, priceType, age]) => [`${market}:${priceType}`, shownPrices.receivedAt - age * 1000]));
+        return keptProfile.tables.some(table => table.age_seconds != null && shownAt[`${table.market}:${table.price_type}`] != null
+            && kept.receivedAt - table.age_seconds * 1000 > shownAt[`${table.market}:${table.price_type}`] + 10000);
+    }, [shownPrices, keptProfile, kept]);
+
+    const toggleKept = async () => {
+        const keys = Object.keys(kept?.profiles || {});
+        const next = activeKept ? keys.filter(key => key !== activeKey) : [...keys, activeKey];
+        setKeptBusy(true);
+        setKeptError(null);
+        const request = ++keptRequest.current;              // a poll answer from before the switch never wins
+        try {
+            const response = await fetch('/api/huginn/arbitrage/kept-profiles', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ profiles: next }),
+            });
+            const data = await readJsonOrThrow(response);
+            if (request === keptRequest.current) setKept(previous => ({ ...data, preview: previous?.preview, receivedAt: Date.now() }));
+            loadKept(activeKey).catch(() => {});     // a fresh preview (what switching again would add)
+        } catch (error) {
+            setKeptError(failureMessage(error));
+        } finally {
+            setKeptBusy(false);
+        }
+    };
+
+    const marketName = useCallback((id) => markets.find(m => m.id === id)?.display || id, [markets]);
 
     const checkLive = async (profile, name) => {
         const key = `${profile.id}|${name}`;
@@ -553,9 +675,19 @@ const HuginnArbitrage = () => {
                         profiles={allProfiles}
                         value={profileId}
                         onChange={id => setProfileId(id)}
+                        keptIds={keptIds}
                     />
+                    {kept && activeProfile.fetchEndpoint && (
+                        <KeepFreshSwitch on={activeKept} busy={keptBusy} minutes={kept.minutes} warming={keptWarming}
+                            preview={kept.preview?.key === activeKey ? kept.preview : null} onToggle={toggleKept} />
+                    )}
                     {markets.length > 0 && <FeeEditor markets={markets} onSaved={refreshMarkets} />}
                 </div>
+                {keptError && (
+                    <p className="shrink-0 -mt-1 text-xs text-red-400 flex items-center gap-1">
+                        <AlertTriangle size={11} /> {keptError}
+                    </p>
+                )}
 
                 {/* SkinSwap's one balance, two views — only for SkinSwap profiles */}
                 {(SKINSWAP_MARKETS.has(activeProfile.buyMarket) || SKINSWAP_MARKETS.has(activeProfile.sellMarket)) && (
@@ -582,14 +714,33 @@ const HuginnArbitrage = () => {
                                     {tradeonData.length} deals · {ownedCount} owned
                                 </span>
                             )}
+                            {openingId === profileId && !tradeonFetching && (
+                                <span className="ml-2 text-xs text-sky-300/80">opening from memory…</span>
+                            )}
                         </button>
+                        {tradeonData && shownPrices && (
+                            <PricesAge tables={shownPrices.tables} receivedAt={shownPrices.receivedAt} marketName={marketName}
+                                staleAfterSeconds={activeKept ? kept.minutes * 60 + 120 : 600}
+                                note={activeProfile.autobuy ? 'The CSFloat buy orders come from the CSFloat sweep (its panel above shows when it ran), not from these tables.'
+                                    : activeProfile.sellMarket === 'LootFarm' ? 'The LOOT.Farm prices come from its own feed, read again at most a minute before.' : null} />
+                        )}
+                        {newerReady && openingId !== profileId && !tradeonFetching && (
+                            <button
+                                type="button"
+                                onClick={() => loadProfile(activeProfile, { fromMemory: true })}
+                                title="The background download has newer prices for this profile. Show them (from memory, about a second)."
+                                className="ml-2 px-2 py-1 rounded-md border border-sky-400/40 bg-sky-500/10 text-xs text-sky-200 hover:bg-sky-500/20 transition-colors shrink-0"
+                            >
+                                Newer prices ready · show
+                            </button>
+                        )}
                         {activeProfile.fetchEndpoint && (
                             <button
                                 type="button"
                                 onClick={handleApiFetch}
                                 disabled={tradeonFetching}
-                                title={tradeonFetching ? 'Downloading this profile\'s pulse price tables, one at a time. A table usually takes seconds; on a slow connection, minutes.' : undefined}
-                                className="flex items-center gap-1.5 px-3 py-1.5 mr-2 rounded-lg bg-amber-600/70 hover:bg-amber-500 text-white text-xs font-medium disabled:opacity-50 disabled:cursor-not-allowed transition-colors shrink-0"
+                                title={tradeonFetching ? 'Downloading this profile\'s pulse price tables, one at a time. A table usually takes seconds; on a slow connection, minutes.' : 'Download this profile\'s price tables now: prices under a minute old'}
+                                className="flex items-center gap-1.5 px-3 py-1.5 mx-2 rounded-lg bg-amber-600/70 hover:bg-amber-500 text-white text-xs font-medium disabled:opacity-50 disabled:cursor-not-allowed transition-colors shrink-0"
                             >
                                 <RefreshCw size={12} className={tradeonFetching ? 'animate-spin' : ''} />
                                 {tradeonFetching ? `Fetching… ${Math.floor(fetchSeconds / 60)}:${String(fetchSeconds % 60).padStart(2, '0')}` : tradeonData ? 'Re-fetch' : 'Fetch live data'}
@@ -608,7 +759,11 @@ const HuginnArbitrage = () => {
                                         </span>
                                     )}
                                     {!tradeonData && !tradeonFetching && (
-                                        <span className="text-xs text-slate-500">Click "Fetch live data" to load prices from Tradeon.</span>
+                                        <span className="text-xs text-slate-500">
+                                            {openingId === profileId ? 'Opening this kept profile from memory…'
+                                                : activeKept ? 'Kept fresh: it opens by itself once the background download has its prices (usually within a minute). "Fetch live data" downloads them now.'
+                                                    : 'Click "Fetch live data" to load prices from Tradeon, or switch on "Keep fresh" to have this profile open by itself.'}
+                                        </span>
                                     )}
                                 </div>
                             ) : (
@@ -811,7 +966,9 @@ const HuginnArbitrage = () => {
                 ) : (
                     <div className="flex-1 flex items-center justify-center text-slate-600 text-sm">
                         {!tradeonData
-                            ? 'Click "Fetch live data" to load deals for this profile. "Get all items" highlights the ones you own.'
+                            ? (openingId === profileId ? 'Opening this kept profile from memory…'
+                                : activeKept ? 'Waiting for the background download of this kept profile\'s prices, or click "Fetch live data".'
+                                    : 'Click "Fetch live data" to load deals for this profile. "Get all items" highlights the ones you own.')
                             : 'No deals to show.'}
                     </div>
                 )}

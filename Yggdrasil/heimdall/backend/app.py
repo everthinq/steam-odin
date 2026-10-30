@@ -39,6 +39,9 @@ setup_logging()
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
+# Compact JSON even in development mode (Flask indents it there): a Huginn profile answer is
+# ~23,000 rows, and the indentation made it about a third bigger and slower to send.
+app.json.compact = True
 # CORS only for the Heimdall frontend + refuse foreign Host headers (DNS
 # rebinding): no website open in the browser can read this login-less API.
 request_guard.install(app)

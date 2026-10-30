@@ -8,6 +8,7 @@ import pytest
 from flask import Flask
 
 from context import ctx
+from pulse_feed import PulseFeed
 from routes import huginn as huginn_routes
 
 
@@ -70,6 +71,7 @@ def test_scan_guard_is_released_after_an_error(client, fake_ctx):
 class PairHuginn:
     def __init__(self):
         self.fees = []
+        self.pulse = PulseFeed(post=None)     # the profile routes record their reads on it
 
     def market_ids(self):
         return {'LisSkins', 'CsFloat'}

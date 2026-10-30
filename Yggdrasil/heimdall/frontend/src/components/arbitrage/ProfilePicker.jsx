@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { ArrowRight, ChevronDown, Search, Zap } from 'lucide-react';
+import { ArrowRight, ChevronDown, Pin, Search, Zap } from 'lucide-react';
 import MarketBadge from './MarketBadge';
 import NotInPulseNote from './NotInPulseNote';
 import ReliabilityMark from './ReliabilityMark';
@@ -48,7 +48,8 @@ const SubHeading = ({ instant }) => (
 // `groupLabel` names each section (default "Buy on <market>"); Harvest uses the account.
 // A section holding both kinds is split into "sell instantly" (the target has buy
 // orders) and "list for sale"; the "Instant sell only" switch hides the second kind.
-const ProfilePicker = ({ profiles, value, onChange, groupLabel = (from) => `Buy on ${from}`, searchPlaceholder = 'Search markets…' }) => {
+// `keptIds` (optional): profiles kept fresh, marked with a pin and listed first under "Kept fresh".
+const ProfilePicker = ({ profiles, value, onChange, groupLabel = (from) => `Buy on ${from}`, searchPlaceholder = 'Search markets…', keptIds = null }) => {
     const [open, setOpen] = useState(false);
     const [query, setQuery] = useState('');
     const [instantOnly, setInstantOnly] = useState(false);
@@ -71,20 +72,26 @@ const ProfilePicker = ({ profiles, value, onChange, groupLabel = (from) => `Buy 
 
     const pick = (id) => { onChange(id); setOpen(false); setQuery(''); };
 
-    const row = (p) => {
+    const kept = filtered.filter(p => keptIds?.has(p.id));
+
+    const row = (p, withFrom = false) => {
         const isActive = p.id === value;
         return (
             <button
                 key={p.id}
                 type="button"
                 onClick={() => pick(p.id)}
-                className={`w-full flex items-center gap-2 pl-5 pr-4 py-2 text-sm transition-colors text-left ${isActive ? 'bg-amber-500/10 text-white' : 'hover:bg-white/[0.04] text-slate-300'}`}
+                className={`w-full flex items-center gap-2 pl-5 pr-4 py-2 text-sm transition-colors text-left ${withFrom ? 'whitespace-nowrap' : ''} ${isActive ? 'bg-amber-500/10 text-white' : 'hover:bg-white/[0.04] text-slate-300'}`}
             >
+                {withFrom && <MarketBadge name={p.from} sub={p.fromSub} dim={!isActive} />}
                 <ArrowRight size={12} className={isActive ? 'text-amber-500/60 shrink-0' : 'text-slate-600 shrink-0'} />
                 <MarketBadge name={p.to} sub={p.toSub} dim={!isActive} />
                 {p.toNotInPulseUi && <NotInPulseNote extra={p.toPriceNote} />}
                 <ReliabilityMark mark={p.toReliability} side={p.toReliabilitySide} />
-                {isActive && <span className="ml-auto w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0" />}
+                <span className="ml-auto flex items-center gap-1.5 shrink-0">
+                    {keptIds?.has(p.id) && <Pin size={11} className="text-sky-400" aria-label="Kept fresh" />}
+                    {isActive && <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />}
+                </span>
             </button>
         );
     };
@@ -108,7 +115,7 @@ const ProfilePicker = ({ profiles, value, onChange, groupLabel = (from) => `Buy 
             </button>
 
             {open && (
-                <div className="absolute top-full left-0 mt-1.5 z-50 min-w-[17rem] bg-[#0d1520] border border-white/10 rounded-xl shadow-2xl shadow-black/60">
+                <div className="absolute top-full left-0 mt-1.5 z-50 min-w-[17rem] w-max max-w-[min(32rem,90vw)] bg-[#0d1520] border border-white/10 rounded-xl shadow-2xl shadow-black/60">
                     <div className="p-1.5 border-b border-white/10 space-y-1.5">
                         <div className="flex items-center gap-2 px-2 py-1.5 rounded-lg bg-black/30">
                             <Search size={13} className="text-slate-500 shrink-0" />
@@ -136,6 +143,15 @@ const ProfilePicker = ({ profiles, value, onChange, groupLabel = (from) => `Buy 
                         {filtered.length === 0 && (
                             <div className="px-4 py-3 text-xs text-slate-500">No matching pairs</div>
                         )}
+                        {kept.length > 0 && (
+                            <div className="pb-1 mb-1 border-b border-white/5">
+                                <div className="flex items-center gap-1.5 px-3 pt-2.5 pb-1 text-[10px] font-bold uppercase tracking-wider text-sky-400/80"
+                                    title="These profiles' prices are downloaded in the background, so they open at once">
+                                    <Pin size={10} /> Kept fresh
+                                </div>
+                                {kept.map(p => row(p, true))}
+                            </div>
+                        )}
                         {rankGroups(groupProfiles(filtered), q).map(group => {
                             const instant = group.items.filter(isInstant);
                             const listing = group.items.filter(p => !isInstant(p));
@@ -150,11 +166,11 @@ const ProfilePicker = ({ profiles, value, onChange, groupLabel = (from) => `Buy 
                                     {split ? (
                                         <>
                                             <SubHeading instant />
-                                            {instant.map(row)}
+                                            {instant.map(p => row(p))}
                                             <SubHeading instant={false} />
-                                            {listing.map(row)}
+                                            {listing.map(p => row(p))}
                                         </>
-                                    ) : group.items.map(row)}
+                                    ) : group.items.map(p => row(p))}
                                 </div>
                             );
                         })}

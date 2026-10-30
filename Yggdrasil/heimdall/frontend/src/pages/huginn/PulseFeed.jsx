@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import InfoTip from '../../components/gjallarhorn/InfoTip';
 import { readJson } from '../../utils/readJson';
+import { MB_PER_DOWNLOAD } from '../../utils/pulseTraffic';
 
 // Huginn → Pulse feed: the switchboard of the master pulse feed (backend pulse_feed.py), the one
 // place Heimdall downloads Tradeon pulse price tables. A table is (market, price type).
@@ -13,8 +14,9 @@ import { readJson } from '../../utils/readJson';
 //    Arbitrage hourly and daily) show ticked; unticking one stops those jobs downloading it
 //    (settings pulse_switched_off_tables). Buttons you press still download it.
 //  - Any other table can be ticked to keep it fresh (pulse_kept_tables, every pulse_keep_minutes).
+//  - Tables kept fresh for Huginn Arbitrage profiles ("Keep fresh" next to the profile) show here
+//    too; they are switched on and off on the Arbitrage page (huginn_kept_profiles).
 // Saved with POST /api/huginn/pulse/kept {tables, minutes, switched_off}.
-const MB_PER_DOWNLOAD = 5;      // one full table on the wire, gzipped (~42-59 MB of JSON), measured 2026-10-30
 const MB_IN_MEMORY = 15;        // one table in the feed's compact form
 const DAY = 86400;
 
@@ -41,12 +43,14 @@ const formatAge = (seconds) => {
 const formatGigabytes = (gb) => (gb >= 10 ? `${Math.round(gb)} GB` : `${gb.toFixed(1)} GB`);
 
 // Downloads a day for a set of switched-on tables: each table as often as its most frequent
-// running job (or the keep-fresh interval when you keep it yourself).
-const downloadsPerDay = (onKeys, jobsByKey, kept, minutes) => {
+// running job (or the keep-fresh interval when you keep it, or a Huginn profile does).
+const downloadsPerDay = (onKeys, jobsByKey, kept, minutes, profileKept, profileMinutes, off) => {
     let total = 0;
     for (const key of onKeys) {
-        const periods = (jobsByKey[key] || []).filter(job => job.active).map(job => job.period_seconds);
+        // A switched-off table is not downloaded by its jobs (only by the keeper, if kept).
+        const periods = off.has(key) ? [] : (jobsByKey[key] || []).filter(job => job.active).map(job => job.period_seconds);
         if (kept.has(key)) periods.push(minutes * 60);
+        if (profileKept.has(key)) periods.push(profileMinutes * 60);
         if (periods.length) total += DAY / Math.min(...periods);
     }
     return total;
@@ -67,24 +71,28 @@ const FreshnessDot = ({ age }) => {
 };
 
 // One switch: a market × price type table.
-const TableSwitch = ({ state, jobs, age, onToggle, disabled }) => {
+const TableSwitch = ({ state, jobs, age, onToggle, disabled, profiles = [] }) => {
     const names = jobs.map(job => jobLook(job).short).join(' · ');
     const looks = {
         job: 'bg-amber-500/15 border-amber-500/40 text-amber-100 hover:bg-amber-500/25',
         kept: 'bg-sky-500/15 border-sky-400/40 text-sky-100 hover:bg-sky-500/25',
+        profile: 'bg-violet-500/15 border-violet-400/40 text-violet-100 hover:bg-violet-500/25',
         off: 'bg-red-500/[0.06] border-red-500/40 border-dashed text-red-300/90 hover:bg-red-500/10',
         idle: 'bg-transparent border-white/10 text-slate-500 hover:border-white/25 hover:text-slate-300',
     };
-    const icon = state === 'job' || state === 'kept' ? <Check size={13} strokeWidth={3} />
+    const icon = state === 'job' || state === 'kept' || state === 'profile' ? <Check size={13} strokeWidth={3} />
         : state === 'off' ? <X size={13} strokeWidth={3} /> : <Plus size={13} />;
     const caption = state === 'job' ? names : state === 'kept' ? 'kept by you'
-        : state === 'off' ? `off · ${names}` : 'off';
-    const tip = state === 'job' ? `Fetched automatically by ${jobs.map(job => `${job.label} (${job.schedule})`).join(' and ')}. Click to stop that.`
-        : state === 'kept' ? 'Kept fresh by you. Click to stop.'
-            : state === 'off' ? `Switched off: ${jobs.map(job => job.label).join(' and ')} will not download it (buttons you press still do). Click to switch it back on.`
-                : disabled ? 'At most 12 tables can be kept fresh by you' : 'Not fetched automatically. Click to keep it fresh.';
+        : state === 'profile' ? (profiles.length === 1 ? 'Huginn profile' : `${profiles.length} Huginn profiles`)
+            : state === 'off' ? (profiles.length ? `Huginn profile · jobs off` : `off · ${names}`) : 'off';
+    const forProfiles = profiles.length ? ` Also kept fresh for the Huginn profile${profiles.length === 1 ? '' : 's'} ${profiles.join(', ')}.` : '';
+    const tip = state === 'job' ? `Fetched automatically by ${jobs.map(job => `${job.label} (${job.schedule})`).join(' and ')}.${forProfiles} Click to stop that.`
+        : state === 'kept' ? `Kept fresh by you.${forProfiles} Click to stop.`
+            : state === 'profile' ? `Kept fresh for the Huginn profile${profiles.length === 1 ? '' : 's'} ${profiles.join(', ')} (switch "Keep fresh" off next to the profile on Huginn's Arbitrage page). Click to keep it yourself too, at your own interval: it then stays kept after the profile is switched off.`
+                : state === 'off' ? `Switched off: ${jobs.map(job => job.label).join(' and ')} will not download it (buttons you press still do).${forProfiles ? `${forProfiles} The keeper still downloads it for them, and the jobs read that copy.` : ''} Click to switch it back on.`
+                    : disabled ? 'At most 12 tables can be kept fresh by you' : 'Not fetched automatically. Click to keep it fresh.';
     return (
-        <button type="button" role="switch" aria-checked={state === 'job' || state === 'kept'} onClick={onToggle}
+        <button type="button" role="switch" aria-checked={state !== 'off' && state !== 'idle'} onClick={onToggle}
             disabled={disabled} title={tip}
             className={`w-full h-11 flex items-center gap-2 px-2.5 rounded-lg border text-left transition-colors disabled:opacity-30 disabled:cursor-not-allowed ${looks[state]}`}>
             <span className="shrink-0">{icon}</span>
@@ -136,8 +144,18 @@ const PulseFeed = () => {
         for (const job of jobs) for (const [market, priceType] of job.tables) (out[keyOf(market, priceType)] ||= []).push(job);
         return out;
     }, [jobs]);
+    // Tables kept fresh for Huginn profiles: key -> [profile labels] (switched on the Arbitrage page).
+    const profilesByKey = useMemo(() => {
+        const out = {};
+        for (const profile of Object.values(status?.kept_profiles || {})) {
+            for (const table of profile.tables) (out[keyOf(table.market, table.price_type)] ||= []).push(profile.label);
+        }
+        return out;
+    }, [status]);
+    const profileKept = useMemo(() => new Set(Object.keys(profilesByKey)), [profilesByKey]);
+    const profileMinutes = status?.profile_kept_minutes ?? 5;
     const saved = useMemo(() => ({
-        kept: new Set((status?.tables || []).filter(table => table.kept).map(table => keyOf(table.market, table.price_type))),
+        kept: new Set((status?.tables || []).filter(table => table.kept_by_you).map(table => keyOf(table.market, table.price_type))),
         off: new Set((status?.tables || []).filter(table => table.switched_off).map(table => keyOf(table.market, table.price_type))),
         minutes: status?.kept_minutes ?? 10,
     }), [status]);
@@ -148,7 +166,7 @@ const PulseFeed = () => {
     const edit = (change) => setDraft(prev => change(prev || { kept: new Set(saved.kept), off: new Set(saved.off), minutes: saved.minutes }));
     const stateOf = (key) => {
         if (jobsByKey[key]) return current.off.has(key) ? 'off' : 'job';
-        return current.kept.has(key) ? 'kept' : 'idle';
+        return current.kept.has(key) ? 'kept' : profileKept.has(key) ? 'profile' : 'idle';
     };
     const toggle = (key) => edit(prev => {
         const next = { ...prev, kept: new Set(prev.kept), off: new Set(prev.off) };
@@ -175,10 +193,11 @@ const PulseFeed = () => {
         const onKeys = new Set([
             ...Object.keys(jobsByKey).filter(key => !choice.off.has(key) && jobsByKey[key].some(job => job.active)),
             ...[...choice.kept],
+            ...profileKept,
         ]);
-        const perDay = downloadsPerDay(onKeys, jobsByKey, choice.kept, choice.minutes);
+        const perDay = downloadsPerDay(onKeys, jobsByKey, choice.kept, choice.minutes, profileKept, profileMinutes, choice.off);
         return { tables: onKeys.size, perDay, gigabytes: (perDay * MB_PER_DOWNLOAD) / 1024 };
-    }, [jobsByKey]);
+    }, [jobsByKey, profileKept, profileMinutes]);
     const savedCost = useMemo(() => costOf(saved), [costOf, saved]);
     const draftCost = useMemo(() => costOf(current), [costOf, current]);
     const changes = useMemo(() => {
@@ -212,6 +231,21 @@ const PulseFeed = () => {
         }
     };
 
+    // The kept profiles' interval saves at once (the profiles themselves are switched on the Arbitrage page).
+    const saveProfileMinutes = async (minutes) => {
+        try {
+            const res = await fetch('/api/huginn/arbitrage/kept-profiles', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ minutes }),     // only the interval: the profile list stays as saved
+            });
+            const answer = await readJson(res);
+            if (!res.ok) throw new Error(answer.error || 'Could not save');
+            load();
+        } catch (err) {
+            setError(err.message);
+        }
+    };
+
     const downloadNow = async (market, priceType) => {
         const key = keyOf(market, priceType);
         setDownloading(prev => ({ ...prev, [key]: true }));
@@ -237,11 +271,11 @@ const PulseFeed = () => {
                 const priceType = choice.price_types.find(option => column.types.includes(option.price_type))?.price_type;
                 return priceType ? { priceType, key: keyOf(choice.market, priceType) } : null;
             });
-            const involved = cells.some(cell => cell && (jobsByKey[cell.key] || saved.kept.has(cell.key) || current.kept.has(cell.key)));
+            const involved = cells.some(cell => cell && (jobsByKey[cell.key] || saved.kept.has(cell.key) || current.kept.has(cell.key) || profileKept.has(cell.key)));
             return { ...choice, cells, involved };
         }).filter(row => !q || row.display.toLowerCase().includes(q) || row.market.toLowerCase().includes(q));
         return out.sort((first, second) => Number(second.involved) - Number(first.involved));
-    }, [status, query, jobsByKey, saved, current]);
+    }, [status, query, jobsByKey, saved, current, profileKept]);
     const visibleRows = showAll || query ? rows : rows.filter(row => row.involved);
     const hiddenCount = rows.length - visibleRows.length;
 
@@ -360,6 +394,31 @@ const PulseFeed = () => {
                                     Boards and jobs then read them from memory instead of downloading them.
                                 </p>
                             </div>
+                            {Object.keys(status?.kept_profiles || {}).length > 0 && (
+                                <div className="bg-slate-950/85 backdrop-blur-sm border border-white/10 rounded-xl p-4 flex flex-col gap-2">
+                                    <div className="flex items-center gap-2">
+                                        <span className="p-1.5 rounded-lg bg-violet-500/15 text-violet-300"><Pin size={15} /></span>
+                                        <div className="min-w-0">
+                                            <div className="text-sm font-semibold text-slate-100">Kept for Huginn profiles</div>
+                                            <div className="text-xs text-slate-500">"Keep fresh" next to a profile on the Arbitrage page</div>
+                                        </div>
+                                    </div>
+                                    <ul className="text-xs text-slate-300 space-y-0.5">
+                                        {Object.entries(status.kept_profiles).map(([key, profile]) => <li key={key} className="truncate">{profile.label}</li>)}
+                                    </ul>
+                                    <label className="flex items-center gap-2 text-xs text-slate-400">
+                                        every
+                                        <select value={profileMinutes} onChange={event => saveProfileMinutes(Number(event.target.value))}
+                                            className="bg-black/30 border border-white/10 rounded-md px-1.5 py-1 text-sm text-white focus:outline-none focus:border-violet-400/40">
+                                            {(status.keep_fresh_choices || [5, 10, 15, 30, 60]).map(choice => <option key={choice} value={choice}>{choice} minutes</option>)}
+                                        </select>
+                                        <span className="ml-auto tabular-nums">{profileKept.size} of {status.max_profile_tables ?? 12} tables</span>
+                                    </label>
+                                    <p className="text-[11px] text-slate-500 leading-snug">
+                                        Saved at once. Those profiles open with prices at most this old.
+                                    </p>
+                                </div>
+                            )}
                         </div>
                     </section>
 
@@ -375,6 +434,7 @@ const PulseFeed = () => {
                             <div className="flex flex-wrap items-center gap-3 text-[11px] text-slate-400 ml-auto">
                                 <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded border bg-amber-500/20 border-amber-500/50" /> on (a job)</span>
                                 <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded border bg-sky-500/20 border-sky-400/50" /> kept by you</span>
+                                <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded border bg-violet-500/20 border-violet-400/50" /> Huginn profile</span>
                                 <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded border border-dashed border-red-500/50 bg-red-500/10" /> switched off</span>
                                 <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded border border-white/15" /> only when asked</span>
                                 <InfoTip tip="Green dot: downloaded in the last 15 minutes; amber: within the hour; grey: older or not in memory.">
@@ -400,10 +460,10 @@ const PulseFeed = () => {
                                             {row.cells.map((cell, index) => (
                                                 <td key={COLUMNS[index].id} className="px-2 py-1.5 min-w-[9.5rem]">
                                                     {cell ? (
-                                                        <TableSwitch state={stateOf(cell.key)} jobs={jobsByKey[cell.key] || []}
+                                                        <TableSwitch state={stateOf(cell.key)} jobs={jobsByKey[cell.key] || []} profiles={profilesByKey[cell.key]}
                                                             age={tablesByKey[cell.key]?.age_seconds}
                                                             onToggle={() => toggle(cell.key)}
-                                                            disabled={stateOf(cell.key) === 'idle' && keptByYou.length >= maxKept} />
+                                                            disabled={['idle', 'profile'].includes(stateOf(cell.key)) && keptByYou.length >= maxKept} />
                                                     ) : <span className="block text-center text-slate-700">—</span>}
                                                 </td>
                                             ))}

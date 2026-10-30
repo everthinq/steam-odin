@@ -42,7 +42,7 @@ while testing; use the dry-run paths.
 | `/` | `pages/Dashboard.jsx` | The only eager page; account cards + tool tiles; each card shows its Market access line and a banner lists accounts that need a purchase (the result of Mímir's check, read-only: `utils/useMarketAccess.js`) |
 | `/add-account` | `pages/AddAccount.jsx` | maFile import |
 | `/accounts/:steamid/confirmations` | `pages/Confirmations.jsx` | |
-| `/huginn` | `pages/huginn/Arbitrage.jsx` | Views: Arbitrage (per-row "check live" ↻), Harvest, Case Arbitrage, Cross-Profile, Price dips (`components/PriceDips.jsx`), LF Auctions, LF Arbitrage; header link to Pulse feed |
+| `/huginn` | `pages/huginn/Arbitrage.jsx` | Views: Arbitrage (per-row "check live" ↻; "Keep fresh" per profile, `components/arbitrage/KeepFreshSwitch.jsx`: a kept profile opens by itself from memory, `?kept=1`; "prices N min old" from the `X-Pulse-Tables` header, `PricesAge.jsx`), Harvest, Case Arbitrage, Cross-Profile, Price dips (`components/PriceDips.jsx`), LF Auctions, LF Arbitrage; header link to Pulse feed |
 | `/huginn/pulse` | `pages/huginn/PulseFeed.jsx` | The switchboard of the master pulse feed: job cards (schedule, running, tables on, traffic, All on / All off), a switch per market × price type (amber = a job fetches it, red dashed = switched off, blue = kept by you, grey = only when asked), traffic estimate, save bar, activity table (`POST /api/huginn/pulse/kept {tables, minutes, switched_off}`) |
 | `/huginn/gjallarhorn` | `pages/huginn/Gjallarhorn.jsx` | |
 | `/huginn/card-deals` | `pages/huginn/CardDeals.jsx` | Andvari; `#buy` opens Buy games |

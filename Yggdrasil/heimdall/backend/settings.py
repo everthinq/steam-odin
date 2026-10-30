@@ -174,6 +174,11 @@ DEFAULT_SETTINGS = {
     # hourly and daily) may NOT download ("Steam:Sell", ...): unticked on the Pulse feed page.
     # Buttons you press still download them.
     "pulse_switched_off_tables": [],
+    # Huginn Arbitrage profiles switched to "Keep fresh" ("LisSkins:CsMoneyTrade:autobuy" = buy market,
+    # sell market, autobuy or min): their pulse tables are downloaded again every
+    # huginn_profile_keep_minutes, so the profile opens from memory (prices up to that old).
+    "huginn_kept_profiles": [],
+    "huginn_profile_keep_minutes": 5,
 }
 
 # How many auto-store move records to keep in the history log.

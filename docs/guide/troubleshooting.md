@@ -38,14 +38,16 @@ To see what the price feed is doing, open http://localhost:5001/api/huginn/pulse
 every price table with its age, downloads, reads and the last error. Every page
 shares these tables, so one failing table explains every page that is missing
 that market. Pages take tables up to 10 minutes old; buttons (Fetch live data,
-Refresh) ask for one under a minute old.
+Refresh) ask for one under a minute old. A Huginn profile switched to **Keep fresh**
+opens from memory with prices up to its interval old (5 minutes by default).
 
 **Fetch live data spins for minutes.** The button counts the time it has waited. A table
 normally downloads in seconds; when `download_seconds` on that page shows minutes, the
 connection (or pulse) is slow, not the app: every page waits the same. Background jobs
 never take the last download slot, so a click starts at once, but the download itself still
 takes as long as the connection needs. Switching tables off on the Pulse feed page frees
-the line for clicks.
+the line for clicks. For a profile you open often, switch on **Keep fresh** next to it:
+it then opens from memory in about a second.
 
 ## HTTP 429 / "Too Many Requests"
 
