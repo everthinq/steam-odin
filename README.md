@@ -1,10 +1,12 @@
 # ⚡ STEAM-ODIN
 
-**steam-odin** is a self-hosted toolset for running many Steam accounts that
-trade Counter-Strike 2 items: a Steam Guard authenticator with automatic
-confirmations, a portfolio tracker, cross-market price scouts, a card-farming
-deal finder, a Storage Unit mover and a Storage Unit shop — one web app on your
-own computer, at http://localhost:3000.
+**steam-odin** is a self-hosted web app for running many Steam accounts that
+trade Counter-Strike 2 items. It keeps every account's Steam Guard codes and
+confirmations in one place, compares prices across 10+ marketplaces, tracks
+your portfolio, farms trading cards and case drops, buys in-game items in bulk
+with price guards, and alerts you by Telegram and phone call when something
+important happens. It runs in Docker on your own computer at
+http://localhost:3000.
 
 Everything is named after Norse figures. The names are flavour; the folder
 layout is the truth.
@@ -32,14 +34,26 @@ Tools inside Heimdall:
 
 | Tool | Does |
 |------|------|
-| **Authenticator** | Steam Guard codes, trade and Market confirmations, auto-confirm, session keep-alive |
-| **Huginn** | Price scout: market-to-market arbitrage, Case Arbitrage, Cross-Profile routes, Harvest, LOOT.Farm |
-| **Gjallarhorn** | When Valve limits a case: rotation cockpit + news alarm that rings your phone |
-| **Andvari** | Games whose trading cards pay for them; buys them on many accounts; ASF farming; card auto-sell |
-| **Team Fortress 2** | New case drops: play on release, sell the drops |
-| **Draupnir** | Portfolio tracker with profit/loss and automatic backups |
-| **Mímir** | Encrypted vault for logins, passwords and emails |
-| **Ratatoskr** | Move items in and out of Storage Units; buy Storage Units on many accounts; Store Catalogue of every in-game store item with its price, and which ones resell above it |
+| **Authenticator** | Steam Guard codes, trade and Market confirmations, auto-confirm, session keep-alive; the Dashboard shows each account's health and Market access |
+| **Huginn** | Price scout across 10+ marketplaces: market-to-market arbitrage after fees, Case Arbitrage, LOOT.Farm, price dips against the 30-day median, a live re-check per item, and the Pulse feed page that controls automatic price downloads |
+| **Cross-Profile** (in Huginn) | The best buy-here, sell-there route for every held item across all accounts |
+| **Harvest** (in Huginn) | Every lot you still hold at the price you paid, against what instant-buy markets pay now |
+| **Gjallarhorn** | When Valve limits a case: suggests selling deflated holdings and rotating into it; a news watcher texts and calls your phone |
+| **Andvari** | Games whose trading cards pay for them; buys them on many accounts; ArchiSteamFarm farming; card auto-sell |
+| **Team Fortress 2** | When a new case is added: every account starts playing, drops are listed on the Market |
+| **Draupnir** | Portfolio tracker: buys, sells, moving-average profit/loss, live valuation, automatic backups |
+| **Mímir** | Encrypted vault for logins, passwords, emails and billing addresses; Market access check (when each account loses the Steam Market) and the Market unlocker (a one-cent in-game purchase that keeps it open a year) |
+| **Ratatoskr** | Moves items in and out of Storage Units; buys Storage Units and any in-game store item on many accounts (price-guarded, dry run first); Store Catalogue Arbitrage (store items that resell above store price); Store Boosts (catches a Steam price boost on its first day) |
+
+## 🧰 Built with
+
+| Part | Language and stack |
+|------|--------------------|
+| Heimdall backend | **Python** (about 60% of the code): Flask API, background schedulers, pytest |
+| Heimdall frontend | **JavaScript**: React 19 + Vite |
+| Ratatoskr | **JavaScript**: Node.js service for Counter-Strike 2's Game Coordinator |
+| Card farming | ArchiSteamFarm (unmodified upstream image) |
+| Running it | Docker Compose, Makefile, Shell scripts, GitHub Actions |
 
 ## ⚔️ Commands of Power
 
@@ -66,7 +80,7 @@ All are bound to **127.0.0.1 only** — the app has no login; never expose it.
 
 ## 🛠️ Development
 
-- **Backend tests** (the real safety net, about 590 tests):
+- **Backend tests** (the real safety net, about 1,050 tests):
 
   ```bash
   docker exec steam-odin-heimdall-backend-1 sh -c \
