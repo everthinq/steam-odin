@@ -1,4 +1,5 @@
 import email.utils
+import gzip
 import json
 import logging
 import os
@@ -753,7 +754,9 @@ class HuginnService:
         return data
 
     def _post_tradeon(self, url, token, body):
-        """POST one pulse table query and return its rows (no caching). Only PulseFeed calls this."""
+        """POST one pulse table query and return its rows (no caching). Only PulseFeed calls this.
+        Asks for gzip: a table is ~4 MB compressed instead of ~42-59 MB of JSON (2.5 s instead of
+        ~100 s on the slow connection, measured 2026-10-30)."""
         body_bytes = json.dumps(body).encode('utf-8')
         req = urllib.request.Request(
             url,
@@ -761,6 +764,7 @@ class HuginnService:
             method='POST',
             headers={
                 'Accept': '*/*',
+                'Accept-Encoding': 'gzip',
                 'Accept-Language': 'ru',
                 'Authorization': f'Bearer {token}',
                 'Content-Type': 'application/json',
@@ -772,7 +776,10 @@ class HuginnService:
             },
         )
         with urllib.request.urlopen(req, timeout=30) as resp:
-            data = json.loads(resp.read().decode('utf-8'))
+            raw = resp.read()
+            if (resp.headers.get('Content-Encoding') or '').strip().lower() in ('gzip', 'x-gzip'):
+                raw = gzip.decompress(raw)
+            data = json.loads(raw)       # bytes: no second decoded copy of a ~59 MB table
         if isinstance(data, list):
             return data
         if isinstance(data, dict):

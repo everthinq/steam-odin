@@ -14,6 +14,7 @@ import {
     togglePortfolioPin,
     reorderPortfolioList,
 } from '../../utils/portfolioLayout';
+import { readJsonOrThrow } from '../../utils/readJson';
 
 const MARKETS = [
     { id: 'steam', label: 'Steam' },
@@ -62,8 +63,7 @@ const DraupnirPortfolios = () => {
             else url = `/api/draupnir/portfolios?market=${mkt}`;
             const res = await fetch(url);
             if (!isCurrent()) return;
-            if (!res.ok) throw new Error('Failed to load portfolios');
-            const data = await res.json();
+            const data = await readJsonOrThrow(res);
             if (!isCurrent()) return;
             if (mode === 'combined') setCombined(data);
             else if (mode === 'arbitrage') setArbitrage(data);

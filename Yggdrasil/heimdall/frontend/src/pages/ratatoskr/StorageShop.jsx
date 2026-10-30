@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { useColumnSort, sortRows } from '../../components/draupnir/columnSort';
 import SortHeader from '../../components/ratatoskr/SortHeader';
+import { failureMessage, readJson, readJsonOrThrow } from '../../utils/readJson';
 
 // Ratatoskr "Buy Storage Units" — and any other in-game store item (/store-catalogue/buy/<entry>,
 // the Store Catalogue's Buy button): pick any account from the dashboard, choose how many,
@@ -67,7 +68,7 @@ const unitsOf = (count, item) => (item.entry === STORAGE_UNIT
 
 const post = (path, body) => fetch(path, {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}),
-}).then((r) => r.json());
+}).then(readJson);
 
 // ---- small parts ---------------------------------------------------------------------------
 
@@ -143,9 +144,9 @@ const StorageShop = ({ item }) => {
     const load = useCallback(() => {
         const number = ++loads.current;
         return fetch(`/api/ratatoskr/storage-shop?${query}`)
-            .then((r) => r.json())
+            .then(readJsonOrThrow)
             .then((d) => { if (number === loads.current) setState(d); })
-            .catch(() => setError('Could not reach the backend.'));
+            .catch((error) => { if (number === loads.current) setError(failureMessage(error)); });
     }, [query]);
     const running = Boolean(state?.job?.running);
     useEffect(() => {
@@ -229,7 +230,7 @@ const StorageShop = ({ item }) => {
         setError(null);
         post('/api/ratatoskr/storage-shop/plan', { item })
             .then((d) => { if (!d.started) setError(d.error); })
-            .catch(() => setError('Could not reach the backend.'))
+            .catch((error) => setError(failureMessage(error)))
             .finally(load);
     };
     const review = () => {
@@ -240,7 +241,7 @@ const StorageShop = ({ item }) => {
                 if (d.started) setOrder((o) => (o ? { ...o, jobStartedAt: d.started_at } : o));
                 else { setOrder(null); setError(d.error); }
             })
-            .catch(() => { setOrder(null); setError('Could not reach the backend.'); })
+            .catch((error) => { setOrder(null); setError(failureMessage(error)); })
             .finally(load);
     };
     const pay = (dryRun) => {
@@ -256,12 +257,15 @@ const StorageShop = ({ item }) => {
             .then((d) => {
                 if (d.started) {
                     setOrder((o) => ({ ...o, jobStartedAt: d.started_at, purchaseStartedAt: d.started_at }));
+                } else if (d.unanswered) {
+                    setOrder(null);           // the answer was lost, not refused: it may be buying
+                    setError(`${d.error} Look at the purchase log before trying again.`);
                 } else {
                     setOrder(previous);       // refused before starting: back to the review
                     setError(d.error);
                 }
             })
-            .catch(() => { setOrder(null); setError('Could not reach the backend: look at the purchase log before trying again.'); })
+            .catch((error) => { setOrder(null); setError(`${failureMessage(error)} Look at the purchase log before trying again.`); })
             .finally(() => { paying.current = false; load(); });
     };
     const closeOrder = () => {
@@ -278,7 +282,7 @@ const StorageShop = ({ item }) => {
             if (!d.started) setError(d.error);
             else setOrder((o) => (o && o.stage === 'running' ? { ...o, jobStartedAt: d.started_at } : o));   // follow the delivery
         })
-        .catch(() => setError('Could not reach the backend.'))
+        .catch((error) => setError(failureMessage(error)))
         .finally(load);
 
     if (!state) {

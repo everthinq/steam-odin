@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { Target, ChevronDown, Plus, Trash2, Search } from 'lucide-react';
+import { readJson } from '../../utils/readJson';
 
 // The buy side: the freshly-limited case(s)/item(s) to rotate INTO. Enter a
 // capital amount (what dumping the sell list raises) and each target shows how
@@ -22,7 +23,7 @@ const TargetBasket = ({ market, defaultCapital }) => {
         const c = cap ?? capital;
         const q = c ? `?capital=${encodeURIComponent(c)}&market=${market}` : `?market=${market}`;
         return fetch(`/api/huginn/gjallarhorn/targets${q}`)
-            .then((r) => (r.ok ? r.json() : null))
+            .then((r) => (r.ok ? readJson(r) : null))
             .then((data) => {
                 if (data && Array.isArray(data.rows)) {
                     setTargets(data.rows.map((row) => ({ name: row.item_name, price: row.price, unitsForCapital: row.unitsForCapital })));
@@ -46,7 +47,7 @@ const TargetBasket = ({ market, defaultCapital }) => {
         const id = setTimeout(() => {
             if (query.trim().length < 2) { setResults([]); return; }
             fetch(`/api/draupnir/portfolios/item-search?q=${encodeURIComponent(query.trim())}`)
-                .then((r) => (r.ok ? r.json() : null))
+                .then((r) => (r.ok ? readJson(r) : null))
                 .then((data) => setResults((data && data.items) ? data.items.slice(0, 8) : []))
                 .catch(() => setResults([]));
         }, 200);
@@ -62,7 +63,7 @@ const TargetBasket = ({ market, defaultCapital }) => {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ targets: names.map((n) => ({ name: n })) }),
             });
-            if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Save failed');
+            if (!res.ok) throw new Error((await readJson(res).catch(() => ({}))).error || 'Save failed');
             await refresh();
         } catch (e) {
             setError(e.message);

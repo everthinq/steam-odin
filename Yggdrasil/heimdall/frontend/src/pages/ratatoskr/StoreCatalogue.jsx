@@ -6,6 +6,7 @@ import SortHeader from '../../components/ratatoskr/SortHeader';
 import SteamMarketLink from '../../components/SteamMarketLink';
 import StoreArbitrage from '../../components/ratatoskr/StoreArbitrage';
 import StoreBoosts from '../../components/ratatoskr/StoreBoosts';
+import { failureMessage, readJson, readJsonOrThrow } from '../../utils/readJson';
 
 // Ratatoskr "Store Catalogue": every item the Counter-Strike 2 in-game store sells, with its
 // US dollar price, from the game store's own price sheet. Nothing is bought on this page: an
@@ -53,9 +54,9 @@ const StoreCatalogue = ({ tab = 'catalogue' }) => {
     const load = useCallback(() => {
         const number = ++loads.current;
         return fetch('/api/ratatoskr/store-catalogue')
-            .then((r) => r.json())
+            .then(readJsonOrThrow)
             .then((d) => { if (number === loads.current) setState(d); })
-            .catch(() => setError('Could not reach the backend.'));
+            .catch((error) => { if (number === loads.current) setError(failureMessage(error)); });
     }, []);
     const job = state?.job || {};
     const reading = Boolean(job.running && job.kind === 'price sheet');
@@ -71,9 +72,9 @@ const StoreCatalogue = ({ tab = 'catalogue' }) => {
     const readAgain = () => {
         setError(null);
         fetch('/api/ratatoskr/store-catalogue/refresh', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })
-            .then((r) => r.json())
+            .then(readJson)
             .then((d) => { if (d.started) setReadStartedAt(d.started_at); else setError(d.error); })
-            .catch(() => setError('Could not reach the backend.'))
+            .catch((error) => setError(failureMessage(error)))
             .finally(load);
     };
 

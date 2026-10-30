@@ -66,6 +66,11 @@ path prefix — add your page there. No catch-all route, no Settings page.
 - **Fetching:** plain `fetch('/api/…')` in each component. Backend errors come
   as `{error: "…"}`; background jobs answer `{started, started_at}` and report
   `{job: {running, done, total, phase, error}}`.
+  Read answers with `readJson(response)` (`utils/readJson.js`), never a bare
+  `response.json()`: an empty or non-JSON body (the backend reloaded mid-request)
+  then becomes an error naming the request and status instead of the browser's
+  "Unexpected end of JSON input". The dev proxy (`vite.config.js`) also answers a
+  lost backend with a JSON 502 saying why.
 - **Stale answers:** a numbered-request ref
   (`const n = ++ref.current; … if (n !== ref.current) return`) so only the
   newest answer is applied. Use it for anything polled or re-requested.

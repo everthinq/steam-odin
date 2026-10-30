@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Boxes, RefreshCw } from 'lucide-react';
+import { readJson } from '../../utils/readJson';
 
 // Inventory readiness for bulk-buying cheap cases: free Storage Unit slots and
 // loose-inventory fill for the selected account. Needs a live Ratatoskr session
@@ -11,7 +12,7 @@ const ReadinessPanel = ({ steamid, accountName }) => {
     const load = useCallback(() => {
         if (!steamid) return Promise.resolve();
         return fetch(`/api/huginn/gjallarhorn/readiness?steamid=${steamid}`)
-            .then((r) => (r.ok ? r.json() : null))
+            .then((r) => (r.ok ? readJson(r) : null))
             .then((d) => setData(d))
             .catch(() => setData(null))
             .finally(() => setLoading(false));

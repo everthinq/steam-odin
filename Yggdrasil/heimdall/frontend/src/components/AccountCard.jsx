@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { Copy, Check, Trash2, Package, Eye, EyeOff, Pin, GripVertical } from 'lucide-react';
 import TypedConfirmDialog from './TypedConfirmDialog';
 import { MarketAccessLine } from './MarketAccess';
+import { readJson } from '../utils/readJson';
 
 const AccountCard = ({ account, onDelete, isPinned = false, onTogglePin, draggable = false, marketAccess = null }) => {
     const { account_name, steamid, code, time_remaining } = account;
@@ -36,7 +37,7 @@ const AccountCard = ({ account, onDelete, isPinned = false, onTogglePin, draggab
         try {
             const res = await fetch(`/api/accounts/${steamid}`, { method: 'DELETE' });
             if (!res.ok) {
-                const body = await res.json().catch(() => ({}));
+                const body = await readJson(res).catch(() => ({}));
                 throw new Error(body.error || `Remove failed (HTTP ${res.status})`);
             }
             setConfirmOpen(false);

@@ -8,6 +8,7 @@ import MarketHoldEditor from '../../components/gjallarhorn/MarketHoldEditor';
 import TargetBasket from '../../components/gjallarhorn/TargetBasket';
 import ReadinessPanel from '../../components/gjallarhorn/ReadinessPanel';
 import NewsWatcher from '../../components/gjallarhorn/NewsWatcher';
+import { failureMessage, readJson } from '../../utils/readJson';
 
 // Reference markets the "current price" can be read on (mirrors the backend
 // _PRICE_MARKETS plus the virtual 'lowest').
@@ -52,19 +53,19 @@ const Gjallarhorn = () => {
             // (repeated calls) and carries the event details as a message.
             method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ring_seconds: 12, repeats: 1 }),
         })
-            .then((r) => r.json())
+            .then(readJson)
             .then((d) => setRingMsg(d.ok ? '📞 Ringing — check your phone.' : `Ring failed: ${d.error || 'error'}`))
-            .catch(() => setRingMsg('Ring failed: could not reach backend.'))
+            .catch((error) => setRingMsg(`Ring failed: ${failureMessage(error)}`))
             .finally(() => setRinging(false));
     };
 
     useEffect(() => {
         fetch('/api/draupnir/portfolios')
-            .then((r) => (r.ok ? r.json() : null))
+            .then((r) => (r.ok ? readJson(r) : null))
             .then((d) => { if (d && Array.isArray(d.portfolios)) setPortfolios(d.portfolios); })
             .catch(() => {});
         fetch('/api/huginn/gjallarhorn/accounts')
-            .then((r) => (r.ok ? r.json() : null))
+            .then((r) => (r.ok ? readJson(r) : null))
             .then((d) => { if (Array.isArray(d)) setAccounts(d); })
             .catch(() => {});
     }, []);
@@ -79,7 +80,7 @@ const Gjallarhorn = () => {
         const params = new URLSearchParams({ portfolio: portfolioId, market });
         if (steamid) params.set('steamid', steamid);
         return fetch(`/api/huginn/gjallarhorn/rotation?${params.toString()}`)
-            .then((r) => (r.ok ? r.json() : null))
+            .then((r) => (r.ok ? readJson(r) : null))
             .then((d) => { if (isCurrent() && d && !d.error) setData(d); })
             .catch(() => {})
             .finally(() => { if (isCurrent()) setLoading(false); });

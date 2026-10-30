@@ -22,6 +22,7 @@ import CsfloatBuyOrdersPanel from '../../components/arbitrage/CsfloatBuyOrdersPa
 import SkinSwapBalanceNote from '../../components/arbitrage/SkinSwapBalanceNote';
 import PriceDips from '../../components/PriceDips';
 import { useNowSeconds } from '../../utils/priceAge';
+import { readJson } from '../../utils/readJson';
 
 // Render results in capped pages — the datasets are ~17k rows and painting them all
 // at once freezes the page. Rows are sorted best-profit-first, so the first page is
@@ -122,17 +123,17 @@ const HuginnArbitrage = () => {
 
     useEffect(() => {
         fetch('/api/huginn/scan/cache')
-            .then(r => r.ok ? r.json() : null)
+            .then(r => r.ok ? readJson(r) : null)
             .then(data => { if (data) setScanData(data); })
             .catch(() => {});
         fetch('/api/huginn/morning-routine')
-            .then(r => (r.ok ? r.json() : null))
+            .then(r => (r.ok ? readJson(r) : null))
             .then(data => { if (data?.enabled) setMorning(data); })
             .catch(() => {});
     }, []);
 
     const refreshMarkets = () => fetch('/api/huginn/markets')
-        .then(r => r.ok ? r.json() : null)
+        .then(r => r.ok ? readJson(r) : null)
         .then(data => { if (Array.isArray(data)) setMarkets(data); })
         .catch(() => {});
     useEffect(() => { refreshMarkets(); }, []);
@@ -173,7 +174,7 @@ const HuginnArbitrage = () => {
         setScanError(null);
         try {
             const res = await fetch('/api/huginn/scan', { method: 'POST' });
-            const data = await res.json();
+            const data = await readJson(res);
             if (!res.ok) throw new Error(data.error || 'Scan failed');
             setScanData(data);
         } catch (err) {
@@ -270,7 +271,7 @@ const HuginnArbitrage = () => {
         try {
             // Every fee, LOOT.Farm's included, comes from the Fees editor server-side.
             const res = await fetch(profile.fetchEndpoint);
-            const data = await res.json();
+            const data = await readJson(res);
             if (!res.ok) throw new Error(data.error || 'Fetch failed');
             if (!Array.isArray(data)) throw new Error('Unexpected response format');
             setProfileData(profile.id, data);
@@ -293,7 +294,7 @@ const HuginnArbitrage = () => {
             const params = new URLSearchParams({ name, buy: profile.buyMarket, sell: profile.sellMarket,
                 mode: profile.toSub === 'autobuy' ? 'autobuy' : 'min' });
             const res = await fetch(`/api/huginn/check-live?${params}`);
-            const data = await res.json();
+            const data = await readJson(res);
             if (!res.ok) throw new Error(data.error || 'Check failed');
             setLiveChecks(prev => ({ ...prev, [key]: { result: data } }));
         } catch (err) {

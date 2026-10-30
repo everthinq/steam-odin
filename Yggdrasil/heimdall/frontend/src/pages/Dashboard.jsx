@@ -14,6 +14,7 @@ import {
     toggleAccountPin,
     reorderAccountList,
 } from '../utils/accountDashboardLayout';
+import { readJsonOrThrow } from '../utils/readJson';
 
 const Dashboard = () => {
     const [accounts, setAccounts] = useState([]);
@@ -43,8 +44,7 @@ const Dashboard = () => {
     const fetchAccounts = async () => {
         try {
             const response = await fetch('/api/accounts');
-            if (!response.ok) throw new Error('Failed to fetch accounts');
-            const data = await response.json();
+            const data = await readJsonOrThrow(response);
             if (!aliveRef.current) return;
             setAccounts(data.accounts || []);
             setError(null);
@@ -73,7 +73,7 @@ const Dashboard = () => {
         setRemoveAllError(null);
         try {
             const response = await fetch('/api/accounts', { method: 'DELETE' });
-            if (!response.ok) throw new Error('Failed to remove accounts');
+            if (!response.ok) await readJsonOrThrow(response);
             setRemoveAllOpen(false);
             await fetchAccounts();
         } catch (err) {

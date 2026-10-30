@@ -22,7 +22,8 @@ its answers:
 - **Kept fresh** (``set_kept``, the Pulse feed page): the tables Ivan ticks are downloaded again in
   the background every few minutes (``start_keeper``), one at a time, so the pages that read them
   open at once; a kept table stays in memory until its next download.
-- **Compact**: a raw table is ~32,000 rows, ~59 MB of JSON and ~155 MB as Python objects. Only the
+- **Compact**: a raw table is ~32,000 rows, ~59 MB of JSON (~4-5 MB gzipped on the wire, see
+  ``HuginnService._post_tradeon``) and ~155 MB as Python objects. Only the
   fields Heimdall reads are kept, as tuples, with each item's name and image stored once for all
   tables (~15 MB a table). ``rows()`` rebuilds pulse-shaped rows (fresh dicts) for the callers that
   want them. Each quote keeps the market's own update time (``offersUpdateTime``), so a page can
@@ -31,7 +32,7 @@ its answers:
   Market.CSGO, Tradeon and the table's own market); the feed keeps the latest count per item and
   market (``weekly_sales``). Gjallarhorn's liquidity and Price dips read it instead of Steam.
 - **Single items** (``lookup``): pulse's name filter answers one item in ~0.5 s and ~5 KB, for a
-  "check live" button on one row instead of a 59 MB table.
+  "check live" button on one row instead of a whole table.
 - **Normalised request**: one body for every table (``BASE_BODY``): no price, count, profit or
   update-time filter, every item type, sold-out items shown (``displaySoldOutItems`` true; on
   2026-10-15 it changed no table's item count), sorted by profit percent, every row in one page.
@@ -64,10 +65,10 @@ WAIT_FOR_DOWNLOAD = 600         # seconds a caller waits on another caller's dow
 # Kept-fresh tables: every how many minutes they may be downloaded again (the Pulse feed page).
 KEEP_FRESH_MINUTES = (5, 10, 15, 30, 60)
 MAX_KEPT_TABLES = 12
-JOB_STATUS_SECONDS = 30         # how long the declared jobs' tables are cached for status()            # each kept table is ~59 MB per download and ~15 MB of memory
+JOB_STATUS_SECONDS = 30         # how long the declared jobs' tables are cached for status()
 KEEPER_TICK = 30                # seconds between the keeper's checks
 KEEPER_RETRY_AFTER = 5 * 60     # a kept table that failed is tried again after this
-MAX_PARALLEL_LOOKUPS = 2        # "Check live" has its own slots: never waits behind 59 MB tables
+MAX_PARALLEL_LOOKUPS = 2        # "Check live" has its own slots: never waits behind whole tables
 # A price its market has not updated for a day or more is stale (pages grey it out; Store Catalogue
 # Arbitrage never signals on it, Harvest never counts it). The one threshold (the frontend's
 # utils/priceAge.js mirrors it).

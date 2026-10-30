@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Newspaper, RefreshCw, Bell, BellOff, PhoneCall } from 'lucide-react';
 import InfoTip from './InfoTip';
+import { readJson } from '../../utils/readJson';
 
 // Bullet 4: the CS2 news watcher. It polls the official Counter-Strike 2 update
 // feed and RINGS + texts the moment Valve adds or removes a case / collection /
@@ -19,7 +20,7 @@ const NewsWatcher = () => {
 
     const load = useCallback(() => (
         fetch('/api/huginn/gjallarhorn/news/status')
-            .then((r) => (r.ok ? r.json() : null))
+            .then((r) => (r.ok ? readJson(r) : null))
             .then((d) => {
                 setStatus(d);
                 // Seed the chat-id field once; don't clobber an in-progress edit.
@@ -71,7 +72,7 @@ const NewsWatcher = () => {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ text: testText }),
         })
-            .then((r) => (r.ok ? r.json() : null))
+            .then((r) => (r.ok ? readJson(r) : null))
             .then((d) => setTestHits(d ? d.hits : []))
             .catch(() => setTestHits([]))
             .finally(() => setTesting(false));

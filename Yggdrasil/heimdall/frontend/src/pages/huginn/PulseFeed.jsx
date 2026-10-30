@@ -5,6 +5,7 @@ import {
     ChevronDown, Clock, Boxes, Bell, Store, Pin, Power,
 } from 'lucide-react';
 import InfoTip from '../../components/gjallarhorn/InfoTip';
+import { readJson } from '../../utils/readJson';
 
 // Huginn → Pulse feed: the switchboard of the master pulse feed (backend pulse_feed.py), the one
 // place Heimdall downloads Tradeon pulse price tables. A table is (market, price type).
@@ -13,7 +14,7 @@ import InfoTip from '../../components/gjallarhorn/InfoTip';
 //    (settings pulse_switched_off_tables). Buttons you press still download it.
 //  - Any other table can be ticked to keep it fresh (pulse_kept_tables, every pulse_keep_minutes).
 // Saved with POST /api/huginn/pulse/kept {tables, minutes, switched_off}.
-const MB_PER_DOWNLOAD = 59;     // one full table, measured 2026-10-15
+const MB_PER_DOWNLOAD = 5;      // one full table on the wire, gzipped (~42-59 MB of JSON), measured 2026-10-30
 const MB_IN_MEMORY = 15;        // one table in the feed's compact form
 const DAY = 86400;
 
@@ -111,7 +112,7 @@ const PulseFeed = () => {
         const n = ++request.current;
         try {
             const res = await fetch('/api/huginn/pulse');
-            const answer = await res.json();
+            const answer = await readJson(res);
             if (n !== request.current) return;
             if (!res.ok) throw new Error(answer.error || 'Could not read the pulse feed');
             setStatus(answer);
@@ -198,7 +199,7 @@ const PulseFeed = () => {
                     minutes: draft.minutes,
                 }),
             });
-            const answer = await res.json();
+            const answer = await readJson(res);
             if (!res.ok) throw new Error(answer.error || 'Could not save');
             setDraft(null);
             setSavedAt(Date.now());
@@ -219,7 +220,7 @@ const PulseFeed = () => {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ market, price_type: priceType }),
             });
-            const answer = await res.json();
+            const answer = await readJson(res);
             if (!res.ok) throw new Error(answer.error || 'Download failed');
             setDownloading(prev => { const next = { ...prev }; delete next[key]; return next; });
             load();
@@ -272,7 +273,7 @@ const PulseFeed = () => {
                 <div className="max-w-6xl mx-auto px-6 pt-6 pb-28 flex flex-col gap-6">
                     <p className="text-sm text-slate-300 leading-relaxed bg-slate-950/85 backdrop-blur-sm border border-white/10 rounded-xl px-4 py-3">
                         Every price Heimdall shows comes from Tradeon pulse, one table per market and price type
-                        (about 59 MB each). <span className="text-slate-200">Ticked tables are fetched automatically</span> in
+                        (about 5 MB each, compressed). <span className="text-slate-200">Ticked tables are fetched automatically</span> in
                         the background; unticked ones only when a page or a button asks. Buttons you press
                         always get prices under a minute old.
                     </p>

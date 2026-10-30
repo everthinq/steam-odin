@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { readJson } from './readJson';
 
 // Steam Community Market access per account (backend: market_access_service.py, routes in
 // routes/mimir.py). Mímir starts the check; the Dashboard only shows the saved result.
@@ -15,7 +16,7 @@ export default function useMarketAccess() {
         try {
             const response = await fetch('/api/mimir/market-access');
             if (!response.ok) return;
-            const data = await response.json();
+            const data = await readJson(response);
             if (n === request.current) setStatus(data);
         } catch {
             // the next poll tries again
@@ -41,7 +42,7 @@ export default function useMarketAccess() {
         setStartError(null);
         try {
             const response = await fetch('/api/mimir/market-access/check', { method: 'POST' });
-            const body = await response.json().catch(() => ({}));
+            const body = await readJson(response).catch(() => ({}));
             if (!response.ok) setStartError(body.error || `HTTP ${response.status}`);
         } catch (e) {
             setStartError(e.message);
@@ -63,7 +64,7 @@ export default function useMarketAccess() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ steamids, dry_run: dryRun !== false }),
             });
-            const body = await response.json().catch(() => ({}));
+            const body = await readJson(response).catch(() => ({}));
             if (!response.ok) setStartError(body.error || `HTTP ${response.status}`);
             started = response.ok;
         } catch (e) {

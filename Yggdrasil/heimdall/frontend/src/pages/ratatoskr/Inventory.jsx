@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import { Search, RefreshCw, Filter, Copy } from 'lucide-react';
+import { readJson } from '../../utils/readJson';
 
 const CDN_URL = 'https://community.cloudflare.steamstatic.com/economy/image/';
 
@@ -19,7 +20,7 @@ const RatatoskrInventory = () => {
         setLoading(true);
         try {
             const res = await fetch(`/api/ratatoskr/inventory/${steamid}`);
-            const data = await res.json();
+            const data = await readJson(res);
             if (data.items) setInventory(data.items);
         } catch (err) {
             console.error(err);

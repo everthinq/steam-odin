@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Save, Send, X } from 'lucide-react';
+import { failureMessage, readJson } from '../../utils/readJson';
 
 // Andvari settings: which scopes to scan, the price/discount filters, the auto
 // scan schedule and the Telegram alert thresholds. Backed by
@@ -33,7 +34,7 @@ const SettingsPanel = ({ onClose, onSaved }) => {
 
     useEffect(() => {
         fetch('/api/huginn/card-deals/config')
-            .then((r) => (r.ok ? r.json() : null))
+            .then((r) => (r.ok ? readJson(r) : null))
             .then((d) => { if (d) setDraft(d); })
             .catch(() => setMessage('Could not load settings.'));
     }, []);
@@ -46,23 +47,23 @@ const SettingsPanel = ({ onClose, onSaved }) => {
         fetch('/api/huginn/card-deals/config', {
             method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(draft),
         })
-            .then((r) => r.json().then((d) => ({ ok: r.ok, d })))
+            .then((r) => readJson(r).then((d) => ({ ok: r.ok, d })))
             .then(({ ok, d }) => {
                 if (!ok) { setMessage(d.error || 'Save failed.'); return; }
                 setDraft(d);
                 setMessage('Saved.');
                 onSaved?.();
             })
-            .catch(() => setMessage('Save failed: could not reach backend.'))
+            .catch((error) => setMessage(`Save failed: ${failureMessage(error)}`))
             .finally(() => setSaving(false));
     };
 
     const testAlert = () => {
         setMessage('Sending test message…');
         fetch('/api/huginn/card-deals/alerts/test', { method: 'POST' })
-            .then((r) => r.json())
+            .then(readJson)
             .then((d) => setMessage(d.ok ? 'Test message sent — check Telegram.' : `Test failed: ${d.error || 'error'}`))
-            .catch(() => setMessage('Test failed: could not reach backend.'));
+            .catch((error) => setMessage(`Test failed: ${failureMessage(error)}`));
     };
 
     return (

@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { Landmark, ChevronDown, Plus, Trash2, Zap } from 'lucide-react';
+import { readJson } from '../../utils/readJson';
 
 // The instant-redeploy market whitelist: which markets do NOT lock your balance
 // for days after a sale, so proceeds can fund the freshly-limited case right away.
@@ -17,7 +18,7 @@ const MarketHoldEditor = ({ onSaved }) => {
     const ref = useRef(null);
 
     const loadHolds = () => fetch('/api/huginn/gjallarhorn/holds')
-        .then((r) => (r.ok ? r.json() : []))
+        .then((r) => (r.ok ? readJson(r) : []))
         .then((data) => { if (Array.isArray(data)) setCount(data.length); })
         .catch(() => {});
 
@@ -26,11 +27,11 @@ const MarketHoldEditor = ({ onSaved }) => {
     useEffect(() => {
         if (!open) return;
         fetch('/api/huginn/gjallarhorn/holds')
-            .then((r) => (r.ok ? r.json() : []))
+            .then((r) => (r.ok ? readJson(r) : []))
             .then((data) => { setError(null); setRows(Array.isArray(data) && data.length ? data.map((h) => ({ ...blankRow(), ...h })) : [blankRow()]); })
             .catch(() => setRows([blankRow()]));
         fetch('/api/huginn/markets')
-            .then((r) => (r.ok ? r.json() : []))
+            .then((r) => (r.ok ? readJson(r) : []))
             .then((data) => { if (Array.isArray(data)) setSuggestions(data.map((m) => m.display)); })
             .catch(() => {});
     }, [open]);
@@ -62,7 +63,7 @@ const MarketHoldEditor = ({ onSaved }) => {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ holds }),
             });
-            const data = await res.json().catch(() => ({}));
+            const data = await readJson(res).catch(() => ({}));
             if (!res.ok) throw new Error(data.error || 'Save failed');
             setCount(Array.isArray(data) ? data.length : holds.length);
             await onSaved?.();

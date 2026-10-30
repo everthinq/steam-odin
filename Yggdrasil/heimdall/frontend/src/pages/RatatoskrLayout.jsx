@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Outlet, Link, useParams, useLocation, useNavigate } from 'react-router-dom';
 import { Package, ArrowRightLeft, Database, LayoutDashboard, Plug, Unplug, Timer, Boxes, Archive, Tags } from 'lucide-react';
+import { readJson } from '../utils/readJson';
 
 const STATUS_POLL_MS = 90 * 1000;
 
@@ -45,7 +46,7 @@ const RatatoskrLayout = () => {
         try {
             const res = await fetch('/api/accounts');
             if (!res.ok) return;
-            const data = await res.json();
+            const data = await readJson(res);
             const found = (data.accounts || []).find((a) => String(a.steamid) === String(steamid));
             setAccount(found || null);
         } catch (err) {
@@ -56,7 +57,7 @@ const RatatoskrLayout = () => {
     const fetchSessionIdleConfig = async () => {
         try {
             const res = await fetch('/api/ratatoskr/config/session-idle');
-            const data = await res.json();
+            const data = await readJson(res);
             if (res.ok && data.idleTimeoutMs != null) {
                 setIdleTimeoutMs(data.idleTimeoutMs);
                 if (Array.isArray(data.presets)) {
@@ -76,7 +77,7 @@ const RatatoskrLayout = () => {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ idleTimeoutMs: ms }),
             });
-            const data = await res.json();
+            const data = await readJson(res);
             if (res.ok && data.idleTimeoutMs != null) {
                 setIdleTimeoutMs(data.idleTimeoutMs);
             }
@@ -91,7 +92,7 @@ const RatatoskrLayout = () => {
         if (!quiet) setLoading(true);
         try {
             const res = await fetch(`/api/ratatoskr/status/${steamid}`);
-            const data = await res.json();
+            const data = await readJson(res);
             if (res.ok && data.status === 'connected') {
                 setStatus('connected');
                 setError(null);
@@ -121,7 +122,7 @@ const RatatoskrLayout = () => {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ steam_id: steamid }),
             });
-            const data = await res.json();
+            const data = await readJson(res);
             if (!res.ok) throw new Error(data.error || 'Login failed');
             setStatus('connected');
         } catch (err) {
@@ -140,7 +141,7 @@ const RatatoskrLayout = () => {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ steam_id: steamid }),
             });
-            const data = await res.json();
+            const data = await readJson(res);
             if (!res.ok) throw new Error(data.error || 'Disconnect failed');
             setStatus('disconnected');
         } catch (err) {

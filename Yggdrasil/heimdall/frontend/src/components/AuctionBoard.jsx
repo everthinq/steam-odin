@@ -2,6 +2,7 @@ import React, { useMemo, useState, useEffect, useCallback } from 'react';
 import { RefreshCw, Search, Gavel, Lock, Camera } from 'lucide-react';
 import { matchesSearchQuery } from '../utils/transferItems';
 import { getTradeonShortLink } from '../utils/tradeonShortLink';
+import { readJson } from '../utils/readJson';
 
 // LOOT.Farm live auctions, cross-referenced with your buy sources: for each auctioned
 // item we take the cheapest current lot (what you'd need to win it for) and show the
@@ -47,8 +48,8 @@ const AuctionBoard = () => {
         setLoading(true); setError(null);
         try {
             const [a, b] = await Promise.all([
-                fetch('/api/huginn/lootfarm/auctions').then(r => r.json()),
-                fetch('/api/huginn/lootfarm/auctions/backtest').then(r => r.json()),
+                fetch('/api/huginn/lootfarm/auctions').then(readJson),
+                fetch('/api/huginn/lootfarm/auctions/backtest').then(readJson),
             ]);
             if (a.error) throw new Error(a.error);
             setData(a); setBt(b.error ? null : b);

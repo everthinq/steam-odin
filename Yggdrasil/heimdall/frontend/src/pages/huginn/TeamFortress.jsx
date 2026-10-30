@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { LayoutDashboard, Swords, Play, Square, RefreshCw, Newspaper, Coins, Save, AlertTriangle, ExternalLink } from 'lucide-react';
 import InfoTip from '../../components/gjallarhorn/InfoTip';
+import { failureMessage, readJson, readJsonOrThrow } from '../../utils/readJson';
 
 // Team Fortress 2 case drops. A newly added case drops to anyone playing and is
 // worth the most in its first hours, so: watch the news, play on every account
@@ -63,7 +64,7 @@ const TeamFortress = () => {
     const [saved, setSaved] = useState(null);
 
     const load = useCallback(() => fetch('/api/huginn/team-fortress')
-        .then((r) => r.json())
+        .then(readJsonOrThrow)
         .then((d) => {
             setStatus(d);
             setError(null);
@@ -72,7 +73,7 @@ const TeamFortress = () => {
                 sell_items_text: (d.settings.team_fortress_sell_items || []).join('\n'),
             });
         })
-        .catch((e) => setError(String(e))), []);
+        .catch((e) => setError(failureMessage(e))), []);
 
     useEffect(() => {
         load();
@@ -83,7 +84,7 @@ const TeamFortress = () => {
     const post = (path, body) => {
         setBusy(true);
         return fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}) })
-            .then((r) => r.json())
+            .then(readJson)
             .then((d) => { if (d.error) setError(d.error); return d; })
             .catch((e) => setError(String(e)))
             .finally(() => { setBusy(false); load(); });
@@ -104,7 +105,7 @@ const TeamFortress = () => {
         };
         setBusy(true);
         fetch('/api/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
-            .then((r) => r.json())
+            .then(readJson)
             .then((d) => {
                 if (d.error) { setError(d.error); return; }
                 setSaved(Date.now());

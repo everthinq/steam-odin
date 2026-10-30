@@ -6,6 +6,7 @@ import { useNowSeconds, isStale } from '../utils/priceAge';
 import SteamMarketLink from './SteamMarketLink';
 import PriceCell from './arbitrage/PriceCell';
 import InfoTip from './gjallarhorn/InfoTip';
+import { readJson } from '../utils/readJson';
 
 // Huginn → Price dips: one market's lowest listing against its own 30-day median (or average)
 // from Tradeon pulse, with the weekly sales pulse reports. "Under" = listed below its usual
@@ -52,7 +53,7 @@ const PriceDips = ({ byHash }) => {
 
     useEffect(() => {
         fetch('/api/huginn/price-dips/markets')
-            .then(response => (response.ok ? response.json() : null))
+            .then(response => (response.ok ? readJson(response) : null))
             .then(answer => { if (answer?.markets) setMarkets(answer.markets); })
             .catch(() => {});
     }, []);
@@ -65,7 +66,7 @@ const PriceDips = ({ byHash }) => {
             const params = new URLSearchParams({ market: settings.market, basis: settings.basis });
             if (fresh) params.set('fresh', '1');
             const res = await fetch(`/api/huginn/price-dips?${params}`);
-            const answer = await res.json();
+            const answer = await readJson(res);
             if (n !== request.current) return;
             if (!res.ok) throw new Error(answer.error || 'Could not load prices');
             setData(answer);

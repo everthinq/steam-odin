@@ -2,6 +2,7 @@ import React, { useMemo, useState, useEffect, useCallback } from 'react';
 import { RefreshCw, Search, Repeat, Lock, Check } from 'lucide-react';
 import { matchesSearchQuery } from '../utils/transferItems';
 import { getTradeonShortLink } from '../utils/tradeonShortLink';
+import { readJson } from '../utils/readJson';
 
 // LOOT.Farm arbitrage: buy LF balance cheap (from the USDT OTC trader) → acquire an item
 // from LOOT.Farm (unlocked +3% so there's no 7-day ban) → instant-sell into a Steam/Buff/
@@ -51,7 +52,7 @@ const LootfarmArbitrage = ({ byHash }) => {
         setLoading(true); setError(null);
         try {
             const p = new URLSearchParams({ balance: rate.toFixed(4), unlocked: unlocked ? '1' : '0', in_stock: inStock ? '1' : '0' });
-            const r = await fetch(`/api/huginn/lootfarm/arbitrage?${p}`).then(x => x.json());
+            const r = await fetch(`/api/huginn/lootfarm/arbitrage?${p}`).then(readJson);
             if (r.error) throw new Error(r.error);
             setData(r);
         } catch (e) { setError(e.message); }

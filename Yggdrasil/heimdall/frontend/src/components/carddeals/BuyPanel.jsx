@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { RefreshCw, ShoppingCart, FlaskConical, AlertTriangle } from 'lucide-react';
+import { failureMessage, readJson, readJsonOrThrow } from '../../utils/readJson';
 
 // Andvari "Buy games": check every account (country, wallet, owned games, regional
 // price in US dollars), then buy the planned games with the Steam wallet. Backend:
@@ -44,9 +45,9 @@ const BuyPanel = () => {
     const [loadedAt, setLoadedAt] = useState(0);      // when the status was read (plan age without Date.now in render)
 
     const load = useCallback(() => fetch('/api/huginn/card-deals/buy')
-        .then((r) => r.json())
+        .then(readJsonOrThrow)
         .then((d) => { setState(d); setLoadedAt(Date.now()); })
-        .catch(() => setError('Could not reach the backend.')), []);
+        .catch((error) => setError(failureMessage(error))), []);
     const running = state?.job?.running;
     useEffect(() => {
         load();
@@ -97,9 +98,9 @@ const BuyPanel = () => {
         setBusy(true);
         setError(null);
         return fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
-            .then((r) => r.json())
+            .then(readJson)
             .then((d) => { if (d.error) setError(d.error); })
-            .catch(() => setError('Could not reach the backend.'))
+            .catch((error) => setError(failureMessage(error)))
             .finally(() => { setBusy(false); load(); });
     };
     const check = () => {

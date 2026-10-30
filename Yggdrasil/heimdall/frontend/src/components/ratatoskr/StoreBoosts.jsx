@@ -5,6 +5,7 @@ import {
     Activity, PhoneCall, Send, AlertTriangle, Package, Flag, Radio, BellRing, Hourglass, CircleHelp, ShieldCheck, Pin, PinOff,
 } from 'lucide-react';
 import SteamMarketLink from '../SteamMarketLink';
+import { failureMessage, readJson } from '../../utils/readJson';
 
 // Store Catalogue → Boosts tab: a Steam price boost of an in-game store item, or of a sticker inside
 // a store capsule, caught on its first day. A price boost (Ivan's definition): someone buys an item on
@@ -205,7 +206,7 @@ const Detail = ({ row, now, tradeHoldDays, onRead, owned, tracking, onTrack }) =
     useEffect(() => {
         let alive = true;
         fetch(`/api/ratatoskr/store-boosts/item?name=${encodeURIComponent(row.name)}`)
-            .then((row) => (row.ok ? row.json() : null))
+            .then((row) => (row.ok ? readJson(row) : null))
             .then((answer) => { if (alive) { setDetail(answer); setFailed(!answer); } })
             .catch(() => { if (alive) setFailed(true); });
         return () => { alive = false; };
@@ -405,12 +406,12 @@ const StoreBoosts = () => {
     const load = useCallback(() => {
         const number = ++loads.current;
         return fetch('/api/ratatoskr/store-boosts')
-            .then((row) => row.json())
+            .then(readJson)
             .then((answer) => {
                 if (number !== loads.current) return;
                 if (answer.error) setError(answer.error); else { setData(answer); setError(null); }
             })
-            .catch(() => { if (number === loads.current) setError('Could not reach the backend.'); });
+            .catch((error) => { if (number === loads.current) setError(failureMessage(error)); });
     }, []);
     // Poll fast only while the page is waiting on something: an item being read, the pulse check, or
     // items you queued (the reader works all day, so its status alone would mean always fast).
@@ -422,7 +423,7 @@ const StoreBoosts = () => {
     }, [load, reading]);
     useEffect(() => {
         fetch('/api/huginn/scan/cache')
-            .then((row) => (row.ok ? row.json() : null))
+            .then((row) => (row.ok ? readJson(row) : null))
             .then((scan) => { if (scan?.by_hash) setByHash(scan.by_hash); })
             .catch(() => {});
     }, []);
@@ -432,21 +433,21 @@ const StoreBoosts = () => {
         try { localStorage.setItem(VIEW_KEY, id); } catch { /* private window: not remembered */ }
     };
     const post = (url, body) => fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}) })
-        .then((response) => response.json().then((answer) => ({ ok: response.ok, ...answer })));
+        .then((response) => readJson(response).then((answer) => ({ ok: response.ok, ...answer })));
     const track = (name, tracked) => post('/api/ratatoskr/store-boosts/track', { name, tracked })
         .then((answer) => setNote(answer.error ? answer.error
             : tracked ? `Tracking ${name}: shown on top.` : `Stopped tracking ${name}.`))
-        .catch(() => setNote('Could not reach the backend.'))
+        .catch((error) => setNote(failureMessage(error)))
         .finally(load);
     const readNow = (name) => post('/api/ratatoskr/store-boosts/read', { name })
         .then((answer) => setNote(answer.queued ? `${name}: queued for a Steam read (position ${answer.position}).` : answer.error))
-        .catch(() => setNote('Could not reach the backend.'))
+        .catch((error) => setNote(failureMessage(error)))
         .finally(load);
     const checkNow = () => {
         setBusy('check');
         post('/api/ratatoskr/store-boosts/check')
             .then((answer) => setNote(answer.started ? 'Pulse check started: Steam and Buff163 prices of every watched item.' : answer.error))
-            .catch(() => setNote('Could not reach the backend.'))
+            .catch((error) => setNote(failureMessage(error)))
             .finally(() => { setBusy(null); load(); });
     };
     const testAlert = (ring) => {
@@ -456,13 +457,13 @@ const StoreBoosts = () => {
         post('/api/ratatoskr/store-boosts/test-alert', { ring })
             .then((answer) => setNote(answer.sent ? `Test sent to Telegram${answer.rang ? ', and the phone is ringing' : ''}.`
                 : answer.rang ? 'The phone is ringing; the Telegram message failed: ' + (answer.error || '') : `Test failed: ${answer.error}`))
-            .catch(() => setNote('Could not reach the backend.'))
+            .catch((error) => setNote(failureMessage(error)))
             .finally(() => { sending.current = false; setBusy(null); load(); });
     };
     // Only this tab's own keys (posting the whole settings object overwrites other screens).
     const saveSetting = (changes) => post('/api/settings', changes)
         .then((answer) => { if (answer.status !== 'success') setNote('The setting was not saved.'); })
-        .catch(() => setNote('Could not reach the backend.'))
+        .catch((error) => setNote(failureMessage(error)))
         .finally(load);
 
     const rows = useMemo(() => data?.rows || [], [data]);

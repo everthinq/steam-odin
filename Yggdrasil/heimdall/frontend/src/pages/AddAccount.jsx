@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { ArrowLeft, Upload, CheckCircle, AlertCircle, FileStack, Loader2 } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
+import { readJson } from '../utils/readJson';
 
 const AddAccount = () => {
     const navigate = useNavigate();
@@ -91,7 +92,7 @@ const AddAccount = () => {
             body: JSON.stringify(data)
         });
 
-        const result = await res.json();
+        const result = await readJson(res);
         if (!res.ok) throw new Error(result.error || 'Import failed');
         return result;
     };
@@ -102,7 +103,7 @@ const AddAccount = () => {
     const fetchExistingSteamids = async () => {
         const res = await fetch('/api/accounts');
         if (!res.ok) throw new Error('Could not read the current account list');
-        const json = await res.json();
+        const json = await readJson(res);
         return new Set((json.accounts || []).map((account) => String(account.steamid)));
     };
 
@@ -179,7 +180,7 @@ const AddAccount = () => {
                             })
                         });
 
-                        const authJson = await authRes.json().catch(() => ({}));
+                        const authJson = await readJson(authRes).catch(() => ({}));
                         if (!authRes.ok || authJson.error) {
                             // Remove the account only when this import created it;
                             // an account that was already here keeps its maFile.

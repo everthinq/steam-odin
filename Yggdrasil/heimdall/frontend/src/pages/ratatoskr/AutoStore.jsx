@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import { Boxes, Plus, X, Play, History, PackageCheck, Info, User, Lock } from 'lucide-react';
+import { readJson } from '../../utils/readJson';
 
 // Handy quick-add suggestions the user is actively buying.
 const SUGGESTED_ITEMS = ['Fracture Case', 'Recoil Case', 'Snakebite Case', 'Clutch Case'];
@@ -67,7 +68,7 @@ const RatatoskrAutoStore = () => {
     const fetchConfig = async () => {
         try {
             const res = await fetch('/api/ratatoskr/auto-store');
-            const data = await res.json();
+            const data = await readJson(res);
             if (res.ok) setConfig(data);
         } catch (err) {
             console.error('Failed to load auto-store config', err);
@@ -79,7 +80,7 @@ const RatatoskrAutoStore = () => {
     const fetchInventoryNames = async () => {
         try {
             const res = await fetch(`/api/ratatoskr/inventory/${steamid}`);
-            const data = await res.json();
+            const data = await readJson(res);
             const names = [
                 ...new Set(
                     (data.items || [])
@@ -103,7 +104,7 @@ const RatatoskrAutoStore = () => {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(body),
             });
-            const data = await res.json();
+            const data = await readJson(res);
             if (!res.ok) throw new Error(data.error || 'Failed to save');
             setConfig(data);
         } catch (err) {
@@ -138,7 +139,7 @@ const RatatoskrAutoStore = () => {
         setError(null);
         try {
             const res = await fetch('/api/ratatoskr/auto-store/sweep', { method: 'POST' });
-            const data = await res.json();
+            const data = await readJson(res);
             if (!res.ok) throw new Error(data.error || 'Sweep failed');
             // Give the sweep a moment, then refresh history.
             setTimeout(fetchConfig, 4000);

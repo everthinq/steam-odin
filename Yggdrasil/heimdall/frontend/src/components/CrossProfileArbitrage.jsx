@@ -3,6 +3,7 @@ import { RefreshCw, Filter, Boxes, Settings2, Plus, X, ArrowRight, Link2 } from 
 import InfoTip from './gjallarhorn/InfoTip';
 import ArbitrageFilters, { ActiveFilterChips } from './arbitrage/ArbitrageFilters';
 import { activeFilterCount, buildOptions, collectionByName, priceInRange, useStoredFilters } from '../utils/arbitrageFilters';
+import { readJson } from '../utils/readJson';
 
 // Cross-profile arbitrage tab (lives inside the Huginn Arbitrage page, right after
 // Case Arbitrage). For every item held across ALL Draupnir accounts:
@@ -97,7 +98,7 @@ const CrossProfileArbitrage = ({ byHash }) => {
 
     useEffect(() => {
         fetch('/api/huginn/arbitrage/cross-profile/config')
-            .then((r) => (r.ok ? r.json() : null))
+            .then((r) => (r.ok ? readJson(r) : null))
             .then((c) => { if (c) { setConfig(c); initDrafts(c); } })
             .catch(() => {});
     }, []);
@@ -111,7 +112,7 @@ const CrossProfileArbitrage = ({ byHash }) => {
         const params = new URLSearchParams({ owned: ownedOnly ? '1' : '0' });
         if (minPct !== '') params.set('min_pct', minPct);
         return fetch(`/api/huginn/arbitrage/cross-profile?${params.toString()}`)
-            .then((r) => (r.ok ? r.json() : null))
+            .then((r) => (r.ok ? readJson(r) : null))
             .then((d) => { if (isCurrent()) { setData(d); setLoading(false); } })
             .catch(() => { if (isCurrent()) { setData(null); setLoading(false); } });
     }, [ownedOnly, minPct]);
@@ -184,7 +185,7 @@ const CrossProfileArbitrage = ({ byHash }) => {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ buy_markets: buyDraft, sell_markets: sellDraft, chains: chainsDraft }),
         })
-            .then((r) => (r.ok ? r.json() : null))
+            .then((r) => (r.ok ? readJson(r) : null))
             .then((c) => { if (c) { setConfig(c); initDrafts(c); } setSavingConfig(false); refresh(); })
             .catch(() => setSavingConfig(false));
     };

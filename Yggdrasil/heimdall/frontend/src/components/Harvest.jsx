@@ -12,6 +12,7 @@ import LisSkinsMarketLink from './LisSkinsMarketLink';
 import CSFloatMarketLink from './CSFloatMarketLink';
 import { useColumnSort, sortRows } from './draupnir/columnSort';
 import { useNowSeconds, isStale, staleTip } from '../utils/priceAge';
+import { readJson } from '../utils/readJson';
 
 // Harvest tab (Huginn Arbitrage page): what you can sell RIGHT NOW for more than
 // you paid. Laid out like the Arbitrage profiles: a profile is "account (portfolio)
@@ -95,7 +96,7 @@ const Harvest = ({ byHash }) => {
 
     useEffect(() => {
         fetch('/api/huginn/harvest/options')
-            .then((r) => (r.ok ? r.json() : null))
+            .then((r) => (r.ok ? readJson(r) : null))
             .then((o) => {
                 if (!o) return;
                 setOptions(o);
@@ -130,7 +131,7 @@ const Harvest = ({ byHash }) => {
         if (minPct !== '') params.set('min_pct', minPct);
         return fetch(`/api/huginn/harvest?${params.toString()}`)
             .then(async (r) => {
-                const body = await r.json().catch(() => null);
+                const body = await readJson(r).catch(() => null);
                 // A failed request is shown like a { status: 'error' } board.
                 return r.ok ? body : { status: 'error', error: body?.error || `Harvest request failed (HTTP ${r.status})` };
             })

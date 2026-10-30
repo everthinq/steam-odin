@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { Percent, ChevronDown, Zap, AlertTriangle, ShieldCheck } from 'lucide-react';
 import NotInPulseNote from './NotInPulseNote';
 import ReliabilityMark from './ReliabilityMark';
+import { readJson } from '../../utils/readJson';
 
 // Sell-side fee editor. Fees are entered as percent and stored as fractions via
 // POST /api/huginn/markets/fees (persisted in settings.json). This is the ONE place
@@ -45,7 +46,7 @@ const FeeEditor = ({ markets, onSaved }) => {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ fees }),
             });
-            const d = await r.json().catch(() => ({}));
+            const d = await readJson(r).catch(() => ({}));
             if (!r.ok) throw new Error(d.error || 'Save failed');
             await onSaved?.();
             setOpen(false);

@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { readJson } from '../../utils/readJson';
 
 // Andvari card auto-sell. Backend: /api/huginn/card-deals/selling (status) and
 // /api/settings (the switches). Cards are listed at the highest price that still
@@ -28,7 +29,7 @@ const SellingPanel = ({ selling, onSaved }) => {
     const [appsText, setAppsText] = useState(null);
     const [purchases, setPurchases] = useState(null);   // Buy games statistics, to set against the card sales
     useEffect(() => {
-        fetch('/api/huginn/card-deals/buy').then((r) => (r.ok ? r.json() : null))
+        fetch('/api/huginn/card-deals/buy').then((r) => (r.ok ? readJson(r) : null))
             .then((d) => setPurchases(d?.statistics || null)).catch(() => {});
     }, []);
 
@@ -38,7 +39,7 @@ const SellingPanel = ({ selling, onSaved }) => {
         setBusy(true);
         setError(null);
         fetch('/api/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(changes) })
-            .then((r) => r.json())
+            .then(readJson)
             .then((d) => { if (d.error) setError(d.error); })
             .catch((e) => setError(String(e)))
             .finally(() => { setBusy(false); onSaved(); });

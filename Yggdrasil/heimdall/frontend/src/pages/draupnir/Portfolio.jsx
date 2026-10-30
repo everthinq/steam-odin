@@ -7,6 +7,7 @@ import { DateField } from '../../components/DateField';
 import SectionHead from '../../components/draupnir/SectionHead';
 import SortTh from '../../components/draupnir/SortTh';
 import { useColumnSort, sortRows } from '../../components/draupnir/columnSort';
+import { readJson } from '../../utils/readJson';
 
 // How each sortable column reads its value from a row (see columnSort.js).
 const HOLDINGS_ACCESSORS = {
@@ -131,7 +132,7 @@ const DraupnirPortfolio = () => {
             if (!isCurrent()) return;
             if (res.status === 404) { setError('Portfolio not found'); return; }
             if (!res.ok) throw new Error('Failed to load portfolio');
-            const json = await res.json();
+            const json = await readJson(res);
             if (!isCurrent()) return;
             setData(json);
             setError(null);
@@ -218,7 +219,7 @@ const DraupnirPortfolio = () => {
         suggestTimer.current = setTimeout(async () => {
             try {
                 const res = await fetch(`/api/draupnir/portfolios/item-search?market=${market}&q=${encodeURIComponent(q.trim())}`);
-                const d = await res.json();
+                const d = await readJson(res);
                 setItemSuggests(d.items || []);
                 setHighlightIdx(-1);
             } catch { setItemSuggests([]); }
@@ -269,7 +270,7 @@ const DraupnirPortfolio = () => {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ name }),
             });
-            return await res.json();   // { valid: true|false|null, suggestions? }
+            return await readJson(res);   // { valid: true|false|null, suggestions? }
         } catch {
             return { valid: null };
         }
@@ -294,10 +295,10 @@ const DraupnirPortfolio = () => {
                 body: JSON.stringify(payload),
             });
             if (!res.ok) {
-                const d = await res.json().catch(() => ({}));
+                const d = await readJson(res).catch(() => ({}));
                 throw new Error(d.error || `Couldn't save transaction (${res.status})`);
             }
-            const saved = await res.json().catch(() => null);
+            const saved = await readJson(res).catch(() => null);
             if (wasAdd) {
                 // Keep Platform + Date for fast repeated entry; clear the rest and
                 // refocus the item field. Make the new row visible (top, unfiltered).

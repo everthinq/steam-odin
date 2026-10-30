@@ -36,6 +36,15 @@ one, delete its line.
 | `market_seller.py` is shared | Only the card seller uses it; Team Fortress 2 has its own seller and shares only `community_pacer` |
 | `.heimdall_salt` is a key file (older docs) | Mentioned only in a docstring about an older scheme; no code reads or writes it |
 
+## Market access and Mímir
+
+| Issue | Where | Effect |
+|-------|-------|--------|
+| The Market access check reads only the first page of Purchase History (a deliberate choice) | `market_access_service.py` | An account with many Market sales could push its last real purchase off page 1: it then shows amber with no date (never wrongly green); Steam's own verdict still shows |
+| Billing addresses are not in Mímir's text export | `mimir_service.export_text` | Restoring the vault from the exported text loses them; the encrypted `.bak` copies keep them |
+| The Market unlocker reads the approval total as the last amount before "Total:", the layout captured live in October 2026 | `approval_total` | If Steam reorders the page, the price guard could read another amount; it still refuses anything it cannot read or above $0.05 |
+| A Market unlocker dry run claims the free Zombie Hunter license on an account that lacks it | `_unlock_steps` | Free and harmless, but not undone by the cancel; every account owns it since 2026-10-29 |
+
 ## Frontend
 
 | Issue | Effect |
@@ -48,4 +57,4 @@ one, delete its line.
 | Ratatoskr Inventory selection has no actions | Selecting does nothing |
 | No confirmation before Confirmations Approve/Deny, Transfer Move, Team Fortress 2 Play / Sell now, card auto-sell checkboxes | One click acts |
 | Unused icon imports are not flagged (`varsIgnorePattern '^[A-Z_]'`) | Dead imports accumulate |
-| 15 `react-hooks/exhaustive-deps` warnings | Lint is at 0 errors, not 0 warnings |
+| 14 `react-hooks/exhaustive-deps` warnings | Lint is at 0 errors, not 0 warnings |

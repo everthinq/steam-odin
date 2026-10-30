@@ -7,6 +7,7 @@ import FarmingPanel from '../../components/carddeals/FarmingPanel';
 import SellingPanel from '../../components/carddeals/SellingPanel';
 import BuyPanel from '../../components/carddeals/BuyPanel';
 import InfoTip from '../../components/gjallarhorn/InfoTip';
+import { failureMessage, readJson } from '../../utils/readJson';
 
 // Andvari — games whose Steam trading-card drops resell for more than the game
 // costs. Two scopes: "On sale" (scanned first, where most deals are) and "Full
@@ -89,7 +90,7 @@ const CardDeals = () => {
     // from its last ASF poll).
     const fetchFarming = useCallback(() => fetch('/api/huginn/card-deals/farming')
         .then(async (r) => {
-            const body = await r.json().catch(() => null);
+            const body = await readJson(r).catch(() => null);
             if (!r.ok || !body) throw new Error(body?.error || `HTTP ${r.status}`);
             return body;
         })
@@ -104,7 +105,7 @@ const CardDeals = () => {
         setFarmingBusy(true);
         fetch(`/api/huginn/card-deals/farming/${steamid}/${action}`, { method: 'POST' })
             .then(async (r) => {
-                const d = await r.json().catch(() => ({}));
+                const d = await readJson(r).catch(() => ({}));
                 if (!r.ok || d.error) setError(`Card farming: ${d.error || `request failed (HTTP ${r.status})`}`);
             })
             .catch((e) => setError(`Card farming: ${e.message}`))
@@ -114,7 +115,7 @@ const CardDeals = () => {
 
     // Card auto-sell status: refreshed every 30 seconds.
     const fetchSelling = useCallback(() => fetch('/api/huginn/card-deals/selling')
-        .then((r) => (r.ok ? r.json() : null))
+        .then((r) => (r.ok ? readJson(r) : null))
         .then((d) => { if (d) setSelling(d); })
         .catch(() => {}), []);
     useEffect(() => {
@@ -128,13 +129,13 @@ const CardDeals = () => {
         const params = new URLSearchParams({ scope, valuation });
         if (showLosing) params.set('include_unprofitable', '1');
         return fetch(`/api/huginn/card-deals?${params.toString()}`)
-            .then((r) => r.json().then((d) => ({ ok: r.ok, d })))
+            .then((r) => readJson(r).then((d) => ({ ok: r.ok, d })))
             .then(({ ok, d }) => {
                 if (!ok || d.error) { setError(d.error || 'Could not load deals.'); return; }
                 setError(null);
                 setData(d);
             })
-            .catch(() => setError('Could not reach the backend.'));
+            .catch((error) => setError(failureMessage(error)));
     }, [scope, showLosing, valuation]);
 
     useEffect(() => { fetchDeals(); }, [fetchDeals]);
@@ -142,7 +143,7 @@ const CardDeals = () => {
     useEffect(() => {
         if (valuation) return;
         fetch('/api/huginn/card-deals/config')
-            .then((r) => (r.ok ? r.json() : null))
+            .then((r) => (r.ok ? readJson(r) : null))
             .then((config) => setValuation(config?.card_deals_valuation === 'listing' ? 'listing' : 'instant'))
             .catch(() => setValuation('instant'));
     }, [valuation]);
@@ -170,7 +171,7 @@ const CardDeals = () => {
 
     const checkBuyOrders = () => {
         fetch('/api/huginn/card-deals/buy-orders', { method: 'POST' })
-            .then((r) => r.json().then((job) => ({ ok: r.ok, job })))
+            .then((r) => readJson(r).then((job) => ({ ok: r.ok, job })))
             .then(({ ok, job }) => {
                 if (!ok) setError('Could not start the buy-order check.');
                 else if (job.kind !== 'buy_orders') setError('A scan is already running; it checks buy orders too.');

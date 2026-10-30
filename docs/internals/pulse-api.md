@@ -26,6 +26,9 @@ POST https://api-pulse.tradeon.space/api/table/counter-strike/TradeOnMarket/{mar
   (checked: Steam `Median30d`).
 - Size and speed: one full table is about **32,000 rows, 59 MB of JSON, 3 seconds**; as Python
   objects about **155 MB**. That is why the feed keeps a compact form (section 3).
+- On the wire it is much smaller: pulse gzips a table on request, **~4–5 MB** (`Accept-Encoding:
+  gzip`, sent since 2026-10-30; it also offers Brotli, which Python cannot read without a library).
+  On the slow connection of late October that took a table from ~100 s to 3–20 s.
 - Headers that matter: `Authorization: Bearer <token>`, `Device-Id`, a browser `User-Agent`,
   `Origin`/`Referer` `https://pulse.tradeon.space`, `Usercurrency: USD`. Without `Device-Id` and
   `User-Agent` pulse answers 403 (`HuginnService._post_tradeon` sends them).
@@ -97,7 +100,8 @@ Errors are `{message, responseType}` with types such as `MarketSubscriptionRequi
   (`MAX_BACKGROUND_DOWNLOADS`) and a waiting page or button goes before them; a page that joins a
   job's queued download moves it to the front. So Fetch live data never queues behind the jobs:
   on 2026-10-29 the connection pulled ~0.8 MB/s and a table took 2–5 minutes (1–15 seconds
-  before 27 October), and the clicks waited behind the jobs' queue. Parsing happens outside the
+  before 27 October), and the clicks waited behind the jobs' queue. Since 2026-10-30 tables come gzipped
+  (about ten times smaller), which brought a table back to seconds. Parsing happens outside the
   feed's lock, so readers of other tables never wait for it.
 - **Stamp with the download time, never "now".** A feature that keeps its own copy (Store
   Catalogue Arbitrage indexes, Case Arbitrage snapshots, Harvest) stamps it with

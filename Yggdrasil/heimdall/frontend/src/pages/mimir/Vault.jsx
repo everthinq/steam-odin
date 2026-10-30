@@ -7,6 +7,7 @@ import {
     LayoutDashboard, KeyRound, Search, Plus, Upload, Download, Eye, EyeOff, Copy, Check,
     Pencil, Trash2, ShieldCheck, ShieldOff, X, Info, LogIn, Loader2, Unlock, MapPin,
 } from 'lucide-react';
+import { readJson } from '../../utils/readJson';
 
 // Mímir — the credential vault. Login / password / email / comment for every
 // Steam account, encrypted at rest with the same key as the maFiles. Rows are
@@ -22,7 +23,7 @@ const REVEAL_TIMEOUT_MILLISECONDS = 30000;
 
 const fetchPassword = async (credentialId) => {
     const res = await fetch(`/api/mimir/credentials/${credentialId}/password`);
-    const data = await res.json().catch(() => null);
+    const data = await readJson(res).catch(() => null);
     if (!res.ok || !data || typeof data.password !== 'string') {
         throw new Error(data?.error || `the backend answered HTTP ${res.status}`);
     }
@@ -131,7 +132,7 @@ const MimirVault = () => {
         try {
             const res = await fetch('/api/mimir/credentials');
             if (!res.ok) throw new Error('Failed to load credentials');
-            const data = await res.json();
+            const data = await readJson(res);
             setCreds(data.credentials || []);
             setError(null);
         } catch (e) {
@@ -228,7 +229,7 @@ const MimirVault = () => {
                     body: JSON.stringify(body),
                 },
             );
-            const data = await res.json();
+            const data = await readJson(res);
             if (!res.ok) throw new Error(data.error || 'Save failed');
             if (!isNew) hidePassword(editing.id);         // a revealed password may be stale now
             closeForm();
@@ -258,7 +259,7 @@ const MimirVault = () => {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ text: importText }),
             });
-            const data = await res.json();
+            const data = await readJson(res);
             if (!res.ok) throw new Error(data.error || 'Import failed');
             setImportResult(data);
             await load();
@@ -273,7 +274,7 @@ const MimirVault = () => {
         setTesting(c.id);
         try {
             const res = await fetch(`/api/mimir/credentials/${c.id}/test-login`, { method: 'POST' });
-            const data = await res.json();
+            const data = await readJson(res);
             await load();                                  // refresh so the health dot updates
             if (res.status === 409) alert(data.error);     // no maFile — can't test
             else if (data.untested) alert(data.error);     // live session reused — password not checked
@@ -288,7 +289,7 @@ const MimirVault = () => {
     const exportVault = async () => {
         try {
             const res = await fetch('/api/mimir/export');
-            const data = await res.json().catch(() => null);
+            const data = await readJson(res).catch(() => null);
             // Never save a file unless the backend really sent the export: a
             // failed request would otherwise download an empty credentials file.
             if (!res.ok || !data || typeof data.text !== 'string') {

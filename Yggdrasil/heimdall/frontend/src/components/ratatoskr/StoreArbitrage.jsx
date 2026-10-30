@@ -14,6 +14,7 @@ import { activeFilterCount, buildOptions, collectionByName, priceInRange, useSto
 import SteamMarketLink from '../SteamMarketLink';
 import BuffMarketLink from '../BuffMarketLink';
 import CSFloatMarketLink from '../CSFloatMarketLink';
+import { failureMessage, readJson, readJsonOrThrow } from '../../utils/readJson';
 
 // Store Catalogue → Arbitrage tab, laid out like Huginn's Arbitrage: a profile is
 // "In-game store → market (autobuy or min)", default CSMoney (Trade) autobuy. The
@@ -145,18 +146,18 @@ const StoreArbitrage = () => {
     const requests = useRef(0);            // only the newest answer is kept
 
     const refreshHuginnMarkets = useCallback(() => fetch('/api/huginn/markets')
-        .then((r) => (r.ok ? r.json() : null))
+        .then((r) => (r.ok ? readJson(r) : null))
         .then((list) => { if (Array.isArray(list)) setHuginnMarkets(list); })
         .catch(() => {}), []);
 
     useEffect(() => {
         fetch('/api/ratatoskr/store-arbitrage/options')
-            .then((r) => r.json())
+            .then(readJsonOrThrow)
             .then((o) => { setOptions(o); setAlerts(o.alerts || null); })
-            .catch(() => setError('Could not reach the backend.'));
+            .catch((error) => setError(failureMessage(error)));
         // Owned counts, accounts and collections come from Huginn's "Get all items".
         fetch('/api/huginn/scan/cache')
-            .then((r) => (r.ok ? r.json() : null))
+            .then((r) => (r.ok ? readJson(r) : null))
             .then((scan) => { if (scan?.by_hash) setByHash(scan.by_hash); })
             .catch(() => {});
         refreshHuginnMarkets();
@@ -208,12 +209,12 @@ const StoreArbitrage = () => {
         const number = ++requests.current;
         return fetch(`/api/ratatoskr/store-arbitrage?markets=${encodeURIComponent(marketsKey)}`)
             .then(async (r) => {
-                const body = await r.json().catch(() => null);
+                const body = await readJson(r).catch(() => null);
                 if (number !== requests.current) return;
                 if (!r.ok || !body || (body.error && !body.rows)) setError(body?.error || `The board could not load (HTTP ${r.status}).`);
                 else { setData(body); setError(null); }
             })
-            .catch(() => { if (number === requests.current) setError('Could not reach the backend.'); })
+            .catch((error) => { if (number === requests.current) setError(failureMessage(error)); })
             .finally(() => { if (number === requests.current) setAnswers((count) => count + 1); });
     }, [marketsKey]);
 
@@ -235,11 +236,11 @@ const StoreArbitrage = () => {
             method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ markets: requestMarkets }),
         })
             .then(async (r) => {
-                const body = await r.json().catch(() => ({}));
+                const body = await readJson(r).catch(() => ({}));
                 if (!r.ok) setRefreshNote(body.error || `Refresh failed (HTTP ${r.status})`);
                 else if (!body.queued) setRefreshNote('Prices were pulled less than a minute ago.');
             })
-            .catch(() => setRefreshNote('Could not reach the backend.'))
+            .catch((error) => setRefreshNote(failureMessage(error)))
             .finally(load);
     };
 
@@ -248,9 +249,9 @@ const StoreArbitrage = () => {
     const readStorePrices = () => {
         setRefreshNote(null);
         fetch('/api/ratatoskr/store-catalogue/refresh', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })
-            .then((r) => r.json())
+            .then(readJson)
             .then((d) => { if (d.started) setSheetStartedAt(d.started_at); else setRefreshNote(d.error || 'The store prices could not be read.'); })
-            .catch(() => setRefreshNote('Could not reach the backend.'));
+            .catch((error) => setRefreshNote(failureMessage(error)));
     };
     useEffect(() => {
         if (sheetStartedAt == null) return undefined;
@@ -258,7 +259,7 @@ const StoreArbitrage = () => {
         const timer = setInterval(() => {
             polls += 1;
             fetch('/api/ratatoskr/store-catalogue')
-                .then((r) => r.json())
+                .then(readJson)
                 .then((d) => {
                     const job = d.job || {};
                     const ours = job.started_at === sheetStartedAt;
@@ -303,10 +304,10 @@ const StoreArbitrage = () => {
         setAlertNote(null);
         fetch('/api/ratatoskr/store-arbitrage/alerts/send', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })
             .then(async (r) => {
-                const body = await r.json().catch(() => ({}));
+                const body = await readJson(r).catch(() => ({}));
                 setAlertNote(body.sent ? `Sent: ${body.items} item${body.items === 1 ? '' : 's'}` : `Not sent: ${body.error || `HTTP ${r.status}`}`);
             })
-            .catch(() => setAlertNote('Not sent: could not reach the backend.'))
+            .catch((error) => setAlertNote(`Not sent: ${failureMessage(error)}`))
             .finally(() => setSending(false));
     };
 

@@ -5,6 +5,7 @@ import { getTradeonShortLink } from '../utils/tradeonShortLink';
 import CaseAlertsPanel from './CaseAlertsPanel';
 import ArbitrageFilters, { ActiveFilterChips } from './arbitrage/ArbitrageFilters';
 import { activeFilterCount, buildOptions, priceInRange, useStoredFilters } from '../utils/arbitrageFilters';
+import { readJson } from '../utils/readJson';
 
 const PAGE_SIZE = 150;
 // While pulse snapshots warm, re-fetch every WARM_POLL_MS — but at most
@@ -165,7 +166,7 @@ const CaseArbitrage = ({ byHash }) => {
         try {
             const qs = cats.length ? `?types=${cats.join(',')}` : '';
             const r = await fetch(`/api/huginn/cases${qs}`);
-            const d = await r.json();
+            const d = await readJson(r);
             if (!r.ok) throw new Error(d.error || 'Fetch failed');
             setData(d);
             const warming = Object.values(d.status || {}).some(s => s === 'refreshing');

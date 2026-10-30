@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { X, History, RotateCcw, Download, Camera, RefreshCw, Check, AlertTriangle, HardDrive } from 'lucide-react';
 import { ConfirmDialog } from './DraupnirDialog';
+import { readJson } from '../utils/readJson';
 
 // Draupnir backups browser — lists point-in-time snapshots of portfolios.json
 // and lets you restore, download, or take one now. Backend: /api/draupnir/portfolios/backups*.
@@ -42,7 +43,7 @@ const BackupsPanel = ({ onClose, onRestored }) => {
         try {
             const r = await fetch('/api/draupnir/portfolios/backups');
             if (!r.ok) throw new Error('Failed to load backups');
-            const d = await r.json();
+            const d = await readJson(r);
             setBackups(d.backups || []);
             setStats(d.stats || null);
         } catch (e) {
@@ -63,7 +64,7 @@ const BackupsPanel = ({ onClose, onRestored }) => {
         setBusy('snapshot');
         try {
             const r = await fetch('/api/draupnir/portfolios/backups/snapshot', { method: 'POST' });
-            const d = await r.json().catch(() => ({}));
+            const d = await readJson(r).catch(() => ({}));
             if (!r.ok || d.error) throw new Error(d.error || `Snapshot failed (HTTP ${r.status})`);
             flash(true, d.deduped ? 'Already up to date — no change since the last snapshot.' : 'Snapshot saved.');
             load();
@@ -81,7 +82,7 @@ const BackupsPanel = ({ onClose, onRestored }) => {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ name }),
             });
-            const d = await r.json();
+            const d = await readJson(r);
             if (!d.ok) throw new Error(d.error || 'restore failed');
             flash(true, 'Restored. Current state was saved first as a pre-restore backup.');
             load();

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { X, Check, Save, Play, Loader2 } from 'lucide-react';
 import NorseStepper from './NorseStepper';
+import { readJson, readJsonOrThrow } from '../utils/readJson';
 
 // The only settings keys this modal edits. Saving posts just these, so it can
 // never overwrite settings other pages own (tokens, alert channels, and so on)
@@ -44,8 +45,7 @@ const GlobalConfirmationsModal = ({ isOpen, onClose }) => {
         setMessage(null);
         try {
             const res = await fetch('/api/settings');
-            if (!res.ok) throw new Error(`Failed to load settings (HTTP ${res.status})`);
-            const data = await res.json();
+            const data = await readJsonOrThrow(res);
             setSettings((previous) => ({ ...previous, ...pickConfirmationSettings(data) }));
             setLoaded(true);
         } catch (error) {
@@ -66,7 +66,7 @@ const GlobalConfirmationsModal = ({ isOpen, onClose }) => {
                 body: JSON.stringify(pickConfirmationSettings(settings))
             });
             if (res.ok) {
-                const data = await res.json().catch(() => ({}));
+                const data = await readJson(res).catch(() => ({}));
                 if (data.settings) {
                     setSettings((previous) => ({ ...previous, ...pickConfirmationSettings(data.settings) }));
                 }

@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { RefreshCw, AlertTriangle, Coins, Radio, Copy } from 'lucide-react';
+import { readJson } from '../../utils/readJson';
 
 // CSFloat buy-order sweep panel, shared by the Arbitrage "=> CSFloat (autobuy)"
 // profiles and Harvest. CSFloat has no bulk buy-order feed, so its autobuy prices
@@ -61,7 +62,7 @@ const CsfloatBuyOrdersPanel = ({ canFetch = true, cannotFetchHint = '', includeH
     const fetchCsfloatStatus = useCallback(async () => {
         try {
             const r = await fetch('/api/huginn/csfloat/buy-orders');
-            if (r.ok) setCsfloatStatus(await r.json());
+            if (r.ok) setCsfloatStatus(await readJson(r));
         } catch { /* ignore */ }
     }, []);
 
@@ -91,7 +92,7 @@ const CsfloatBuyOrdersPanel = ({ canFetch = true, cannotFetchHint = '', includeH
         setConnCheck(null);
         try {
             const r = await fetch('/api/huginn/csfloat/connectivity');
-            const d = await r.json().catch(() => ({}));
+            const d = await readJson(r).catch(() => ({}));
             if (!r.ok) { setConnCheck({ error: d.error || 'Connectivity check failed' }); return; }
             setConnCheck(d);
         } catch (err) {
@@ -105,7 +106,7 @@ const CsfloatBuyOrdersPanel = ({ canFetch = true, cannotFetchHint = '', includeH
         try {
             const url = `/api/huginn/csfloat/buy-orders${includeHoldings ? '?include_holdings=1' : ''}`;
             const r = await fetch(url, { method: 'POST' });
-            const d = await r.json().catch(() => ({}));
+            const d = await readJson(r).catch(() => ({}));
             if (!r.ok) { setStartError(d.error || 'Could not start CSFloat buy-order sweep'); return; }
             setStartError(null);
             fetchCsfloatStatus();

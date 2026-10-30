@@ -42,6 +42,7 @@ import ItemThumb from '../../components/transfer/ItemThumb';
 import GroupQtyInput from '../../components/transfer/GroupQtyInput';
 import PricingSampleReport from '../../components/transfer/PricingSampleReport';
 import { getCasketCount, getItemCollection, transferRowSurfaceClass } from '../../utils/transferView';
+import { readJson } from '../../utils/readJson';
 
 const STORAGE_CAPACITY = 1000;
 const TRANSFER_HEADER_BTN =
@@ -107,7 +108,7 @@ const RatatoskrTransfer = () => {
     const fetchMoveDelay = async () => {
         try {
             const res = await fetch('/api/ratatoskr/config/move-delay');
-            const data = await res.json();
+            const data = await readJson(res);
             if (res.ok && data.delayMs != null) {
                 setMoveDelayMs(data.delayMs);
                 setMoveDelayBounds({ min: data.min ?? 100, max: data.max ?? 5000 });
@@ -127,7 +128,7 @@ const RatatoskrTransfer = () => {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ delayMs: clamped }),
             });
-            const data = await res.json();
+            const data = await readJson(res);
             if (res.ok && data.delayMs != null) {
                 setMoveDelayMs(data.delayMs);
             }
@@ -201,7 +202,7 @@ const RatatoskrTransfer = () => {
     const fetchInventory = async () => {
         try {
             const res = await fetch(`/api/ratatoskr/inventory/${steamid}`);
-            const data = await res.json().catch(() => ({}));
+            const data = await readJson(res).catch(() => ({}));
             if (!res.ok || data.error) throw new Error(data.error || `HTTP ${res.status}`);
             if (data.items) setInventory(data.items);
             reportLoadError('inventory', null);
@@ -214,7 +215,7 @@ const RatatoskrTransfer = () => {
     const fetchCaskets = async () => {
         try {
             const res = await fetch(`/api/ratatoskr/caskets/${steamid}`);
-            const data = await res.json().catch(() => ({}));
+            const data = await readJson(res).catch(() => ({}));
             if (!res.ok || data.error) throw new Error(data.error || `HTTP ${res.status}`);
             if (data.caskets) setCaskets(data.caskets);
             reportLoadError('caskets', null);
@@ -258,7 +259,7 @@ const RatatoskrTransfer = () => {
                     name: trimmed,
                 }),
             });
-            const data = await res.json();
+            const data = await readJson(res);
             if (!res.ok || data.error) {
                 throw new Error(data.error || 'Failed to rename storage unit');
             }
@@ -288,7 +289,7 @@ const RatatoskrTransfer = () => {
         setLoading(true);
         try {
             const res = await fetch(`/api/ratatoskr/casket/${steamid}/${casketId}`);
-            const data = await res.json();
+            const data = await readJson(res);
             // The selection moved on (another unit, all storage, or none):
             // this unit's contents no longer belong on screen.
             if (!isCurrent()) return;
@@ -310,7 +311,7 @@ const RatatoskrTransfer = () => {
                 const c = units[i];
                 try {
                     const res = await fetch(`/api/ratatoskr/casket/${steamid}/${c.item_id}`);
-                    const data = await res.json();
+                    const data = await readJson(res);
                     allItems.push(...tagCasketItems(data.items || [], c.item_id, casketDisplayName(c)));
                 } catch (err) {
                     console.error(`Failed to load casket ${c.item_id}`, err);
@@ -439,7 +440,7 @@ const RatatoskrTransfer = () => {
             if (!mountedRef.current) return;
             try {
                 const res = await fetch(`/api/ratatoskr/move/status/${steamid}`);
-                const data = await res.json();
+                const data = await readJson(res);
                 if (res.ok && !data.error) {
                     moveRunningRef.current = !!data.running;
                     if (!data.running) {
@@ -468,7 +469,7 @@ const RatatoskrTransfer = () => {
                 }
                 try {
                     const res = await fetch(`/api/ratatoskr/move/status/${steamid}`);
-                    const data = await res.json();
+                    const data = await readJson(res);
                     if (!res.ok || data.error) {
                         throw new Error(data.error || `Move status HTTP ${res.status}`);
                     }
@@ -505,7 +506,7 @@ const RatatoskrTransfer = () => {
                 target,
             }),
         });
-        const data = await res.json();
+        const data = await readJson(res);
         if (!res.ok || data.error) {
             throw new Error(data.error || 'Failed to queue moves');
         }

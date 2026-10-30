@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Bell, Send, RefreshCw, Check, AlertTriangle, Save } from 'lucide-react';
+import { readJson } from '../utils/readJson';
 
 // Config panel for Case Arbitrage price alerts (a buy market cheaper than CSFloat).
 // Reads/writes the shared /api/settings and drives the /api/huginn/cases/alerts/* routes.
@@ -18,7 +19,7 @@ const CaseAlertsPanel = () => {
     const loadStatus = async () => {
         try {
             const r = await fetch('/api/huginn/cases/alerts');
-            if (r.ok) setStatus(await r.json());
+            if (r.ok) setStatus(await readJson(r));
         } catch { /* ignore */ }
     };
 
@@ -27,7 +28,7 @@ const CaseAlertsPanel = () => {
             try {
                 const r = await fetch('/api/settings');
                 if (r.ok) {
-                    const s = await r.json();
+                    const s = await readJson(r);
                     setEnabled(!!s.case_alerts_enabled);
                     setTgToken(s.telegram_bot_token || '');
                     setTgChat(s.telegram_chat_id != null ? String(s.telegram_chat_id) : '');
@@ -71,7 +72,7 @@ const CaseAlertsPanel = () => {
         setBusy('test');
         try {
             const r = await fetch('/api/huginn/cases/alerts/test', { method: 'POST' });
-            const d = await r.json();
+            const d = await readJson(r);
             flash(!!d.ok, d.ok ? `Test sent via ${d.channel}.` : `Test failed: ${d.error || 'unknown'}`);
         } catch (e) {
             flash(false, e.message);
@@ -82,7 +83,7 @@ const CaseAlertsPanel = () => {
         setBusy('check');
         try {
             const r = await fetch(`/api/huginn/cases/alerts/check${force ? '?force=1' : ''}`, { method: 'POST' });
-            const d = await r.json();
+            const d = await readJson(r);
             if (!d.ran) flash(false, `Not run: ${d.reason}`);
             else flash(!!(d.sent || d.new === 0), `Checked: ${d.active} active, ${d.new} new${d.sent ? ` · sent via ${d.channel}` : d.new ? ' · send failed' : ''}`);
         } catch (e) {

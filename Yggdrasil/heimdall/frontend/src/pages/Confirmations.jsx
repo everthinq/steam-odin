@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { ArrowLeft, RefreshCw, CheckCircle2, XCircle, AlertCircle } from 'lucide-react';
+import { readJson } from '../utils/readJson';
 
 const typeLabels = {
     1: 'Test',
@@ -29,7 +30,7 @@ const Confirmations = () => {
         }
         try {
             const res = await fetch(`/api/accounts/${steamid}/confirmations`);
-            const data = await res.json();
+            const data = await readJson(res);
 
             if (!res.ok) {
                 setConfirmations([]);
@@ -69,7 +70,7 @@ const Confirmations = () => {
                     op
                 })
             });
-            const data = await res.json();
+            const data = await readJson(res);
 
             if (!res.ok) {
                 throw new Error(data.error || data.message || 'Failed to update confirmation');
