@@ -54,7 +54,7 @@ while testing; use the dry-run paths.
 | `/store-catalogue/arbitrage` | `pages/ratatoskr/StoreCatalogue.jsx` (`tab="arbitrage"`) → `components/ratatoskr/StoreArbitrage.jsx` | Store Catalogue Arbitrage, laid out like Huginn's Arbitrage: profile In-game store → market (`ProfilePicker`, default CSMoney (Trade) autobuy, plus "Best market"), CSMoney (Trade) indicator column with BUY signal, Refresh, filters, Telegram switch / Send now; Buy links to the guarded buy page (read-only) |
 | `/store-catalogue/boosts` | `pages/ratatoskr/StoreCatalogue.jsx` (`tab="boosts"`) → `components/ratatoskr/StoreBoosts.jsx` | Store Boosts: cards (alarm counts, Steam reader with its read spacing, hourly pulse check + Check now, alert switches + Test message / Test ring), a Tracked panel (pinned items on top, `TrackButton`, read on the normal schedule), views Moving now / Capsules / All, rows with level, Steam now vs usual, sales vs usual, a 7-day SVG chart and Confirmed; a row opens the 14-day hourly chart (`BoostChart`, hover) and a capsule's stickers with odds and opening value (read-only; Buy links to the guarded buy page) |
 | `/store-catalogue/buy/:item` | `pages/ratatoskr/StorageShop.jsx` | The Buy Storage Units page for any price sheet entry (keyed by it) |
-| `/ratatoskr/:steamid/{inventory,transfer,auto-store}` | `pages/RatatoskrLayout.jsx` + `pages/ratatoskr/` | Layout passes `{steamid, account}` via `<Outlet context>` |
+| `/ratatoskr/:steamid/{transfer,auto-store}` | `pages/RatatoskrLayout.jsx` + `pages/ratatoskr/` | Layout passes `{steamid, account}` via `<Outlet context>`; `/ratatoskr/:steamid` and the old `…/inventory` (page removed) redirect to `transfer` |
 
 Every page except the Dashboard is `React.lazy`; all routes sit in a
 `RouteErrorBoundary` keyed by path (a stale tab after a rebuild gets a
@@ -142,13 +142,11 @@ path prefix — add your page there. No catch-all route, no Settings page.
   `tip`, so those hints are empty.
 - No confirmation before: Confirmations Approve/Deny, Transfer Move, Team
   Fortress 2 Play / Sell now, card auto-sell checkboxes (they save at once).
-- Ratatoskr Inventory lets you select items, but the selection has no actions.
 
 ## Ratatoskr: items a Storage Unit cannot hold
 
 Ratatoskr's `item_moveable` (`items.js` `itemProcessorCanBeMoved`) is false for untradable
-collectibles, the default music kit, Storage Units and default weapons. The Inventory page and
-Transfer's To mode hide those items unless the switch `components/transfer/UnstorableSwitch.jsx`
+collectibles, the default music kit, Storage Units and default weapons. Transfer's To mode hides those items unless the switch `components/transfer/UnstorableSwitch.jsx`
 is on (`utils/showUnstorable.js`: `useShowUnstorable`, localStorage `ratatoskr.showUnstorableItems`).
 `canGoIntoStorageUnit` (`utils/transferItems.js`) is the one test; `groupItemsByName(…, {markUnstorable})`
 (To mode only — anything already in a Storage Unit can always come out) puts such items on lines of

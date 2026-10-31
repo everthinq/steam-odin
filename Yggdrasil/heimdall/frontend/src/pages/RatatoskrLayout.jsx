@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Outlet, Link, useParams, useLocation, useNavigate } from 'react-router-dom';
-import { Package, ArrowRightLeft, Database, LayoutDashboard, Plug, Unplug, Timer, Boxes, Archive, Tags } from 'lucide-react';
+import { ArrowRightLeft, Database, LayoutDashboard, Plug, Unplug, Timer, Boxes, Archive, Tags } from 'lucide-react';
 import { readJson } from '../utils/readJson';
 
 const STATUS_POLL_MS = 90 * 1000;
@@ -152,7 +152,6 @@ const RatatoskrLayout = () => {
     };
 
     const navItems = [
-        { path: 'inventory', icon: Package, label: 'Inventory' },
         { path: 'transfer', icon: ArrowRightLeft, label: 'Transfer' },
         { path: 'auto-store', icon: Boxes, label: 'Auto-Store' },
     ];
@@ -357,8 +356,8 @@ const RatatoskrLayout = () => {
                         </div>
                         <h1 className="text-2xl font-bold text-amber-100 font-serif mb-2">Not connected</h1>
                         <p className="text-slate-400 text-sm mb-6">
-                            Connect to the Steam Game Coordinator using the button in the sidebar to use Inventory and
-                            Transfer.
+                            Connect to the Steam Game Coordinator using the button in the sidebar to use Transfer and
+                            Auto-Store.
                         </p>
                         <button
                             type="button"

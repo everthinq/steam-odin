@@ -1,6 +1,6 @@
 import { useState } from 'react';
 
-// One setting for the Inventory and Transfer pages: hidden by default, remembered per browser.
+// Transfer's To mode: hidden by default, remembered per browser.
 const SHOW_UNSTORABLE_KEY = 'ratatoskr.showUnstorableItems';
 
 const readShowUnstorable = () => {

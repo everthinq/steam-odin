@@ -54,7 +54,6 @@ one, delete its line.
 | UI says "Set tradeon_token in Settings" | There is no Settings page; edit `backend/settings.json` |
 | Gjallarhorn help says "Confirmations → Connect" | Connect is in the Ratatoskr sidebar |
 | `NewsWatcher.jsx` passes `text=` to `InfoTip`, which reads `tip` | Three empty ⓘ hints |
-| Ratatoskr Inventory selection has no actions | Selecting does nothing |
 | No confirmation before Confirmations Approve/Deny, Transfer Move, Team Fortress 2 Play / Sell now, card auto-sell checkboxes | One click acts |
 | Unused icon imports are not flagged (`varsIgnorePattern '^[A-Z_]'`) | Dead imports accumulate |
-| 14 `react-hooks/exhaustive-deps` warnings | Lint is at 0 errors, not 0 warnings |
+| 13 `react-hooks/exhaustive-deps` warnings | Lint is at 0 errors, not 0 warnings |

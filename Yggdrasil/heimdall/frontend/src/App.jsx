@@ -10,7 +10,6 @@ import './index.css';
 const AddAccount = lazy(() => import('./pages/AddAccount'));
 const Confirmations = lazy(() => import('./pages/Confirmations'));
 const RatatoskrLayout = lazy(() => import('./pages/RatatoskrLayout'));
-const RatatoskrInventory = lazy(() => import('./pages/ratatoskr/Inventory'));
 const RatatoskrTransfer = lazy(() => import('./pages/ratatoskr/Transfer'));
 const RatatoskrAutoStore = lazy(() => import('./pages/ratatoskr/AutoStore'));
 const RatatoskrStorageShop = lazy(() => import('./pages/ratatoskr/StorageShop'));
@@ -104,8 +103,9 @@ function App() {
           <Route path="/store-catalogue/boosts" element={<RatatoskrStoreCatalogue tab="boosts" />} />
           <Route path="/store-catalogue/buy/:item" element={<RatatoskrStorageShop />} />
           <Route path="/ratatoskr/:steamid" element={<RatatoskrLayout />}>
-            <Route index element={<Navigate to="inventory" replace />} />
-            <Route path="inventory" element={<RatatoskrInventory />} />
+            <Route index element={<Navigate to="transfer" replace />} />
+            {/* The Inventory page was removed (Transfer's To mode shows the same items); old links land on Transfer. */}
+            <Route path="inventory" element={<Navigate to="../transfer" replace />} />
             <Route path="transfer" element={<RatatoskrTransfer />} />
             <Route path="auto-store" element={<RatatoskrAutoStore />} />
           </Route>
