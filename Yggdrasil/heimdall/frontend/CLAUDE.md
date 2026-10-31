@@ -151,14 +151,25 @@ sorted tradable first; `holdSplit` marks an item that has both (the tradable lin
 "Tradable now" badge). A held line's `floatVariants` are its floats (skins) or, for float-less
 items, one variant per unlock time (`variantKind: 'unlock'`, `trade_unlock`), sorted soonest
 first. `formatTradeHoldLabel` gives the time left ("14h", "6d", range "1h–6d"),
-`formatTradeUnlock` the unlock moment in the browser's time zone. Trade-held items can go into a
-Storage Unit; nothing about the hold blocks selection.
+`formatTradeUnlock` the unlock moment in the browser's time zone; a held line whose copies all
+unlock at one moment carries `trade_unlock` ("Unlocks …" under the name). The queue entries carry
+`tradeHold` (shown in `TransferQueueModal`) and the CSV export a range. Trade-held items can go into
+a Storage Unit; nothing about the hold blocks selection.
+
+- **The page clock:** holds are judged at the `now` option of `groupItemsByName` (milliseconds);
+  Transfer passes `useNowSeconds()` (`utils/priceAge.js`, ticks every minute) and lists it in the
+  `useMemo` dependencies, so a hold that ends while the page is open moves its copies to the
+  tradable line without a reload. Keep that dependency.
+- **Trap:** `tradeHoldMs(item, now)` and `isItemOnTradeHold(item, now)` take an optional second
+  argument. Never hand them straight to `map` / `filter` / `some` (`items.map(tradeHoldMs)`): the
+  array index becomes `now` and every hold reads tens of thousands of days. Wrap them:
+  `items.map((item) => tradeHoldMs(item))`.
 
 ## Ratatoskr: items a Storage Unit cannot hold
 
 Ratatoskr's `item_moveable` (`items.js` `itemProcessorCanBeMoved`) is false for untradable
-collectibles, the default music kit, Storage Units and default weapons. Transfer's To mode hides those items unless the switch `components/transfer/UnstorableSwitch.jsx`
-is on (`utils/showUnstorable.js`: `useShowUnstorable`, localStorage `ratatoskr.showUnstorableItems`).
+collectibles, the default music kit, Storage Units and default weapons. Transfer's To mode hides
+those items unless the switch `components/transfer/UnstorableSwitch.jsx` is on (`utils/showUnstorable.js`: `useShowUnstorable`, localStorage `ratatoskr.showUnstorableItems`).
 `canGoIntoStorageUnit` (`utils/transferItems.js`) is the one test; `groupItemsByName(…, {markUnstorable})`
 (To mode only — anything already in a Storage Unit can always come out) puts such items on lines of
 their own (`unstorable`), whose selectable quantity is 0, and `handleMove` drops

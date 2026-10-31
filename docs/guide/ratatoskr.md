@@ -33,8 +33,11 @@ a trade), the item gets two rows next to each other — "Tradable now" (green)
 and "Trade hold · 6–7d" (orange, the time left, in hours under a day). Both can
 go into a Storage Unit. A held case or sticker opens (the arrow) into one line
 per unlock time ("Unlocks Thu 6 Nov, 08:00"), so you can move exactly the
-batch you want; a held skin opens into its floats, each with its hold. The
-queue repeats the hold next to each held entry.
+batch you want; a held skin opens into its floats, each with its hold. A held
+row whose copies all unlock at once says when under its name. The queue and
+the CSV export repeat the hold. The page checks the holds every minute: copies
+whose hold ends while the page is open move to the "Tradable now" row by
+themselves.
 
 **Show items that can't be stored (N)** (To mode):
 untradable items — service medals, veteran and operation coins, Loyalty Badge,

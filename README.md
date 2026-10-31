@@ -43,7 +43,7 @@ Tools inside Heimdall:
 | **Team Fortress 2** | When a new case is added: every account starts playing, drops are listed on the Market |
 | **Draupnir** | Portfolio tracker: buys, sells, moving-average profit/loss, live valuation, automatic backups |
 | **Mímir** | Encrypted vault for logins, passwords, emails and billing addresses; Market access check (when each account loses the Steam Market) and the Market unlocker (a one-cent in-game purchase that keeps it open a year) |
-| **Ratatoskr** | Moves items in and out of Storage Units; buys Storage Units and any in-game store item on many accounts (price-guarded, dry run first); Store Catalogue Arbitrage (store items that resell above store price); Store Boosts (catches a Steam price boost on its first day) |
+| **Ratatoskr** | Moves items in and out of Storage Units (tradable and trade-held copies shown apart, unstorable items hidden); buys Storage Units and any in-game store item on many accounts (price-guarded, dry run first); Store Catalogue Arbitrage (store items that resell above store price); Store Boosts (catches a Steam price boost on its first day) |
 
 ## 🧰 Built with
 
