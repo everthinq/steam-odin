@@ -5,6 +5,7 @@ const GlobalOffensive = require('globaloffensive');
 const bodyParser = require('body-parser');
 const Items = require('./items');
 const Store = require('./store');
+const { createMoveQueues } = require('./moves');
 
 const app = express();
 const port = process.env.PORT || 3030;
@@ -18,6 +19,32 @@ app.use((req, res, next) => {
         return res.status(403).json({ error: 'browser requests are not accepted' });
     }
     return next();
+});
+
+// Only the Heimdall backend may call Ratatoskr: it sends RATATOSKR_SECRET (the root .env,
+// `make ratatoskr-secret`) in this header. The port is not published on the Mac either; the
+// secret keeps any other container on the Docker network out. /health stays open for
+// Docker's health check (it says nothing about any account).
+const RATATOSKR_SECRET = process.env.RATATOSKR_SECRET || '';
+if (!RATATOSKR_SECRET) {
+    console.warn('RATATOSKR_SECRET is not set: every request is refused except /health (run `make ratatoskr-secret`)');
+}
+const secretMatches = (given) => {
+    const expected = Buffer.from(RATATOSKR_SECRET);
+    const actual = Buffer.from(String(given || ''));
+    return expected.length > 0 && actual.length === expected.length
+        && require('crypto').timingSafeEqual(actual, expected);
+};
+app.use((req, res, next) => {
+    if (req.path === '/health') return next();
+    if (!secretMatches(req.headers['x-ratatoskr-secret'])) {
+        return res.status(401).json({ error: 'missing or wrong Ratatoskr secret' });
+    }
+    return next();
+});
+
+app.get('/health', (req, res) => {
+    res.json({ status: 'ok', sessions: Object.keys(sessions).length });
 });
 app.use(bodyParser.json());
 
@@ -33,7 +60,7 @@ const loginsInProgress = new Set();
 
 const MIN_MOVE_DELAY_MS = 100;
 const MAX_MOVE_DELAY_MS = 5000;
-const DEFAULT_MOVE_DELAY_MS = parseInt(process.env.MOVE_DELAY_MS || '400', 10);
+const DEFAULT_MOVE_DELAY_MS = parseInt(process.env.MOVE_DELAY_MS || '200', 10);
 
 let moveDelayMs = Math.min(
     MAX_MOVE_DELAY_MS,
@@ -82,12 +109,6 @@ const isSessionIdleExpired = (session) => {
     return Date.now() - session.lastActivity > idleMs;
 };
 
-const hasActiveMoveWork = (steamID) => {
-    const state = moveQueues[steamID];
-    if (!state) return false;
-    return state.running || state.jobs.length > 0;
-};
-
 const setMoveDelayMs = (value) => {
     const parsed = parseInt(value, 10);
     if (Number.isNaN(parsed)) {
@@ -97,9 +118,11 @@ const setMoveDelayMs = (value) => {
     return moveDelayMs;
 };
 
-const moveQueues = {};
-
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+// The move queue, one per account, each move confirmed by the Game Coordinator (moves.js).
+const { enqueueMoves, getMoveQueueStatus, hasActiveMoveWork, dropMoveQueue } = createMoveQueues({
+    getSession: (steamID) => sessions[steamID],
+    getMoveDelayMs: () => getMoveDelayMs(),
+});
 
 const CASKET_NAME_MAX_LENGTH = 20;
 
@@ -172,121 +195,6 @@ const renameCasket = (session, casketId, name) => {
             reject(err);
         }
     });
-};
-
-const createMoveQueueState = () => ({
-    jobs: [],
-    running: false,
-    done: 0,
-    failed: 0,
-    total: 0,
-    errors: [],
-    currentItemID: null,
-});
-
-const getMoveQueue = (steamID) => {
-    if (!moveQueues[steamID]) {
-        moveQueues[steamID] = createMoveQueueState();
-    }
-    return moveQueues[steamID];
-};
-
-const getMoveQueueStatus = (steamID) => {
-    const state = moveQueues[steamID] || createMoveQueueState();
-    const pending = state.jobs.length;
-    const processed = state.done + state.failed;
-    return {
-        running: state.running,
-        pending,
-        done: state.done,
-        failed: state.failed,
-        total: state.total || processed + pending,
-        processed,
-        currentItemID: state.currentItemID,
-        errors: state.errors.slice(-20),
-        delayMs: getMoveDelayMs(),
-    };
-};
-
-const executeMoveJob = (session, job) => {
-    const { csgo } = session;
-    if (job.source === 'inventory' && job.target === 'casket') {
-        csgo.addToCasket(job.casketID, job.itemID);
-        return;
-    }
-    if (job.source === 'casket' && job.target === 'inventory') {
-        csgo.removeFromCasket(job.casketID, job.itemID);
-        return;
-    }
-    throw new Error('Invalid move source/target');
-};
-
-const processMoveQueue = async (steamID) => {
-    const state = getMoveQueue(steamID);
-    if (state.running) return;
-
-    const session = getSession(steamID);
-    if (!session?.csgo?.haveGCSession) {
-        state.errors.push({ error: 'No active GC session' });
-        return;
-    }
-
-    state.running = true;
-
-    while (state.jobs.length > 0) {
-        // The session was disconnected, replaced, or lost the Game Coordinator:
-        // nothing sent now would move, so fail what is left instead of counting it done.
-        // Compare the Steam client, not the entry object: a Game Coordinator
-        // reconnect of the same client rebuilds sessions[steamID].
-        if (!sessions[steamID] || sessions[steamID].user !== session.user || !session.csgo.haveGCSession) {
-            const left = state.jobs.splice(0);
-            state.failed += left.length;
-            state.errors.push({ error: `Game Coordinator session lost: ${left.length} moves not sent` });
-            console.error(`Move queue stopped (${steamID}): session lost, ${left.length} moves not sent`);
-            break;
-        }
-        const job = state.jobs.shift();
-        state.currentItemID = job.itemID;
-
-        try {
-            executeMoveJob(session, job);
-            state.done++;
-            session.lastActivity = Date.now();
-        } catch (err) {
-            state.failed++;
-            state.errors.push({ itemID: job.itemID, error: err.message });
-            console.error(`Move queue error (${steamID}):`, err);
-        }
-
-        if (state.jobs.length > 0) {
-            await sleep(getMoveDelayMs());
-        }
-    }
-
-    state.running = false;
-    state.currentItemID = null;
-    console.log(`Move queue finished for ${steamID}: ${state.done} ok, ${state.failed} failed`);
-};
-
-const enqueueMoves = (steamID, jobs, resetCounters) => {
-    const state = getMoveQueue(steamID);
-
-    if (resetCounters && !state.running) {
-        state.done = 0;
-        state.failed = 0;
-        state.errors = [];
-        state.total = 0;
-    }
-
-    state.jobs.push(...jobs);
-    state.total = state.done + state.failed + state.jobs.length;
-
-    processMoveQueue(steamID).catch((err) => {
-        console.error(`Move queue processor crashed (${steamID}):`, err);
-        state.running = false;
-    });
-
-    return getMoveQueueStatus(steamID);
 };
 
 // Steam Guard codes are timed by Steam's clock, never this container's alone: Docker's
@@ -528,7 +436,7 @@ const disconnectSession = (steamID) => {
     }
 
     delete sessions[steamID];
-    delete moveQueues[steamID];
+    dropMoveQueue(steamID);
     return true;
 };
 
@@ -683,23 +591,6 @@ app.post('/casket/rename', (req, res) => {
             console.error('Casket rename error:', err);
             res.status(500).json({ error: err.message || 'Failed to rename storage unit' });
         });
-});
-
-// Move Item Endpoint (queued)
-app.post('/move', (req, res) => {
-    const { steamID, source, target, itemID, casketID } = req.body;
-
-    const session = getSession(steamID);
-    if (!session?.csgo?.haveGCSession) {
-        return res.status(401).json({ error: 'No active GC session' });
-    }
-
-    if (!itemID || !casketID || !source || !target) {
-        return res.status(400).json({ error: 'Missing required fields' });
-    }
-
-    const status = enqueueMoves(steamID, [{ itemID, source, target, casketID }], true);
-    return res.json({ success: true, message: 'Move queued', ...status });
 });
 
 // Batch move endpoint (queued with delay between each item)

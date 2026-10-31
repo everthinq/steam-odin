@@ -6,6 +6,8 @@ from steam_service import SteamService
 from settings import SettingsManager
 from scheduler import ConfirmationScheduler
 from ratatoskr_service import RatatoskrService
+from jobs import JobRegistry
+from storage_deposit import DepositService
 from huginn_service import CASE_ALERTS_JOB, CASE_FULL_JOB, HuginnService
 from notifications import notification_channel
 from pulse_views import apply_active_settings
@@ -50,6 +52,11 @@ request_guard.install(app)
 settings_manager = SettingsManager()
 steam_service = SteamService()
 ratatoskr_service = RatatoskrService()
+jobs = JobRegistry()
+# Every Storage Unit move (Transfer, Auto-Store, the command line) goes through it.
+deposit_service = DepositService(ratatoskr_service, jobs)
+# Nothing logs an account out of Ratatoskr between two batches of a move run.
+ratatoskr_service.moves_in_progress = deposit_service.busy
 huginn_service = HuginnService(steam_service, ratatoskr_service)
 # Every fee comes from the one Fees editor (settings huginn_market_fees).
 huginn_service.settings_provider = settings_manager.get_settings
@@ -64,7 +71,7 @@ draupnir_service = DraupnirService(huginn_service)
 # once daily, with GFS retention and safe restore.
 draupnir_backup = BackupService(draupnir_service.path)
 draupnir_service.set_backup(draupnir_backup)
-scheduler = ConfirmationScheduler(settings_manager, steam_service, ratatoskr_service)
+scheduler = ConfirmationScheduler(settings_manager, steam_service, ratatoskr_service, deposit_service)
 # Mimir: encrypted credential vault (login/password/email/comment), sharing the
 # maFile encryption key. SteamService.get_password falls back to it by login.
 mimir_service = MimirService(steam_service.storage)
@@ -154,6 +161,8 @@ huginn_service.pulse.declare_job(
 ctx.settings_manager = settings_manager
 ctx.steam_service = steam_service
 ctx.ratatoskr_service = ratatoskr_service
+ctx.jobs = jobs
+ctx.deposit_service = deposit_service
 ctx.huginn_service = huginn_service
 ctx.draupnir_service = draupnir_service
 ctx.draupnir_backup = draupnir_backup

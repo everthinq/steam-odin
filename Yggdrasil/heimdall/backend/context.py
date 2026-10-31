@@ -12,6 +12,8 @@ class _Context:
     settings_manager = None
     steam_service = None
     ratatoskr_service = None
+    jobs = None
+    deposit_service = None
     huginn_service = None
     draupnir_service = None
     draupnir_backup = None

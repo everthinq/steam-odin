@@ -17,6 +17,7 @@ your network or the internet.
 ```bash
 git clone <this repository> steam-odin
 cd steam-odin
+make ratatoskr-secret   # once: the secret only the backend may call Ratatoskr with
 make odin        # build and start everything
 ```
 
@@ -42,7 +43,6 @@ Open **http://localhost:3000**. `make help` lists every command; the main ones:
 |---------|------|
 | http://localhost:3000 | The app |
 | http://localhost:5001 | The backend API (used by the app) |
-| http://localhost:3001 | Ratatoskr (used by the backend only) |
 | http://localhost:1242 | ArchiSteamFarm's own UI (after step 5) |
 
 ## 2. Import your accounts

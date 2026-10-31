@@ -5,14 +5,13 @@ import time
 from datetime import datetime, timezone
 
 import notifications
+from storage_deposit import CommandError
 
 logger = logging.getLogger(__name__)
 
-# Storage units hold up to 1000 items (mirrors STORAGE_CAPACITY in frontend/src/utils/transferView.js).
-STORAGE_CAPACITY = 1000
-# Drop an in-flight move from the guard set after this long so a stuck/failed
-# move gets retried on a later sweep instead of being skipped forever.
-_INFLIGHT_TTL_SEC = 15 * 60
+# An item the Game Coordinator refused is not offered again for this long (the trade
+# protection rule already keeps traded items out; this covers anything unexpected).
+_AUTO_STORE_REFUSED_RETRY_SEC = 6 * 3600
 
 # Proactive session keep-alive. Steam web access tokens live ~24h; we sweep every
 # few hours and renew any account with less than the min-TTL left, so confirmations
@@ -39,15 +38,16 @@ _CONFIRMATION_TYPE_UNDOCUMENTED_MARKET = 12
 
 
 class ConfirmationScheduler:
-    def __init__(self, settings_manager, steam_service, ratatoskr_service=None):
+    def __init__(self, settings_manager, steam_service, ratatoskr_service=None, deposit_service=None):
         self.settings_manager = settings_manager
         self.steam_service = steam_service
         self.ratatoskr_service = ratatoskr_service
+        # Auto-Store deposits through the same command as Transfer (storage_deposit.py).
+        self.deposit_service = deposit_service
         self.stop_event = threading.Event()
         self.thread = None
-        # steamid -> {item_id: queued_at_epoch} for moves already handed to Ratatoskr
-        # but not yet reflected in inventory, so we don't double-queue them.
-        self._auto_store_inflight = {}
+        # steamid -> {item_id: refused_at_epoch}: items the Game Coordinator refused.
+        self._auto_store_refused = {}
         # Last time the proactive token keep-alive sweep ran (0 = run on first loop).
         self._last_keepalive = 0.0
         # Held for the whole confirmation sweep so the "Check now" button and the
@@ -385,7 +385,7 @@ class ConfirmationScheduler:
     # Auto-store watcher: sweep watched items from inventory into storage.
     # ------------------------------------------------------------------
     def _auto_store_sweep(self, settings):
-        if not self.ratatoskr_service:
+        if not self.ratatoskr_service or not self.deposit_service:
             return
 
         watch = {
@@ -404,187 +404,90 @@ class ConfirmationScheduler:
                 logger.error(f"[AUTO-STORE] Failed for {steamid}: {e}")
 
     def _auto_store_account(self, steamid, watch):
+        """Deposit the watched items through the deposit command, Transfer's own rules:
+        refused items (trade protected, unstorable) are never sent, the fullest unit with
+        room fills first, what has no room waits for the next sweep."""
+        # A deposit still running (this sweep's or Transfer's) finishes first.
+        if self.deposit_service.busy(steamid):
+            return
         if not self._ensure_connected(steamid):
             logger.error(f"[AUTO-STORE] {steamid} not connected and could not auto-connect — skipping")
             return
-
-        items = self._fetch_inventory_items(steamid)
-        if items is None:
-            return
-
-        present_ids = {str(it.get("item_id")) for it in items}
-        now = time.time()
-
         status = self.ratatoskr_service.get_move_status(steamid) or {}
-        queue_busy = bool(status.get("running") or (status.get("pending") or 0) > 0)
-
-        # 1) Reconcile earlier moves against reality — logs only genuine deposits.
-        self._reconcile_inflight(steamid, present_ids, now, queue_busy)
-
-        # Don't pile more work onto a queue that's still draining.
-        if queue_busy:
+        if status.get("running"):
             return
 
-        inflight = self._auto_store_inflight.setdefault(steamid, {})
+        now = time.time()
+        refused = self._auto_store_refused.setdefault(steamid, {})
+        for item_id in [i for i, at in list(refused.items()) if now - at > _AUTO_STORE_REFUSED_RETRY_SEC]:
+            refused.pop(item_id, None)
 
-        # 2) Storable, watched items not already in flight.
-        id_to_name = {str(it.get("item_id")): it.get("item_name") for it in items}
-        loose_ids = [
-            str(it.get("item_id"))
-            for it in items
-            if self._is_storable(it)
-            and str(it.get("item_name", "")).strip().lower() in watch
-            and str(it.get("item_id")) not in inflight
-        ]
-        if not loose_ids:
+        try:
+            # The inventory can come back empty right after a connect: asked again up to 3 times.
+            plan = self.deposit_service.plan_deposit(
+                steamid, names=watch, exclude=set(refused), allow_overflow=True, retry_empty=3)
+        except CommandError as e:
+            logger.error(f"[AUTO-STORE] {steamid}: {e.message}")
             return
-
-        caskets = (self.ratatoskr_service.get_caskets(steamid) or {}).get("caskets") or []
-        plan, unplaced = self._plan_casket_moves(loose_ids, caskets)
-        if not plan:
-            logger.info(f"[AUTO-STORE] {steamid}: no storage room for {len(loose_ids)} item(s)")
+        if not plan["moves"]:
+            if plan["overflow"]:
+                logger.info(f"[AUTO-STORE] {steamid}: no storage room for {plan['overflow']} item(s)")
             return
-
-        for casket_id, batch_ids in plan:
-            res = self.ratatoskr_service.move_batch(
-                steamid, batch_ids, "inventory", "casket", casket_id
-            )
-            if res.get("error"):
-                logger.error(f"[AUTO-STORE] {steamid}: move to {casket_id} failed: {res.get('error')}")
-                continue
-
-            casket_name = self._casket_label(caskets, casket_id)
-            for iid in batch_ids:
-                inflight[iid] = {
-                    "casket_id": str(casket_id),
-                    "casket_name": casket_name,
-                    "item_name": id_to_name.get(iid),
-                    "issued_at": now,
-                }
-            logger.info(
-                f"[AUTO-STORE] {steamid}: issued {len(batch_ids)} move(s) → "
-                f"'{casket_name}' ({casket_id}); confirming once they leave inventory"
-            )
-
-        if unplaced:
-            logger.info(f"[AUTO-STORE] {steamid}: {len(unplaced)} item(s) had no room left")
-
-    def _reconcile_inflight(self, steamid, present_ids, now, queue_busy):
-        """Confirm previously-issued moves against the live inventory.
-
-        A move is only real once the item has left the loose inventory (it's now
-        inside a storage unit) — that's when we log it. Fire-and-forget GC adds
-        give no acknowledgement, so this is the only trustworthy signal. Items
-        that linger after the queue has drained were refused by the GC (trade-protected
-        items are already skipped by `_is_storable`, so this is rare: a unit filled meanwhile,
-        a lost session) and are dropped so they aren't counted or stuck.
-        """
-        inflight = self._auto_store_inflight.setdefault(steamid, {})
-        if not inflight:
+        try:
+            self.deposit_service.execute(plan["plan_id"], on_finish=self._auto_store_finished)
+        except CommandError as e:
+            # A Transfer move started or finished on this account just now (busy, plan_stale).
+            logger.info(f"[AUTO-STORE] {steamid}: not now ({e.message}); next sweep")
             return
+        units = ", ".join(f"{b['count']} → '{b['casket_name']}'" for b in plan["batches"])
+        logger.info(f"[AUTO-STORE] {steamid}: storing {plan['moves']} item(s): {units}")
+        if plan["overflow"]:
+            logger.info(f"[AUTO-STORE] {steamid}: {plan['overflow']} item(s) had no room left")
 
-        confirmed = {}  # casket_id -> {"name": str, "count": int, "items": {mhn: qty}}
-        for iid, meta in list(inflight.items()):
-            if iid not in present_ids:
-                cid = meta.get("casket_id")
-                slot = confirmed.setdefault(
-                    cid, {"name": meta.get("casket_name"), "count": 0, "items": {}}
-                )
-                slot["count"] += 1
-                name = meta.get("item_name") or "Unknown item"
-                slot["items"][name] = slot["items"].get(name, 0) + 1
-                inflight.pop(iid, None)
-            elif not queue_busy and (now - meta.get("issued_at", now)) > _INFLIGHT_TTL_SEC:
-                logger.info(f"[AUTO-STORE] {steamid}: item {iid} never moved (refused by the Game Coordinator) — releasing guard")
-                inflight.pop(iid, None)
+    def _auto_store_finished(self, plan, job):
+        """Record what the Game Coordinator confirmed; remember what it refused.
 
-        if not confirmed:
-            return
-
+        Runs before the job reads as finished, so no sweep re-plans this account meanwhile. Only
+        a real refusal (the Game Coordinator never answered) is remembered; an item that was never
+        sent (Ratatoskr down, session lost) or is unconfirmed is offered again at the next sweep."""
+        steamid = plan["steamid"]
+        result = (job or {}).get("result") or {}
+        if (job or {}).get("error"):
+            logger.error(f"[AUTO-STORE] {steamid}: deposit failed: {job['error']}")
         account_name = self._account_name(steamid)
-        for cid, slot in confirmed.items():
-            breakdown = ", ".join(f"{qty}× {nm}" for nm, qty in slot["items"].items())
-            logger.info(f"[AUTO-STORE] {steamid}: confirmed {slot['count']} stored in '{slot['name']}' ({cid}): {breakdown}")
+        for batch in result.get("batches") or []:
+            if not batch.get("moved"):
+                continue
+            items = {}
+            for item_id in batch.get("moved_ids") or []:
+                name = plan["item_names"].get(item_id) or "Unknown item"
+                items[name] = items.get(name, 0) + 1
+            breakdown = ", ".join(f"{qty}× {name}" for name, qty in items.items())
+            logger.info(f"[AUTO-STORE] {steamid}: confirmed {batch['moved']} stored in "
+                        f"'{batch['casket_name']}' ({batch['casket_id']}): {breakdown}")
             self.settings_manager.append_auto_store_history({
                 "ts": datetime.now(timezone.utc).isoformat(),
                 "steamid": steamid,
                 "account_name": account_name,
-                "count": slot["count"],
-                "casket_id": str(cid),
-                "casket_name": slot["name"],
-                "items": slot["items"],
+                "count": batch["moved"],
+                "casket_id": str(batch["casket_id"]),
+                "casket_name": batch["casket_name"],
+                "items": items,
             })
-
-    @staticmethod
-    def _is_storable(it):
-        """Whether a loose inventory item can actually be deposited into storage now.
-
-        Skips storage units themselves, items the GC marks unmovable (medals,
-        base weapons, untradable collectibles), and — the key distinction —
-        items received via a trade. A traded item carries econ attribute 312
-        (surfaced as `trade_locked`) and the GC refuses to store it. A plain
-        market-purchase cooldown (`trade_unlock`, attribute 75) does NOT block
-        storage, so those items are moved normally even mid-cooldown.
-        """
-        if it.get("def_index") == 1201:
-            return False
-        if not it.get("item_moveable", True):
-            return False
-        if it.get("trade_locked"):
-            return False
-        return True
-
-    @staticmethod
-    def _plan_casket_moves(item_ids, caskets):
-        """Split the items over the Storage Units as if they were one storage: the fullest unit
-        with room fills first, then the next fullest, full units skipped.
-
-        The same rule as the Transfer page's To mode (`planBulkDeposit`, utils/transferView.js),
-        which Ivan chose: a sweep touches as few units as it can and the emptier ones stay free.
-        Each unit holds STORAGE_CAPACITY items; the Game Coordinator moves an item into one
-        specific unit, so the plan is one batch per unit.
-
-        Returns (plan, unplaced): plan is a list of (casket_id, [item_ids]); unplaced are the
-        items no unit has room for.
-        """
-        def free(c):
-            return max(0, STORAGE_CAPACITY - int(c.get("item_storage_total") or 0))
-
-        units = sorted((c for c in caskets if free(c) > 0), key=free)
-        plan = []
-        remaining = list(item_ids)
-        for c in units:
-            if not remaining:
-                break
-            take = min(free(c), len(remaining))
-            plan.append((c.get("item_id"), remaining[:take]))
-            remaining = remaining[take:]
-        return plan, remaining
-
-    @staticmethod
-    def _casket_label(caskets, casket_id):
-        for c in caskets:
-            if str(c.get("item_id")) == str(casket_id):
-                return c.get("item_customname") or c.get("item_name") or "Storage Unit"
-        return "Storage Unit"
+        refused = self._auto_store_refused.setdefault(steamid, {})
+        for item in result.get("failed_items") or []:
+            name = item.get("item_name") or item["item_id"]
+            if item.get("code") == "refused":
+                refused[item["item_id"]] = time.time()
+                logger.info(f"[AUTO-STORE] {steamid}: {name} was refused by the Game Coordinator — "
+                            f"not offered again for 6 hours")
+            else:
+                logger.info(f"[AUTO-STORE] {steamid}: {name} did not move ({item.get('code')}) — "
+                            f"offered again at the next sweep")
 
     def _account_name(self, steamid):
         data = self.steam_service.get_account(steamid)
         return (data or {}).get("account_name", "Unknown")
-
-    def _fetch_inventory_items(self, steamid, retries=3):
-        """Fetch inventory, retrying briefly since it can lag a fresh GC connect."""
-        for attempt in range(retries):
-            resp = self.ratatoskr_service.get_inventory(steamid) or {}
-            if resp.get("error"):
-                logger.error(f"[AUTO-STORE] {steamid}: inventory fetch error: {resp.get('error')}")
-                return None
-            items = resp.get("items")
-            if items:
-                return items
-            if attempt < retries - 1:
-                time.sleep(1)
-        return []
 
     def _ensure_connected(self, steamid):
         """Return True if the account has a live Ratatoskr GC session, auto-connecting if not.

@@ -51,6 +51,7 @@ import requests
 
 import community_pacer
 from jsonio import atomic_write_json, read_json
+from ratatoskr_service import items_moving
 from store_purchase_service import CURRENCY_CODES, to_usd
 
 log = logging.getLogger(__name__)
@@ -534,8 +535,7 @@ class StorageShopService:
 
     def _close(self, steamid):
         """Log out of Ratatoskr, unless a move started on the account meanwhile."""
-        moves = self.ratatoskr.get_move_status(steamid) or {}
-        if moves.get('running') or moves.get('pending'):
+        if items_moving(self.ratatoskr, steamid):
             log.info('[STORAGE-SHOP] %s is moving items: Ratatoskr session kept', steamid)
             return
         try:
@@ -902,8 +902,7 @@ class StorageShopService:
                     if not opened:
                         raise ShopError('the delivery timed out on a Ratatoskr session the shop did not open: '
                                         'disconnect the account in Ratatoskr, then press Deliver again')
-                    moves = self.ratatoskr.get_move_status(steamid) or {}
-                    if moves.get('running') or moves.get('pending'):
+                    if items_moving(self.ratatoskr, steamid):
                         raise ShopError('the delivery timed out while items are moving on the account: '
                                         'press Deliver again when the move is done')
                     self.ratatoskr.disconnect(steamid)

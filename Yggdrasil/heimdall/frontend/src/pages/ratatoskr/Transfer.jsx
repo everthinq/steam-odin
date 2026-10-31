@@ -13,11 +13,9 @@ import {
     Minus,
     ChevronDown,
     Pencil,
-    X,
     Layers,
 } from 'lucide-react';
 
-const CASKET_NAME_MAX_LENGTH = 20;
 import storageUnitImage from '../../assets/ratatoskr/storage-unit.png';
 import TransferQueueModal from '../../components/TransferQueueModal';
 import TransferProgressBar from '../../components/TransferProgressBar';
@@ -36,7 +34,6 @@ import {
     formatTradeHoldLabel,
     formatTradeUnlock,
     itemsHaveTradeHold,
-    isItemTradeProtected,
     canGoIntoStorageUnit,
 } from '../../utils/transferItems';
 import UnstorableSwitch from '../../components/transfer/UnstorableSwitch';
@@ -51,11 +48,13 @@ import {
     getItemCollection,
     transferRowSurfaceClass,
     STORAGE_CAPACITY,
-    storageFreeSpace,
-    planBulkDeposit,
 } from '../../utils/transferView';
 import StorageSpacePanel from '../../components/transfer/StorageSpacePanel';
 import { readJson } from '../../utils/readJson';
+import { postCommand, jobProgress, followJob, watchJobUntilDone } from '../../utils/moveCommands';
+import { useMoveDelay } from '../../utils/useMoveDelay';
+import { useTransferSelection } from '../../utils/useTransferSelection';
+import RenameCasketDialog from '../../components/transfer/RenameCasketDialog';
 import { useNowSeconds } from '../../utils/priceAge';
 
 const TRANSFER_HEADER_BTN =
@@ -66,6 +65,8 @@ const RatatoskrTransfer = () => {
 
     const [inventory, setInventory] = useState([]);
     const [caskets, setCaskets] = useState([]);
+    // {free, units, units_with_room, stored, capacity} from the backend.
+    const [storage, setStorage] = useState(null);
     const [casketItems, setCasketItems] = useState([]);
     const [selectedCasketIds, setSelectedCasketIds] = useState([]);
     const [allStorageSelected, setAllStorageSelected] = useState(false);
@@ -82,8 +83,7 @@ const RatatoskrTransfer = () => {
     const pricingSampleMoveRef = useRef(null);
     const [moveProgress, setMoveProgress] = useState(null);
     const [moveError, setMoveError] = useState(null);
-    const [moveDelayMs, setMoveDelayMs] = useState(400);
-    const [moveDelayBounds, setMoveDelayBounds] = useState({ min: 100, max: 5000 });
+    const { moveDelayMs, setMoveDelayMs, moveDelayBounds, saveMoveDelay } = useMoveDelay(steamid);
     const [qtySortDir, setQtySortDir] = useState(null); // null = by name, 'asc' | 'desc' = by qty
     const [expandedFloatLines, setExpandedFloatLines] = useState(() => new Set());
     const [queueOpen, setQueueOpen] = useState(false);
@@ -91,9 +91,6 @@ const RatatoskrTransfer = () => {
     const [includedCollections, setIncludedCollections] = useState([]);
     const [collectionFilterSearch, setCollectionFilterSearch] = useState('');
     const [renamingCasket, setRenamingCasket] = useState(null);
-    const [renameDraft, setRenameDraft] = useState('');
-    const [renameLoading, setRenameLoading] = useState(false);
-    const [renameError, setRenameError] = useState(null);
     const [allCasketItems, setAllCasketItems] = useState([]);
     const [allCasketLoading, setAllCasketLoading] = useState(false);
     const [allCasketLoaded, setAllCasketLoaded] = useState(false);
@@ -121,43 +118,10 @@ const RatatoskrTransfer = () => {
         return () => { mountedRef.current = false; };
     }, []);
 
-    const fetchMoveDelay = async () => {
-        try {
-            const res = await fetch('/api/ratatoskr/config/move-delay');
-            const data = await readJson(res);
-            if (res.ok && data.delayMs != null) {
-                setMoveDelayMs(data.delayMs);
-                setMoveDelayBounds({ min: data.min ?? 100, max: data.max ?? 5000 });
-            }
-        } catch (err) {
-            console.error(err);
-        }
-    };
-
-    const saveMoveDelay = async (value) => {
-        const parsed = parseInt(value, 10);
-        if (Number.isNaN(parsed)) return;
-        const clamped = Math.min(moveDelayBounds.max, Math.max(moveDelayBounds.min, parsed));
-        try {
-            const res = await fetch('/api/ratatoskr/config/move-delay', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ delayMs: clamped }),
-            });
-            const data = await readJson(res);
-            if (res.ok && data.delayMs != null) {
-                setMoveDelayMs(data.delayMs);
-            }
-        } catch (err) {
-            console.error(err);
-        }
-    };
-
     useEffect(() => {
-        expectedCasketCountsRef.current = {};
+        setStorage(null);   // never show the previous account's free space
         fetchInventory();
         fetchCaskets();
-        fetchMoveDelay();
     }, [steamid]);
 
     useEffect(() => {
@@ -229,90 +193,21 @@ const RatatoskrTransfer = () => {
         }
     };
 
-    // Counts this page just deposited into each unit ({casketId: count}). The Game Coordinator's
-    // own count can lag a few seconds behind a move; until it catches up the page plans with the
-    // higher number, so a quick second deposit never over-fills a unit. Cleared by any withdrawal.
-    const expectedCasketCountsRef = useRef({});
-
     const fetchCaskets = async () => {
         try {
             const res = await fetch(`/api/ratatoskr/caskets/${steamid}`);
             const data = await readJson(res).catch(() => ({}));
             if (!res.ok || data.error) throw new Error(data.error || `HTTP ${res.status}`);
-            if (data.caskets) {
-                const expected = expectedCasketCountsRef.current;
-                setCaskets(data.caskets.map((c) => {
-                    const want = expected[c.item_id];
-                    if (want === undefined) return c;
-                    if (getCasketCount(c) >= want) {
-                        delete expected[c.item_id];   // the Game Coordinator caught up
-                        return c;
-                    }
-                    return { ...c, item_storage_total: want };
-                }));
-            }
+            if (data.caskets) setCaskets(data.caskets);
+            // The free space comes from the backend: it also counts what a move just deposited
+            // while the Game Coordinator's own unit counts still lag behind.
+            const storageRes = await fetch(`/api/ratatoskr/storage/${steamid}`);
+            const storageData = await readJson(storageRes).catch(() => ({}));
+            if (storageRes.ok && !storageData.error) setStorage(storageData);
             reportLoadError('caskets', null);
         } catch (err) {
             console.error(err);
             reportLoadError('caskets', `Could not load the storage units: ${err.message}`);
-        }
-    };
-
-    const openRenameCasket = (casket) => {
-        setRenamingCasket(casket);
-        setRenameDraft(casket.item_customname || '');
-        setRenameError(null);
-    };
-
-    const closeRenameCasket = () => {
-        if (renameLoading) return;
-        setRenamingCasket(null);
-        setRenameDraft('');
-        setRenameError(null);
-    };
-
-    const submitRenameCasket = async () => {
-        if (!renamingCasket || renameLoading) return;
-        const trimmed = renameDraft.trim();
-        if (trimmed.length > CASKET_NAME_MAX_LENGTH) {
-            setRenameError(`Name must be ${CASKET_NAME_MAX_LENGTH} characters or less`);
-            return;
-        }
-
-        setRenameLoading(true);
-        setRenameError(null);
-
-        try {
-            const res = await fetch('/api/ratatoskr/casket/rename', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    steamID: steamid,
-                    casketID: renamingCasket.item_id,
-                    name: trimmed,
-                }),
-            });
-            const data = await readJson(res);
-            if (!res.ok || data.error) {
-                throw new Error(data.error || 'Failed to rename storage unit');
-            }
-
-            const updated = data.casket || {
-                ...renamingCasket,
-                item_customname: data.custom_name || trimmed || undefined,
-            };
-
-            setCaskets((prev) =>
-                prev.map((c) => (c.item_id === updated.item_id ? { ...c, ...updated } : c))
-            );
-            setRenamingCasket(null);
-            setRenameDraft('');
-            setRenameError(null);
-        } catch (err) {
-            console.error(err);
-            setRenameError(err.message || 'Rename failed');
-        } finally {
-            setRenameLoading(false);
         }
     };
 
@@ -469,151 +364,29 @@ const RatatoskrTransfer = () => {
         }
     };
 
-    // Waits in the background until Ratatoskr reports the move queue idle, so
-    // the Move button stays disabled while a move may still be running even
-    // after the main status poll gave up. Then clears the progress bar.
-    const watchUntilMoveIdle = () => {
-        const check = async () => {
-            if (!mountedRef.current) return;
-            try {
-                const res = await fetch(`/api/ratatoskr/move/status/${steamid}`);
-                const data = await readJson(res);
-                if (res.ok && !data.error) {
-                    moveRunningRef.current = !!data.running;
-                    if (!data.running) {
-                        setMoveProgress(null);
-                        return;
-                    }
-                    setMoveProgress(data);
-                }
-            } catch (err) {
-                console.error('Move status check failed', err);
-            }
-            setTimeout(check, 5000);
-        };
-        setTimeout(check, 5000);
+    // Moves are backend commands (storage_deposit.py, utils/moveCommands.js): plan → execute once →
+    // a job this page follows. The backend decides which unit each item goes into and what a
+    // Storage Unit refuses; closing the tab never stops a move.
+    const showJob = (job) => {
+        moveRunningRef.current = !!job.running;
+        setMoveProgress(jobProgress(job));
     };
 
-    const MOVE_STATUS_RETRIES = 4;   // failed polls in a row before giving up (backoff 1s, 2s, 4s, 8s)
-
-    const pollMoveStatus = () =>
-        new Promise((resolve, reject) => {
-            let failures = 0;
-            const poll = async () => {
-                if (!mountedRef.current) {
-                    reject(Object.assign(new Error('Page closed'), { cancelled: true }));
-                    return;
-                }
-                try {
-                    const res = await fetch(`/api/ratatoskr/move/status/${steamid}`);
-                    const data = await readJson(res);
-                    if (!res.ok || data.error) {
-                        throw new Error(data.error || `Move status HTTP ${res.status}`);
-                    }
-                    failures = 0;
-                    moveRunningRef.current = !!data.running;
-                    showMoveProgress(data);
-                    if (!data.running && data.pending === 0) {
-                        resolve(data);
-                        return;
-                    }
-                    setTimeout(poll, 500);
-                } catch (err) {
-                    failures += 1;
-                    if (failures > MOVE_STATUS_RETRIES) {
-                        reject(new Error(`Lost track of the move (${err.message}). It may still be running — the Move button re-enables once Ratatoskr reports it finished.`));
-                        return;
-                    }
-                    console.warn(`Move status poll failed (attempt ${failures}), retrying`, err);
-                    setTimeout(poll, 1000 * 2 ** (failures - 1));
-                }
-            };
-            poll();
+    // Keeps following a move job after the main poll gave up, so the Move button stays disabled
+    // while the move may still be running. Then clears the progress bar.
+    const watchUntilMoveIdle = (jobId) =>
+        watchJobUntilDone(jobId, {
+            isActive: () => mountedRef.current,
+            onUpdate: (job) => {
+                moveRunningRef.current = !!job.running;
+                setMoveProgress(job.running ? jobProgress(job) : null);
+            },
         });
-
-    const queueBatchMove = async (itemIDs, casketID, source, target) => {
-        const res = await fetch('/api/ratatoskr/move/batch', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                steamID: steamid,
-                itemIDs,
-                casketID,
-                source,
-                target,
-            }),
-        });
-        const data = await readJson(res);
-        if (!res.ok || data.error) {
-            throw new Error(data.error || 'Failed to queue moves');
-        }
-        showMoveProgress(data);
-        return pollMoveStatus();
-    };
-
-    // A move split into several batches (one per Storage Unit) shows one progress bar for the
-    // whole move: Ratatoskr counts each batch from zero, so the earlier batches are added on.
-    const moveBatchOffsetRef = useRef(null);
-    const showMoveProgress = (data) => {
-        const offset = moveBatchOffsetRef.current;
-        if (!offset) {
-            setMoveProgress(data);
-            return;
-        }
-        const done = offset.done + (data.done || 0);
-        const failed = offset.failed + (data.failed || 0);
-        setMoveProgress({
-            ...data,
-            running: !!data.running || offset.batchesLeft > 0,
-            done,
-            failed,
-            processed: done + failed,
-            total: offset.total,
-            pending: Math.max(0, offset.total - done - failed),
-        });
-    };
-
-    /** Queues the batches one after another; returns the summed `{done, failed}`. */
-    const runMoveBatches = async (batches, source, target) => {
-        const total = batches.reduce((sum, batch) => sum + batch.itemIDs.length, 0);
-        let done = 0;
-        let failed = 0;
-        try {
-            for (let i = 0; i < batches.length; i++) {
-                moveBatchOffsetRef.current = { done, failed, total, batchesLeft: batches.length - i - 1 };
-                const status = await queueBatchMove(batches[i].itemIDs, batches[i].casketID, source, target);
-                done += status.done || 0;
-                failed += status.failed || 0;
-            }
-        } finally {
-            moveBatchOffsetRef.current = null;
-        }
-        return { done, failed };
-    };
 
     const handleMove = async () => {
         if (!hasStorageSelection || !transferMode || moveProgress?.running) return;
-        // Never send the Game Coordinator an item a Storage Unit cannot take: one it can never hold,
-        // or one under trade protection (received in a trade; taken only once the protection ends).
-        // A plain trade hold (a Steam Market purchase) can be stored.
-        const unstorableIds = new Set(
-            inventory
-                .filter((i) => !canGoIntoStorageUnit(i) || isItemTradeProtected(i))
-                .map((i) => i.item_id)
-        );
-        const itemsToMove = transferMode === 'to'
-            ? selectedInvItems.filter((id) => !unstorableIds.has(id))
-            : selectedCasketItems;
+        const itemsToMove = transferMode === 'to' ? selectedInvItems : selectedCasketItems;
         if (itemsToMove.length === 0) return;
-        // To mode: spread over the Storage Units, the fullest with room first; never more than fits.
-        const deposit = transferMode === 'to' ? planBulkDeposit(itemsToMove, caskets) : null;
-        if (deposit && deposit.overflow > 0) {
-            setMoveError(`${deposit.overflow} item${deposit.overflow === 1 ? '' : 's'} more than your Storage Units can hold. Remove some or buy Storage Units.`);
-            return;
-        }
-
-        const source = transferMode === 'to' ? 'inventory' : 'casket';
-        const target = transferMode === 'to' ? 'casket' : 'inventory';
 
         setLoading(true);
         setMoveError(null);
@@ -622,12 +395,14 @@ const RatatoskrTransfer = () => {
         setPricingSampleQueued(false);
         setMoveProgress({ running: true, done: 0, failed: 0, total: itemsToMove.length, pending: itemsToMove.length });
         moveRunningRef.current = true;
+        let jobId = null;
 
         try {
-            let totalDone = 0;
-            let totalFailed = 0;
-
-            if (transferMode === 'from') {
+            let plan;
+            if (transferMode === 'to') {
+                // The backend leaves out what a Storage Unit refuses and fills the fullest unit with room first.
+                plan = await postCommand('/api/ratatoskr/deposit/plan', { steamid, item_ids: itemsToMove });
+            } else {
                 const pool =
                     allCasketItems.length > 0
                         ? allCasketItems
@@ -638,33 +413,52 @@ const RatatoskrTransfer = () => {
                                   ? casketDisplayName(primarySelectedCasket)
                                   : ''
                           );
-                expectedCasketCountsRef.current = {};   // a withdrawal lowers counts: trust the Game Coordinator again
                 const byCasket = groupItemsByCasket(itemsToMove, pool);
-                const status = await runMoveBatches(
-                    Array.from(byCasket, ([casketID, itemIDs]) => ({ casketID, itemIDs })),
-                    source,
-                    target
-                );
-                totalDone = status.done;
-                totalFailed = status.failed;
-            } else {
-                for (const batch of deposit.batches) {
-                    expectedCasketCountsRef.current[batch.casket.item_id] =
-                        getCasketCount(batch.casket) + batch.itemIds.length;
-                }
-                const status = await runMoveBatches(
-                    deposit.batches.map((batch) => ({ casketID: batch.casket.item_id, itemIDs: batch.itemIds })),
-                    source,
-                    target
-                );
-                totalDone = status.done;
-                totalFailed = status.failed;
+                plan = await postCommand('/api/ratatoskr/withdraw/plan', {
+                    steamid,
+                    items: Array.from(byCasket, ([casketId, ids]) =>
+                        ids.map((itemId) => ({ item_id: itemId, casket_id: casketId }))
+                    ).flat(),
+                });
             }
+            if (!plan.executable) {
+                const firstRefusal = plan.refused?.[0]?.reason;
+                throw new Error(
+                    plan.overflow > 0
+                        ? `${plan.overflow} item${plan.overflow === 1 ? '' : 's'} more than your Storage Units can hold. Remove some or buy Storage Units.`
+                        : firstRefusal || 'Nothing in the selection can be moved'
+                );
+            }
+            const job = await postCommand(`/api/ratatoskr/plans/${plan.plan_id}/execute`);
+            jobId = job.id;
+            const finished = await followJob(job.id, { onProgress: showJob, isActive: () => mountedRef.current });
+            if (finished.error) {
+                // Stopped partway: show where the items really are, so nothing is sent twice.
+                setSelectedInvItems([]);
+                setSelectedCasketItems([]);
+                await refreshAfterMove();
+                throw new Error(`The move stopped partway (${finished.error}); ${finished.done || 0} moved before that.`);
+            }
+            const totalDone = finished.done || 0;
+            const gameFailed = finished.result?.failed_items || [];
+            const totalFailed = gameFailed.length + (plan.refused?.length || 0);
+            const whereTo = (finished.result?.batches || [])
+                .filter((batch) => batch.moved > 0)
+                .map((batch) => `${batch.casket_name} · ${batch.moved}`)
+                .join(', ');
 
             const sampleItems = pricingSampleMoveRef.current;
 
             if (totalFailed > 0) {
-                setMoveError(`${totalDone} moved, ${totalFailed} failed. Check console for details.`);
+                const listNames = (items) => {
+                    const names = items.map((item) => item.item_name || item.item_id);
+                    return names.slice(0, 3).join(', ') + (names.length > 3 ? ` and ${names.length - 3} more` : '');
+                };
+                const parts = [`${totalDone} moved${whereTo && transferMode === 'to' ? ` (${whereTo})` : ''}`];
+                // Left out by the plan (the Game Coordinator never saw them) vs sent but not moved.
+                if (plan.refused?.length) parts.push(`${plan.refused.length} left out (${plan.refused[0].reason}): ${listNames(plan.refused)}`);
+                if (gameFailed.length) parts.push(`${gameFailed.length} did not move (refused by the game or not sent): ${listNames(gameFailed)}`);
+                setMoveError(`${parts.join('; ')}.`);
                 pricingSampleMoveRef.current = null;
             } else {
                 if (sampleItems?.length) {
@@ -674,7 +468,11 @@ const RatatoskrTransfer = () => {
                     );
                     pricingSampleMoveRef.current = null;
                 } else {
-                    setSuccessMsg(`Moved ${totalDone} items successfully!`);
+                    setSuccessMsg(
+                        transferMode === 'to' && whereTo
+                            ? `Stored ${totalDone} item${totalDone === 1 ? '' : 's'}: ${whereTo}`
+                            : `Moved ${totalDone} item${totalDone === 1 ? '' : 's'}`
+                    );
                     setTimeout(() => setSuccessMsg(null), 5000);
                 }
             }
@@ -686,17 +484,18 @@ const RatatoskrTransfer = () => {
             await new Promise((r) => setTimeout(r, 1500));
             await refreshAfterMove();
         } catch (err) {
-            if (err.cancelled) return;   // page closed mid-move: nothing to update
+            if (err.cancelled) return;   // page closed mid-move: the backend carries on
             console.error(err);
             setMoveError(err.message || 'Transfer failed');
+            if (!err.jobId) moveRunningRef.current = false;
+            if (err.jobLost) refreshAfterMove();   // show where the items really are
         } finally {
             if (mountedRef.current) {
                 setLoading(false);
                 if (moveRunningRef.current) {
-                    // The last status still said "running" (the poll gave up, or
-                    // queueing a later batch failed): keep the Move button
-                    // disabled until Ratatoskr says the queue is idle.
-                    watchUntilMoveIdle();
+                    // The last status still said "running" (the poll gave up): keep the
+                    // Move button disabled until the backend says the move job finished.
+                    watchUntilMoveIdle(jobId);
                 } else {
                     setTimeout(() => setMoveProgress(null), 2000);
                 }
@@ -848,86 +647,22 @@ const RatatoskrTransfer = () => {
     const selectedIds = transferMode === 'to' ? selectedInvItems : selectedCasketItems;
     const setSelectedIds = transferMode === 'to' ? setSelectedInvItems : setSelectedCasketItems;
 
-    // Membership set so the per-row selected-qty scans are O(group), not
-    // O(group × selectedCount) via Array.includes on every render.
-    const selectedIdsSet = useMemo(() => new Set(selectedIds), [selectedIds]);
-
-    const getIdsSelectedQty = (itemIds) =>
-        itemIds.filter((id) => selectedIdsSet.has(id)).length;
-
-    const getGroupSelectedQty = (group) => getIdsSelectedQty(group.item_ids);
-
-    /**
-     * Full qty in both directions — deposit-all to storage, withdraw-all from storage — except a
-     * line of items a Storage Unit cannot hold: shown when asked for, never selectable.
-     */
-    // To mode: a line under trade protection (received in a trade) is shown but not selectable — a
-    // Storage Unit takes it only once the protection ends (Select all skips it too). A plain trade
-    // hold (a Steam Market purchase) does not block a Storage Unit.
-    const isHeldForDeposit = (group) => transferMode === 'to' && !!group.tradeProtected;
-
-    const getMaxSelectableQty = (group) =>
-        group.unstorable || isHeldForDeposit(group) ? 0 : group.qty;
-
-    const getVariantMaxSelectableQty = (lineGroup, variant) =>
-        lineGroup.unstorable || isHeldForDeposit(lineGroup) || isHeldForDeposit(variant) ? 0 : variant.qty;
-
-    /** Select button tooltip; says why a line cannot be selected. */
-    const selectTitle = (group, qty, what) => {
-        if (group.unstorable) return "A Storage Unit can't hold this item";
-        if (isHeldForDeposit(group)) {
-            return `Trade protected (${formatTradeHoldLabel(group.items)} left, received in a trade) — a Storage Unit takes it once the protection ends`;
-        }
-        return `Select all ${qty}${what}`;
-    };
-
-    const setIdsSelectedQty = (itemIds, qty) => {
-        const n = Math.max(0, Math.min(itemIds.length, Number.isFinite(qty) ? qty : 0));
-        setSelectedIds((prev) => {
-            const without = prev.filter((id) => !itemIds.includes(id));
-            return [...without, ...itemIds.slice(0, n)];
-        });
-    };
-
-    const setGroupSelectedQty = (group, qty) => {
-        const cap = getMaxSelectableQty(group);
-        setIdsSelectedQty(group.item_ids, Math.min(cap, qty));
-    };
-
-    const setFloatVariantSelectedQty = (lineGroup, variant, qty) => {
-        const cap = getVariantMaxSelectableQty(lineGroup, variant);
-        setIdsSelectedQty(variant.item_ids, Math.min(cap, qty));
-    };
-
-    const toggleGroupCheckbox = (group) => {
-        const current = getGroupSelectedQty(group);
-        const target = getMaxSelectableQty(group);
-        if (target === 0) return;
-        setGroupSelectedQty(group, current >= target ? 0 : target);
-    };
-
-    const toggleFloatVariantCheckbox = (lineGroup, variant) => {
-        const current = getIdsSelectedQty(variant.item_ids);
-        const target = getVariantMaxSelectableQty(lineGroup, variant);
-        if (target === 0) return;
-        setFloatVariantSelectedQty(lineGroup, variant, current >= target ? 0 : target);
-    };
-
-    const groupSelectionState = (group) => {
-        const selectedCount = getGroupSelectedQty(group);
-        const target = getMaxSelectableQty(group);
-        if (selectedCount === 0 || target === 0) return 'none';
-        if (selectedCount >= target) return 'all';
-        return 'partial';
-    };
-
-    const floatVariantSelectionState = (lineGroup, variant) => {
-        const selectedCount = getIdsSelectedQty(variant.item_ids);
-        const target = getVariantMaxSelectableQty(lineGroup, variant);
-        if (selectedCount === 0 || target === 0) return 'none';
-        if (selectedCount >= target) return 'all';
-        return 'partial';
-    };
+    const {
+        selectedIdsSet,
+        getIdsSelectedQty,
+        getGroupSelectedQty,
+        isHeldForDeposit,
+        getMaxSelectableQty,
+        getVariantMaxSelectableQty,
+        selectTitle,
+        setGroupSelectedQty,
+        setFloatVariantSelectedQty,
+        toggleGroupCheckbox,
+        toggleFloatVariantCheckbox,
+        groupSelectionState,
+        floatVariantSelectionState,
+        selectAllLines,
+    } = useTransferSelection({ selectedIds, setSelectedIds, transferMode });
 
     const toggleFloatLineExpanded = (lineKey) => {
         setExpandedFloatLines((prev) => {
@@ -939,16 +674,7 @@ const RatatoskrTransfer = () => {
     };
 
     /** Select every visible skin line at full quantity in one action. */
-    const selectAllVisibleItems = () => {
-        const ids = [];
-        for (const lineGroup of sortedGroupedItems) {
-            const cap = getMaxSelectableQty(lineGroup);
-            if (cap > 0) {
-                ids.push(...lineGroup.item_ids.slice(0, cap));
-            }
-        }
-        setSelectedIds(ids);
-    };
+    const selectAllVisibleItems = () => selectAllLines(sortedGroupedItems);
 
     const selectOnePerSkinForArbitrage = async () => {
         setMoveError(null);
@@ -1037,27 +763,12 @@ const RatatoskrTransfer = () => {
             });
     }, [sortedGroupedItems, selectedIds, selectedIdsSet, allCasketItems, casketItems]);
 
-    // To mode: the Storage Units as one storage.
-    const storageFree = useMemo(() => storageFreeSpace(caskets), [caskets]);
-    const unitsWithRoom = useMemo(
-        () => caskets.filter((c) => getCasketCount(c) < STORAGE_CAPACITY).length,
-        [caskets]
-    );
-    const depositPlan = useMemo(
-        () => (transferMode === 'to' ? planBulkDeposit(selectedInvItems, caskets) : null),
-        [transferMode, selectedInvItems, caskets]
-    );
-    const depositOverflow = depositPlan?.overflow ?? 0;
-    // Where the queued items go, fullest unit first: "Temp6 · 7, Armory0 · 32 and 2 more".
-    const depositDestination = useMemo(() => {
-        if (!depositPlan || depositPlan.batches.length === 0) return null;
-        const shown = depositPlan.batches
-            .slice(0, 3)
-            .map((batch) => `${casketDisplayName(batch.casket)} · ${batch.itemIds.length}`)
-            .join(', ');
-        const more = depositPlan.batches.length - 3;
-        return more > 0 ? `${shown} and ${more} more` : shown;
-    }, [depositPlan]);
+    // To mode: the Storage Units as one storage, as the backend counts it (GET /api/ratatoskr/storage).
+    // Which unit each item goes into is decided only when Move is pressed (the deposit plan).
+    const storageFree = storage?.free ?? 0;
+    const unitsWithRoom = storage?.units_with_room ?? 0;
+    const depositOverflow =
+        transferMode === 'to' && storage ? Math.max(0, selectedInvItems.length - storage.free) : 0;
 
     const listLoading =
         loading ||
@@ -1576,7 +1287,7 @@ const RatatoskrTransfer = () => {
                                 onClose={() => setQueueOpen(false)}
                                 transferMode={transferMode}
                                 storageName={selectedStorageLabel}
-                                destination={transferMode === 'to' ? depositDestination : null}
+                                destination={transferMode === 'to' ? 'the fullest Storage Unit with room first' : null}
                                 blockedReason={
                                     depositOverflow > 0
                                         ? `${depositOverflow} more than your Storage Units can hold`
@@ -1721,10 +1432,10 @@ const RatatoskrTransfer = () => {
             {transferMode === 'to' ? (
                 <StorageSpacePanel
                     free={storageFree}
-                    unitCount={caskets.length}
+                    unitCount={storage?.units ?? caskets.length}
                     unitsWithRoom={unitsWithRoom}
                     selected={selectedIds.length}
-                    loading={loading && caskets.length === 0}
+                    loading={!storage}
                 />
             ) : (
             <CollapsibleSection
@@ -1752,7 +1463,7 @@ const RatatoskrTransfer = () => {
                     {primarySelectedCasket && !allStorageSelected && selectedCasketIds.length === 1 && (
                         <button
                             type="button"
-                            onClick={() => openRenameCasket(primarySelectedCasket)}
+                            onClick={() => setRenamingCasket(primarySelectedCasket)}
                             className="flex items-center gap-1.5 shrink-0 px-2.5 py-2 text-xs text-slate-400 border border-white/10 rounded-lg hover:text-white hover:bg-white/5 transition-colors"
                             title="Rename selected storage unit"
                         >
@@ -1843,7 +1554,7 @@ const RatatoskrTransfer = () => {
                                     </button>
                                     <button
                                         type="button"
-                                        onClick={() => openRenameCasket(c)}
+                                        onClick={() => setRenamingCasket(c)}
                                         className="shrink-0 p-2.5 text-slate-500 hover:text-white hover:bg-white/5 rounded-r-lg transition-colors"
                                         title="Rename storage unit"
                                         aria-label={`Rename ${name}`}
@@ -1873,72 +1584,18 @@ const RatatoskrTransfer = () => {
             )}
 
             {renamingCasket && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-                    <button
-                        type="button"
-                        className="absolute inset-0 bg-black/70 backdrop-blur-sm"
-                        onClick={closeRenameCasket}
-                        aria-label="Close rename dialog"
-                    />
-                    <div
-                        className="relative w-full max-w-sm bg-[#1a1d24] border border-white/10 rounded-xl shadow-2xl p-5"
-                        onClick={(e) => e.stopPropagation()}
-                    >
-                        <div className="flex items-center justify-between mb-4">
-                            <h3 className="text-sm font-medium text-white">Rename storage unit</h3>
-                            <button
-                                type="button"
-                                onClick={closeRenameCasket}
-                                disabled={renameLoading}
-                                className="p-1 text-slate-500 hover:text-white disabled:opacity-40"
-                                aria-label="Close"
-                            >
-                                <X size={16} />
-                            </button>
-                        </div>
-                        <p className="text-xs text-slate-500 mb-3">
-                            Custom names are free for storage units (max {CASKET_NAME_MAX_LENGTH} characters).
-                        </p>
-                        <input
-                            type="text"
-                            value={renameDraft}
-                            maxLength={CASKET_NAME_MAX_LENGTH}
-                            disabled={renameLoading}
-                            onChange={(e) => setRenameDraft(e.target.value)}
-                            onKeyDown={(e) => {
-                                if (e.key === 'Enter') submitRenameCasket();
-                                if (e.key === 'Escape') closeRenameCasket();
-                            }}
-                            placeholder="Storage unit name"
-                            className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-500/40 mb-2"
-                            autoFocus
-                        />
-                        <p className="text-[10px] text-slate-600 mb-3 text-right tabular-nums">
-                            {renameDraft.length}/{CASKET_NAME_MAX_LENGTH}
-                        </p>
-                        {renameError && (
-                            <p className="text-xs text-red-400 mb-3">{renameError}</p>
-                        )}
-                        <div className="flex gap-2 justify-end">
-                            <button
-                                type="button"
-                                onClick={closeRenameCasket}
-                                disabled={renameLoading}
-                                className="px-3 py-2 text-xs text-slate-400 hover:text-white disabled:opacity-40"
-                            >
-                                Cancel
-                            </button>
-                            <button
-                                type="button"
-                                onClick={submitRenameCasket}
-                                disabled={renameLoading}
-                                className="px-4 py-2 text-xs font-medium rounded-lg bg-amber-600 hover:bg-amber-500 text-white disabled:opacity-40"
-                            >
-                                {renameLoading ? 'Saving…' : 'Save'}
-                            </button>
-                        </div>
-                    </div>
-                </div>
+                <RenameCasketDialog
+                    key={renamingCasket.item_id}
+                    steamid={steamid}
+                    casket={renamingCasket}
+                    onClose={() => setRenamingCasket(null)}
+                    onRenamed={(updated) => {
+                        setCaskets((prev) =>
+                            prev.map((c) => (c.item_id === updated.item_id ? { ...c, ...updated } : c))
+                        );
+                        setRenamingCasket(null);
+                    }}
+                />
             )}
 
         </div>

@@ -15,6 +15,7 @@ def register_blueprints(app):
     from routes.ratatoskr import bp as ratatoskr_bp
     from routes.huginn import bp as huginn_bp
     from routes.mimir import bp as mimir_bp
+    from routes.jobs import bp as jobs_bp
 
     app.register_blueprint(accounts_bp)
     app.register_blueprint(settings_bp)
@@ -22,3 +23,4 @@ def register_blueprints(app):
     app.register_blueprint(ratatoskr_bp)
     app.register_blueprint(huginn_bp)
     app.register_blueprint(mimir_bp)
+    app.register_blueprint(jobs_bp)

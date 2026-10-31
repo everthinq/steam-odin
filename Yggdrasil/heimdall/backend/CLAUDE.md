@@ -17,11 +17,13 @@ Deep dives on single features live in [docs/internals/](../../../docs/internals/
 |---|---------|------------|
 | 1 | `SettingsManager()` | `settings.json` (defaults in `settings.py`) |
 | 2 | `SteamService()` | its own `SecureStorage` over `maFiles/` |
-| 3 | `RatatoskrService()` | `RATATOSKR_URL` |
+| 3 | `RatatoskrService()` | `RATATOSKR_URL`; every call sends `X-Ratatoskr-Secret` (`RATATOSKR_SECRET`); `moves_in_progress = deposit.busy`, so `items_moving(ratatoskr, steamid)` — what Huginn's scan and Buy Storage Units ask before logging an account out — also covers a move run between two batches |
+| 3a | `JobRegistry()` | `jobs.py`: long work started by a command, followed at `GET /api/jobs/<id>` |
+| 3b | `DepositService(ratatoskr, jobs)` | `storage_deposit.py`: every Storage Unit move (Transfer, Auto-Store, the command line) |
 | 4 | `HuginnService(steam, ratatoskr)` | + `settings_provider` (all market fees) |
 | 5 | `DraupnirService(huginn)` | `portfolios.json` |
 | 6 | `BackupService(draupnir.path)` | + `draupnir.set_backup(...)` |
-| 7 | `ConfirmationScheduler(settings, steam, ratatoskr)` | |
+| 7 | `ConfirmationScheduler(settings, steam, ratatoskr, deposit)` | Auto-Store deposits through `DepositService` |
 | 8 | `MimirService(steam.storage)` | shares the maFile key |
 | 9 | `SteamMarketService(steam)` | Gjallarhorn liquidity |
 | 10 | `GjallarhornService(draupnir, huginn, steam_market, ratatoskr, steam)` | read-only cockpit |
@@ -42,7 +44,7 @@ Deep dives on single features live in [docs/internals/](../../../docs/internals/
 | 25 | `MorningRoutine(...)` | wired to `routes.huginn` scan + CSFloat sweep |
 
 4. hangs the singletons on `context.ctx` and registers the blueprints
-   (`routes/__init__.py`: accounts, settings, draupnir, ratatoskr, huginn, mimir);
+   (`routes/__init__.py`: accounts, settings, draupnir, ratatoskr, huginn, mimir, jobs);
 5. starts the background threads — **only in the reloader child**
    (`WERKZEUG_RUN_MAIN == 'true'`) when `FLASK_ENV=development`, so they never
    run twice — then `app.run(threaded=True)`.
@@ -89,9 +91,11 @@ Harvest warmers, card-deals scans, `andvari-{kind}` store-purchase jobs,
 | `app.py` | Composition root, `ctx` wiring, background thread start, JSON error handlers, `GET /health` |
 | `context.py` | The `ctx` singleton holder (empty until `app.py` fills it) |
 | `request_guard.py` | CORS only for `localhost:3000` / `127.0.0.1:3000`; 403 for a foreign `Host` (DNS rebinding) or a cross-origin write; extra hosts via `HEIMDALL_ALLOWED_HOSTS` |
-| `routes/` | Flask blueprints by domain: `accounts`, `settings`, `draupnir`, `ratatoskr`, `huginn`, `mimir`. Each reads `ctx` at request time. About 140 routes; `tests/test_routes_blueprints.py` counts them per blueprint |
+| `routes/` | Flask blueprints by domain: `accounts`, `settings`, `draupnir`, `ratatoskr`, `huginn`, `mimir`, `jobs` (`GET /api/jobs/<id>`). Each reads `ctx` at request time. About 140 routes; `tests/test_routes_blueprints.py` counts them per blueprint |
 | `steam_service.py` | Steam login, TOTP on Steam's clock (`_query_time`: asked again every 5 minutes, when this clock moved backwards, and after a rejected code, which is tried once more), sessions, **mobile confirmations**, web-token lifecycle, password lookup from Mímir, outbound proxy (`HTTP(S)_PROXY`, `SOCKS_PROXY`); debug log `logs/steam_debug.log` with secrets redacted |
-| `scheduler.py` | Background auto-confirm loop **+ session keep-alive sweep** + auto-store sweep + auto-confirmed trade alerts. Auto-Store follows Transfer's To mode exactly: `_is_storable` skips Storage Units, `item_moveable: false` and `trade_locked` (trade protection, attribute 312 — items received in a trade; a Steam Market purchase's plain hold is stored); `_plan_casket_moves` fills the fullest unit with room first (same as the frontend's `planBulkDeposit`). Tests: `tests/test_auto_store_planning.py` |
+| `scheduler.py` | Background auto-confirm loop **+ session keep-alive sweep** + auto-store sweep + auto-confirmed trade alerts. Auto-Store deposits through the same command as Transfer (`DepositService.plan_deposit(names=…, allow_overflow=True)` → `execute`): Transfer's rules by construction; the history records only moves the Game Coordinator confirmed (`_auto_store_finished`); an item with code `refused` is not offered again for 6 hours, one not sent or unconfirmed is offered at the next sweep; the inventory is asked again up to 3 times while it comes back empty (right after a connect). Tests: `tests/test_storage_deposit.py` |
+| `storage_deposit.py` | **The one copy of the Storage Unit rules** ([storage-units.md](../../../docs/internals/storage-units.md)): `storage_block(item)` (Storage Unit, `item_moveable: false`, trade protection — attribute 312, `trade_locked` while `trade_protected_until` is ahead; a Market purchase's plain hold is no block), `plan_deposit` (one storage, fullest unit with room first), `STORAGE_CAPACITY`; `DepositService`: `plan_deposit` / `plan_withdraw` → `execute(plan_id)` once (a second call returns the same job; plans expire after 10 minutes, executed ones are forgotten after an hour; one run per account; a plan made before the account's last run finished is `plan_stale`; `CommandError` with a `code`), runs the batches one after another through Ratatoskr's `/move/batch`, counts only the ids Ratatoskr confirmed for that batch's `runId` (a dropped queue → `unconfirmed`, never moved; every failed item has a `code`: `refused`, `not_sent`, `busy`, `unconfirmed`), calls `on_finish` before the job reads as finished, remembers what it just deposited per unit for 2 minutes (the Game Coordinator's count lags), `storage(steamid)` for the free space. Routes in `routes/ratatoskr.py`: `/storage/<steamid>`, `/deposit/plan`, `/withdraw/plan`, `/plans/<id>/execute`; the inventory route adds `storage_block` to every item |
+| `jobs.py` | `JobRegistry`: one shape for long work started by a command — `{id, kind, running, done, failed, total, phase, error, result, started_at, finished_at}` — kept in memory (newest 200), read at `GET /api/jobs/<id>` |
 | `storage.py` | maFile load/save, encryption (key from `HEIMDALL_SECRET_KEY` or `maFiles/.heimdall_key`), legacy migration, soft delete to `maFiles/.deleted/` |
 | `huginn_service.py` | "Get all items" inventory scan (`scan`: an account it cannot log into keeps its items from the previous scan, `account_scans` says when each account was read and which were `carried_over`), Tradeon pulse price feed, cross-market prices, market registry + fees, case arbitrage catalog + Telegram board, CSFloat buy-order sweep and key rotation, LOOT.Farm auctions (largest file) |
 | `pulse_feed.py` | **The master price feed: the only code that asks Tradeon pulse for prices.** A table is (market id, price type), one normalised body (`BASE_BODY`: no filters, sold-out items shown); single flight per table, at most 4 downloads at once (each peaks at ~200 MB), freshness chosen by the caller (`FRESH` 10 min, `ON_DEMAND` 1 min), compact storage (~15 MB a table instead of 155 MB) with each price's market update time (`updated` / `offersUpdateTime`), weekly sales per item and market (`weekly_sales`, from `itemPopularity`), single-item `lookup` (name filter, ~0.5 s), **the gate: only Huginn Arbitrage downloads** (the keeper and `with feed.reading(download=True)`, opened only for the profile routes; every other read gets memory or `NotActive`), active tables (`set_active`, the Buff163 reference, `download_once`, `set_active_hours`, `start_keeper` with the Mac-sleep pause), per-request reads (which tables a request read and when they were downloaded, the `X-Pulse-Tables` header), recurring jobs, slaves that only read (`declare_job`, `with feed.job(id)`: who reads what), `is_stale` / `STALE_SECONDS`, bonus balances scaled once, listeners, `status()` (`GET /api/huginn/pulse`). Anything that keeps its own copy stamps it with the table's download time (`HuginnService.market_index_at`), never "now". API facts and ideas: [docs/internals/pulse-api.md](../../../docs/internals/pulse-api.md) |
@@ -195,7 +199,7 @@ docker exec steam-odin-heimdall-backend-1 sh -c \
 docker exec steam-odin-heimdall-backend-1 sh -c 'cd /app && ruff check .'
 ```
 
-About 960 tests in 43 files (`tests/`); `conftest.py` stubs CSFloat and refuses
+About 1,090 tests in 49 files (`tests/`); `conftest.py` stubs CSFloat and refuses
 every pulse request (fake `_post_tradeon` on the service), so no test reaches the
 network. Every feature that spends money or sells has pure helpers
 with tests — extend them, including with bytes captured live.

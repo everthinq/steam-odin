@@ -45,7 +45,9 @@ def test_ratatoskr_blueprint_registers_all_routes():
     from routes.ratatoskr import bp
     rules = _rules_for(bp)
     for want in ['/api/ratatoskr/login', '/api/ratatoskr/status/<steamid>',
-                 '/api/ratatoskr/move/batch', '/api/ratatoskr/auto-store',
+                 '/api/ratatoskr/deposit/plan', '/api/ratatoskr/withdraw/plan',
+                 '/api/ratatoskr/plans/<plan_id>/execute', '/api/ratatoskr/storage/<steamid>',
+                 '/api/ratatoskr/auto-store',
                  '/api/ratatoskr/auto-store/sweep', '/api/ratatoskr/storage-shop',
                  '/api/ratatoskr/storage-shop/plan', '/api/ratatoskr/storage-shop/run',
                  '/api/ratatoskr/storage-shop/deliver-again', '/api/ratatoskr/store-catalogue',
@@ -56,7 +58,7 @@ def test_ratatoskr_blueprint_registers_all_routes():
                  '/api/ratatoskr/store-boosts/check', '/api/ratatoskr/store-boosts/test-alert',
                  '/api/ratatoskr/store-boosts/track']:
         assert want in rules, f'missing ratatoskr route: {want}'
-    assert _rule_count(bp, '/api/ratatoskr') == 33
+    assert _rule_count(bp, '/api/ratatoskr') == 35
 
 
 def test_accounts_blueprint_registers_all_routes():
@@ -132,3 +134,8 @@ def test_mimir_blueprint_holds_the_market_access_routes():
     for want in ['/api/mimir/market-access', '/api/mimir/market-access/check',
                  '/api/mimir/market-access/unlock']:
         assert want in rules, f'missing mimir route: {want}'
+
+
+def test_jobs_blueprint_follows_long_work():
+    from routes.jobs import bp
+    assert _rules_for(bp) >= {'/api/jobs/<job_id>'}

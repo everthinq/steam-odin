@@ -66,7 +66,11 @@ export const matchesSearchQuery = (fields, query) => {
  * Loyalty Badge, Global Offensive Badge), the default music kit, Storage Units, default weapons.
  * An item without the flag counts as storable.
  */
-export const canGoIntoStorageUnit = (item) => item?.item_moveable !== false;
+// What a Storage Unit refuses is decided by the backend (storage_deposit.py): every inventory item
+// carries `storage_block` — null, or {code, reason, until}. The page only reads it.
+const UNSTORABLE_CODES = new Set(['unstorable', 'storage_unit']);
+
+export const canGoIntoStorageUnit = (item) => !UNSTORABLE_CODES.has(item?.storage_block?.code);
 
 export const tagInventoryItems = (items) =>
     (items || []).map((item) => ({
@@ -118,12 +122,16 @@ const tradeHoldMs = (item, now = Date.now()) => {
 export const isItemOnTradeHold = (item, now) => tradeHoldMs(item, now) > 0;
 
 /**
- * Trade protection (Ratatoskr's `trade_protected_until`, game attribute 312): set on items received
- * in a trade with another player. Such an item cannot go into a Storage Unit until it ends. A plain
- * trade hold (a Steam Market purchase) has no protection and can be stored.
+ * Trade protection (the backend's `storage_block` code `trade_protected`, game attribute 312): set on
+ * items received in a trade with another player; a Storage Unit refuses them until `until`. A plain
+ * trade hold (a Steam Market purchase) is no block. `now` only lets the page clock drop a block that
+ * ended while the page was open.
  */
-export const isItemTradeProtected = (item, now = Date.now()) =>
-    !!item?.trade_protected_until && new Date(item.trade_protected_until).getTime() > now;
+export const isItemTradeProtected = (item, now = Date.now()) => {
+    const block = item?.storage_block;
+    if (block?.code !== 'trade_protected') return false;
+    return !block.until || new Date(block.until).getTime() > now;
+};
 
 /** "14h" under a day, otherwise whole days rounded up ("6d"). */
 const formatHoldDuration = (ms) =>

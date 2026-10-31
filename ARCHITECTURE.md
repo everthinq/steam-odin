@@ -27,7 +27,7 @@ flowchart TB
 
     subgraph Docker
         BE["Heimdall backend<br/>(Flask, threaded)<br/>localhost:5001 → :5000"]
-        RAT["Ratatoskr<br/>(Node + steam-user + GC)<br/>localhost:3001 → :3000"]
+        RAT["Ratatoskr<br/>(Node + steam-user + GC)<br/>Docker network only, shared secret"]
         ASF["ArchiSteamFarm<br/>(pinned image)<br/>localhost:1242"]
     end
 

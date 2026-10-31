@@ -161,10 +161,11 @@ unlock at one moment carries `trade_unlock` ("Unlocks …" under the name). The 
   Storage Unit. **Trade protection** (attribute 312, an item received in a trade; Ratatoskr's
   `trade_locked` + `trade_protected_until`, only while ahead) DOES. Lines split three ways
   (`tradable` / `hold` / `protected`, `isItemTradeProtected`); protected lines get a red "Trade
-  protected" badge. In To mode `isHeldForDeposit` (= `tradeProtected`) makes the line's and its
-  variants' selectable quantity 0 — select button and `GroupQtyInput` locked (`totalQty` still
-  shows the count), Select all skips them, `selectTitle` says how long is left — and `handleMove`
-  drops protected and unstorable ids before planning. Plain-hold lines stay selectable. Never key
+  protected" badge. `isItemTradeProtected` only reads the backend's `storage_block` (code
+  `trade_protected`, `until`; the page clock drops a block that ended while the page is open). In To
+  mode `isHeldForDeposit` (= `tradeProtected`) makes the line's and its variants' selectable quantity
+  0 — select button and `GroupQtyInput` locked (`totalQty` still shows the count), Select all skips
+  them, `selectTitle` says how long is left — and the backend's plan refuses them again anyway. Plain-hold lines stay selectable. Never key
   storability on `trade_unlock` alone. From mode is unaffected.
 
 - **The page clock:** holds are judged at the `now` option of `groupItemsByName` (milliseconds);
@@ -182,34 +183,41 @@ unlock at one moment carries `trade_unlock` ("Unlocks …" under the name). The 
 Units — they are one "limitless" storage whose size is the sum of their free places. Do not bring
 back a unit picker, per-unit choices or an exclusion list for To mode; units are picked and
 renamed only in From mode. Underneath, the Game Coordinator still moves an item into one specific
-unit (`casketID`), so the page plans the split itself:
+unit (`casketID`), so the backend plans the split:
 
 To mode has no Storage Unit picker: `components/transfer/StorageSpacePanel.jsx` shows the free
-places across every unit (`storageFreeSpace`, `utils/transferView.js`, with `STORAGE_CAPACITY`
-1000), the selection and what is left; `planBulkDeposit(itemIds, caskets)` splits a move into one
-batch per unit, the fullest with room first, and reports `overflow` (Move is disabled and
-`handleMove` refuses while it is above 0). `runMoveBatches` queues the batches one after another
-(From mode uses it too) and `showMoveProgress` adds the finished batches on, because Ratatoskr
-counts each batch from zero — one progress bar for the whole move. After a deposit only the
-inventory and the unit counts are fetched again, never every unit's contents.
-The plan is made from the unit counts (`item_storage_total`) the page last loaded; the counts are
-re-read after every move. The Game Coordinator's count can lag a few seconds behind a move, so
-`expectedCasketCountsRef` keeps what the page just deposited per unit and `fetchCaskets` uses the
-higher number until the Game Coordinator catches up (cleared by any withdrawal and on account
-change) — a quick second deposit never over-fills a unit. Ratatoskr counts a sent move as done
-even when the Game Coordinator refuses it, so an over-filled unit would fail silently: the items
-would just stay in the inventory. Fill order is
-fullest-with-room first (Ivan chose it: fewest units touched, emptier units stay free); the
-batches run one after another at the normal move delay, never in parallel (rate limits).
-Auto-Store (backend `scheduler.py`, `_plan_casket_moves` and `_is_storable`) follows the same two
-rules — fullest first, trade-protected and unstorable items skipped; change them together.
+places across every unit from the backend (`GET /api/ratatoskr/storage/<steamid>`: `free`, `units`,
+`units_with_room`; it also counts what a move just deposited while the Game Coordinator's own counts
+lag), the selection and what is left (Move is disabled while the selection is bigger).
+
+**Moves are backend commands** (`backend/storage_deposit.py`, [storage-units.md](../../../docs/internals/storage-units.md));
+the page decides nothing about where an item goes or whether a unit takes it. `handleMove` posts
+`/api/ratatoskr/deposit/plan` (To) or `/api/ratatoskr/withdraw/plan` (From, `{item_id, casket_id}`
+from `groupItemsByCasket`), refuses a plan that is not `executable` (overflow, or every item
+refused — the message names the reason), then `/api/ratatoskr/plans/<id>/execute` and follows the
+job (`utils/moveCommands.js`: `postCommand`, `followJob`, `jobProgress`, `watchJobUntilDone`). The
+result message names the units ("Stored 60 items: Temp0 · 6, …") and, when something did not move,
+the refused items. Ratatoskr confirms every move, so `done` is what really moved. Closing the tab
+never stops a move (the job runs in the backend); a second Move on the same account while one runs
+gets "Items are already moving". After a backend restart the job is unknown (404 `job_unknown`):
+`followJob` stops at once, the page says the result is unknown and reloads the lists. After a deposit only the inventory and the unit counts are fetched
+again, never every unit's contents. Never bring back a planner, an "expected counts" ref or a
+storability rule in the page: read `storage_block` and the plan. `STORAGE_CAPACITY` in
+`utils/transferView.js` is for display only (unit lists).
+Auto-Store (backend `scheduler.py`) uses the same deposit command — change them together.
+
+**Where Transfer's pieces live** (the page itself is layout and wiring): `utils/moveCommands.js`
+(commands and jobs), `utils/useTransferSelection.js` (which lines can be picked, quantities, the
+select buttons' states and tooltips, Select all), `utils/useMoveDelay.js` (the pause between moves),
+`components/transfer/RenameCasketDialog.jsx` (renaming a unit; mounted with `key={casket.item_id}`),
+plus the older `components/transfer/*` pieces.
 
 ## Ratatoskr: items a Storage Unit cannot hold
 
-Ratatoskr's `item_moveable` (`items.js` `itemProcessorCanBeMoved`) is false for untradable
-collectibles, the default music kit, Storage Units and default weapons. Transfer's To mode hides
-those items unless the switch `components/transfer/UnstorableSwitch.jsx` is on (`utils/showUnstorable.js`: `useShowUnstorable`, localStorage `ratatoskr.showUnstorableItems`).
-`canGoIntoStorageUnit` (`utils/transferItems.js`) is the one test; `groupItemsByName(…, {markUnstorable})`
+The backend marks every inventory item with `storage_block` (`storage_deposit.py`): code
+`unstorable` (Ratatoskr's `item_moveable: false` — untradable collectibles, the default music kit,
+default weapons), `storage_unit`, or `trade_protected` (with `until`). Transfer's To mode hides the
+first two unless the switch `components/transfer/UnstorableSwitch.jsx` is on (`utils/showUnstorable.js`: `useShowUnstorable`, localStorage `ratatoskr.showUnstorableItems`).
+`canGoIntoStorageUnit` (`utils/transferItems.js`) only reads that code; `groupItemsByName(…, {markUnstorable})`
 (To mode only — anything already in a Storage Unit can always come out) puts such items on lines of
-their own (`unstorable`), whose selectable quantity is 0, and `handleMove` drops
-them before anything reaches the Game Coordinator.
+their own (`unstorable`), whose selectable quantity is 0; the backend's plan refuses them anyway.

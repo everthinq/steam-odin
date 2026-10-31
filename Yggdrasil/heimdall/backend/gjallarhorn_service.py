@@ -25,12 +25,11 @@ from datetime import datetime, timezone
 
 from pulse_feed import NotActive
 from pulse_views import steam_liquidity
+# Storage Units hold up to 1000 items each: the one constant lives in storage_deposit.py.
+from storage_deposit import STORAGE_CAPACITY
 
 logger = logging.getLogger(__name__)
 
-# Storage Units hold up to 1000 items each (mirrors scheduler.STORAGE_CAPACITY
-# and the frontend constant).
-STORAGE_CAPACITY = 1000
 
 # Steam Market liquidity is throttled and cached (see SteamMarketService), so we
 # only enrich the holdings that actually matter for a rotation — the highest-value

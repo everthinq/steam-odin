@@ -24,8 +24,8 @@ Stable" means ready. **Auto-disconnect when idle** frees the session after
    many places are left after the move (red, and Move disabled, when the
    selection does not fit; **Buy Storage Units** is next to it). The move fills
    the fullest unit with room first, then the next, so it touches as few units
-   as it can and the emptier ones stay free; the queue says where the items go
-   ("Goes into Temp6 · 7, Temp4 · 14 …").
+   as it can and the emptier ones stay free. After the move the message says
+   where the items went ("Stored 60 items: Temp0 · 6, Random investments1 · 42 …").
    **From:** pick one, several or **All storage units**. The pencil renames a
    Storage Unit (free, up to 20 characters; in From mode).
 3. Select items: by group with a quantity, by float, select all; filter by
@@ -33,7 +33,10 @@ Stable" means ready. **Auto-disconnect when idle** frees the session after
 4. Open the queue (**N ITEMS**), set the delay between items if needed, press
    **Move**. Moves start immediately — no second question — and run one at a
    time with a pause between them; one progress bar follows the whole move,
-   even when it spans several Storage Units.
+   even when it spans several Storage Units. The move runs in Heimdall's
+   backend: closing or reloading the page does not stop it.
+5. Each item counts as moved only when the game confirms it. If the game
+   refuses an item (it stays where it was), the message names it.
 
 **Tradable now and trade hold** are separate rows: when you hold copies of an
 item that can be traded now and copies still on trade hold (a fresh purchase,
@@ -84,6 +87,8 @@ How it works underneath — worth knowing, nothing to do:
 - Each unit's share is sent as its own batch, one after another, with the same
   pause between items as always (no extra speed, no extra risk of Steam
   limits); the progress bar adds them up into one.
+- The backend makes this plan, not the page — the same plan Auto-Store uses —
+  and runs it once, even if Move is pressed twice.
 - Only what a Storage Unit takes is ever sent: never items it can never hold
   (medals, coins, badges, the default music kit) and never trade-protected
   copies (received in a trade). Market purchases on a trade hold are sent.
@@ -91,7 +96,9 @@ How it works underneath — worth knowing, nothing to do:
   turns red, says how many items are too many, and Move stays disabled until
   you remove some or buy more Storage Units.
 - The unit counts are read again after every move, so the next plan uses the
-  real numbers.
+  real numbers. The game's own count lags a few seconds behind a move; Heimdall
+  counts what it just stored meanwhile, so a quick second move never over-fills
+  a unit.
 
 **Move one of each to inventory** (From mode) takes one copy of every
 different skin out of storage — useful so price websites that read your
@@ -106,11 +113,14 @@ case you collect) from the inventory into your Storage Units, every
 confirmation-check cycle. Switch the watcher on, switch "Act on this account"
 on, add item names, **Sweep now** to run it once. The history shows every move.
 
-It follows exactly the rules of Transfer's To mode: the Storage Units are one
-storage, the **fullest unit with room fills first**; items **bought on the
-Steam Market** are stored even during their trade hold; items **received in a
-trade** (trade protected) and items a Storage Unit can never hold are skipped.
-Items that do not fit anywhere wait for the next sweep.
+It uses the very same move as Transfer's To mode, so the rules are identical:
+the Storage Units are one storage, the **fullest unit with room fills first**;
+items **bought on the Steam Market** are stored even during their trade hold;
+items **received in a trade** (trade protected) and items a Storage Unit can
+never hold are skipped. Items that do not fit anywhere wait for the next sweep.
+The history lists only moves the game confirmed; an item the game refused is
+not tried again for 6 hours (one that simply was not sent, for example while
+Ratatoskr restarted, is tried again at the next sweep).
 
 ## Buy Storage Units
 

@@ -14,6 +14,7 @@ from datetime import datetime, timezone, timedelta
 from jsonio import atomic_write_json
 from price_history import PriceHistory
 from pulse_feed import COUNT, FRESH, ON_DEMAND, PRICE, NotActive, PulseFeed
+from ratatoskr_service import items_moving
 from notifications import (TELEGRAM_MESSAGE_LIMIT, delete_notification, edit_notification,
                            notification_channel, send_notification, telegram_visible_length)
 
@@ -644,8 +645,7 @@ class HuginnService:
         finally:
             for steam_id in opened:
                 try:
-                    moves = self.rat.get_move_status(steam_id) or {}
-                    if moves.get('running') or moves.get('pending'):
+                    if items_moving(self.rat, steam_id):
                         # Something started moving items on this session meanwhile.
                         logger.info(f'[HUGINN] {steam_id} left logged in after the scan: items are moving')
                         continue

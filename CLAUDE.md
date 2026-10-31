@@ -41,7 +41,7 @@ not a separate deployable):
 | **Draupnir** | Portfolio tracker (buy/sell, moving-average profit/loss, canonical platform names, live valuation, point-in-time backups) | `draupnir_service.py`, `draupnir_backup_service.py` | `pages/draupnir/` |
 | **Huginn** | Cross-market price scout / arbitrage (Tradeon pulse feed, case arbitrage, Price dips vs the 30-day median, "check live" per row, stale prices greyed); **Active profiles**: only the profiles Ivan trades on are downloaded (every 5 minutes, active hours, Buff163 reference daily), every other page reads them from memory; Heimdall's own price history (`price_history.py`); **Pulse feed** page: read-only monitor | `huginn_service.py`, `pulse_feed.py`, `pulse_views.py` | `pages/huginn/` (`PulseFeed.jsx` at `/huginn/pulse`) |
 | **Mímir** | Encrypted credential vault (login / password / email / comment / billing address), shares the maFile key; **Market access** button + column (when each account loses the Steam Community Market: newest store or in-game purchase + 1 year, and Steam's own eligibility check) and the **Market unlocker** (buys Zombie Hunter's one-cent Editor Pack, an in-game purchase that keeps the Market open a year; dry run cancels; price-guarded) | `mimir_service.py`, `market_access_service.py` | `pages/mimir/`, `components/MarketAccess.jsx`, `components/MarketUnlocker.jsx`, `utils/useMarketAccess.js` |
-| **Ratatoskr** | Moves items between Storage Units and inventory (the **Transfer** page, where Ratatoskr opens: To mode treats every Storage Unit as one "limitless" storage — no unit to pick, a Storage space panel with the free places; underneath each unit still holds 1,000 and the deposit is split per unit, the fullest with room first; copies tradable now, copies on a plain trade hold (a Steam Market purchase — storable) and trade-protected copies (received in a trade — not storable, never selected) are separate rows, held cases and stickers open per unlock time; Auto-Store follows the same rules (fullest first, trade-protected skipped); items a Storage Unit cannot hold are hidden behind "Show items that can't be stored"); there is no Inventory page any more; **Buy Storage Units** ("Storage shop" in the code) buys Storage Units on many accounts through the game store (Game Coordinator transaction, approved with the account's web session, price-guarded, dry run cancels); **Store Catalogue** lists every in-game store item with its US dollar price from the same price sheet, and its Buy button buys any of them through the same guarded flow; its **Arbitrage** tab (Store Catalogue Arbitrage) recommends store items that resell above the store price, laid out like Huginn's Arbitrage (profile In-game store → market, autobuy or min), with CSMoney (Trade)'s instant offer as the BUY indicator, a daily price history, a Refresh button, and a daily refresh after the morning "Get all items" that posts profitable items to the Huginn Telegram bot (read-only, never buys); its **Boosts** tab (Store Boosts) catches a Steam price boost of a store item, or of a sticker inside a store capsule, on its first day: an hourly pulse check, Steam's price history one item at a time, levels watch / boost / second wave / fading, a Huginn Telegram message per new level and a phone ring on a boost (read-only, never buys) | `ratatoskr_service.py` → Node service (`store.js`), `storage_shop_service.py`, `store_catalogue_service.py`, `store_arbitrage_service.py`, `store_boost_service.py` | `pages/ratatoskr/` (`StorageShop.jsx` at `/buy-storage-units`, `StoreCatalogue.jsx` at `/store-catalogue`, `/store-catalogue/arbitrage` with `components/ratatoskr/StoreArbitrage.jsx` and `/store-catalogue/boosts` with `components/ratatoskr/StoreBoosts.jsx`) |
+| **Ratatoskr** | Moves items between Storage Units and inventory (the **Transfer** page, where Ratatoskr opens: To mode treats every Storage Unit as one "limitless" storage — no unit to pick, a Storage space panel with the free places; underneath each unit still holds 1,000 and the deposit is split per unit, the fullest with room first; copies tradable now, copies on a plain trade hold (a Steam Market purchase — storable) and trade-protected copies (received in a trade — not storable, never selected) are separate rows, held cases and stickers open per unlock time; Transfer and Auto-Store move items only through the backend's commands (`storage_deposit.py`: plan → execute once → a job, the one copy of the storage rules; Ratatoskr confirms every move from the Game Coordinator's answer, a move with no answer is reported refused); items a Storage Unit cannot hold are hidden behind "Show items that can't be stored"); there is no Inventory page any more; **Buy Storage Units** ("Storage shop" in the code) buys Storage Units on many accounts through the game store (Game Coordinator transaction, approved with the account's web session, price-guarded, dry run cancels); **Store Catalogue** lists every in-game store item with its US dollar price from the same price sheet, and its Buy button buys any of them through the same guarded flow; its **Arbitrage** tab (Store Catalogue Arbitrage) recommends store items that resell above the store price, laid out like Huginn's Arbitrage (profile In-game store → market, autobuy or min), with CSMoney (Trade)'s instant offer as the BUY indicator, a daily price history, a Refresh button, and a daily refresh after the morning "Get all items" that posts profitable items to the Huginn Telegram bot (read-only, never buys); its **Boosts** tab (Store Boosts) catches a Steam price boost of a store item, or of a sticker inside a store capsule, on its first day: an hourly pulse check, Steam's price history one item at a time, levels watch / boost / second wave / fading, a Huginn Telegram message per new level and a phone ring on a boost (read-only, never buys) | `ratatoskr_service.py` → Node service (`moves.js`, `store.js`), `storage_deposit.py`, `jobs.py`, `storage_shop_service.py`, `store_catalogue_service.py`, `store_arbitrage_service.py`, `store_boost_service.py` | `pages/ratatoskr/` (`StorageShop.jsx` at `/buy-storage-units`, `StoreCatalogue.jsx` at `/store-catalogue`, `/store-catalogue/arbitrage` with `components/ratatoskr/StoreArbitrage.jsx` and `/store-catalogue/boosts` with `components/ratatoskr/StoreBoosts.jsx`) |
 | **Gjallarhorn** (in Huginn) | Event rotation: when Valve limits a case, sell deflated holdings and rotate into it; Counter-Strike 2 news watcher that texts + rings the phone; read-only, never trades | `gjallarhorn_service.py`, `gjallarhorn_news_service.py`, `steam_market_service.py`, `telegram_caller.py` | `pages/huginn/Gjallarhorn.jsx`, `components/gjallarhorn/` |
 | **Cross-Profile** (in Huginn) | Best buy-minimum → autobuy route per held item across every account, plus user-defined market chains | `cross_arbitrage_service.py` | `components/CrossProfileArbitrage.jsx` (Arbitrage page view) |
 | **Harvest** (in Huginn) | Every purchase lot you still hold, at the price you paid (no averaging, oldest sold first), vs what an autobuy market pays now; account → market profiles like Arbitrage | `harvest_service.py` | `components/Harvest.jsx` (Arbitrage page tab) |
@@ -55,8 +55,17 @@ not a separate deployable):
   read them from `ctx` at request time. Runs `threaded=True`.
 - **Frontend** is React 19 + Vite + react-router-dom 7. Tool pages are
   code-split with `React.lazy`/`Suspense`; the Dashboard is eager.
-- **Ratatoskr** is a separate Node service the backend calls over HTTP; the
-  frontend never talks to it directly.
+- **Ratatoskr** is a separate Node service the backend calls over HTTP (Docker
+  network only, shared secret); the frontend never talks to it directly.
+- **The backend is the product; the frontend is a screen on top of it**
+  (Ivan's rule, 2026-10-31). Every decision — what is allowed, what to do, in
+  what order — and every action with more than one step lives in the backend;
+  the page only displays, sorts, filters and sends instructions. Each button is
+  one backend command with the same name and parameters, so it could be typed
+  in bash (a command-line tool over the same API is planned). Commands that act
+  answer a plan first and act on "execute plan <id>" once; long work is a job
+  (`GET /api/jobs/<id>`); errors are `{error, code}`. Ratatoskr's moves are the
+  first feature built this way ([storage-units.md](docs/internals/storage-units.md)).
 - **ASF** (ArchiSteamFarm) is an unmodified upstream image the backend drives
   over its API (port 1242, this Mac only, password-guarded; its own UI is behind
   Andvari's "ASF UI" button). It never receives 2FA seeds — Heimdall types
@@ -80,8 +89,10 @@ not a separate deployable):
 | `make ragnarok` (`clean`) | down + remove orphans + prune images |
 
 Ports: **frontend** http://localhost:3000, **backend** http://localhost:5001
-(container 5000). Ratatoskr http://localhost:3001.
-All three are published on **127.0.0.1 only**, and the backend refuses foreign
+(container 5000). Ratatoskr is **not published**: only the backend reaches it,
+over the Docker network, with the shared secret `RATATOSKR_SECRET` (root `.env`,
+`make ratatoskr-secret` once; without it Ratatoskr refuses everything).
+Both published ports are on **127.0.0.1 only**, and the backend refuses foreign
 `Host` headers and cross-origin reads (`request_guard.py`). Neither the API nor
 the UI has a login and they serve Steam Guard codes, the Mímir password export
 and trade confirmations — never publish them on all interfaces, never re-open
@@ -171,8 +182,12 @@ Or on the host per the [README](README.md) (`pip install -r requirements-dev.txt
 `npm run build`. To verify a UI change actually renders, drive it in headless
 Chrome (`--dump-dom --virtual-time-budget`) or open http://localhost:3000.
 
+**Ratatoskr** has `npm test` (`Yggdrasil/ratatoskr/test/`, node's built-in
+runner: move confirmations, item conversion).
+
 **Continuous integration** (`.github/workflows/ci.yml`) runs backend pytest +
-ruff + `pip-audit`, and frontend lint + build, on every push and pull request.
+ruff + `pip-audit`, frontend lint + build, and Ratatoskr's tests, on every push
+and pull request.
 
 ---
 

@@ -6,9 +6,14 @@ containers are running.
 
 ## A page says "Failed to connect to Ratatoskr"
 
-Ratatoskr probably crashed or restarted. `docker ps -a` — if
-`steam-odin-ratatoskr-1` is not "Up", run `docker compose up -d ratatoskr`.
-A restart logs every account out of Ratatoskr; press **Connect** again.
+Ratatoskr probably crashed or restarted. `docker ps` — if
+`steam-odin-ratatoskr-1` is not "Up (healthy)", run `docker compose up -d ratatoskr`.
+A restart logs every account out of Ratatoskr; press **Connect** again
+(Auto-Store reconnects its own accounts at its next sweep).
+
+If it is up but every Ratatoskr action fails with "missing or wrong Ratatoskr
+secret": the shared secret is missing from the root `.env`. Run
+`make ratatoskr-secret`, then `docker compose up -d heimdall-backend ratatoskr`.
 
 ## Confirmations stopped working
 
@@ -76,10 +81,12 @@ In To mode, two kinds of item are shown but cannot be put into a Storage Unit:
 
 ## Items stayed in the inventory after a move
 
-The game gives no answer to a deposit, so a refused item just stays where it
-was. Transfer and Auto-Store never send trade-protected or unstorable items, so
-this is rare: a Storage Unit filled up meanwhile, or the Ratatoskr session was
-lost. Refresh the page and move again. See
+Every move is confirmed by the game; an item it refused stays where it was and
+the message after the move names it (Auto-Store logs it and does not try it
+again for 6 hours). Transfer and Auto-Store never send trade-protected or
+unstorable items, so this is rare: a Storage Unit filled up meanwhile. If the
+Ratatoskr session was lost during the move, the items are reported as not sent
+or unconfirmed rather than refused. Refresh the page and move again. See
 [storage-units.md](../internals/storage-units.md).
 
 ## Buy Storage Units: "MAY BE PAID"

@@ -5,6 +5,10 @@ import os
 logger = logging.getLogger(__name__)
 
 RATATOSKR_URL = os.environ.get('RATATOSKR_URL', 'http://localhost:3030')
+# Shared with Ratatoskr (both read RATATOSKR_SECRET from the root .env): Ratatoskr
+# refuses any request without it, so only this backend can move items or open a
+# store transaction even if another container on the Docker network is compromised.
+_HEADERS = {'X-Ratatoskr-Secret': os.environ.get('RATATOSKR_SECRET', '')}
 
 def _error_body(error, fallback):
     """The error Ratatoskr sent back ({"error": ...} with any 4xx/5xx), or None when
@@ -21,6 +25,17 @@ def _error_body(error, fallback):
     return {"error": message or fallback, "status_code": response.status_code}
 
 
+def items_moving(ratatoskr, steam_id):
+    """Whether items are moving on the account, so its session must not be logged out: Ratatoskr's
+    queue is busy, or a backend move run (storage_deposit.py) sits between two of its batches —
+    Ratatoskr's queue then looks idle for a moment."""
+    moves = ratatoskr.get_move_status(steam_id) or {}
+    if moves.get('running') or moves.get('pending'):
+        return True
+    in_progress = getattr(ratatoskr, 'moves_in_progress', None)
+    return bool(in_progress and in_progress(steam_id))
+
+
 class RatatoskrService:
     def __init__(self):
         self.base_url = RATATOSKR_URL
@@ -28,6 +43,8 @@ class RatatoskrService:
         # at AsfService.pause_for_ratatoskr: Steam allows one "playing" session per
         # account, and ASF card farming would block Ratatoskr's Counter-Strike 2 session.
         self.before_login = None
+        # app.py points it at DepositService.busy: see items_moving.
+        self.moves_in_progress = None
 
     def login(self, account_name, password, shared_secret=None, two_factor_code=None):
         """
@@ -48,7 +65,7 @@ class RatatoskrService:
             payload["sharedSecret"] = shared_secret
 
         try:
-            response = requests.post(f"{self.base_url}/login", json=payload, timeout=45)
+            response = requests.post(f"{self.base_url}/login", json=payload, headers=_HEADERS, timeout=45)
             response.raise_for_status()
             return response.json()
         except requests.exceptions.RequestException as e:
@@ -60,7 +77,7 @@ class RatatoskrService:
         Checks if a session is active for the given SteamID.
         """
         try:
-            response = requests.get(f"{self.base_url}/status/{steam_id}", timeout=5)
+            response = requests.get(f"{self.base_url}/status/{steam_id}", headers=_HEADERS, timeout=5)
             if response.status_code == 200:
                 data = response.json()
                 data.setdefault("status", "connected")
@@ -76,7 +93,7 @@ class RatatoskrService:
     def disconnect(self, steam_id):
         """End the Ratatoskr GC session for a Steam account."""
         try:
-            response = requests.post(f"{self.base_url}/disconnect/{steam_id}", timeout=10)
+            response = requests.post(f"{self.base_url}/disconnect/{steam_id}", headers=_HEADERS, timeout=10)
             if response.status_code == 200:
                 return response.json()
             if response.status_code == 404:
@@ -86,27 +103,9 @@ class RatatoskrService:
             logger.error(f"Ratatoskr Disconnect Error: {e}")
             return {"error": "Failed to connect to Ratatoskr"}
 
-    def move_item(self, steam_id, item_id, source, target, casket_id=None):
-        """
-        Moves an item between inventory and storage unit (queued).
-        """
-        payload = {
-            "steamID": steam_id,
-            "itemID": item_id,
-            "source": source,
-            "target": target,
-            "casketID": casket_id
-        }
-        try:
-            response = requests.post(f"{self.base_url}/move", json=payload, timeout=30)
-            response.raise_for_status()
-            return response.json()
-        except requests.exceptions.RequestException as e:
-            logger.error(f"Ratatoskr Move Error: {e}")
-            return _error_body(e, 'Move failed') or {"error": "Failed to connect to Ratatoskr"}
-
     def move_batch(self, steam_id, item_ids, source, target, casket_id=None):
-        """Queue a batch of item moves with server-side throttling."""
+        """Queue a batch of item moves into or out of one Storage Unit (server-side throttling,
+        each move confirmed by the Game Coordinator). Only storage_deposit.DepositService calls it."""
         payload = {
             "steamID": steam_id,
             "itemIDs": item_ids,
@@ -115,7 +114,7 @@ class RatatoskrService:
             "casketID": casket_id,
         }
         try:
-            response = requests.post(f"{self.base_url}/move/batch", json=payload, timeout=60)
+            response = requests.post(f"{self.base_url}/move/batch", json=payload, headers=_HEADERS, timeout=60)
             response.raise_for_status()
             return response.json()
         except requests.exceptions.RequestException as e:
@@ -125,7 +124,7 @@ class RatatoskrService:
     def get_move_status(self, steam_id):
         """Poll move queue progress for an account."""
         try:
-            response = requests.get(f"{self.base_url}/move/status/{steam_id}", timeout=10)
+            response = requests.get(f"{self.base_url}/move/status/{steam_id}", headers=_HEADERS, timeout=10)
             response.raise_for_status()
             return response.json()
         except requests.exceptions.RequestException as e:
@@ -135,7 +134,7 @@ class RatatoskrService:
     def get_move_delay(self):
         """Get delay between queued item moves (ms)."""
         try:
-            response = requests.get(f"{self.base_url}/config/move-delay", timeout=10)
+            response = requests.get(f"{self.base_url}/config/move-delay", headers=_HEADERS, timeout=10)
             response.raise_for_status()
             return response.json()
         except requests.exceptions.RequestException as e:
@@ -148,7 +147,7 @@ class RatatoskrService:
             response = requests.post(
                 f"{self.base_url}/config/move-delay",
                 json={"delayMs": delay_ms},
-                timeout=10,
+                headers=_HEADERS, timeout=10,
             )
             response.raise_for_status()
             return response.json()
@@ -162,7 +161,7 @@ class RatatoskrService:
             response = requests.post(
                 f"{self.base_url}/config/protected-accounts",
                 json={"steamIds": [str(s) for s in (steam_ids or [])]},
-                timeout=10,
+                headers=_HEADERS, timeout=10,
             )
             response.raise_for_status()
             return response.json()
@@ -173,7 +172,7 @@ class RatatoskrService:
     def get_session_idle_timeout(self):
         """Get auto-disconnect idle timeout (ms); 0 = never."""
         try:
-            response = requests.get(f"{self.base_url}/config/session-idle", timeout=10)
+            response = requests.get(f"{self.base_url}/config/session-idle", headers=_HEADERS, timeout=10)
             response.raise_for_status()
             return response.json()
         except requests.exceptions.RequestException as e:
@@ -186,7 +185,7 @@ class RatatoskrService:
             response = requests.post(
                 f"{self.base_url}/config/session-idle",
                 json={"idleTimeoutMs": idle_timeout_ms},
-                timeout=10,
+                headers=_HEADERS, timeout=10,
             )
             response.raise_for_status()
             return response.json()
@@ -197,7 +196,7 @@ class RatatoskrService:
     def get_inventory(self, steam_id):
         """Fetch inventory."""
         try:
-            response = requests.get(f"{self.base_url}/inventory/{steam_id}", timeout=10)
+            response = requests.get(f"{self.base_url}/inventory/{steam_id}", headers=_HEADERS, timeout=10)
             return response.json()
         except requests.exceptions.RequestException:
             return {"error": "Failed to fetch inventory from Ratatoskr"}
@@ -205,7 +204,7 @@ class RatatoskrService:
     def get_caskets(self, steam_id):
         """Fetch storage units."""
         try:
-            response = requests.get(f"{self.base_url}/caskets/{steam_id}", timeout=10)
+            response = requests.get(f"{self.base_url}/caskets/{steam_id}", headers=_HEADERS, timeout=10)
             return response.json()
         except requests.exceptions.RequestException:
             return {"error": "Failed to fetch caskets from Ratatoskr"}
@@ -214,7 +213,7 @@ class RatatoskrService:
         """Fetch contents of a specific storage unit."""
         try:
             response = requests.get(f"{self.base_url}/casket/{steam_id}/{casket_id}",
-                                    timeout=35)   # the Game Coordinator itself waits up to 30 s
+                                    headers=_HEADERS, timeout=35)   # the Game Coordinator itself waits up to 30 s
             return response.json()
         except requests.exceptions.RequestException:
             return {"error": "Failed to fetch casket contents from Ratatoskr"}
@@ -230,7 +229,7 @@ class RatatoskrService:
             response = requests.post(
                 f"{self.base_url}/casket/rename",
                 json=payload,
-                timeout=30,
+                headers=_HEADERS, timeout=30,
             )
             response.raise_for_status()
             return response.json()
@@ -243,7 +242,7 @@ class RatatoskrService:
     def _store_call(self, method, path, payload=None, timeout=35):
         """A store call; the Game Coordinator itself waits up to 20 s for its answer."""
         try:
-            response = requests.request(method, f"{self.base_url}{path}", json=payload, timeout=timeout)
+            response = requests.request(method, f"{self.base_url}{path}", json=payload, headers=_HEADERS, timeout=timeout)
             response.raise_for_status()
             return response.json()
         except requests.exceptions.RequestException as e:

@@ -59,6 +59,7 @@ Tools inside Heimdall:
 
 ```bash
 make help       # list every command
+make ratatoskr-secret  # once: the secret only the backend may call Ratatoskr with
 make odin       # build + start everything
 make raid       # start (detached)
 make bifrost    # start with attached logs
@@ -73,7 +74,6 @@ make asf        # start ArchiSteamFarm and reconnect Heimdall
 |---------|---------|
 | http://localhost:3000 | The app (frontend) |
 | http://localhost:5001 | Backend API |
-| http://localhost:3001 | Ratatoskr (backend use only) |
 | http://localhost:1242 | ArchiSteamFarm UI |
 
 All are bound to **127.0.0.1 only** — the app has no login; never expose it.

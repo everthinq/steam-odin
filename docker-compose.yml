@@ -20,6 +20,8 @@ services:
       # `make asf-setup` puts it in the root .env (gitignored).
       - ASF_URL=http://asf:1242
       - ASF_IPC_PASSWORD=${ASF_IPC_PASSWORD:-}
+      # Ratatoskr refuses any request without it (`make ratatoskr-secret` writes it to .env).
+      - RATATOSKR_SECRET=${RATATOSKR_SECRET:-}
       - HEIMDALL_SECRET_KEY=${HEIMDALL_SECRET_KEY:-change_this_to_a_secure_random_string_in_production}
       # Proxy settings to change outbound IP and avoid Steam rate limits (HTTP 429)
       # Uncomment and set these environment variables to use a proxy/VPN:
@@ -36,6 +38,12 @@ services:
       # Example: SOCKS_PROXY=socks5://127.0.0.1:1080 (local SOCKS proxy)
       # Example: HTTP_PROXY=http://proxy.example.com:8080
     command: python app.py
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5000/health', timeout=4)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
 
   heimdall-frontend:
     build: ./Yggdrasil/heimdall/frontend
@@ -58,17 +66,24 @@ services:
     # non-root user (Dockerfile), source mounted read-only.
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
-    ports:
-      - "127.0.0.1:3001:3000"   # this Mac only (the backend uses the Docker network)
+    # No published port: only the backend calls it, over the Docker network, with the
+    # shared secret. To look at it by hand: docker exec steam-odin-ratatoskr-1 wget -qO- localhost:3000/health
     environment:
       - PORT=3000
+      - RATATOSKR_SECRET=${RATATOSKR_SECRET:-}
       - HEIMDALL_API_URL=http://heimdall-backend:5000
-      - MOVE_DELAY_MS=400
+      - MOVE_DELAY_MS=200
       # Auto-disconnect after idle (ms). 0 = never. Default 3600000 (1 hour).
       # - SESSION_IDLE_TIMEOUT_MS=1800000
     volumes:
       - ./Yggdrasil/ratatoskr:/app:ro
       - /app/node_modules
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
 
   # ASF: ArchiSteamFarm — idles games so their trading cards drop (Andvari's farmer).
   # Hardened: pinned image digest, non-root, no Linux capabilities, read-only

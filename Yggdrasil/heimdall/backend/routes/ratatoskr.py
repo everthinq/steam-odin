@@ -8,6 +8,7 @@ import threading
 from flask import Blueprint, jsonify, request
 
 from context import ctx
+from storage_deposit import CommandError, storage_block
 
 bp = Blueprint('ratatoskr', __name__)
 
@@ -70,42 +71,49 @@ def ratatoskr_disconnect():
     return jsonify(result)
 
 
-@bp.route('/api/ratatoskr/move', methods=['POST'])
-def ratatoskr_move():
-    """Move items via Ratatoskr."""
-    if not request.json:
-        return jsonify({"error": "Missing JSON body"}), 400
+# ---- Move commands: plan, then execute once (storage_deposit.py) ----------------
+# Transfer, Auto-Store and the command line move items only through these: the rules
+# (what a Storage Unit refuses, the fullest unit with room first) live in the backend.
 
-    result = ctx.ratatoskr_service.move_item(
-        steam_id=request.json.get('steamID'),
-        item_id=request.json.get('itemID'),
-        source=request.json.get('source'),
-        target=request.json.get('target'),
-        casket_id=request.json.get('casketID')
-    )
-
-    if 'error' in result:
-        return jsonify(result), 400
-    return jsonify(result)
+def _command(run, status=200):
+    try:
+        return jsonify(run()), status
+    except CommandError as error:
+        return jsonify(error.body()), error.status
 
 
-@bp.route('/api/ratatoskr/move/batch', methods=['POST'])
-def ratatoskr_move_batch():
-    """Queue a batch of item moves via Ratatoskr."""
-    if not request.json:
-        return jsonify({"error": "Missing JSON body"}), 400
+@bp.route('/api/ratatoskr/storage/<steamid>', methods=['GET'])
+def ratatoskr_storage(steamid):
+    """Free places across every Storage Unit (they count as one storage)."""
+    return _command(lambda: ctx.deposit_service.storage(steamid))
 
-    result = ctx.ratatoskr_service.move_batch(
-        steam_id=request.json.get('steamID'),
-        item_ids=request.json.get('itemIDs'),
-        source=request.json.get('source'),
-        target=request.json.get('target'),
-        casket_id=request.json.get('casketID'),
-    )
 
-    if 'error' in result:
-        return jsonify(result), 400
-    return jsonify(result)
+@bp.route('/api/ratatoskr/deposit/plan', methods=['POST'])
+def ratatoskr_deposit_plan():
+    """Plan a deposit: {steamid, item_ids: [...]} or {steamid, all_storable: true}."""
+    body = request.get_json(silent=True) or {}
+    if not body.get('steamid'):
+        return jsonify({'error': 'Missing steamid', 'code': 'bad_request'}), 400
+    item_ids = body.get('item_ids')
+    if item_ids is not None and not isinstance(item_ids, list):
+        return jsonify({'error': 'item_ids must be a list', 'code': 'bad_request'}), 400
+    return _command(lambda: ctx.deposit_service.plan_deposit(
+        body['steamid'], item_ids=item_ids, all_storable=bool(body.get('all_storable'))))
+
+
+@bp.route('/api/ratatoskr/withdraw/plan', methods=['POST'])
+def ratatoskr_withdraw_plan():
+    """Plan taking items out: {steamid, items: [{item_id, casket_id}]}."""
+    body = request.get_json(silent=True) or {}
+    if not body.get('steamid') or not isinstance(body.get('items'), list):
+        return jsonify({'error': 'Needs steamid and items', 'code': 'bad_request'}), 400
+    return _command(lambda: ctx.deposit_service.plan_withdraw(body['steamid'], body['items']))
+
+
+@bp.route('/api/ratatoskr/plans/<plan_id>/execute', methods=['POST'])
+def ratatoskr_execute_plan(plan_id):
+    """Run a plan once; answers its job (GET /api/jobs/<id>). Again: the same job."""
+    return _command(lambda: ctx.deposit_service.execute(plan_id), 202)
 
 
 @bp.route('/api/ratatoskr/move/status/<steamid>', methods=['GET'])
@@ -156,8 +164,12 @@ def ratatoskr_set_session_idle():
 
 @bp.route('/api/ratatoskr/inventory/<steamid>', methods=['GET'])
 def ratatoskr_inventory(steamid):
-    """Get inventory for account."""
-    return jsonify(ctx.ratatoskr_service.get_inventory(steamid))
+    """Get inventory for account; each item says whether a Storage Unit takes it
+    (`storage_block`: None, or {code, reason, until}) — the backend's rule, not the page's."""
+    answer = ctx.ratatoskr_service.get_inventory(steamid)
+    for item in (answer or {}).get('items') or []:
+        item['storage_block'] = storage_block(item)
+    return jsonify(answer)
 
 
 @bp.route('/api/ratatoskr/caskets/<steamid>', methods=['GET'])

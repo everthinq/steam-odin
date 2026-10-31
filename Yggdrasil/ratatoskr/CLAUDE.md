@@ -9,28 +9,36 @@ Ratatoskr's map and its rate-limit contract.
 ## What it is
 
 A small Express service that drives the `steam-user` + `globaloffensive`
-(Game Coordinator) libraries. The Heimdall **backend** calls it over HTTP
-(`RATATOSKR_URL`); the **frontend never calls it directly** — it goes through
-Heimdall's `/api/ratatoskr/*` routes. Any request carrying an `Origin` header
-is refused with 403 (only server-to-server calls are accepted).
+(Game Coordinator) libraries. Only the Heimdall **backend** calls it, over the
+Docker network (`RATATOSKR_URL`); the **frontend never calls it directly** — it
+goes through Heimdall's `/api/ratatoskr/*` routes. Its port is **not published**
+on the Mac, every request must carry the shared secret (`X-Ratatoskr-Secret` =
+`RATATOSKR_SECRET` from the root `.env`, written once by `make ratatoskr-secret`;
+missing or wrong → 401, and with no secret set every request is refused), and
+any request with an `Origin` header is refused with 403. Only `GET /health` is
+open (Docker's health check). To look by hand:
+`docker exec steam-odin-ratatoskr-1 wget -qO- localhost:3000/health`.
 
 | File | Job |
 |------|-----|
-| `server.js` | Express app, session store, login, move queue, idle sweep, every endpoint |
+| `server.js` | Express app, the secret check, session store, login, idle sweep, every endpoint |
+| `moves.js` | The move queue (`createMoveQueues`): one per account, moves sent one after another at the move delay, **each confirmed by the Game Coordinator** in the background — a deposit by `itemRemoved` (the item left the inventory) or `itemAcquired` inside the target unit, a withdrawal by `itemAcquired` back in the inventory; no answer in 15 s = refused (seen live 2026-10-31, [storage-units.md §4](../../docs/internals/storage-units.md)) |
+| `test/` | `npm test` (node's built-in runner, no dependencies): `moves.test.js` (confirmations with a fake Game Coordinator), `items.test.js` (the hold fields from raw items shaped like recorded ones). Also in CI |
 | `store.js` | Counter-Strike 2 in-game store over the Game Coordinator: price sheet (`StoreGetUserData`), `StorePurchaseInit` / `Finalize` / `Cancel`, one request per session at a time, each sent as a Game Coordinator **job** (Finalize is answered only to a job); catches Steam's `ClientMicroTxnAuthRequest` (EMsg 5504, not handled by steam-user). Protocol and live findings: [docs/internals/storage-shop.md](../../docs/internals/storage-shop.md) |
-| `items.js` | Converts Game Coordinator inventory into display items (names, images, stickers, wear, collections); logic derived from Casemove. Loads `csgo_english.json` and `items_game.json` once at start. Two fields Heimdall's Transfer page relies on: `item_moveable` (`itemProcessorCanBeMoved`: false for what a Storage Unit cannot hold — untradable collectibles, the default music kit, Storage Units, default weapons; the To mode hides those) `trade_unlock` (attribute 75: when a trade hold ends — a Steam Market purchase has only this and CAN go into a Storage Unit) and `trade_locked` + `trade_protected_until` (attribute 312, trade protection: an item received in a trade; set only while the date is ahead; the Game Coordinator refuses such an item into a Storage Unit while Ratatoskr still counts the sent move as done — Auto-Store skips `trade_locked`, Transfer's To mode never selects it) |
+| `items.js` | Converts Game Coordinator inventory into display items (names, images, stickers, wear, collections); logic derived from Casemove. Loads `csgo_english.json` and `items_game.json` once at start. The fields the backend's storage rules (`storage_deposit.py` `storage_block`) read: `item_moveable` (`itemProcessorCanBeMoved`: false for what a Storage Unit cannot hold — untradable collectibles, the default music kit, Storage Units, default weapons), `trade_unlock` (attribute 75: when a trade hold ends — a Steam Market purchase has only this and CAN go into a Storage Unit) and `trade_locked` + `trade_protected_until` (attribute 312, trade protection: an item received in a trade; set only while the date is ahead; the Game Coordinator refuses such an item into a Storage Unit) |
 | `fetch_items.js` | Manual one-off: downloads fresh `items_game` / `csgo_english` from SteamDatabase's GameTracking-CS2 and writes the two JSON files (`node fetch_items.js`, on the Mac in this folder: the container's copy is read-only). Run it after a game update adds items (the Store Catalogue then marks fewer items "new"), then `docker restart steam-odin-ratatoskr-1`; last refreshed 2026-10-03 |
 
-Scripts: `npm start` (= `node server.js`), `npm run dev` (nodemon). Image
+Scripts: `npm start` (= `node server.js`), `npm run dev` (nodemon), `npm test` (the tests in `test/`). Image
 `node:22-alpine`, runs as user `node`, all capabilities dropped, source mounted
-read-only. Container port 3000, published on host **127.0.0.1:3001**.
+read-only. Container port 3000, **not published** on the Mac (Docker network only); Docker health check on `/health`.
 
 ## Environment
 
 | Variable | Default | Notes |
 |----------|---------|-------|
 | `PORT` | 3030 in code | Compose sets 3000 |
-| `MOVE_DELAY_MS` | 400 | Clamped 100–5000; changeable live via `/config/move-delay` |
+| `RATATOSKR_SECRET` | none | Shared with the backend (root `.env`, `make ratatoskr-secret`); unset = every request refused except `/health` |
+| `MOVE_DELAY_MS` | 200 | Clamped 100–5000; changeable live via `/config/move-delay` |
 | `SESSION_IDLE_TIMEOUT_MS` | 3600000 (1 h) | 0 = never; otherwise 5 min–24 h; changeable live |
 | `HEIMDALL_API_URL` | `http://localhost:5000` | Compose: `http://heimdall-backend:5000` (web session hand-back) |
 
@@ -61,14 +69,15 @@ read-only. Container port 3000, published on host **127.0.0.1:3001**.
 | Method + path | Purpose |
 |---------------|---------|
 | `POST /login` | Log in + connect to the Game Coordinator |
+| `GET /health` | `{status, sessions}` — the only endpoint without the secret (Docker health check) |
 | `GET /status/:steamid` | 200 connected / 503 `gc_lost` / 404 disconnected (also keep-alive) |
 | `POST /disconnect/:steamid` | Log off |
 | `GET /inventory/:steamid` | Converted inventory |
 | `GET /caskets/:steamid` | Storage Units (definition 1201) |
 | `GET /casket/:steamid/:casketid` | One Storage Unit's contents |
 | `POST /casket/rename` | Free rename, max 20 characters, 15 s timeout |
-| `POST /move`, `POST /move/batch` | Queue moves (inventory ↔ casket); a batch has one `casketID`. Heimdall's Transfer To mode treats every Storage Unit as one storage and splits a deposit into one batch per unit (fullest with room first, `planBulkDeposit` in the frontend), sent one after another — Ratatoskr itself knows nothing of the pooling and never checks the 1,000-item limit |
-| `GET /move/status/:steamid` | Queue progress (last 20 errors) |
+| `POST /move/batch` | Queue moves (inventory ↔ casket); a batch has one `casketID`. Called only by the backend's `DepositService` (`storage_deposit.py`), which treats every Storage Unit as one storage and splits a deposit into one batch per unit (fullest with room first), sent one after another — Ratatoskr itself knows nothing of the pooling and never checks the 1,000-item limit |
+| `GET /move/status/:steamid` | Queue progress of the current run: `runId` (new for every batch queued on an idle queue; `/move/batch` returns it), `done` (confirmed), `refused`, `failed` (refused or never sent), `doneItemIDs`, `refusedItemIDs`, `unconfirmedItemIDs` (no answer because the session or the Game Coordinator was lost meanwhile — not a refusal), `failedItemIDs`, `awaiting` (sent, no answer yet), `running` until every sent move is answered; last 20 errors with a `code` (`refused`, `not_sent`). A disconnect drops the queue, so a client must count only the ids of its own `runId`. An item already queued or awaiting is not queued twice |
 | `GET/POST /config/move-delay` | Delay between moves |
 | `GET/POST /config/session-idle` | Idle timeout + presets |
 | `GET/POST /config/protected-accounts` | Accounts exempt from the idle sweep |
@@ -87,11 +96,12 @@ directly** — only Heimdall's guarded Buy Storage Units (and its per-item pages
 Steam and the Game Coordinator throttle aggressively (HTTP 429 / silent drops).
 The current tuning exists because faster settings got accounts rate-limited:
 
-- **Moves are serial with a delay** (`MOVE_DELAY_MS`, default 400 ms). One
+- **Moves are serial with a delay** (`MOVE_DELAY_MS`, default 200 ms; Ivan has moved at 200 ms for a long time without trouble). One
   runner per account; before each move it re-checks the session and Game
   Coordinator and fails the rest ("session lost") rather than sending blind.
-  Do not batch or parallelise moves. A sent move counts as done (the Game
-  Coordinator does not confirm).
+  Do not batch or parallelise moves. A sent move counts as done only when the
+  Game Coordinator's inventory update confirms it (`moves.js`); confirmations
+  run in the background, so they never slow the queue down.
 - **Store requests are serial per session** (`serial` queue in `store.js`): two
   answers of the same type would mix.
 - On the Heimdall side the scheduler sleeps between accounts; the Transfer page
@@ -104,9 +114,10 @@ confirm with Ivan before shortening any of it.
 
 ## Traps
 
-- **Storage rules live in [docs/internals/storage-units.md](../../docs/internals/storage-units.md)**
-  (trade hold vs trade protection, fullest unit first, refused deposits fail silently, how to read
-  the raw Game Coordinator data without a restart). Transfer and Auto-Store change together.
+- **Storage rules live in the backend** (`storage_deposit.py`), explained in
+  [docs/internals/storage-units.md](../../docs/internals/storage-units.md) (trade hold vs trade
+  protection, fullest unit first, how a move is confirmed, how to read the raw Game Coordinator
+  data without a restart). Ratatoskr only moves what it is told and reports what was confirmed.
 
 - **No hot reload.** After editing any `.js`, `docker restart steam-odin-ratatoskr-1`
   (it drops every live session). `npm run dev` / nodemon only reloads when run

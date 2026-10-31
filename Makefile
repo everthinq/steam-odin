@@ -4,7 +4,7 @@
 # Use 'make help' (or just 'make') to hear the songs of the commands.
 
 .PHONY: help odin forge raid bifrost sleep ragnarok helheim saga
-.PHONY: all build up dev down clean prune logs asf-setup asf asf-password
+.PHONY: all build up dev down clean prune logs asf-setup asf asf-password ratatoskr-secret
 
 # Default: Speak the wisdom
 help:
@@ -22,6 +22,7 @@ help:
 	@echo "  \033[0;32masf-setup\033[0m          One-time ArchiSteamFarm setup (password + hardened config)"
 	@echo "  \033[0;32masf\033[0m                Start ArchiSteamFarm and reconnect Heimdall to it"
 	@echo "  \033[0;32masf-password\033[0m       Copy the ASF UI password to the clipboard (never printed)"
+	@echo "  \033[0;32mratatoskr-secret\033[0m   One-time: the secret only the backend may call Ratatoskr with (root .env)"
 	@echo ""
 
 # ------------------------------------------------------------------------------
@@ -97,3 +98,10 @@ asf:
 
 asf-password:
 	@grep '^ASF_IPC_PASSWORD=' .env | cut -d= -f2- | tr -d '\n' | pbcopy && echo "ASF UI password copied to the clipboard (open http://localhost:1242)"
+
+# Ratatoskr refuses every request without this secret; the backend sends it. Written once
+# into the root .env (gitignored, owner-only), never printed. Then: docker compose up -d
+ratatoskr-secret:
+	@touch .env && chmod 600 .env
+	@if grep -q '^RATATOSKR_SECRET=.' .env; then echo "RATATOSKR_SECRET already set in .env"; \
+	else echo "RATATOSKR_SECRET=$$(openssl rand -hex 32)" >> .env && echo "RATATOSKR_SECRET written to .env — run: docker compose up -d heimdall-backend ratatoskr"; fi
