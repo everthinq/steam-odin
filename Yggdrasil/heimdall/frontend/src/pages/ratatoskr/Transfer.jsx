@@ -34,6 +34,7 @@ import {
     pickOneItemIdPerSkin,
     formatItemFloat,
     formatTradeHoldLabel,
+    formatTradeUnlock,
     itemsHaveTradeHold,
     canGoIntoStorageUnit,
 } from '../../utils/transferItems';
@@ -46,6 +47,7 @@ import GroupQtyInput from '../../components/transfer/GroupQtyInput';
 import PricingSampleReport from '../../components/transfer/PricingSampleReport';
 import { getCasketCount, getItemCollection, transferRowSurfaceClass } from '../../utils/transferView';
 import { readJson } from '../../utils/readJson';
+import { useNowSeconds } from '../../utils/priceAge';
 
 const STORAGE_CAPACITY = 1000;
 const TRANSFER_HEADER_BTN =
@@ -89,6 +91,8 @@ const RatatoskrTransfer = () => {
     const [allCasketLoaded, setAllCasketLoaded] = useState(false);
     const [storageSectionOpen, setStorageSectionOpen] = useState(true);
     const [showUnstorable, setShowUnstorable] = useShowUnstorable();
+    // Ticks every minute: trade holds that end while the page is open move to the tradable line.
+    const nowSeconds = useNowSeconds();
     const filterRef = useRef(null);
     const fetchingAllStorage = useRef(false);
     // Bumped on every casket selection change and every single-casket fetch:
@@ -624,7 +628,7 @@ const RatatoskrTransfer = () => {
             float:
                 group.floatVariants?.length === 1
                     ? formatItemFloat(group.floatVariants[0]?.item_paint_wear) || ''
-                    : group.hasMultipleFloats
+                    : group.hasMultipleFloats && group.variantKind === 'float'
                       ? `${group.floatVariants.length} floats`
                       : '',
             collection: group.item_collection || '',
@@ -729,8 +733,9 @@ const RatatoskrTransfer = () => {
         () => groupItemsByName(displayItems, {
             includeStorage: showStorageColumn,
             markUnstorable: transferMode === 'to',
+            ...(nowSeconds ? { now: nowSeconds * 1000 } : {}),
         }),
-        [displayItems, showStorageColumn, transferMode]
+        [displayItems, showStorageColumn, transferMode, nowSeconds]
     );
 
     const sortedGroupedItems = useMemo(() => {
@@ -890,6 +895,10 @@ const RatatoskrTransfer = () => {
                 storageName: group.storage_unit_name,
                 group,
                 queueQty: group.item_ids.filter((id) => selectedIds.includes(id)).length,
+                // Time left on the hold of the queued copies, so a tradable and a held line of one item tell apart.
+                tradeHold: group.onTradeHold
+                    ? formatTradeHoldLabel(group.items.filter((item) => selectedIdsSet.has(item.item_id)))
+                    : null,
             }))
             .filter((e) => e.queueQty > 0);
 
@@ -926,7 +935,7 @@ const RatatoskrTransfer = () => {
                     queueQty: 1,
                 };
             });
-    }, [sortedGroupedItems, selectedIds, allCasketItems, casketItems]);
+    }, [sortedGroupedItems, selectedIds, selectedIdsSet, allCasketItems, casketItems]);
 
     const slotsLeft =
         primarySelectedCasket && transferMode === 'to'
@@ -1232,9 +1241,9 @@ const RatatoskrTransfer = () => {
                                                 className="shrink-0 p-0.5 text-slate-500 hover:text-white transition-colors"
                                                 aria-expanded={floatsOpen}
                                                 aria-label={
-                                                    floatsOpen
-                                                        ? 'Hide float variants'
-                                                        : 'Show float variants'
+                                                    lineGroup.variantKind === 'unlock'
+                                                        ? floatsOpen ? 'Hide unlock times' : 'Show unlock times'
+                                                        : floatsOpen ? 'Hide float variants' : 'Show float variants'
                                                 }
                                             >
                                                 <ChevronDown
@@ -1255,8 +1264,19 @@ const RatatoskrTransfer = () => {
                                                 </span>
                                                 <SteamMarketLink itemName={lineGroup.item_name} />
                                                 {lineGroup.onTradeHold && (
-                                                    <span className="shrink-0 px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wide bg-orange-500/25 text-orange-300 border border-orange-500/30">
-                                                        {formatTradeHoldLabel(lineGroup.items)}
+                                                    <span
+                                                        className="shrink-0 px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wide bg-orange-500/25 text-orange-300 border border-orange-500/30"
+                                                        title="On trade hold: can go into a Storage Unit, cannot be traded or sold yet"
+                                                    >
+                                                        Trade hold · {formatTradeHoldLabel(lineGroup.items)}
+                                                    </span>
+                                                )}
+                                                {!lineGroup.onTradeHold && lineGroup.holdSplit && (
+                                                    <span
+                                                        className="shrink-0 px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wide bg-emerald-500/15 text-emerald-300 border border-emerald-500/30"
+                                                        title="These copies can be traded now; the copies on trade hold have a line of their own"
+                                                    >
+                                                        Tradable now
                                                     </span>
                                                 )}
                                                 {lineGroup.unstorable && (
@@ -1275,6 +1295,15 @@ const RatatoskrTransfer = () => {
                                                     )}
                                                 </p>
                                             )}
+                                            {lineGroup.trade_unlock ? (
+                                                <p className="text-[11px] text-orange-300/70 truncate">
+                                                    Unlocks {formatTradeUnlock(lineGroup.trade_unlock)}
+                                                </p>
+                                            ) : lineGroup.variantKind === 'unlock' && lineGroup.hasMultipleFloats ? (
+                                                <p className="text-[11px] text-orange-300/70 truncate">
+                                                    {lineGroup.floatVariants.length} unlock times
+                                                </p>
+                                            ) : null}
                                             {!lineGroup.hasMultipleFloats &&
                                                 formatItemFloat(
                                                     lineGroup.floatVariants[0]?.item_paint_wear
@@ -1315,8 +1344,9 @@ const RatatoskrTransfer = () => {
                                         const vSelected = getIdsSelectedQty(variant.item_ids);
                                         const vMax = getVariantMaxSelectableQty(lineGroup, variant);
                                         const floatLabel =
-                                            formatItemFloat(variant.item_paint_wear) ||
-                                            'No float data';
+                                            variant.variantKind === 'unlock'
+                                                ? `Unlocks ${formatTradeUnlock(variant.trade_unlock)}`
+                                                : formatItemFloat(variant.item_paint_wear) || 'No float data';
 
                                         return (
                                             <div
@@ -1328,7 +1358,7 @@ const RatatoskrTransfer = () => {
                                                     <ItemThumb item={variant.representative} />
                                                     <div className="min-w-0">
                                                         <p
-                                                            className={`text-xs font-mono truncate ${variant.onTradeHold ? 'text-orange-200' : 'text-slate-300'}`}
+                                                            className={`text-xs truncate ${variant.variantKind === 'unlock' ? '' : 'font-mono'} ${variant.onTradeHold ? 'text-orange-200' : 'text-slate-300'}`}
                                                         >
                                                             {floatLabel}
                                                         </p>
@@ -1336,7 +1366,7 @@ const RatatoskrTransfer = () => {
                                                             {variant.qty} in stack
                                                             {variant.onTradeHold && (
                                                                 <span className="text-orange-400/90 ml-1">
-                                                                    · trade hold
+                                                                    · trade hold {formatTradeHoldLabel(variant.items)}
                                                                 </span>
                                                             )}
                                                         </p>

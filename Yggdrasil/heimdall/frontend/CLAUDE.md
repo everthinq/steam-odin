@@ -143,6 +143,17 @@ path prefix — add your page there. No catch-all route, no Settings page.
 - No confirmation before: Confirmations Approve/Deny, Transfer Move, Team
   Fortress 2 Play / Sell now, card auto-sell checkboxes (they save at once).
 
+## Ratatoskr Transfer: tradable now vs trade hold
+
+`groupItemsByName` (`utils/transferItems.js`) splits every name + wear line by trade status: the
+copies tradable now and the copies on trade hold (`trade_unlock` in the future) are separate lines,
+sorted tradable first; `holdSplit` marks an item that has both (the tradable line gets the
+"Tradable now" badge). A held line's `floatVariants` are its floats (skins) or, for float-less
+items, one variant per unlock time (`variantKind: 'unlock'`, `trade_unlock`), sorted soonest
+first. `formatTradeHoldLabel` gives the time left ("14h", "6d", range "1h–6d"),
+`formatTradeUnlock` the unlock moment in the browser's time zone. Trade-held items can go into a
+Storage Unit; nothing about the hold blocks selection.
+
 ## Ratatoskr: items a Storage Unit cannot hold
 
 Ratatoskr's `item_moveable` (`items.js` `itemProcessorCanBeMoved`) is false for untradable

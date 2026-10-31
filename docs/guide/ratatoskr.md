@@ -27,6 +27,15 @@ Stable" means ready. **Auto-disconnect when idle** frees the session after
    **Move**. Moves start immediately — no second question — and run one at a
    time with a pause between them; the progress bar follows.
 
+**Tradable now and trade hold** are separate rows: when you hold copies of an
+item that can be traded now and copies still on trade hold (a fresh purchase,
+a trade), the item gets two rows next to each other — "Tradable now" (green)
+and "Trade hold · 6–7d" (orange, the time left, in hours under a day). Both can
+go into a Storage Unit. A held case or sticker opens (the arrow) into one line
+per unlock time ("Unlocks Thu 6 Nov, 08:00"), so you can move exactly the
+batch you want; a held skin opens into its floats, each with its hold. The
+queue repeats the hold next to each held entry.
+
 **Show items that can't be stored (N)** (To mode):
 untradable items — service medals, veteran and operation coins, Loyalty Badge,
 Global Offensive Badge, the default music kit (Music Kit | Valve, CS:GO) — can

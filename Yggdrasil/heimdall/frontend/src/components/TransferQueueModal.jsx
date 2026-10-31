@@ -80,6 +80,9 @@ const TransferQueueModal = ({
                                 <p className="text-xs text-slate-500 truncate">
                                     {locationLabel}: {entry.storageName || storageName}
                                     <span className="text-slate-400 ml-2">× {entry.queueQty}</span>
+                                    {entry.tradeHold && (
+                                        <span className="text-orange-400/90 ml-2">· trade hold {entry.tradeHold}</span>
+                                    )}
                                 </p>
                             </div>
                             <button

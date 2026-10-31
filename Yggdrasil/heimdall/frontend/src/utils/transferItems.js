@@ -106,42 +106,73 @@ export const getItemSkinLineKey = (item) =>
 /** @deprecated alias */
 export const getItemSkinKey = (item) => getItemSkinLineKey(item);
 
-export const isItemOnTradeHold = (item) => {
-    if (!item?.trade_unlock) return false;
-    return new Date(item.trade_unlock) > new Date();
+const HOUR_MS = 60 * 60 * 1000;
+const DAY_MS = 24 * HOUR_MS;
+
+/** Milliseconds until the item can be traded again (at `now`, default this moment); 0 when it is tradable. */
+const tradeHoldMs = (item, now = Date.now()) => {
+    if (!item?.trade_unlock) return 0;
+    return Math.max(0, new Date(item.trade_unlock).getTime() - now);
 };
+
+export const isItemOnTradeHold = (item, now) => tradeHoldMs(item, now) > 0;
+
+/** "14h" under a day, otherwise whole days rounded up ("6d"). */
+const formatHoldDuration = (ms) =>
+    ms < DAY_MS ? `${Math.max(1, Math.ceil(ms / HOUR_MS))}h` : `${Math.ceil(ms / DAY_MS)}d`;
 
 export const getTradeHoldDaysForItems = (items) => {
-    let maxDays = 0;
-    for (const item of items || []) {
-        if (!isItemOnTradeHold(item)) continue;
-        const unlock = new Date(item.trade_unlock);
-        const days = Math.ceil((unlock - new Date()) / (1000 * 60 * 60 * 24));
-        maxDays = Math.max(maxDays, days);
-    }
-    return maxDays;
+    let longest = 0;
+    for (const item of items || []) longest = Math.max(longest, tradeHoldMs(item));
+    return longest > 0 ? Math.ceil(longest / DAY_MS) : 0;
 };
 
-export const itemsHaveTradeHold = (items) => getTradeHoldDaysForItems(items) > 0;
+export const itemsHaveTradeHold = (items, now) => (items || []).some((item) => isItemOnTradeHold(item, now));
 
+/** Time left on the trade hold: "6d", or the range "14h–7d" when the items unlock at different times; "—" when none is held. */
 export const formatTradeHoldLabel = (items) => {
-    const days = getTradeHoldDaysForItems(items);
-    return days > 0 ? `${days}d` : '—';
+    const holds = (items || []).map((item) => tradeHoldMs(item)).filter((ms) => ms > 0);
+    if (holds.length === 0) return '—';
+    const shortest = formatHoldDuration(Math.min(...holds));
+    const longest = formatHoldDuration(Math.max(...holds));
+    return shortest === longest ? longest : `${shortest}–${longest}`;
 };
 
-/** Tradeable floats first; stacks on trade hold sink to the bottom. */
+/** When a trade hold ends, in the browser's time zone: "Thu 6 Nov, 08:00". */
+export const formatTradeUnlock = (tradeUnlock) => {
+    const date = new Date(tradeUnlock);
+    if (Number.isNaN(date.getTime())) return '';
+    return date.toLocaleString(undefined, {
+        weekday: 'short',
+        day: 'numeric',
+        month: 'short',
+        hour: '2-digit',
+        minute: '2-digit',
+    });
+};
+
+/** Tradable variants first; held ones after, the soonest unlock first, then by float. */
 export const compareFloatVariantsWithTradeHoldLast = (a, b) => {
-    const aHold = itemsHaveTradeHold(a.items) ? 1 : 0;
-    const bHold = itemsHaveTradeHold(b.items) ? 1 : 0;
+    const aHold = a.onTradeHold ? 1 : 0;
+    const bHold = b.onTradeHold ? 1 : 0;
     if (aHold !== bHold) return aHold - bHold;
+    if (a.variantKind === 'unlock' && b.variantKind === 'unlock') {
+        return new Date(a.trade_unlock) - new Date(b.trade_unlock);
+    }
     return (a.item_paint_wear ?? 0) - (b.item_paint_wear ?? 0);
 };
 
 /**
- * Group by name + wear (and storage when requested). Distinct floats are nested
- * under `floatVariants` for the expandable picker in the transfer table.
+ * Group by name + wear (and storage when requested), then split by trade status: the copies
+ * tradable now and the copies on trade hold are separate lines (`onTradeHold`), so a mixed stack
+ * shows both. Each line nests `floatVariants` for the expandable picker: one per distinct float
+ * (skins), or, for float-less items on hold (cases, stickers), one per unlock time
+ * (`variantKind: 'unlock'`). `holdSplit` marks the lines whose item also has a line of the other
+ * trade status; `trade_unlock` is set on a held line whose copies all unlock at the same moment.
+ * `now` (milliseconds) is the moment holds are judged at: pass a clock that ticks, so a hold that
+ * ends while the page is open moves its copies to the tradable line.
  */
-export const groupItemsByName = (items, { includeStorage = false, markUnstorable = false } = {}) => {
+export const groupItemsByName = (items, { includeStorage = false, markUnstorable = false, now = Date.now() } = {}) => {
     const map = new Map();
     for (const item of items) {
         const lineKey = getItemSkinLineKey(item);
@@ -151,11 +182,14 @@ export const groupItemsByName = (items, { includeStorage = false, markUnstorable
         // Depositing (`markUnstorable`): items a Storage Unit cannot hold get a line of their own,
         // so a line is all one or the other. Items already in a Storage Unit can always come out.
         const unstorable = markUnstorable && !canGoIntoStorageUnit(item);
-        const key = unstorable ? `${storageKey}\0unstorable` : storageKey;
+        const onHold = isItemOnTradeHold(item, now);
+        const statusKey = `${storageKey}\0${unstorable ? 'unstorable' : 'storable'}`;
+        const key = `${statusKey}\0${onHold ? 'hold' : 'tradable'}`;
 
         if (!map.has(key)) {
             map.set(key, {
                 key,
+                status_key: statusKey,
                 skin_line_key: lineKey,
                 item_name: item.item_name,
                 item_wear_name: item.item_wear_name,
@@ -177,10 +211,17 @@ export const groupItemsByName = (items, { includeStorage = false, markUnstorable
         line.item_ids.push(item.item_id);
         line.items.push(item);
 
-        const floatSeg = getItemFloatKey(item) || '__no_float__';
-        if (!line.floatVariantMap.has(floatSeg)) {
-            line.floatVariantMap.set(floatSeg, {
-                key: `${key}\0${floatSeg}`,
+        const floatKey = getItemFloatKey(item);
+        const variantKind = floatKey ? 'float' : onHold ? 'unlock' : 'none';
+        const variantSegment =
+            variantKind === 'float' ? floatKey
+                : variantKind === 'unlock' ? `unlock:${item.trade_unlock}`
+                    : '__no_float__';
+        if (!line.floatVariantMap.has(variantSegment)) {
+            line.floatVariantMap.set(variantSegment, {
+                key: `${key}\0${variantSegment}`,
+                variantKind,
+                trade_unlock: item.trade_unlock,
                 item_paint_wear: item.item_paint_wear,
                 item_collection: item.item_collection,
                 stickers: item.stickers || [],
@@ -189,9 +230,14 @@ export const groupItemsByName = (items, { includeStorage = false, markUnstorable
                 items: [],
             });
         }
-        const variant = line.floatVariantMap.get(floatSeg);
+        const variant = line.floatVariantMap.get(variantSegment);
         variant.item_ids.push(item.item_id);
         variant.items.push(item);
+    }
+
+    const linesPerStatus = new Map();
+    for (const line of map.values()) {
+        linesPerStatus.set(line.status_key, (linesPerStatus.get(line.status_key) || 0) + 1);
     }
 
     return Array.from(map.values())
@@ -200,26 +246,36 @@ export const groupItemsByName = (items, { includeStorage = false, markUnstorable
                 .map((v) => ({
                     ...v,
                     qty: v.item_ids.length,
-                    onTradeHold: itemsHaveTradeHold(v.items),
+                    onTradeHold: itemsHaveTradeHold(v.items, now),
                     tradeHoldDays: getTradeHoldDaysForItems(v.items),
                 }))
                 .sort(compareFloatVariantsWithTradeHoldLast);
             // Drop the working map from the returned line (floatVariants replaces it).
             const rest = { ...line };
             delete rest.floatVariantMap;
+            const onTradeHold = itemsHaveTradeHold(line.items, now);
+            const unlockTimes = new Set(line.items.map((item) => item.trade_unlock));
             return {
                 ...rest,
                 qty: line.item_ids.length,
                 floatVariants,
                 hasMultipleFloats: floatVariants.length > 1,
-                onTradeHold: itemsHaveTradeHold(line.items),
+                variantKind: floatVariants[0]?.variantKind || 'none',
+                onTradeHold,
                 tradeHoldDays: getTradeHoldDaysForItems(line.items),
+                trade_unlock: onTradeHold && unlockTimes.size === 1 ? line.items[0].trade_unlock : null,
+                holdSplit: linesPerStatus.get(line.status_key) > 1,
             };
         })
         .sort((a, b) => {
             const loc = (a.storage_unit_name || '').localeCompare(b.storage_unit_name || '');
             if (loc !== 0) return loc;
-            return (a.item_name || '').localeCompare(b.item_name || '');
+            const name = (a.item_name || '').localeCompare(b.item_name || '');
+            if (name !== 0) return name;
+            const wear = (a.item_wear_name || '').localeCompare(b.item_wear_name || '');
+            if (wear !== 0) return wear;
+            // Same item: tradable now first, the trade hold right under it.
+            return (a.onTradeHold ? 1 : 0) - (b.onTradeHold ? 1 : 0);
         });
 };
 
