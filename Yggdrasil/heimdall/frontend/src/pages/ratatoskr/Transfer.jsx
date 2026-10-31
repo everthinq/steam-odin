@@ -45,11 +45,18 @@ import CollapsibleSection from '../../components/transfer/CollapsibleSection';
 import ItemThumb from '../../components/transfer/ItemThumb';
 import GroupQtyInput from '../../components/transfer/GroupQtyInput';
 import PricingSampleReport from '../../components/transfer/PricingSampleReport';
-import { getCasketCount, getItemCollection, transferRowSurfaceClass } from '../../utils/transferView';
+import {
+    getCasketCount,
+    getItemCollection,
+    transferRowSurfaceClass,
+    STORAGE_CAPACITY,
+    storageFreeSpace,
+    planBulkDeposit,
+} from '../../utils/transferView';
+import StorageSpacePanel from '../../components/transfer/StorageSpacePanel';
 import { readJson } from '../../utils/readJson';
 import { useNowSeconds } from '../../utils/priceAge';
 
-const STORAGE_CAPACITY = 1000;
 const TRANSFER_HEADER_BTN =
     'inline-flex items-center justify-center gap-2 h-10 px-4 rounded-lg text-sm font-medium transition-all shrink-0';
 
@@ -146,6 +153,7 @@ const RatatoskrTransfer = () => {
     };
 
     useEffect(() => {
+        expectedCasketCountsRef.current = {};
         fetchInventory();
         fetchCaskets();
         fetchMoveDelay();
@@ -220,12 +228,28 @@ const RatatoskrTransfer = () => {
         }
     };
 
+    // Counts this page just deposited into each unit ({casketId: count}). The Game Coordinator's
+    // own count can lag a few seconds behind a move; until it catches up the page plans with the
+    // higher number, so a quick second deposit never over-fills a unit. Cleared by any withdrawal.
+    const expectedCasketCountsRef = useRef({});
+
     const fetchCaskets = async () => {
         try {
             const res = await fetch(`/api/ratatoskr/caskets/${steamid}`);
             const data = await readJson(res).catch(() => ({}));
             if (!res.ok || data.error) throw new Error(data.error || `HTTP ${res.status}`);
-            if (data.caskets) setCaskets(data.caskets);
+            if (data.caskets) {
+                const expected = expectedCasketCountsRef.current;
+                setCaskets(data.caskets.map((c) => {
+                    const want = expected[c.item_id];
+                    if (want === undefined) return c;
+                    if (getCasketCount(c) >= want) {
+                        delete expected[c.item_id];   // the Game Coordinator caught up
+                        return c;
+                    }
+                    return { ...c, item_storage_total: want };
+                }));
+            }
             reportLoadError('caskets', null);
         } catch (err) {
             console.error(err);
@@ -353,7 +377,9 @@ const RatatoskrTransfer = () => {
         setAllCasketItems([]);
     };
 
-    const hasStorageSelection = allStorageSelected || selectedCasketIds.length > 0;
+    // To mode deposits into every Storage Unit with room as if they were one: nothing to pick.
+    const hasStorageSelection =
+        transferMode === 'to' || allStorageSelected || selectedCasketIds.length > 0;
 
     const isCasketSelected = (casketId) =>
         allStorageSelected || selectedCasketIds.includes(casketId);
@@ -433,6 +459,8 @@ const RatatoskrTransfer = () => {
         invalidateAllStorageCache();
         await fetchInventory();
         await fetchCaskets();
+        // A deposit needs only the inventory and the unit counts, never every unit's contents.
+        if (transferMode === 'to') return;
         if (allStorageSelected || selectedCasketIds.length !== 1) {
             await fetchAllStorageContents();
         } else if (selectedCasketIds.length === 1) {
@@ -483,7 +511,7 @@ const RatatoskrTransfer = () => {
                     }
                     failures = 0;
                     moveRunningRef.current = !!data.running;
-                    setMoveProgress(data);
+                    showMoveProgress(data);
                     if (!data.running && data.pending === 0) {
                         resolve(data);
                         return;
@@ -518,13 +546,52 @@ const RatatoskrTransfer = () => {
         if (!res.ok || data.error) {
             throw new Error(data.error || 'Failed to queue moves');
         }
-        setMoveProgress(data);
+        showMoveProgress(data);
         return pollMoveStatus();
+    };
+
+    // A move split into several batches (one per Storage Unit) shows one progress bar for the
+    // whole move: Ratatoskr counts each batch from zero, so the earlier batches are added on.
+    const moveBatchOffsetRef = useRef(null);
+    const showMoveProgress = (data) => {
+        const offset = moveBatchOffsetRef.current;
+        if (!offset) {
+            setMoveProgress(data);
+            return;
+        }
+        const done = offset.done + (data.done || 0);
+        const failed = offset.failed + (data.failed || 0);
+        setMoveProgress({
+            ...data,
+            running: !!data.running || offset.batchesLeft > 0,
+            done,
+            failed,
+            processed: done + failed,
+            total: offset.total,
+            pending: Math.max(0, offset.total - done - failed),
+        });
+    };
+
+    /** Queues the batches one after another; returns the summed `{done, failed}`. */
+    const runMoveBatches = async (batches, source, target) => {
+        const total = batches.reduce((sum, batch) => sum + batch.itemIDs.length, 0);
+        let done = 0;
+        let failed = 0;
+        try {
+            for (let i = 0; i < batches.length; i++) {
+                moveBatchOffsetRef.current = { done, failed, total, batchesLeft: batches.length - i - 1 };
+                const status = await queueBatchMove(batches[i].itemIDs, batches[i].casketID, source, target);
+                done += status.done || 0;
+                failed += status.failed || 0;
+            }
+        } finally {
+            moveBatchOffsetRef.current = null;
+        }
+        return { done, failed };
     };
 
     const handleMove = async () => {
         if (!hasStorageSelection || !transferMode || moveProgress?.running) return;
-        if (transferMode === 'to' && selectedCasketIds.length !== 1) return;
         // Never send the Game Coordinator an item a Storage Unit cannot hold.
         const unstorableIds = new Set(
             inventory.filter((i) => !canGoIntoStorageUnit(i)).map((i) => i.item_id)
@@ -533,6 +600,12 @@ const RatatoskrTransfer = () => {
             ? selectedInvItems.filter((id) => !unstorableIds.has(id))
             : selectedCasketItems;
         if (itemsToMove.length === 0) return;
+        // To mode: spread over the Storage Units, the fullest with room first; never more than fits.
+        const deposit = transferMode === 'to' ? planBulkDeposit(itemsToMove, caskets) : null;
+        if (deposit && deposit.overflow > 0) {
+            setMoveError(`${deposit.overflow} item${deposit.overflow === 1 ? '' : 's'} more than your Storage Units can hold. Remove some or buy Storage Units.`);
+            return;
+        }
 
         const source = transferMode === 'to' ? 'inventory' : 'casket';
         const target = transferMode === 'to' ? 'casket' : 'inventory';
@@ -560,21 +633,27 @@ const RatatoskrTransfer = () => {
                                   ? casketDisplayName(primarySelectedCasket)
                                   : ''
                           );
+                expectedCasketCountsRef.current = {};   // a withdrawal lowers counts: trust the Game Coordinator again
                 const byCasket = groupItemsByCasket(itemsToMove, pool);
-                for (const [casketID, itemIDs] of byCasket) {
-                    const status = await queueBatchMove(itemIDs, casketID, source, target);
-                    totalDone += status.done || 0;
-                    totalFailed += status.failed || 0;
-                }
-            } else {
-                const status = await queueBatchMove(
-                    itemsToMove,
-                    selectedCasketIds[0],
+                const status = await runMoveBatches(
+                    Array.from(byCasket, ([casketID, itemIDs]) => ({ casketID, itemIDs })),
                     source,
                     target
                 );
-                totalDone = status.done || 0;
-                totalFailed = status.failed || 0;
+                totalDone = status.done;
+                totalFailed = status.failed;
+            } else {
+                for (const batch of deposit.batches) {
+                    expectedCasketCountsRef.current[batch.casket.item_id] =
+                        getCasketCount(batch.casket) + batch.itemIds.length;
+                }
+                const status = await runMoveBatches(
+                    deposit.batches.map((batch) => ({ casketID: batch.casket.item_id, itemIDs: batch.itemIds })),
+                    source,
+                    target
+                );
+                totalDone = status.done;
+                totalFailed = status.failed;
             }
 
             const sampleItems = pricingSampleMoveRef.current;
@@ -937,10 +1016,27 @@ const RatatoskrTransfer = () => {
             });
     }, [sortedGroupedItems, selectedIds, selectedIdsSet, allCasketItems, casketItems]);
 
-    const slotsLeft =
-        primarySelectedCasket && transferMode === 'to'
-            ? Math.max(0, STORAGE_CAPACITY - getCasketCount(primarySelectedCasket))
-            : null;
+    // To mode: the Storage Units as one storage.
+    const storageFree = useMemo(() => storageFreeSpace(caskets), [caskets]);
+    const unitsWithRoom = useMemo(
+        () => caskets.filter((c) => getCasketCount(c) < STORAGE_CAPACITY).length,
+        [caskets]
+    );
+    const depositPlan = useMemo(
+        () => (transferMode === 'to' ? planBulkDeposit(selectedInvItems, caskets) : null),
+        [transferMode, selectedInvItems, caskets]
+    );
+    const depositOverflow = depositPlan?.overflow ?? 0;
+    // Where the queued items go, fullest unit first: "Temp6 · 7, Armory0 · 32 and 2 more".
+    const depositDestination = useMemo(() => {
+        if (!depositPlan || depositPlan.batches.length === 0) return null;
+        const shown = depositPlan.batches
+            .slice(0, 3)
+            .map((batch) => `${casketDisplayName(batch.casket)} · ${batch.itemIds.length}`)
+            .join(', ');
+        const more = depositPlan.batches.length - 3;
+        return more > 0 ? `${shown} and ${more} more` : shown;
+    }, [depositPlan]);
 
     const listLoading =
         loading ||
@@ -951,6 +1047,7 @@ const RatatoskrTransfer = () => {
     const isMoving = moveProgress?.running;
 
     const selectedStorageLabel = useMemo(() => {
+        if (transferMode === 'to') return 'Storage Units';
         if (allStorageSelected) return 'All storage units';
         if (selectedCasketIds.length === 0) return 'None selected';
         if (selectedCasketIds.length === 1) {
@@ -958,7 +1055,7 @@ const RatatoskrTransfer = () => {
             return c ? casketDisplayName(c) : '1 storage unit';
         }
         return `${selectedCasketIds.length} storage units`;
-    }, [allStorageSelected, selectedCasketIds, caskets]);
+    }, [transferMode, allStorageSelected, selectedCasketIds, caskets]);
 
     const emptyUnitsMessage = () => {
         if (transferMode === 'to') {
@@ -973,6 +1070,9 @@ const RatatoskrTransfer = () => {
 
     const mainEmptyMessage = () => {
         if (!transferMode) return 'Choose To or From to see available storage units';
+        if (transferMode === 'to' && caskets.length === 0) {
+            return 'No Storage Units in this inventory yet — buy one under Buy Storage Units.';
+        }
         if (!hasStorageSelection) {
             return transferMode === 'to'
                 ? 'Pick a storage unit to deposit items into'
@@ -1057,9 +1157,14 @@ const RatatoskrTransfer = () => {
                 )}
 
                 <div className="flex items-center gap-4 ml-auto text-xs">
-                    {slotsLeft !== null && transferMode === 'to' && (
-                        <span className="text-amber-400/90 font-medium whitespace-nowrap">
-                            {slotsLeft} LEFT
+                    {transferMode === 'to' && (
+                        <span
+                            className={`font-medium whitespace-nowrap tabular-nums ${depositOverflow > 0 ? 'text-red-300' : 'text-amber-400/90'}`}
+                            title="Free places left in your Storage Units after moving the selected items"
+                        >
+                            {depositOverflow > 0
+                                ? `${depositOverflow.toLocaleString('en-US')} TOO MANY`
+                                : `${(storageFree - selectedIds.length).toLocaleString('en-US')} LEFT`}
                         </span>
                     )}
                     <button
@@ -1439,6 +1544,12 @@ const RatatoskrTransfer = () => {
                                 onClose={() => setQueueOpen(false)}
                                 transferMode={transferMode}
                                 storageName={selectedStorageLabel}
+                                destination={transferMode === 'to' ? depositDestination : null}
+                                blockedReason={
+                                    depositOverflow > 0
+                                        ? `${depositOverflow} more than your Storage Units can hold`
+                                        : null
+                                }
                                 entries={queueEntries}
                                 totalItems={selectedIds.length}
                                 onClearAll={clearQueue}
@@ -1501,7 +1612,7 @@ const RatatoskrTransfer = () => {
             {transferMode && (
                 <p className="text-xs text-slate-500 -mt-4 mb-4">
                     {transferMode === 'to'
-                        ? 'Showing storage units with room (0–999 items).'
+                        ? 'Pick items and counts, then Move: they go into your Storage Units as one storage, the fullest unit with room first.'
                         : 'Showing storage units with items (1–1,000 items).'}
                 </p>
             )}
@@ -1575,6 +1686,15 @@ const RatatoskrTransfer = () => {
                 }}
             />
 
+            {transferMode === 'to' ? (
+                <StorageSpacePanel
+                    free={storageFree}
+                    unitCount={caskets.length}
+                    unitsWithRoom={unitsWithRoom}
+                    selected={selectedIds.length}
+                    loading={loading && caskets.length === 0}
+                />
+            ) : (
             <CollapsibleSection
                 title="STORAGE UNITS"
                 icon={Package}
@@ -1707,6 +1827,7 @@ const RatatoskrTransfer = () => {
                     </>
                 )}
             </CollapsibleSection>
+            )}
 
             {mainEmptyMessage() ? (
                 <div className="flex-1 flex flex-col items-center justify-center rounded-2xl border border-white/5 bg-odin-blue/20 text-slate-500 min-h-0">

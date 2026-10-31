@@ -18,14 +18,22 @@ Stable" means ready. **Auto-disconnect when idle** frees the session after
 
 1. Choose **To** (inventory → a Storage Unit) or **From** (Storage Units →
    inventory).
-2. Pick the Storage Unit (To: one with room; From: one, several or **All
-   storage units**). The pencil renames a Storage Unit (free, up to 20
-   characters).
+2. **To:** there is nothing to pick — your Storage Units count as one
+   storage. The **Storage space** panel shows how many places are free across
+   them, how many of your units have room, how many items you selected and how
+   many places are left after the move (red, and Move disabled, when the
+   selection does not fit; **Buy Storage Units** is next to it). The move fills
+   the fullest unit with room first, then the next, so it touches as few units
+   as it can and the emptier ones stay free; the queue says where the items go
+   ("Goes into Temp6 · 7, Temp4 · 14 …").
+   **From:** pick one, several or **All storage units**. The pencil renames a
+   Storage Unit (free, up to 20 characters; in From mode).
 3. Select items: by group with a quantity, by float, select all; filter by
-   collection or search. "N LEFT" shows free space.
+   collection or search. "N LEFT" shows the free places left after the move.
 4. Open the queue (**N ITEMS**), set the delay between items if needed, press
    **Move**. Moves start immediately — no second question — and run one at a
-   time with a pause between them; the progress bar follows.
+   time with a pause between them; one progress bar follows the whole move,
+   even when it spans several Storage Units.
 
 **Tradable now and trade hold** are separate rows: when you hold copies of an
 item that can be traded now and copies still on trade hold (a fresh purchase,
@@ -47,6 +55,28 @@ are. Switch it on to see them, greyed and marked "Can't be stored"; they can
 never be selected or moved. The choice is remembered in this browser. Which
 items count comes from the game's own item data (Ratatoskr's `item_moveable`),
 not from a list of names.
+
+**One limitless storage (To mode).** You never deal with single Storage Units
+when putting items away: all of them together act as one storage, as big as
+their free places combined. Pick items and counts, press Move.
+
+How it works underneath — worth knowing, nothing to do:
+
+- Every Storage Unit still holds at most **1,000 items**; the game only ever
+  moves an item into one specific unit. The "free" number is the sum of the
+  free places of every unit (1,000 minus what each holds).
+- At Move, Heimdall splits your selection over the units: the **fullest unit
+  with room first**, then the next fullest, until every item has a place. So a
+  move touches as few units as possible and your emptier units stay free for
+  later. Full units are skipped.
+- Each unit's share is sent as its own batch, one after another, with the same
+  pause between items as always (no extra speed, no extra risk of Steam
+  limits); the progress bar adds them up into one.
+- If the selection is bigger than the free space, nothing is sent: the panel
+  turns red, says how many items are too many, and Move stays disabled until
+  you remove some or buy more Storage Units.
+- The unit counts are read again after every move, so the next plan uses the
+  real numbers.
 
 **Move one of each to inventory** (From mode) takes one copy of every
 different skin out of storage — useful so price websites that read your

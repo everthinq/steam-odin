@@ -20,6 +20,8 @@ const TransferQueueModal = ({
     anchored = false,
     transferMode,
     storageName,
+    destination = null,
+    blockedReason = null,
     entries,
     totalItems,
     onClearAll,
@@ -106,6 +108,16 @@ const TransferQueueModal = ({
             />
 
             <div className="p-4 border-t border-white/10 space-y-3 bg-black/20">
+                {destination && (
+                    <p className="text-xs text-slate-500" title="The fullest Storage Unit with room fills first">
+                        Goes into <span className="text-slate-300">{destination}</span>
+                    </p>
+                )}
+                {blockedReason && (
+                    <p className="text-xs text-red-300" role="alert">
+                        {blockedReason} — remove some items or buy Storage Units.
+                    </p>
+                )}
                 <label className="flex items-center justify-between text-xs text-slate-500">
                     <span>Delay between items</span>
                     <span className="flex items-center gap-1">
@@ -126,7 +138,7 @@ const TransferQueueModal = ({
                 <button
                     type="button"
                     onClick={onMove}
-                    disabled={isMoving || totalItems === 0}
+                    disabled={isMoving || totalItems === 0 || !!blockedReason}
                     className="w-full py-3 rounded-lg bg-[#2a2d35] hover:bg-[#343842] border border-white/10 text-white text-sm font-medium disabled:opacity-40 transition-colors"
                 >
                     {isMoving ? 'Moving…' : `Move${totalItems > 0 ? ` (${totalItems})` : ''}`}

@@ -165,6 +165,32 @@ a Storage Unit; nothing about the hold blocks selection.
   array index becomes `now` and every hold reads tens of thousands of days. Wrap them:
   `items.map((item) => tradeHoldMs(item))`.
 
+## Ratatoskr Transfer: To mode is one bulk storage
+
+**The idea (Ivan's, keep it):** in To mode the user never thinks about single 1,000-item Storage
+Units — they are one "limitless" storage whose size is the sum of their free places. Do not bring
+back a unit picker, per-unit choices or an exclusion list for To mode; units are picked and
+renamed only in From mode. Underneath, the Game Coordinator still moves an item into one specific
+unit (`casketID`), so the page plans the split itself:
+
+To mode has no Storage Unit picker: `components/transfer/StorageSpacePanel.jsx` shows the free
+places across every unit (`storageFreeSpace`, `utils/transferView.js`, with `STORAGE_CAPACITY`
+1000), the selection and what is left; `planBulkDeposit(itemIds, caskets)` splits a move into one
+batch per unit, the fullest with room first, and reports `overflow` (Move is disabled and
+`handleMove` refuses while it is above 0). `runMoveBatches` queues the batches one after another
+(From mode uses it too) and `showMoveProgress` adds the finished batches on, because Ratatoskr
+counts each batch from zero — one progress bar for the whole move. After a deposit only the
+inventory and the unit counts are fetched again, never every unit's contents.
+The plan is made from the unit counts (`item_storage_total`) the page last loaded; the counts are
+re-read after every move. The Game Coordinator's count can lag a few seconds behind a move, so
+`expectedCasketCountsRef` keeps what the page just deposited per unit and `fetchCaskets` uses the
+higher number until the Game Coordinator catches up (cleared by any withdrawal and on account
+change) — a quick second deposit never over-fills a unit. Ratatoskr counts a sent move as done
+even when the Game Coordinator refuses it, so an over-filled unit would fail silently: the items
+would just stay in the inventory. Fill order is
+fullest-with-room first (Ivan chose it: fewest units touched, emptier units stay free); the
+batches run one after another at the normal move delay, never in parallel (rate limits).
+
 ## Ratatoskr: items a Storage Unit cannot hold
 
 Ratatoskr's `item_moveable` (`items.js` `itemProcessorCanBeMoved`) is false for untradable

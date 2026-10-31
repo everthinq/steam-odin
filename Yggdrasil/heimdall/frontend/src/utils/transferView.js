@@ -26,3 +26,33 @@ export const transferRowSurfaceClass = (onTradeHold, selected, { variant = false
     }
     return variant ? TRADE_HOLD_VARIANT_IDLE : TRADE_HOLD_ROW_IDLE;
 };
+
+/** Items a Storage Unit holds. */
+export const STORAGE_CAPACITY = 1000;
+
+const casketFreeSpace = (c) => Math.max(0, STORAGE_CAPACITY - getCasketCount(c));
+
+/** Free places across every Storage Unit, as if they were one. */
+export const storageFreeSpace = (caskets) =>
+    (caskets || []).reduce((sum, c) => sum + casketFreeSpace(c), 0);
+
+/**
+ * Deposits into the Storage Units as if they were one: the fullest unit with room fills first, so
+ * a move touches as few units as it can and the emptier ones stay free. Returns
+ * `{batches: [{casket, itemIds}], overflow}`; `overflow` items fit nowhere and are left out.
+ */
+export const planBulkDeposit = (itemIds, caskets) => {
+    const units = (caskets || [])
+        .map((casket) => ({ casket, free: casketFreeSpace(casket) }))
+        .filter((unit) => unit.free > 0)
+        .sort((a, b) => a.free - b.free);
+    const batches = [];
+    let next = 0;
+    for (const unit of units) {
+        if (next >= itemIds.length) break;
+        const taken = itemIds.slice(next, next + unit.free);
+        next += taken.length;
+        batches.push({ casket: unit.casket, itemIds: taken });
+    }
+    return { batches, overflow: itemIds.length - next };
+};

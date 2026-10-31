@@ -67,7 +67,7 @@ read-only. Container port 3000, published on host **127.0.0.1:3001**.
 | `GET /caskets/:steamid` | Storage Units (definition 1201) |
 | `GET /casket/:steamid/:casketid` | One Storage Unit's contents |
 | `POST /casket/rename` | Free rename, max 20 characters, 15 s timeout |
-| `POST /move`, `POST /move/batch` | Queue moves (inventory ↔ casket) |
+| `POST /move`, `POST /move/batch` | Queue moves (inventory ↔ casket); a batch has one `casketID`. Heimdall's Transfer To mode treats every Storage Unit as one storage and splits a deposit into one batch per unit (fullest with room first, `planBulkDeposit` in the frontend), sent one after another — Ratatoskr itself knows nothing of the pooling and never checks the 1,000-item limit |
 | `GET /move/status/:steamid` | Queue progress (last 20 errors) |
 | `GET/POST /config/move-delay` | Delay between moves |
 | `GET/POST /config/session-idle` | Idle timeout + presets |
