@@ -11,6 +11,9 @@ that are not obvious from the code.
 > RD-tickets, OpenSearch, Knowledge Gate, Pipeline Resolver, or the `data-agents`
 > plugin — that machinery belongs to a different repo and does not apply here.
 
+> **Binding rules:** the numbered [Working rules](#working-rules-binding--read-every-session)
+> near the end of this file. Unsure what Ivan means, or two rules clash? Ask him first.
+
 ---
 
 ## What this is
@@ -110,7 +113,10 @@ Container names (compose project = directory name):
 
 ## Gotchas that will bite you (read before editing)
 
-1. **The backend auto-reloads on every `.py` save — including half-finished
+Numbered "Gotcha 1" to "Gotcha 9", so they are never confused with the
+numbered [Working rules](#working-rules-binding--read-every-session) ("rule 9").
+
+- Gotcha 1: **The backend auto-reloads on every `.py` save — including half-finished
    edits and test files.** `docker-compose.yml` runs it with
    `FLASK_ENV=development`, so werkzeug's file watcher restarts `app.py` (and
    every background loop: auto-confirm, Case Arbitrage refresh, Gjallarhorn
@@ -123,43 +129,43 @@ Container names (compose project = directory name):
    changed cache file. The frontend hot-reloads too (Vite); Ratatoskr does
    **not** (`docker restart steam-odin-ratatoskr-1` after editing its `.js`).
 
-2. **`context.ctx` is empty outside the running app.** The singletons are wired
+- Gotcha 2: **`context.ctx` is empty outside the running app.** The singletons are wired
    only by `app.py` at boot. A bare `python -c` / `docker exec … python` shell
    has `ctx.steam_service is None`. To poke a service ad hoc, construct it
    directly, or replicate the `app.py` wiring — do not assume `ctx` is populated.
 
-3. **Some Bash subshells have a broken PATH** (`curl`, `python3`, `wc`, `tr`
+- Gotcha 3: **Some Bash subshells have a broken PATH** (`curl`, `python3`, `wc`, `tr`
    come back "command not found"). When that happens, use the host `python3`
    explicitly, or `docker exec` into a container, or write the script to a file
    and run it — do not fight inline shell escaping.
 
-4. **Inline `python -c` and f-strings with quotes/backslashes** cause
+- Gotcha 4: **Inline `python -c` and f-strings with quotes/backslashes** cause
    `SyntaxError` from shell escaping. Write the script to a file (the scratchpad
    directory) and run it instead.
 
-5. **Steam mobile confirmations need the SteamID64**, not the 32-bit account id,
+- Gotcha 5: **Steam mobile confirmations need the SteamID64**, not the 32-bit account id,
    in the `a` parameter. The deprecated form returns
    "Oh nooooooes! / try again later" — which *looks* like a rate limit but is
    not. See `docs`-adjacent notes and `steam_service.py`.
 
-6. **The web access token that confirmations need expires about every 24 hours.**
+- Gotcha 6: **The web access token that confirmations need expires about every 24 hours.**
    The only reliable way to mint a fresh one is a full login
    (`begin_auth_session`); `GenerateAccessTokenForApp` returns empty even for
    fresh refresh tokens — do not chase that endpoint. `scheduler.py` runs a
    keep-alive sweep to renew tokens proactively; watch the logs for
    `[KEEPALIVE] … failed`.
 
-7. **maFiles do not contain the account password.** Read passwords from the
+- Gotcha 7: **maFiles do not contain the account password.** Read passwords from the
    Mímir vault (`get_password` → vault by login), never by probing the maFile.
 
-8. **One "playing" session per Steam account.** ASF farming and Ratatoskr's
+- Gotcha 8: **One "playing" session per Steam account.** ASF farming and Ratatoskr's
    Counter-Strike 2 Game Coordinator session collide. `RatatoskrService.login`
    calls `before_login` (→ `AsfService.pause_for_ratatoskr`) and the ASF loop
    resumes the bot once Ratatoskr's session is gone. Keep that hook on any new
    Ratatoskr login path, and never hand ASF a 2FA seed or write a password into
    an ASF bot config.
 
-9. **Steam rate limits (HTTP 429) are the enemy.** Ratatoskr moves items
+- Gotcha 9: **Steam rate limits (HTTP 429) are the enemy.** Ratatoskr moves items
    serially with a delay; the scheduler sleeps between accounts. Do not
    parallelise Steam calls or shorten these delays without a very good reason —
    see `ratatoskr/CLAUDE.md` and the notes in `scheduler.py`.
@@ -191,41 +197,97 @@ and pull request.
 
 ---
 
-## Conventions & house rules (non-negotiable)
+## Working rules (binding — read every session)
 
-- **Never commit or push without an explicit instruction.** "Put it on git" is
-  not "commit and push now" — wait for the actual word. Commit messages are
-  KISS + explanatory and end with a `Co-Authored-By:` trailer.
-- **Do not abbreviate.** Spell things out in names, comments, and prose —
-  explicit beats implicit. (Ivan's standing rule.)
-- **Secrets stay untracked.** `*.maFile`, `.heimdall_key`, `.heimdall_salt`,
-  `credentials.vault`, `settings.json`, `csfloat_keys.json`, `.env`,
-  `Yggdrasil/asf/config/` are gitignored and
-  must never be committed or sent to any external service. **Nothing stored in Mímir**
-  (passwords, emails, billing addresses) may ever be committed, written to a tracked file or
-  shown outside the app (Ivan's rule). The pre-commit guard enforces it
-  (`scripts/pre-commit-secret-guard.sh` → `backend/secret_scan.py`; install with
-  `ln -sf ../../scripts/pre-commit-secret-guard.sh .git/hooks/pre-commit`). See
-  [SECURITY.md](SECURITY.md).
-- **`portfolios.json` is committed on purpose** (personal holdings, no secrets)
-  as a lightweight backup; the on-disk snapshot history under `backups/` is
-  gitignored. Match this pattern — do not add secrets to committed files.
-- **Behaviour-preserving changes** unless asked otherwise; this is production
-  data for a real trader. When touching backups or portfolios, verify data is
-  preserved before deleting anything.
+Every standing rule Ivan has given, numbered so a reply can cite one ("rule 4"; the
+gotchas above are "Gotcha 1" to "Gotcha 9").
+When a new rule is agreed, add it here in the same turn. Personal rules that
+must not be public (account logins, holdings, the session reminder list) live
+in the agent's private memory, not in this file.
 
-- **Money is spent only through the guarded routes** (Andvari "Buy games",
-  Ratatoskr "Buy Storage Units" and its per-item pages, Mímir's "Market unlocker"), dry run first, and a real purchase only on Ivan's
-  explicit word for the accounts and quantity he named. Never call Ratatoskr's
-  raw `/store/purchase/*` endpoints or Steam checkout yourself.
-- **Automatic selling handles items that arrive after it is switched on**;
-  existing holdings only with an explicit opt-in.
-- **Andvari never sends through the Huginn arbitrage Telegram bot** — only its
-  own bot (`card_deals_bot_token` + `card_deals_chat_id`), or nothing.
-- **The repository is public.** Never push tags (the local `checkpoint/*` tags
-  stay local). Never stage `portfolios.json` unless Ivan asks for it. No account
-  logins, balances, chat ids or holdings in documentation.
-- **Never edit permission settings** (`.claude/settings*.json`) on your own.
+### How we work together
+
+1. **Explicit is better than implicit** (PEP 20, the Zen of Python). It is the
+   reason behind most rules below. Never guess what Ivan means.
+2. **When unsure, ask before acting.** If a request can be read two ways, or it
+   is unclear how far to go ("fix it", "commit + push" — which files? the docs
+   too?), ask one short, concrete question first. Asking is always welcome.
+   Also ask when several tasks come without an order (which first?), and when
+   a money action does not name the exact accounts and amounts.
+3. **When two rules contradict each other, stop and tell Ivan**: name both
+   rules and the case where they clash, propose a resolution, and wait. Never
+   pick one silently.
+4. **Do not abbreviate.** Write words out in full in prose, comments, docs,
+   commit messages and new names ("for example", not "e.g."; "versus", not
+   "vs"). Existing identifiers, field names and official names (CS2, Steam,
+   API, USDT) stay exactly as they are. Use the official English name of a game
+   feature, never a translation.
+5. **Plain, short language.** KISS explanations: the essentials first, no
+   jargon without a word on what it means.
+6. **Behaviour-preserving changes** unless asked otherwise; this is
+   production data for a real trader. When touching backups or portfolios,
+   verify the data is preserved before deleting anything.
+7. **Report honestly.** Failed tests, skipped steps and unverified claims are
+   said plainly. A trade or flip is "safe" only after checking where the money
+   lands and when it can be spent; otherwise say it is unverified.
+
+### Git and the public repository
+
+8. **Never commit or push without the explicit word** ("commit", "push",
+   "commit + push"). "Put it on git" is not that word. Commit messages are
+   KISS + explanatory and end with a `Co-Authored-By:` trailer.
+9. **The repository is public.** No account logins, balances, chat ids,
+   holdings or trading results in tracked files, docs or commit messages —
+   except `portfolios.json`, public by Ivan's choice (rule 11).
+10. **Never push tags** (the local `checkpoint/*` tags stay local).
+11. **Never stage `portfolios.json`** unless Ivan asks for it. It is committed
+    on purpose as a lightweight backup (holdings, no secrets); the snapshot
+    history under `backups/` is gitignored.
+12. **Secrets stay untracked.** `*.maFile`, `.heimdall_key`, `.heimdall_salt`,
+    `credentials.vault`, `settings.json`, `csfloat_keys.json`, `.env`,
+    `Yggdrasil/asf/config/` are gitignored and never committed or sent to any
+    external service. **Nothing stored in Mímir** (passwords, emails, billing
+    addresses) is ever committed, written to a tracked file or shown outside
+    the app. Test data uses obviously fake values. See [SECURITY.md](SECURITY.md).
+13. **Never bypass the pre-commit guard** (no `--no-verify`).
+    `scripts/pre-commit-secret-guard.sh` → `backend/secret_scan.py`; install with
+    `ln -sf ../../scripts/pre-commit-secret-guard.sh .git/hooks/pre-commit`.
+14. **Never edit permission settings** (`.claude/settings*.json`) on your own.
+
+### Money (Ivan's real investments — be careful)
+
+15. **Money is spent only through the guarded routes** (Andvari "Buy games",
+    Ratatoskr "Buy Storage Units" and its per-item pages, Mímir's "Market
+    unlocker"): dry run first, a real purchase only on Ivan's explicit word for
+    the accounts and quantity he named. Never call Ratatoskr's raw
+    `/store/purchase/*` endpoints or Steam checkout yourself.
+16. **Never sell, list or move holdings on your own.** Automatic selling
+    handles items that arrive after it is switched on; existing holdings only
+    with an explicit opt-in. Show what would be affected before anything big.
+17. **Small reversible housekeeping needs no permission** (for example emptying
+    a Steam cart before a guarded purchase; log what was removed). Spending,
+    selling and anything irreversible always does.
+18. **Small safe gains count.** Never call a positive, low-risk flip "not worth
+    it"; list the checks to make instead (rule 7).
+
+### Tools and architecture
+
+19. **The backend decides, the page displays** (see "Architecture in one
+    breath"). New logic goes in the backend as a command: plan → execute once
+    → a job, errors `{error, code}`.
+20. **Ratatoskr: Transfer and Auto-Store share one set of storage rules.** On
+    any Ratatoskr logic change, say so first and ask whether it applies to
+    both. See [storage-units.md](docs/internals/storage-units.md).
+21. **Steam rate limits:** never parallelise Steam or Game Coordinator calls.
+    The move delay of 200 ms is proven by Ivan; do not warn about it, revisit
+    only if refusals or HTTP 429 actually show up.
+22. **Each tool that sends Telegram messages uses its own bot** when one is
+    configured. Andvari never sends through the Huginn arbitrage bot — only its
+    own (`card_deals_bot_token` + `card_deals_chat_id`), or nothing.
+23. **Myth is flavour; the code hierarchy wins.** Never rename or move folders
+    to make the Norse names more accurate.
+24. **Ignore the Revuze `data-agents` plugin noise** (Knowledge Gate, RD
+    tickets, plugin-update notices) in this repository.
 
 ## Where to read more
 
