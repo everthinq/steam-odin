@@ -114,8 +114,8 @@ class _Table:
     def prices(self):
         return dict(self._prices)
 
-    def index(self):
-        return {name: {'price': price, 'count': 3, 'updated': None} for name, price in self._prices.items()}
+    def quotes(self):
+        return {name: (price, 3, None) for name, price in self._prices.items()}
 
 
 def _saved(tmp_path, day):
@@ -159,3 +159,16 @@ def test_a_seed_pulse_refuses_is_not_asked_again_after_a_restart(tmp_path):
     again = price_history.PriceHistory(str(tmp_path))
     assert ('Buff', 'Median30d') not in again.seeds_wanted(['Buff'])
     assert ('Buff', 'Average30d') in again.seeds_wanted(['Buff'])
+
+
+def test_a_side_never_recorded_does_not_mix_the_seed_into_the_trade_statistic(tmp_path):
+    clock = [1_800_000_000.0]
+    history = price_history.PriceHistory(str(tmp_path), clock=lambda: clock[0])
+    history.record(_Table('Steam', 'Median30d', {'Case': 1.2}, clock[0]))
+    os.utime(history._seed_path('Steam', 'Median30d'), (clock[0], clock[0]))
+    assert history.trade_statistic('Steam', 'Sell', 'Buy', names=['Case']) == {'Case': 1.2}   # the seed
+    for _ in range(price_history.MIN_DAYS):
+        history.record(_Table('Steam', 'Sell', {'Case': 1.5}, clock[0]))           # Steam Buy never kept
+        history.flush()
+        clock[0] += 86400
+    assert history.trade_statistic('Steam', 'Sell', 'Buy', names=['Case']) == {'Case': 1.5}   # own listing alone

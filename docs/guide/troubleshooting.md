@@ -48,7 +48,8 @@ never take the last download slot, so a click starts at once, but the download i
 takes as long as the connection needs. For a profile you trade on, switch on **Active**
 next to it: it then opens from memory in about a second. If the Active profiles panel says
 **falling behind**, the connection cannot download that many tables in the interval: make
-a profile inactive or choose a longer interval.
+a profile inactive or choose a longer interval. (The one-time 30-day price downloads after a
+restart do not count towards it.)
 
 ## HTTP 429 / "Too Many Requests"
 

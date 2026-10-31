@@ -95,8 +95,8 @@ def test_the_history_replaces_the_seed_after_enough_days(tmp_path):
         def prices(self):
             return dict(self._prices)
 
-        def index(self):
-            return {name: {'price': price, 'count': 3, 'updated': None} for name, price in self._prices.items()}
+        def quotes(self):
+            return {name: (price, 3, None) for name, price in self._prices.items()}
     history.record(Table('Median30d', {'Case': 9.0, 'Sticker': 2.0}, clock[0]))
     for day in range(price_history.MIN_DAYS):
         for sample in (1.0, 3.0):                                            # the day's average: 2.0
@@ -123,8 +123,8 @@ def test_a_restart_keeps_the_days_samples(tmp_path):
         def prices(self):
             return {'Case': self.price}
 
-        def index(self):
-            return {'Case': {'price': self.price, 'count': 3, 'updated': None}}
+        def quotes(self):
+            return {'Case': (self.price, 3, None)}
     first = price_history.PriceHistory(str(tmp_path), clock=lambda: clock[0])
     first.record(Table(1.0))
     first.flush()
@@ -260,8 +260,8 @@ def test_the_trade_price_is_the_middle_of_listing_and_buy_orders(tmp_path):
         def prices(self):
             return dict(self._prices)
 
-        def index(self):
-            return {name: {'price': price, 'count': 3, 'updated': None} for name, price in self._prices.items()}
+        def quotes(self):
+            return {name: (price, 3, None) for name, price in self._prices.items()}
     history.record(Table('Median30d', {'Seeded': 5.0}))
     assert history.trade_statistic('Steam', 'Sell', 'Buy', names=['Seeded']) == {'Seeded': 5.0}   # the seed alone
     for _ in range(price_history.MIN_DAYS):
@@ -357,10 +357,10 @@ def test_sold_out_and_stale_prices_are_never_recorded(tmp_path):
     class Table:
         market_id, price_type, started_at = 'Steam', 'Sell', 1_800_000_000.0
 
-        def index(self):
-            return {'Live': {'price': 2.0, 'count': 4, 'updated': self.started_at - 60},
-                    'Sold out': {'price': 9.0, 'count': 0, 'updated': self.started_at - 60},
-                    'Frozen': {'price': 7.0, 'count': 2, 'updated': self.started_at - 3 * 86400}}
+        def quotes(self):
+            return {'Live': (2.0, 4, self.started_at - 60),
+                    'Sold out': (9.0, 0, self.started_at - 60),
+                    'Frozen': (7.0, 2, self.started_at - 3 * 86400)}
     history.record(Table())
     assert list(history._today[('Steam', 'Sell')]['items']) == ['Live']
 

@@ -474,6 +474,25 @@ def test_one_time_downloads_happen_once():
     assert feed.status()['keeper']['once_pending'] == []
 
 
+def test_the_keeper_asks_hourly_which_one_time_downloads_are_wanted_again():
+    clock = Clock()
+    feed, requests = _feed(clock=clock)
+    feed.set_active([], 5)
+    wanted = [[('Steam', 'Median30d')]]
+    feed.want_once(lambda: wanted[0])
+    feed.keep_fresh_once('token')
+    assert requests.count(('Steam', 'Median30d')) == 1
+    feed.keep_fresh_once('token')                                             # within the hour: not asked
+    clock.now += pulse_feed.ONCE_CHECK_SECONDS
+    wanted[0] = []                                                            # the seed is fresh: nothing
+    feed.keep_fresh_once('token')
+    assert requests.count(('Steam', 'Median30d')) == 1
+    clock.now += pulse_feed.ONCE_CHECK_SECONDS
+    wanted[0] = [('Steam', 'Median30d')]                                      # a month later: once more
+    feed.keep_fresh_once('token')
+    assert requests.count(('Steam', 'Median30d')) == 2
+
+
 def test_a_failed_active_table_waits_before_the_keeper_tries_again():
     clock = Clock()
     calls = []
@@ -570,3 +589,12 @@ def test_a_refused_read_is_not_served_from_memory():
         with pytest.raises(pulse_feed.NotActive):
             feed.table('token', 'Buff', 'Sell', job='case-arbitrage-alerts')
     assert feed.status()['served_from_memory'] == 0
+
+
+def test_quotes_are_the_index_without_a_dictionary_per_item():
+    feed, _ = _feed(rows=[_row('Sticker | A', second=2.5), _row('Sticker | B', second=0)])
+    with feed.reading(download=True):
+        table = feed.table('token', 'Steam', 'Sell', max_age=ON_DEMAND)
+    assert table.quotes() == {name: (quote['price'], quote['count'], quote['updated'])
+                              for name, quote in table.index().items()}
+    assert list(table.quotes()) == ['Sticker | A']

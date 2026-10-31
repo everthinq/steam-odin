@@ -976,6 +976,9 @@ class HuginnService:
         try:
             table = self._table(token, 'Steam', 'Buy')
             steam, tradeon = table.prices(), table.prices('first')
+        except NotActive as e:
+            # No active Huginn profile keeps Steam's buy orders: no prices, not an error (every 15 minutes).
+            logger.debug(f'[HUGINN] auction pulse prices not active: {e}')
         except Exception as e:
             logger.error(f'[HUGINN] auction pulse prices failed: {e}')
         return steam, tradeon
@@ -2521,18 +2524,19 @@ class HuginnService:
         status is 'error' in that window (stale snapshot still served)."""
         with self._price_lock:
             cached = self._container_cache.get(market)
+            # Read and claimed under one lock: concurrent page polls start one memory read, not one each.
+            checked = self._container_checked_at.get(market, 0)
+            recheck = token and cached and time.time() - checked >= self._CONTAINER_CHECK_SEC
+            if recheck:
+                self._container_checked_at[market] = time.time()
         if not token:
             return (cached[1] if cached else {}), 'no_token'
-        checked = self._container_checked_at.get(market, 0)
-        if cached and time.time() - checked < self._CONTAINER_CHECK_SEC:
-            return cached[1], 'fresh'
         if cached:
-            # Served as it is while memory is read again in the background (milliseconds, never a
-            # download), at most once a check interval: no "refreshing" spinner for a memory read.
-            with self._price_lock:
-                self._container_checked_at[market] = time.time()
-            threading.Thread(target=self._refresh_container_bg,
-                             args=(token, market, self.pulse.current_job()), daemon=True).start()
+            if recheck:
+                # Served as it is while memory is read again in the background (milliseconds, never a
+                # download), at most once a check interval: no "refreshing" spinner for a memory read.
+                threading.Thread(target=self._refresh_container_bg,
+                                 args=(token, market, self.pulse.current_job()), daemon=True).start()
             return cached[1], 'fresh'
         with self._price_lock:
             state = self._container_state.get(market)
@@ -2541,6 +2545,7 @@ class HuginnService:
             if state == 'inactive' and not cached:
                 # No active profile keeps it: look again (a memory read) at most once a check
                 # interval, without claiming to warm.
+                checked = self._container_checked_at.get(market, 0)
                 if time.time() - checked >= self._CONTAINER_CHECK_SEC:
                     self._container_checked_at[market] = time.time()
                     threading.Thread(target=self._refresh_container_bg,

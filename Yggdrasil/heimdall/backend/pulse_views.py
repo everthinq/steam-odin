@@ -31,7 +31,7 @@ def _parallel(calls):
         return [future.result() for future in futures]
 
 
-def price_dips(huginn, token, market_id, basis='Median30d', max_age=FRESH):
+def price_dips(huginn, token, market_id, basis='Median30d'):
     """Every item of *market_id* with its lowest listing and its 30-day *basis* price.
 
     Rows (no image: the page builds it from the name, keeping the answer small): name, price
@@ -47,13 +47,14 @@ def price_dips(huginn, token, market_id, basis='Median30d', max_age=FRESH):
     listing_type = market['buy_type'] if market['buy_type'] != _ESTIMATED_SELL else None
     if not listing_type:
         raise ValueError(f'{market_id} has no listings on pulse')
-    listing_table = huginn._table(token, market_id, listing_type, max_age)     # NotActive: not kept
+    # A slave read: memory only, whatever its age (FRESH matters only to a downloader).
+    listing_table = huginn._table(token, market_id, listing_type, FRESH)     # NotActive: not kept
     listing = listing_table.index()
     instant_type = market['autobuy'] if market_id not in _AUTOBUY_VIA_CSFLOAT_SWEEP else None
     instant = {}
     if instant_type:
         try:
-            instant = huginn._table(token, market_id, instant_type, max_age).prices()
+            instant = huginn._table(token, market_id, instant_type, FRESH).prices()
         except NotActive:
             instant_type = None
     typical = huginn.history.statistic(market_id, listing_type, basis, listing)
@@ -306,7 +307,8 @@ def saved_hours(settings):
 
 def apply_active_settings(huginn, settings):
     """Hand the saved choice to the master feed: the active profiles' tables (plus the Buff163
-    reference), their interval, the active hours, and the statistics seed still missing."""
+    reference), their interval, the active hours, and the statistics seed (missing or a month old,
+    asked again hourly by the keeper)."""
     _, tables = parse_active_profiles_leniently(saved_profiles(settings))
     huginn.pulse.set_active(tables, saved_minutes(settings))
     hours = saved_hours(settings)
@@ -315,8 +317,9 @@ def apply_active_settings(huginn, settings):
     except ValueError:
         window = None
     huginn.pulse.set_active_hours(window)
-    huginn.pulse.download_once(huginn.history.seeds_wanted(market_id for market_id, _ in huginn.pulse.active()),
-                               give_up=huginn.history.seed_unavailable)
+    pulse = huginn.pulse
+    pulse.want_once(lambda: huginn.history.seeds_wanted(market_id for market_id, _ in pulse.active()),
+                    give_up=huginn.history.seed_unavailable)
     return tables
 
 

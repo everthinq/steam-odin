@@ -84,6 +84,7 @@ MAX_ACTIVE_TABLES = 12          # tables the active profiles may need together
 REFERENCE_TABLES = {('Buff', 'Sell'): 24 * 60 * 60}
 SLEEP_GAP = 3 * 30              # the keeper's tick took this long: the Mac (and Docker) slept
 ONCE_TRIES = 3                  # a one-time download (the seed) is given up after this many failures
+ONCE_CHECK_SECONDS = 3600       # how often the keeper asks which one-time downloads are wanted again
 JOB_STATUS_SECONDS = 30         # how long the declared jobs' tables are cached for status()
 KEEPER_TICK = 30                # seconds between the keeper's checks
 KEEPER_RETRY_AFTER = 5 * 60     # a kept table that failed is tried again after this
@@ -233,6 +234,13 @@ class PulseTable:
         return {name: entry[position][PRICE] for name, entry in self.entries.items()
                 if entry[position] and entry[position][PRICE]}
 
+    def quotes(self, side='second'):
+        """{name: (price, count, updated)} of one side, without index()'s dictionary per item (the
+        price history reads every table)."""
+        position = 0 if side == 'first' else 1
+        return {name: (entry[position][PRICE], entry[position][COUNT], entry[position][UPDATED])
+                for name, entry in self.entries.items() if entry[position] and entry[position][PRICE]}
+
     def index(self, names=None, side='second'):
         """{name: {price, count, image, rising, falling, updated}} of one side, for *names* (default
         every item); 'updated' is the market's own update time of that price (epoch seconds)."""
@@ -310,6 +318,8 @@ class PulseFeed:
         self._active_hours = None    # (start, end) minutes of the local day the keeper downloads in
         self._keeper_failed = {}     # key -> when its last background download failed
         self._once_failures = {}     # key -> failed attempts of a one-time download (given up at ONCE_TRIES)
+        self._once_wanted = None     # () -> keys still wanted once (the seed, again each month); asked hourly
+        self._once_checked = None    # when the keeper last asked it
         self._keeper_started = False
         self._keeper_last_run = None
         self._keeper_last_pass = None  # {at, seconds, downloads} of the last pass that downloaded
@@ -657,6 +667,26 @@ class PulseFeed:
             if give_up:
                 self._once_give_up = give_up
 
+    def want_once(self, wanted, give_up=None):
+        """*wanted()* gives the one-time downloads still needed (the statistics seed: missing, or a
+        month old); asked now and again every ONCE_CHECK_SECONDS by the keeper, so a backend that
+        runs for weeks still downloads the monthly seed."""
+        with self._lock:
+            self._once_wanted = wanted
+            self._once_checked = self._clock()
+        self.download_once(wanted(), give_up=give_up)
+
+    def _ask_once_wanted(self):
+        with self._lock:
+            wanted, checked = self._once_wanted, self._once_checked
+            if not wanted or (checked is not None and self._clock() - checked < ONCE_CHECK_SECONDS):
+                return
+            self._once_checked = self._clock()
+        try:
+            self.download_once(wanted())
+        except Exception as error:
+            logger.warning('[PULSE] keeper: one-time downloads wanted: %s', error)
+
     def will_download(self, key):
         """Whether the keeper is about to bring this table: active, inside the active hours, and
         not failing."""
@@ -693,10 +723,12 @@ class PulseFeed:
             with self._lock:
                 self._keeper_last_run = self._clock()
             return 0
+        self._ask_once_wanted()
         with self._lock:
             due = [(key, seconds) for key, seconds in self._active.items()] + [(key, None) for key in self._once]
             failed = dict(self._keeper_failed)
         started, done = self._clock(), 0
+        active_seconds = 0.0            # the active tables' share of the pass (one-time downloads left out)
         for key, seconds in due:
             now = self._clock()
             with self._lock:
@@ -706,33 +738,42 @@ class PulseFeed:
                 continue
             if key in failed and now - failed[key] < KEEPER_RETRY_AFTER:
                 continue
+            began = self._clock()
             try:
                 self.table(token, key[0], key[1], max_age=seconds - KEEPER_TICK if seconds else 0,
                            count_read=False, keeper=True)
                 done += 1
                 with self._lock:
                     self._keeper_failed.pop(key, None)
-                    if seconds is None and key in self._once:
-                        self._once.remove(key)
+                    if seconds is None:
+                        self._once_failures.pop(key, None)
+                        if key in self._once:
+                            self._once.remove(key)
             except Exception as error:
                 logger.warning('[PULSE] keeper: %s %s failed: %s', key[0], key[1], error)
+                give_up = None
                 with self._lock:
                     self._keeper_failed[key] = self._clock()
                     if seconds is None:
                         tries = self._once_failures[key] = self._once_failures.get(key, 0) + 1
                         if tries >= ONCE_TRIES and key in self._once:
                             self._once.remove(key)      # e.g. needs pulse's Table subscription
+                            self._once_failures.pop(key, None)
                             logger.warning('[PULSE] gave up the one-time download of %s %s', *key)
                             give_up = getattr(self, '_once_give_up', None)
-                            if give_up:
-                                try:
-                                    give_up(key)
-                                except Exception as callback_error:
-                                    logger.warning('[PULSE] give-up callback: %s', callback_error)
+                if give_up:                     # outside the lock: it writes a file
+                    try:
+                        give_up(key)
+                    except Exception as callback_error:
+                        logger.warning('[PULSE] give-up callback: %s', callback_error)
+            if seconds is not None:
+                active_seconds += self._clock() - began
         with self._lock:
             self._keeper_last_run = self._clock()
             if done:
-                self._keeper_last_pass = {'at': started, 'seconds': round(self._clock() - started, 1), 'downloads': done}
+                # 'seconds' is the active tables' part only: a pass that also brought the statistics
+                # seed is not "falling behind".
+                self._keeper_last_pass = {'at': started, 'seconds': round(active_seconds, 1), 'downloads': done}
         return done
 
     def note_sleep(self, slept_from, slept_to):
@@ -741,6 +782,7 @@ class PulseFeed:
         with self._lock:
             self._keeper_sleep = {'from': slept_from, 'to': slept_to}
             self._keeper_failed = {}
+            self._once_failures = {}    # a failure without a network never counts towards giving a seed up
         logger.info('[PULSE] the Mac slept for %d minutes; the keeper starts again after one tick',
                     round((slept_to - slept_from) / 60))
 
@@ -764,7 +806,7 @@ class PulseFeed:
                     continue
                 try:
                     token = token_provider()
-                    if token and (self._active or self._once):
+                    if token and (self._active or self._once or self._once_wanted):
                         self.keep_fresh_once(token)
                 except Exception as error:      # never let the thread die
                     logger.warning('[PULSE] keeper: %s', error)

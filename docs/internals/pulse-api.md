@@ -143,11 +143,17 @@ Errors are `{message, responseType}` with types such as `MarketSubscriptionRequi
   the active profiles (settings `huginn_active_profiles` as `"BuyMarket:SellMarket:autobuy|min"`,
   read from the older `huginn_kept_profiles` until first saved; `huginn_active_minutes` 5/10/15/30/60,
   default 5; at most `MAX_ACTIVE_TABLES` 12) plus `REFERENCE_TABLES` (Buff163's lowest listing,
-  once a day). `download_once` adds one-time downloads (the price history's seed). The keeper (30 s
-  tick, one table at a time, a failed table waits 5 minutes) runs only inside `set_active_hours`
-  (settings `huginn_active_hours` {enabled, start, end}, local time); a tick that took over
-  `SLEEP_GAP` means the Mac slept: it forgets the failures, waits a tick for the network, then
-  catches up (`note_sleep`, `status()['keeper']['sleep']`). An active table is never dropped from
+  once a day). `download_once` adds one-time downloads (the price history's seed); `want_once(wanted,
+  give_up)` registers who wants them, and the keeper asks `wanted()` again every `ONCE_CHECK_SECONDS`
+  (an hour), so a backend running for weeks still downloads the monthly seed. A one-time download is
+  given up after `ONCE_TRIES` (3) failures (`give_up` marks the seed `.unavailable`, outside the
+  lock); its failure count is cleared on success and after the Mac slept, so failures without a
+  network never block a seed for a month. The keeper (30 s tick, one table at a time, a failed table
+  waits 5 minutes) runs only inside `set_active_hours` (settings `huginn_active_hours` {enabled,
+  start, end}, local time); a tick that took over `SLEEP_GAP` means the Mac slept: it forgets the
+  failures, waits a tick for the network, then catches up (`note_sleep`,
+  `status()['keeper']['sleep']`). "Falling behind" (`keeper.behind`) times the active tables'
+  downloads only: the one-time seed downloads after a restart never count. An active table is never dropped from
   memory; others leave after `KEEP_SECONDS`. `profile_tables` mirrors each profile's fetch and
   `tests/test_active_profiles.py` calls every profile route to prove they match. `?kept=1` (an
   active profile opening by itself) accepts the keeper's copy up to its interval plus two ticks;
@@ -160,8 +166,14 @@ Errors are `{message, responseType}` with types such as `MarketSubscriptionRequi
   45 days; a seed pulse refuses is marked `.unavailable` for a month) before. Sold-out items and
   prices their market has not refreshed for a day are not sampled; a table from before midnight that
   finishes late is added to its own day; today's rows are saved every minute (a docker restart kills
-  the reloader's worker without atexit). `trade_statistic` (the middle of listing and buy orders)
-  is what Store Boosts and Gjallarhorn compare with. Price dips, Gjallarhorn and Store
+  the reloader's worker without atexit). Recording reads `PulseTable.quotes()` ({name: (price, count,
+  updated)}, no dictionary per item) and gzips the day file outside the main lock (a separate
+  writer lock), so `statistic()` readers never wait for a save. Statistics are computed once a day
+  per table, both bases in one read of the window; only the results are kept (merged with the seed,
+  and own-history only). `trade_statistic` (what Store Boosts and Gjallarhorn compare with) is the
+  middle of the listing's and buy orders' **own** statistics, either alone when only one side has 7
+  days of its own (a side no active profile records never mixes pulse's seed in), and the seed only
+  when neither has. Price dips, Gjallarhorn and Store
   Boosts read it. Measured before the switch (2026-10-31): 134 downloads an hour, about 17 GB a day;
   after: the active tables only (7 tables at 5 minutes, about 10 GB a day, plus Buff163 daily).
 - "Check live" asks for 500 rows per name (a short name is contained in many) and prices the sell

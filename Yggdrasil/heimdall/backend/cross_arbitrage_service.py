@@ -33,6 +33,8 @@ import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
+from pulse_feed import NotActive
+
 logger = logging.getLogger(__name__)
 
 
@@ -402,6 +404,11 @@ class CrossArbitrageService:
                 if kind == 'buy':
                     return self._buy_index(token, mid)
                 return self.huginn.market_autobuy_index(token, mid)
+            except NotActive as e:
+                # No active Huginn profile keeps that market: shown as failed with the reason, quietly.
+                logger.debug('[CROSS-ARB] %s index not active for %s: %s', kind, mid, e)
+                failed[(kind, mid)] = str(e)[:200]
+                return {}
             except Exception as e:
                 logger.warning('[CROSS-ARB] %s index failed for %s: %s', kind, mid, e)
                 failed[(kind, mid)] = str(e)[:200] or type(e).__name__

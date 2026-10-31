@@ -70,10 +70,11 @@ class PriceHistory:
     def __init__(self, directory=None, clock=time.time):
         self._directory = directory or HISTORY_DIRECTORY     # read now: tests point it at a temporary folder
         self._clock = clock
-        self._lock = threading.Lock()
+        self._lock = threading.Lock()       # the in-memory rows and caches (held briefly)
+        self._writing = threading.Lock()    # recording and saving the day files (one writer at a time)
         self._today = {}        # (market, price type) -> {'day', 'items': {name: [sum, count, lowest, highest, last]}, 'flushed_at'}
-        self._daily = {}        # (market, price type) -> (day read, {name: [daily averages]}): the window, once a day
-        self._statistics = {}   # (market, price type, basis) -> (day computed, {name: value})
+        self._statistics = {}   # (market, price type, basis) -> (day computed, {name: value}, {name: own value only})
+        self._seed_generation = 0   # changes with every new seed: statistics computed before it are dropped
         self._reading = {}      # (market, price type) -> lock: one read of the window at a time
         self._seeds = {}        # (market, basis) -> {name: price} (loaded on first use)
 
@@ -97,25 +98,32 @@ class PriceHistory:
             return
         key = (table.market_id, table.price_type)
         day = _day(table.started_at)
-        prices = {name: quote['price'] for name, quote in table.index().items()
-                  if quote.get('count') != 0 and not is_stale(quote.get('updated'), table.started_at)}
-        with self._lock:
-            today = self._today.get(key)
+        prices = {name: price for name, (price, count, updated) in table.quotes().items()
+                  if count != 0 and not is_stale(updated, table.started_at)}
+        with self._writing:             # one writer at a time; readers only wait for the short folds
+            with self._lock:
+                today = self._today.get(key)
             if today is None:
-                today = self._today[key] = self._load_today(key, day)
+                loaded = self._load_today(key, day)
+                with self._lock:
+                    today = self._today.setdefault(key, loaded)
             if day < today['day']:
                 # A table from an earlier day finishing late (a download that started before midnight):
                 # added to that day's saved row, never replacing it.
                 late = self._load_today(key, day)
                 self._fold(late['items'], prices)
-                self._write(key, late)
+                self._write(key, self._rows(late), late)
                 return
             if today['day'] != day:
-                self._flush_locked(key)
-                today = self._today[key] = self._load_today(key, day)
-            self._fold(today['items'], prices)
-            if self._clock() - today['flushed_at'] >= FLUSH_SECONDS:
-                self._flush_locked(key)
+                self._flush(key)
+                loaded = self._load_today(key, day)
+                with self._lock:
+                    today = self._today[key] = loaded
+            with self._lock:
+                self._fold(today['items'], prices)
+                due = self._clock() - today['flushed_at'] >= FLUSH_SECONDS
+            if due:
+                self._flush(key)
 
     @staticmethod
     def _fold(items, prices):
@@ -138,16 +146,23 @@ class PriceHistory:
                  for name, row in saved.items() if isinstance(row, list) and len(row) == 5}
         return {'day': day, 'items': items, 'flushed_at': self._clock() if items else 0}   # a new day: saved at once
 
-    def _flush_locked(self, key):
-        today = self._today.get(key)
-        if today:
-            self._write(key, today)
-
-    def _write(self, key, day_row):
-        if not day_row['items']:
-            return
-        rows = {name: [round(total / count, 2), lowest, highest, last, count]
+    @staticmethod
+    def _rows(day_row):
+        return {name: [round(total / count, 2), lowest, highest, last, count]
                 for name, (total, count, lowest, highest, last) in day_row['items'].items()}
+
+    def _flush(self, key):
+        """Save one table's day row: copied under the lock, gzipped and written outside it (the
+        caller holds _writing)."""
+        with self._lock:
+            today = self._today.get(key)
+            rows = self._rows(today) if today else None
+        if rows:
+            self._write(key, rows, today)
+
+    def _write(self, key, rows, day_row):
+        if not rows:
+            return
         try:
             _write_gzip_json(self._day_path(*key, day_row['day']), rows)
             day_row['flushed_at'] = self._clock()
@@ -156,9 +171,11 @@ class PriceHistory:
 
     def flush(self):
         """Save today's rows now (tests, shutdown)."""
-        with self._lock:
-            for key in list(self._today):
-                self._flush_locked(key)
+        with self._writing:
+            with self._lock:
+                keys = list(self._today)
+            for key in keys:
+                self._flush(key)
 
     def _save_seed(self, table):
         path = self._seed_path(table.market_id, table.price_type)
@@ -170,7 +187,8 @@ class PriceHistory:
         _write_gzip_json(path, {'downloaded_at': table.started_at, 'prices': prices})
         with self._lock:
             self._seeds[(table.market_id, table.price_type)] = prices
-            self._statistics = {}       # the seed changes them (the daily averages stay)
+            self._statistics = {}       # the seed changes them
+            self._seed_generation += 1
         logger.info('[HISTORY] seeded %s %s: %d items', table.market_id, table.price_type, len(prices))
 
     def _seed_age_days(self, path):
@@ -226,58 +244,62 @@ class PriceHistory:
         first = _day(self._clock() - WINDOW_DAYS * 86400)
         return [day for day in names if first <= day < today]
 
-    def statistic(self, market_id, price_type, basis='Median30d', names=None):
+    def statistic(self, market_id, price_type, basis='Median30d', names=None, own_only=False):
         """{name: 30-day median (or average) price} of a market's listing or buy-orders table, from
-        the item's own daily averages once it has MIN_DAYS full days, else from the seed. Computed
-        once a day and kept."""
+        the item's own daily averages once it has MIN_DAYS full days, else from the seed (*own_only*:
+        the items with MIN_DAYS of their own only). Computed once a day and kept."""
         if basis not in BASES:
             raise ValueError(f'{basis}: use one of {", ".join(BASES)}')
         today = _day(self._clock())
-        key = (market_id, price_type, basis)
         with self._lock:
-            cached = self._statistics.get(key)
-        if not cached or cached[0] != today:
-            daily = self._daily_averages(market_id, price_type, today)
-            summarise = statistics.median if basis == 'Median30d' else statistics.fmean
-            with self._lock:
-                values = dict(self._seed(market_id, basis))
-            for name, means in daily.items():
-                if len(means) >= MIN_DAYS:
-                    values[name] = round(summarise(means), 2)
-            cached = (today, values)
-            with self._lock:
-                self._statistics[key] = cached
-        values = cached[1]
+            cached = self._statistics.get((market_id, price_type, basis))
+        if not (cached and cached[0] == today):
+            cached = self._compute(market_id, price_type, basis, today)
+        values = cached[2] if own_only else cached[1]
         return values if names is None else {name: values[name] for name in names if name in values}
 
-    def _daily_averages(self, market_id, price_type, today):
-        """{name: [daily averages]} of the window before *today*, read once a day per table (both
-        bases share it), one reader at a time, without the main lock: the listener keeps recording."""
-        key = (market_id, price_type)
+    def _compute(self, market_id, price_type, basis, today):
+        """Both bases of one table from the window before *today*, read once a day (one reader at a
+        time, without the main lock: the listener keeps recording). Only the results are kept, never
+        the window's daily averages (~30 numbers per item)."""
         with self._lock:
-            reading = self._reading.setdefault(key, threading.Lock())
+            reading = self._reading.setdefault((market_id, price_type), threading.Lock())
         with reading:
             with self._lock:
-                cached = self._daily.get(key)
+                cached = self._statistics.get((market_id, price_type, basis))
+                generation = self._seed_generation
             if cached and cached[0] == today:
-                return cached[1]
+                return cached               # another reader computed it meanwhile
             daily = {}
             for day in self._full_days(market_id, price_type, today):
                 for name, row in (_read_gzip_json(self._day_path(market_id, price_type, day)) or {}).items():
                     daily.setdefault(name, []).append(row[MEAN])
+            own = {each: {} for each in BASES}
+            for each, values in own.items():
+                summarise = statistics.median if each == 'Median30d' else statistics.fmean
+                for name, means in daily.items():
+                    if len(means) >= MIN_DAYS:
+                        values[name] = round(summarise(means), 2)
             with self._lock:
-                self._daily[key] = (today, daily)
-            return daily
+                computed = {each: (today, {**self._seed(market_id, each), **own[each]}, own[each]) for each in BASES}
+                if generation == self._seed_generation:     # no new seed while reading
+                    for each, entry in computed.items():
+                        self._statistics[(market_id, price_type, each)] = entry
+            return computed[basis]
 
     def trade_statistic(self, market_id, listing_type, buy_type, basis='Median30d', names=None):
         """{name: 30-day price where a sale lands}: the middle of the lowest listing's and the buy
-        orders' statistic (either alone when the other is missing). Before MIN_DAYS both are pulse's
-        seed (its 30-day median of sales), so the middle is that seed."""
-        listing = self.statistic(market_id, listing_type, basis, names)
-        orders = self.statistic(market_id, buy_type, basis, names)
-        return {name: round((listing[name] + orders[name]) / 2, 2) if name in listing and name in orders
-                else listing.get(name, orders.get(name))
-                for name in set(listing) | set(orders)}
+        orders' own statistic (either alone when only one side has MIN_DAYS of its own: a side that is
+        never recorded must not mix pulse's seed into it). Without either, pulse's seed (its 30-day
+        median of sales, the same for both sides)."""
+        listing = self.statistic(market_id, listing_type, basis, names, own_only=True)
+        orders = self.statistic(market_id, buy_type, basis, names, own_only=True)
+        seed = self.statistic(market_id, listing_type, basis, names)
+        result = {name: price for name, price in seed.items()}
+        for name in set(listing) | set(orders):
+            result[name] = (round((listing[name] + orders[name]) / 2, 2) if name in listing and name in orders
+                            else listing.get(name, orders.get(name)))
+        return result
 
     def coverage(self, market_id, price_type):
         """{days: full days saved in the window, seeded: {basis: bool}} of one table."""
