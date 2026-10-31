@@ -63,6 +63,25 @@ Steam is rate-limiting this connection. The app already spaces its calls; wait
   press ↺ **Retry login** in Andvari → Card farming.
 - "ASF down": `make asf` starts it (after `make asf-setup` once).
 
+## Transfer: some items cannot be selected, or Select all skips them
+
+In To mode, two kinds of item are shown but cannot be put into a Storage Unit:
+
+- **Trade protected** (red badge): received in a trade with another player. It
+  can go into a Storage Unit once the protection ends; hover the select button
+  for how long is left. Items bought on the Steam Market (orange **Trade hold**)
+  are not blocked.
+- **Can't be stored** (hidden unless "Show items that can't be stored" is on):
+  medals, coins, badges, the default music kit — never.
+
+## Items stayed in the inventory after a move
+
+The game gives no answer to a deposit, so a refused item just stays where it
+was. Transfer and Auto-Store never send trade-protected or unstorable items, so
+this is rare: a Storage Unit filled up meanwhile, or the Ratatoskr session was
+lost. Refresh the page and move again. See
+[storage-units.md](../internals/storage-units.md).
+
 ## Buy Storage Units: "MAY BE PAID"
 
 See [ratatoskr.md](ratatoskr.md#buy-storage-units): check the account's purchase

@@ -41,6 +41,7 @@ Plus: [Telegram alerts and phone rings](telegram.md) and
 | **Storage Unit** | A Counter-Strike 2 item that holds up to 1,000 other items, so the inventory stays small. |
 | **Game Coordinator** | Valve's server for Counter-Strike 2 itself (inventory, Storage Units, the in-game store), separate from the Steam website. |
 | **Autobuy market** | A site that buys your item instantly at a fixed price (as opposed to listing it and waiting). |
-| **Trade protection / trade hold** | The 7 days after a trade or purchase during which an item cannot be traded again. |
+| **Trade hold** | The days after a purchase (for example on the Steam Community Market) during which an item cannot be traded or sold again. It **can** still go into a Storage Unit. |
+| **Trade protection** | The days after receiving an item in a trade with another player. It cannot be traded, sold **or put into a Storage Unit** until it ends. |
 | **ASF** | ArchiSteamFarm, a well-known open-source program that "plays" games so their trading cards drop. |
 | **Dry run** | A test purchase that goes through every check and stops before paying. |

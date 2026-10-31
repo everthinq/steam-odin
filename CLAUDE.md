@@ -222,6 +222,8 @@ ruff + `pip-audit`, and frontend lint + build, on every push and pull request.
 - What every screen does (human guide): [docs/guide/](docs/guide/README.md)
 - Feature deep dives: [docs/internals/](docs/internals/) — start with
   [storage-shop.md](docs/internals/storage-shop.md) before touching Buy Storage Units or the Store Catalogue
+- Storage Units — what can go in (trade hold vs trade protection, attribute 312) and which unit
+  fills first; Transfer and Auto-Store share it: [docs/internals/storage-units.md](docs/internals/storage-units.md)
 - Tradeon pulse (every price on every Huginn page): [docs/internals/pulse-api.md](docs/internals/pulse-api.md) —
   all requests go through the master feed `backend/pulse_feed.py`, never anywhere else
 - Steam Market price history (`pricehistory`: login, wallet currency, errors, store vs market

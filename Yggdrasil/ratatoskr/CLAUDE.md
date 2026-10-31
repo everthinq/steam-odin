@@ -104,6 +104,10 @@ confirm with Ivan before shortening any of it.
 
 ## Traps
 
+- **Storage rules live in [docs/internals/storage-units.md](../../docs/internals/storage-units.md)**
+  (trade hold vs trade protection, fullest unit first, refused deposits fail silently, how to read
+  the raw Game Coordinator data without a restart). Transfer and Auto-Store change together.
+
 - **No hot reload.** After editing any `.js`, `docker restart steam-odin-ratatoskr-1`
   (it drops every live session). `npm run dev` / nodemon only reloads when run
   that way, not in the compose service.
