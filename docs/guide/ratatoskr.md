@@ -16,7 +16,8 @@ Stable" means ready. **Auto-disconnect when idle** frees the session after
 
 ### Inventory
 
-Every Counter-Strike 2 item in the inventory, with search.
+Every Counter-Strike 2 item in the inventory, with search. Items a Storage Unit
+cannot hold are hidden (see **Show items that can't be stored** below).
 
 ### Transfer
 
@@ -30,6 +31,15 @@ Every Counter-Strike 2 item in the inventory, with search.
 4. Open the queue (**N ITEMS**), set the delay between items if needed, press
    **Move**. Moves start immediately — no second question — and run one at a
    time with a pause between them; the progress bar follows.
+
+**Show items that can't be stored (N)** (To mode, and on the Inventory page):
+untradable items — service medals, veteran and operation coins, Loyalty Badge,
+Global Offensive Badge, the default music kit (Music Kit | Valve, CS:GO) — can
+never go into a Storage Unit, so they are hidden by default. N is how many there
+are. Switch it on to see them, greyed and marked "Can't be stored"; they can
+never be selected or moved. The choice is remembered in this browser and is the
+same on both pages. Which items count comes from the game's own item data
+(Ratatoskr's `item_moveable`), not from a list of names.
 
 **Move one of each to inventory** (From mode) takes one copy of every
 different skin out of storage — useful so price websites that read your

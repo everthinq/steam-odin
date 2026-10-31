@@ -87,7 +87,7 @@ path prefix — add your page there. No catch-all route, no Settings page.
 - **localStorage** is for per-browser conveniences only (layout, filters),
   every access wrapped in `try`/`catch`. Keys in use: `heimdall-dashboard-layout`,
   `draupnir-portfolio-layout`, `huginn.harvest`, `andvari.valuation`,
-  `andvari.buy.apps`, `huginn.arbitrageFilters`, `huginn.harvestFilters`, `huginn.caseArbitrageFilters`, `huginn.crossProfileFilters`, `ratatoskr.storeArbitrage`, `ratatoskr.storeArbitrageFilters`, `ratatoskr.storeBoosts`, `huginn.priceDips`, `huginn.skinswapNoteOpen`, `lf_balance_pct`, `lf_unlocked`.
+  `andvari.buy.apps`, `huginn.arbitrageFilters`, `huginn.harvestFilters`, `huginn.caseArbitrageFilters`, `huginn.crossProfileFilters`, `ratatoskr.storeArbitrage`, `ratatoskr.storeArbitrageFilters`, `ratatoskr.storeBoosts`, `ratatoskr.showUnstorableItems`, `huginn.priceDips`, `huginn.skinswapNoteOpen`, `lf_balance_pct`, `lf_unlocked`.
 - **Shared pieces:** `components/gjallarhorn/InfoTip.jsx` (prop `tip`) for
   tooltips; `components/draupnir/columnSort.js` (`useColumnSort`, `sortRows`) with the header `components/ratatoskr/SortHeader.jsx`;
   `components/arbitrage/ArbitrageFilters.jsx` (price / account / collection filters + chips on Arbitrage, Harvest, Case Arbitrage, Cross-Profile and Store Catalogue Arbitrage; each tab names its price sides via `priceSides`; helpers, `useStoredFilters` and `buildOptions` in `utils/arbitrageFilters.js`; the page passes its inventory scan down as `byHash`, the only source of collections);
@@ -143,3 +143,14 @@ path prefix — add your page there. No catch-all route, no Settings page.
 - No confirmation before: Confirmations Approve/Deny, Transfer Move, Team
   Fortress 2 Play / Sell now, card auto-sell checkboxes (they save at once).
 - Ratatoskr Inventory lets you select items, but the selection has no actions.
+
+## Ratatoskr: items a Storage Unit cannot hold
+
+Ratatoskr's `item_moveable` (`items.js` `itemProcessorCanBeMoved`) is false for untradable
+collectibles, the default music kit, Storage Units and default weapons. The Inventory page and
+Transfer's To mode hide those items unless the switch `components/transfer/UnstorableSwitch.jsx`
+is on (`utils/showUnstorable.js`: `useShowUnstorable`, localStorage `ratatoskr.showUnstorableItems`).
+`canGoIntoStorageUnit` (`utils/transferItems.js`) is the one test; `groupItemsByName(…, {markUnstorable})`
+(To mode only — anything already in a Storage Unit can always come out) puts such items on lines of
+their own (`unstorable`), whose selectable quantity is 0, and `handleMove` drops
+them before anything reaches the Game Coordinator.

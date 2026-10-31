@@ -35,7 +35,10 @@ import {
     formatItemFloat,
     formatTradeHoldLabel,
     itemsHaveTradeHold,
+    canGoIntoStorageUnit,
 } from '../../utils/transferItems';
+import UnstorableSwitch from '../../components/transfer/UnstorableSwitch';
+import { useShowUnstorable, UNSTORABLE_EXPLANATION } from '../../utils/showUnstorable';
 import PickCheckbox from '../../components/transfer/PickCheckbox';
 import CollapsibleSection from '../../components/transfer/CollapsibleSection';
 import ItemThumb from '../../components/transfer/ItemThumb';
@@ -85,6 +88,7 @@ const RatatoskrTransfer = () => {
     const [allCasketLoading, setAllCasketLoading] = useState(false);
     const [allCasketLoaded, setAllCasketLoaded] = useState(false);
     const [storageSectionOpen, setStorageSectionOpen] = useState(true);
+    const [showUnstorable, setShowUnstorable] = useShowUnstorable();
     const filterRef = useRef(null);
     const fetchingAllStorage = useRef(false);
     // Bumped on every casket selection change and every single-casket fetch:
@@ -517,7 +521,13 @@ const RatatoskrTransfer = () => {
     const handleMove = async () => {
         if (!hasStorageSelection || !transferMode || moveProgress?.running) return;
         if (transferMode === 'to' && selectedCasketIds.length !== 1) return;
-        const itemsToMove = transferMode === 'to' ? selectedInvItems : selectedCasketItems;
+        // Never send the Game Coordinator an item a Storage Unit cannot hold.
+        const unstorableIds = new Set(
+            inventory.filter((i) => !canGoIntoStorageUnit(i)).map((i) => i.item_id)
+        );
+        const itemsToMove = transferMode === 'to'
+            ? selectedInvItems.filter((id) => !unstorableIds.has(id))
+            : selectedCasketItems;
         if (itemsToMove.length === 0) return;
 
         const source = transferMode === 'to' ? 'inventory' : 'casket';
@@ -660,9 +670,17 @@ const RatatoskrTransfer = () => {
         transferMode === 'from' &&
         (allStorageSelected || selectedCasketIds.length > 1);
 
+    // Inventory items a Storage Unit cannot hold (untradable collectibles, the default music kit).
+    const unstorableCount = useMemo(
+        () => inventory.filter((i) => i.def_index !== 1201 && !canGoIntoStorageUnit(i)).length,
+        [inventory]
+    );
+
     const rawItems = useMemo(() => {
         if (transferMode === 'to') {
-            return tagInventoryItems(inventory.filter((i) => i.def_index !== 1201));
+            return tagInventoryItems(inventory.filter(
+                (i) => i.def_index !== 1201 && (showUnstorable || canGoIntoStorageUnit(i))
+            ));
         }
         if (allStorageSelected) return allCasketItems;
         if (selectedCasketIds.length === 0) return [];
@@ -679,6 +697,7 @@ const RatatoskrTransfer = () => {
     }, [
         transferMode,
         inventory,
+        showUnstorable,
         casketItems,
         allCasketItems,
         allStorageSelected,
@@ -707,8 +726,11 @@ const RatatoskrTransfer = () => {
         (itemSearch.trim() ? 1 : 0) + (includedCollections.length > 0 ? 1 : 0);
 
     const groupedItems = useMemo(
-        () => groupItemsByName(displayItems, { includeStorage: showStorageColumn }),
-        [displayItems, showStorageColumn]
+        () => groupItemsByName(displayItems, {
+            includeStorage: showStorageColumn,
+            markUnstorable: transferMode === 'to',
+        }),
+        [displayItems, showStorageColumn, transferMode]
     );
 
     const sortedGroupedItems = useMemo(() => {
@@ -746,10 +768,13 @@ const RatatoskrTransfer = () => {
 
     const getGroupSelectedQty = (group) => getIdsSelectedQty(group.item_ids);
 
-    /** Full qty in both directions — deposit-all to storage, withdraw-all from storage. */
-    const getMaxSelectableQty = (group) => group.qty;
+    /**
+     * Full qty in both directions — deposit-all to storage, withdraw-all from storage — except a
+     * line of items a Storage Unit cannot hold: shown when asked for, never selectable.
+     */
+    const getMaxSelectableQty = (group) => (group.unstorable ? 0 : group.qty);
 
-    const getVariantMaxSelectableQty = (lineGroup, variant) => variant.qty;
+    const getVariantMaxSelectableQty = (lineGroup, variant) => (lineGroup.unstorable ? 0 : variant.qty);
 
     const setIdsSelectedQty = (itemIds, qty) => {
         const n = Math.max(0, Math.min(itemIds.length, Number.isFinite(qty) ? qty : 0));
@@ -1014,6 +1039,14 @@ const RatatoskrTransfer = () => {
                     />
                 </div>
 
+                {transferMode === 'to' && (
+                    <UnstorableSwitch
+                        checked={showUnstorable}
+                        onChange={setShowUnstorable}
+                        count={unstorableCount}
+                    />
+                )}
+
                 <div className="flex items-center gap-4 ml-auto text-xs">
                     {slotsLeft !== null && transferMode === 'to' && (
                         <span className="text-amber-400/90 font-medium whitespace-nowrap">
@@ -1092,6 +1125,11 @@ const RatatoskrTransfer = () => {
                 ) : sortedGroupedItems.length === 0 ? (
                     <p className="text-sm text-slate-500 text-center py-12">
                         {activeFilterCount > 0 ? 'No items match your filters.' : 'No items to show.'}
+                        {transferMode === 'to' && !showUnstorable && unstorableCount > 0 && (
+                            <span className="block mt-1 text-xs text-slate-600">
+                                {unstorableCount} item{unstorableCount === 1 ? '' : 's'} that can't be stored {unstorableCount === 1 ? 'is' : 'are'} hidden.
+                            </span>
+                        )}
                     </p>
                 ) : (
                     sortedGroupedItems.map((lineGroup) => {
@@ -1183,7 +1221,8 @@ const RatatoskrTransfer = () => {
                         return (
                             <React.Fragment key={lineGroup.key}>
                                 <div
-                                    className={`grid ${tableGridCols} gap-2 items-center px-4 py-2 border-b border-white/5 transition-colors ${transferRowSurfaceClass(lineGroup.onTradeHold, sel)}`}
+                                    className={`grid ${tableGridCols} gap-2 items-center px-4 py-2 border-b border-white/5 transition-colors ${transferRowSurfaceClass(lineGroup.onTradeHold, sel)} ${lineGroup.unstorable ? 'opacity-50' : ''}`}
+                                    title={lineGroup.unstorable ? UNSTORABLE_EXPLANATION : undefined}
                                 >
                                     <div className="flex items-center gap-1.5 min-w-0">
                                         {lineGroup.hasMultipleFloats ? (
@@ -1218,6 +1257,11 @@ const RatatoskrTransfer = () => {
                                                 {lineGroup.onTradeHold && (
                                                     <span className="shrink-0 px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wide bg-orange-500/25 text-orange-300 border border-orange-500/30">
                                                         {formatTradeHoldLabel(lineGroup.items)}
+                                                    </span>
+                                                )}
+                                                {lineGroup.unstorable && (
+                                                    <span className="shrink-0 px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wide bg-white/5 text-slate-400 border border-white/10">
+                                                        Can't be stored
                                                     </span>
                                                 )}
                                             </div>
@@ -1257,7 +1301,9 @@ const RatatoskrTransfer = () => {
                                             sel,
                                             () => toggleGroupCheckbox(lineGroup),
                                             getMaxSelectableQty(lineGroup) === 0,
-                                            `Select all ${lineGroup.qty}`
+                                            lineGroup.unstorable
+                                                ? "A Storage Unit can't hold this item"
+                                                : `Select all ${lineGroup.qty}`
                                         )}
                                     </div>
                                 </div>

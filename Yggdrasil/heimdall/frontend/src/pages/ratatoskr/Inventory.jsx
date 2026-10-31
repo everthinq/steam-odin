@@ -2,6 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import { Search, RefreshCw, Filter, Copy } from 'lucide-react';
 import { readJson } from '../../utils/readJson';
+import { canGoIntoStorageUnit } from '../../utils/transferItems';
+import UnstorableSwitch from '../../components/transfer/UnstorableSwitch';
+import { useShowUnstorable, UNSTORABLE_EXPLANATION } from '../../utils/showUnstorable';
 
 const CDN_URL = 'https://community.cloudflare.steamstatic.com/economy/image/';
 
@@ -11,6 +14,7 @@ const RatatoskrInventory = () => {
     const [loading, setLoading] = useState(true);
     const [search, setSearch] = useState('');
     const [selectedItems, setSelectedItems] = useState([]);
+    const [showUnstorable, setShowUnstorable] = useShowUnstorable();
 
     useEffect(() => {
         fetchInventory();
@@ -37,9 +41,11 @@ const RatatoskrInventory = () => {
         );
     };
 
-    const filteredInventory = inventory.filter(item =>
+    const items = inventory.filter(item => item.def_index !== 1201); // Hide caskets
+    const unstorableCount = items.filter(item => !canGoIntoStorageUnit(item)).length;
+    const filteredInventory = items.filter(item =>
         item.item_name.toLowerCase().includes(search.toLowerCase()) &&
-        item.def_index !== 1201 // Hide caskets
+        (showUnstorable || canGoIntoStorageUnit(item))
     );
 
     return (
@@ -52,6 +58,11 @@ const RatatoskrInventory = () => {
                 </div>
 
                 <div className="flex items-center gap-3 w-full md:w-auto">
+                    <UnstorableSwitch
+                        checked={showUnstorable}
+                        onChange={setShowUnstorable}
+                        count={unstorableCount}
+                    />
                     <div className="relative flex-1 md:w-64">
                         <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={16} />
                         <input
@@ -81,14 +92,16 @@ const RatatoskrInventory = () => {
                     {filteredInventory.map(item => (
                         <div
                             key={item.item_id}
-                            onClick={() => toggleSelection(item.item_id)}
-                            className={`group aspect-square bg-odin-blue/50 rounded-2xl border cursor-pointer relative overflow-hidden transition-all duration-200 ${selectedItems.includes(item.item_id) ? 'border-amber-500 ring-2 ring-amber-500/20 bg-amber-500/5' : 'border-white/5 hover:border-white/20 hover:bg-white/5'}`}
+                            onClick={() => canGoIntoStorageUnit(item) && toggleSelection(item.item_id)}
+                            title={canGoIntoStorageUnit(item) ? undefined : UNSTORABLE_EXPLANATION}
+                            className={`group aspect-square bg-odin-blue/50 rounded-2xl border relative overflow-hidden transition-all duration-200 ${canGoIntoStorageUnit(item) ? 'cursor-pointer' : 'opacity-50 cursor-not-allowed'} ${selectedItems.includes(item.item_id) ? 'border-amber-500 ring-2 ring-amber-500/20 bg-amber-500/5' : 'border-white/5 hover:border-white/20 hover:bg-white/5'}`}
                         >
                             {/* Rarity Bar */}
                             <div className={`absolute top-0 left-0 w-full h-1`} style={{ backgroundColor: item.rarity_color || '#b0c3d9' }} />
 
                             <div className="absolute top-3 right-3 z-10 flex flex-col items-end gap-1">
                                 {item.stattrak && <span className="text-[10px] uppercase font-bold bg-orange-600/90 text-white px-1.5 py-0.5 rounded shadow-sm backdrop-blur-sm">ST</span>}
+                                {!canGoIntoStorageUnit(item) && <span className="text-[10px] uppercase font-bold px-1.5 py-0.5 rounded bg-black/60 text-slate-300 backdrop-blur-sm">Can't be stored</span>}
                                 {item.rarityName && <span className="text-[10px] px-1.5 py-0.5 rounded bg-black/60 text-white backdrop-blur-sm truncate max-w-[80px]">{item.rarityName}</span>}
                             </div>
 
@@ -111,6 +124,11 @@ const RatatoskrInventory = () => {
             ) : (
                 <div className="text-center py-20 text-slate-500">
                     <p className="text-lg">No items found matching your search.</p>
+                    {!showUnstorable && unstorableCount > 0 && (
+                        <p className="text-xs mt-1 text-slate-600">
+                            {unstorableCount} item{unstorableCount === 1 ? '' : 's'} that can't be stored {unstorableCount === 1 ? 'is' : 'are'} hidden.
+                        </p>
+                    )}
                 </div>
             )}
         </div>

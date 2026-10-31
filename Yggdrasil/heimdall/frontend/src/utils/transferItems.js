@@ -60,6 +60,14 @@ export const matchesSearchQuery = (fields, query) => {
     return tokens.every((token) => haystack.includes(token));
 };
 
+/**
+ * Whether a Storage Unit can hold the item. Ratatoskr's `item_moveable` is false for what the
+ * Game Coordinator refuses: untradable collectibles (service medals, veteran and operation coins,
+ * Loyalty Badge, Global Offensive Badge), the default music kit, Storage Units, default weapons.
+ * An item without the flag counts as storable.
+ */
+export const canGoIntoStorageUnit = (item) => item?.item_moveable !== false;
+
 export const tagInventoryItems = (items) =>
     (items || []).map((item) => ({
         ...item,
@@ -133,13 +141,17 @@ export const compareFloatVariantsWithTradeHoldLast = (a, b) => {
  * Group by name + wear (and storage when requested). Distinct floats are nested
  * under `floatVariants` for the expandable picker in the transfer table.
  */
-export const groupItemsByName = (items, { includeStorage = false } = {}) => {
+export const groupItemsByName = (items, { includeStorage = false, markUnstorable = false } = {}) => {
     const map = new Map();
     for (const item of items) {
         const lineKey = getItemSkinLineKey(item);
-        const key = includeStorage
+        const storageKey = includeStorage
             ? `${lineKey}\0${item.storage_unit_id ?? 'inventory'}`
             : lineKey;
+        // Depositing (`markUnstorable`): items a Storage Unit cannot hold get a line of their own,
+        // so a line is all one or the other. Items already in a Storage Unit can always come out.
+        const unstorable = markUnstorable && !canGoIntoStorageUnit(item);
+        const key = unstorable ? `${storageKey}\0unstorable` : storageKey;
 
         if (!map.has(key)) {
             map.set(key, {
@@ -150,6 +162,7 @@ export const groupItemsByName = (items, { includeStorage = false } = {}) => {
                 item_collection: item.item_collection,
                 stickers: item.stickers || [],
                 representative: item,
+                unstorable,
                 item_ids: [],
                 items: [],
                 floatVariantMap: new Map(),
