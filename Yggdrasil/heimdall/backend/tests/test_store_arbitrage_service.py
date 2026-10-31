@@ -255,11 +255,7 @@ def test_the_board_warms_in_the_background_then_serves_rows(tmp_path):
     first = service.board('token', ['Buff', 'Steam', 'LisSkins', 'Unknown'])
     assert first['status'] == 'warming' and first['rows'] == []
     assert [m['id'] for m in first['markets']] == ['Buff', 'Steam', 'LisSkins']
-    for _ in range(200):
-        if not service._warming:
-            break
-        import time
-        time.sleep(0.01)
+    assert service.wait_idle(timeout=5, step=0.01)
     board = service.board('token', ['Buff', 'Steam', 'LisSkins'])
     assert board['status'] == 'fresh'
     # LisSkins has no instant side; Buff163 is priced once per side.

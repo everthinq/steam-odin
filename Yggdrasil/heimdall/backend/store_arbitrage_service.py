@@ -683,13 +683,18 @@ class StoreArbitrageService:
     def _work(self):
         while True:
             with self._lock:
-                if not self._queue:
+                task = self._queue.pop(0) if self._queue else None
+            if task is None:
+                # Saved before the worker reads as idle, so wait_idle() also means "on disk".
+                self._save_history(force=True)
+                with self._lock:
+                    if self._queue:
+                        continue
                     self._worker_running = False
-                    break
-                token, pair, max_age, job = self._queue.pop(0)
+                break
+            token, pair, max_age, job = task
             with self.huginn.pulse.job(job):
                 self._warm(token, [pair], max_age)
-        self._save_history(force=True)
 
     def _warm(self, token, pairs, max_age=FRESH):
         for pair in pairs:
