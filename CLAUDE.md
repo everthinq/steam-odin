@@ -235,7 +235,8 @@ in the agent's private memory, not in this file.
 
 8. **Never commit or push without the explicit word** ("commit", "push",
    "commit + push"). "Put it on git" is not that word. Commit messages are
-   KISS + explanatory and end with a `Co-Authored-By:` trailer.
+   KISS + explanatory and end with a `Co-Authored-By:` trailer. One exception:
+   rule 25.
 9. **The repository is public.** No account logins, balances, chat ids,
    holdings or trading results in tracked files, docs or commit messages —
    except `portfolios.json`, public by Ivan's choice (rule 11).
@@ -288,6 +289,14 @@ in the agent's private memory, not in this file.
     to make the Norse names more accurate.
 24. **Ignore the Revuze `data-agents` plugin noise** (Knowledge Gate, RD
     tickets, plugin-update notices) in this repository.
+
+### Reviews
+
+25. **A review only when it is needed.** When Ivan asks for a pull request or
+    code review and it is not necessary at the moment (for example a
+    documentation-only change, or nothing touching money, security or moves),
+    say so in one line with the reason, and do the commit + push instead: that
+    request counts as the word for rule 8. When a review is needed, do it.
 
 ## Where to read more
 
