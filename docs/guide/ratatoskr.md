@@ -30,13 +30,15 @@ Stable" means ready. **Auto-disconnect when idle** frees the session after
    Storage Unit (free, up to 20 characters; in From mode).
 3. Select items: by group with a quantity, by float, select all; filter by
    collection or search. "N LEFT" shows the free places left after the move.
-4. Open the queue (**N ITEMS**), set the delay between items if needed, press
+4. Open the queue (**N ITEMS**), set the delay between items if needed (200 ms by default), press
    **Move**. Moves start immediately — no second question — and run one at a
    time with a pause between them; one progress bar follows the whole move,
    even when it spans several Storage Units. The move runs in Heimdall's
    backend: closing or reloading the page does not stop it.
 5. Each item counts as moved only when the game confirms it. If the game
-   refuses an item (it stays where it was), the message names it.
+   refuses an item (it stays where it was), the message names it. If the
+   connection to the game drops during the move, the items without an answer
+   are "not confirmed": refresh the page to see where they are.
 
 **Tradable now and trade hold** are separate rows: when you hold copies of an
 item that can be traded now and copies still on trade hold (a fresh purchase,

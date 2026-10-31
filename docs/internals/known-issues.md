@@ -14,7 +14,7 @@ one, delete its line.
 | CI runs Python 3.11 and Node 20; the images run Python 3.9 and Node 22 | `.github/workflows/ci.yml` vs the Dockerfiles | Code must work on both; a 3.10+ feature would pass CI and crash the container |
 | CI lint and `ruff` are non-blocking (`|| true`) | `ci.yml` | Lint errors do not fail a push; keep them at zero by hand |
 | The backend Dockerfile's `gunicorn` command is overridden by compose (`python app.py`) | `docker-compose.yml` | The development server with auto-reload is what actually runs |
-| No container has a healthcheck; the frontend has no restart policy | `docker-compose.yml` | A crashed frontend stays down until `make raid` |
+| Only the backend and Ratatoskr have a healthcheck; the frontend has no restart policy | `docker-compose.yml` | A crashed frontend stays down until `make raid` |
 | A stale compose comment mentions `network_mode: host` | `docker-compose.yml` | None |
 | `make ratatoskr` and `make huginn` only print a message | `Makefile` | Use `docker compose up -d ratatoskr` |
 | `cors` and `dotenv` are declared but unused | `ratatoskr/package.json` | None |

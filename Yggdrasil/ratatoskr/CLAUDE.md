@@ -22,7 +22,7 @@ open (Docker's health check). To look by hand:
 | File | Job |
 |------|-----|
 | `server.js` | Express app, the secret check, session store, login, idle sweep, every endpoint |
-| `moves.js` | The move queue (`createMoveQueues`): one per account, moves sent one after another at the move delay, **each confirmed by the Game Coordinator** in the background — a deposit by `itemRemoved` (the item left the inventory) or `itemAcquired` inside the target unit, a withdrawal by `itemAcquired` back in the inventory; no answer in 15 s = refused (seen live 2026-10-31, [storage-units.md §4](../../docs/internals/storage-units.md)) |
+| `moves.js` | The move queue (`createMoveQueues`): one per account, moves sent one after another at the move delay, **each confirmed by the Game Coordinator** in the background — a deposit by `itemRemoved` (the item left the inventory) or `itemAcquired` inside the target unit, a withdrawal by `itemAcquired` back in the inventory; no answer in 15 s = refused, or unconfirmed when the session or the Game Coordinator was lost first (seen live 2026-10-31, [storage-units.md §4](../../docs/internals/storage-units.md)) |
 | `test/` | `npm test` (node's built-in runner, no dependencies): `moves.test.js` (confirmations with a fake Game Coordinator), `items.test.js` (the hold fields from raw items shaped like recorded ones). Also in CI |
 | `store.js` | Counter-Strike 2 in-game store over the Game Coordinator: price sheet (`StoreGetUserData`), `StorePurchaseInit` / `Finalize` / `Cancel`, one request per session at a time, each sent as a Game Coordinator **job** (Finalize is answered only to a job); catches Steam's `ClientMicroTxnAuthRequest` (EMsg 5504, not handled by steam-user). Protocol and live findings: [docs/internals/storage-shop.md](../../docs/internals/storage-shop.md) |
 | `items.js` | Converts Game Coordinator inventory into display items (names, images, stickers, wear, collections); logic derived from Casemove. Loads `csgo_english.json` and `items_game.json` once at start. The fields the backend's storage rules (`storage_deposit.py` `storage_block`) read: `item_moveable` (`itemProcessorCanBeMoved`: false for what a Storage Unit cannot hold — untradable collectibles, the default music kit, Storage Units, default weapons), `trade_unlock` (attribute 75: when a trade hold ends — a Steam Market purchase has only this and CAN go into a Storage Unit) and `trade_locked` + `trade_protected_until` (attribute 312, trade protection: an item received in a trade; set only while the date is ahead; the Game Coordinator refuses such an item into a Storage Unit) |
@@ -78,7 +78,7 @@ read-only. Container port 3000, **not published** on the Mac (Docker network onl
 | `POST /casket/rename` | Free rename, max 20 characters, 15 s timeout |
 | `POST /move/batch` | Queue moves (inventory ↔ casket); a batch has one `casketID`. Called only by the backend's `DepositService` (`storage_deposit.py`), which treats every Storage Unit as one storage and splits a deposit into one batch per unit (fullest with room first), sent one after another — Ratatoskr itself knows nothing of the pooling and never checks the 1,000-item limit |
 | `GET /move/status/:steamid` | Queue progress of the current run: `runId` (new for every batch queued on an idle queue; `/move/batch` returns it), `done` (confirmed), `refused`, `failed` (refused or never sent), `doneItemIDs`, `refusedItemIDs`, `unconfirmedItemIDs` (no answer because the session or the Game Coordinator was lost meanwhile — not a refusal), `failedItemIDs`, `awaiting` (sent, no answer yet), `running` until every sent move is answered; last 20 errors with a `code` (`refused`, `not_sent`). A disconnect drops the queue, so a client must count only the ids of its own `runId`. An item already queued or awaiting is not queued twice |
-| `GET/POST /config/move-delay` | Delay between moves |
+| `GET/POST /config/move-delay` | Delay between moves (default 200 ms, 100–5000; the Transfer queue's delay field) |
 | `GET/POST /config/session-idle` | Idle timeout + presets |
 | `GET/POST /config/protected-accounts` | Accounts exempt from the idle sweep |
 | `GET /store/user-data/:steamid` | Price sheet (base64), wallet, Storage Unit count, countries |
@@ -105,8 +105,8 @@ The current tuning exists because faster settings got accounts rate-limited:
 - **Store requests are serial per session** (`serial` queue in `store.js`): two
   answers of the same type would mix.
 - On the Heimdall side the scheduler sleeps between accounts; the Transfer page
-  loads "All storage units" one unit at a time 350 ms apart and polls move
-  status every 500 ms.
+  loads "All storage units" one unit at a time 350 ms apart and follows a move's
+  backend job every 500 ms (it never polls Ratatoskr itself).
 - **Idle auto-disconnect** frees sessions after the timeout.
 
 If you are tempted to "speed things up", assume the delay is load-bearing and
