@@ -1,5 +1,13 @@
 """The one place Heimdall asks Tradeon pulse for prices (the master); every feature reads from it.
 
+**Only Huginn Arbitrage downloads** (Ivan's master-slave rule, 2026-10-31): the keeper keeps the
+tables of the active Huginn profiles fresh (``set_active``), "Fetch live data" and a profile
+opening by itself download through ``reading(download=True)``, and "Check live" asks pulse for one
+item (``lookup``). Every other reader (Case Arbitrage and its alerts, Store Catalogue Arbitrage,
+Store Boosts, Harvest, Cross-Profile, Price dips, Gjallarhorn, Draupnir's valuation, the LOOT.Farm
+boards) is a slave: it gets the copy in memory, whatever its age, waits for a download already
+under way, and otherwise gets ``NotActive``. It never causes a request.
+
 Every pulse price table is ``POST /api/table/counter-strike/TradeOnMarket/{market}/all`` with one
 body: the first market is always Tradeon's lowest listing ("Sell"), the second market is priced as
 one price type (``Sell`` = lowest listing, ``SellWithoutHold``, ``Buy`` = buy orders, ``Median30d``…).
@@ -19,13 +27,14 @@ its answers:
 - **Freshness is the caller's choice**: ``max_age`` seconds (``FRESH`` = 10 minutes for background
   reads; a button the user pressed asks for ``ON_DEMAND`` = 1 minute). A table is kept
   ``KEEP_SECONDS`` after its download and then dropped.
-- **Kept fresh** (``set_kept``, the Pulse feed page; ``set_kept_for_profiles``, the Huginn profiles
-  switched to "Keep fresh"): those tables are downloaded again in the background every few minutes
-  (``start_keeper``), one at a time, each at the shorter of its two intervals, so the pages that read
-  them open at once; a kept table stays in memory until its next download.
-- **Per request** (``reading``): a page that may show a kept table as old as its interval says so
-  (``accept_kept``; a Huginn profile opening by itself), and every table the request read is
-  recorded with its download time, so the page can say how old its prices are.
+- **Active tables** (``set_active``): the active profiles' tables every few minutes, Buff163's
+  lowest listing once a day (the off-Steam reference), and one-time downloads (``download_once``:
+  the statistics seed). The keeper (``start_keeper``) downloads them one at a time, only inside
+  the active hours (``set_active_hours``), and after the Mac slept it waits a tick for the network
+  and starts again from a clean slate. An active table stays in memory until its next download.
+- **Per request** (``reading``): Huginn Arbitrage's routes may download (*download*), a profile
+  opening by itself accepts the active copy up to its interval (*accept_kept*), and every table
+  the request read is recorded with its download time, so the page can say how old its prices are.
 - **Compact**: a raw table is ~32,000 rows, ~59 MB of JSON (~4-5 MB gzipped on the wire, see
   ``HuginnService._post_tradeon``) and ~155 MB as Python objects. Only the
   fields Heimdall reads are kept, as tuples, with each item's name and image stored once for all
@@ -44,7 +53,8 @@ its answers:
   (Trade) ÷ 1.4), keeping the page price as ``pagePrice``.
 - **Listeners** (``add_listener``) hear about every downloaded table on one background thread, so
   a slave can keep what it needs (Store Catalogue Arbitrage keeps the store items).
-- ``status()`` lists every table, its age, downloads, reads and whether it is kept fresh.
+- ``status()`` lists every table, its age, downloads, reads, its readers and whether it is active,
+  and the keeper's state (active hours, last pass, the last sleep).
 
 Facts about the pulse API and ideas not used yet are in docs/internals/pulse-api.md.
 """
@@ -66,10 +76,14 @@ KEEP_SECONDS = FRESH            # a table older than this is dropped (nobody ask
 MAX_PARALLEL_DOWNLOADS = 4
 MAX_BACKGROUND_DOWNLOADS = 3    # the last slot is kept for a page or a button
 WAIT_FOR_DOWNLOAD = 600         # seconds a caller waits on another caller's download (queue included)
-# Kept-fresh tables: every how many minutes they may be downloaded again (the Pulse feed page).
-KEEP_FRESH_MINUTES = (5, 10, 15, 30, 60)
-MAX_KEPT_TABLES = 12
-MAX_PROFILE_TABLES = 12         # tables kept fresh for Huginn profiles (on top of MAX_KEPT_TABLES)
+# Active profiles: every how many minutes their tables are downloaded again (Huginn Arbitrage).
+ACTIVE_MINUTES = (5, 10, 15, 30, 60)
+MAX_ACTIVE_TABLES = 12          # tables the active profiles may need together
+# Read once a day: Buff163 is the main market, not tradeable yet, but its price belongs in the
+# statistics and is the off-Steam reference (Case Arbitrage, Store Boosts, valuation).
+REFERENCE_TABLES = {('Buff', 'Sell'): 24 * 60 * 60}
+SLEEP_GAP = 3 * 30              # the keeper's tick took this long: the Mac (and Docker) slept
+ONCE_TRIES = 3                  # a one-time download (the seed) is given up after this many failures
 JOB_STATUS_SECONDS = 30         # how long the declared jobs' tables are cached for status()
 KEEPER_TICK = 30                # seconds between the keeper's checks
 KEEPER_RETRY_AFTER = 5 * 60     # a kept table that failed is tried again after this
@@ -210,6 +224,9 @@ class PulseTable:
     def __len__(self):
         return len(self.entries)
 
+    def __bool__(self):
+        return True             # a downloaded table is there even when it has no rows (len 0)
+
     def prices(self, side='second'):
         """{name: price} of one side ('first' = Tradeon's lowest listing)."""
         position = 0 if side == 'first' else 1
@@ -242,8 +259,9 @@ class PulseTable:
         return out
 
 
-class SwitchedOff(RuntimeError):
-    """A background job asked for a table switched off on the Pulse feed page (and none in memory)."""
+class NotActive(RuntimeError):
+    """A slave asked for a table that is not in memory: no active Huginn profile keeps it, and only
+    Huginn Arbitrage downloads."""
 
 
 class _Flight:
@@ -262,6 +280,10 @@ def _new_counts():
 
 
 class PulseFeed:
+    # Tests only (conftest.py): the older tests of the slaves' own logic let them download from a
+    # fake pulse. Never set in the app; the gate's own tests switch it off again.
+    slaves_may_download = False
+
     def __init__(self, post, scale=None, clock=time.time):
         """*post(url, token, body)* sends one request and returns the parsed rows; *scale*:
         {market id: factor} for bonus-balance markets."""
@@ -283,14 +305,15 @@ class PulseFeed:
         self._listener_thread = ThreadPoolExecutor(max_workers=1, thread_name_prefix='pulse-feed-listener')
         self._counts = {}            # key -> _new_counts()
         self._lookups = {'count': 0, 'failures': 0, 'last_error': None}
-        self._kept = []              # [(market id, price type)] kept fresh in the background
-        self._kept_seconds = FRESH   # how often a kept table is downloaded again
-        self._kept_for_profiles = []  # [(market id, price type)] kept fresh for Huginn's kept profiles
-        self._profile_kept_seconds = 5 * 60
+        self._active = {}            # (market id, price type) -> seconds between the keeper's downloads
+        self._once = []              # [(market id, price type)] the keeper downloads once (statistics seed)
+        self._active_hours = None    # (start, end) minutes of the local day the keeper downloads in
         self._keeper_failed = {}     # key -> when its last background download failed
+        self._once_failures = {}     # key -> failed attempts of a one-time download (given up at ONCE_TRIES)
         self._keeper_started = False
         self._keeper_last_run = None
-        self._switched_off = set()   # {(market id, price type)} background jobs may not download
+        self._keeper_last_pass = None  # {at, seconds, downloads} of the last pass that downloaded
+        self._keeper_sleep = None    # {from, to}: the last time the Mac slept
         self._jobs = {}              # job id -> {label, schedule, tables(), active()}: declared
         self._local = threading.local()
         self._started = clock()
@@ -298,11 +321,10 @@ class PulseFeed:
     # ---- the one request ---------------------------------------------------------------------
 
     def table(self, token, market_id, price_type, max_age=FRESH, count_read=True, job=None, keeper=False):
-        """The (market id, price type) table, downloaded at most *max_age* seconds ago. A background
-        read (*max_age* FRESH or more) of a kept-fresh table accepts it up to the kept interval
-        (the Pulse feed page's choice), so it never downloads behind the keeper's back; a button's
-        read (ON_DEMAND) always wants it under a minute old, unless this thread is ``reading``
-        with *accept_kept*. The keeper passes *count_read* False."""
+        """The (market id, price type) table. A slave gets the copy in memory whatever its age (or
+        waits for a download under way), else NotActive. A downloader (the keeper, or a thread
+        ``reading`` with *download*) gets it downloaded at most *max_age* seconds ago; with
+        *accept_kept*, an active table up to its interval. The keeper passes *count_read* False."""
         table = self._read(token, market_id, price_type, max_age, count_read, job, keeper)
         reads = getattr(self._local, 'reads', None)
         if reads is not None:
@@ -311,22 +333,24 @@ class PulseFeed:
         return table
 
     @contextmanager
-    def reading(self, accept_kept=False):
+    def reading(self, accept_kept=False, download=False):
         """This thread's reads as one request: yields {(market id, price type): download start} of
-        every table read; with *accept_kept*, a kept table is accepted up to its kept interval even
-        by a button's read (a Huginn profile opening from memory)."""
-        previous = getattr(self._local, 'reads', None), getattr(self._local, 'accept_kept', False)
-        self._local.reads, self._local.accept_kept = {}, accept_kept
+        every table read. *download*: it may download (Huginn Arbitrage's routes only); with
+        *accept_kept*, an active table is accepted up to its interval (a profile opening by itself)."""
+        previous = (getattr(self._local, 'reads', None), getattr(self._local, 'accept_kept', False),
+                    getattr(self._local, 'download', False))
+        self._local.reads, self._local.accept_kept, self._local.download = {}, accept_kept, download
         try:
             yield self._local.reads
         finally:
-            self._local.reads, self._local.accept_kept = previous
+            self._local.reads, self._local.accept_kept, self._local.download = previous
 
     def _read(self, token, market_id, price_type, max_age, count_read, job, keeper):
         key = (market_id, price_type)
         now = self._clock()
         job = job or self.current_job()
-        urgent = not job and not keeper              # a page or a button, not a background job
+        downloader = keeper or getattr(self._local, 'download', False) or self.slaves_may_download
+        urgent = downloader and not keeper and not job   # Huginn Arbitrage's page goes before the keeper
         with self._lock:
             counts = self._counts.setdefault(key, _new_counts())
             if count_read:
@@ -336,31 +360,36 @@ class PulseFeed:
                 counts['jobs'][job] = now
             self._drop_old_tables(now)
             cached = self._tables.get(key)
-            if job and key in self._switched_off:
-                # Switched off on the Pulse feed page: a background job never downloads it; it may
-                # still read what a page or a button downloaded.
+            if not downloader:
+                # A slave: the copy in memory whatever its age, or a download under way; never a request.
                 if cached:
-                    counts['from_memory'] += 1
+                    if count_read:
+                        counts['from_memory'] += 1
                     return cached
-                raise SwitchedOff(f'pulse {market_id} {price_type} is switched off for automatic fetching')
-            every = self._keep_every(key)
-            if cached and every and not keeper:      # never for the keeper's own read
-                if max_age >= FRESH:
-                    max_age = max(max_age, every)
-                elif getattr(self._local, 'accept_kept', False):
-                    # A page opening a kept profile: the keeper's next download may be under way
-                    # (it starts within KEEPER_TICK of the interval), so allow it two ticks.
+                flight = self._flights.get(key)
+                if flight is None:
+                    if key in self._active:
+                        raise NotActive(f'{market_id} {price_type} is active but not downloaded yet '
+                                        '(the keeper is on it, or outside the active hours)')
+                    raise NotActive(f'{market_id} {price_type} is not kept by an active Huginn profile '
+                                    '(only Huginn Arbitrage downloads prices)')
+                leader = promoted = False
+            else:
+                every = self._active.get(key)
+                if cached and every and not keeper and getattr(self._local, 'accept_kept', False):
+                    # A profile opening by itself: the keeper's next download may be under way (it
+                    # starts within KEEPER_TICK of the interval), so allow it two ticks.
                     max_age = max(max_age, every + 2 * KEEPER_TICK)
-            if cached and now - cached.started_at < max_age:
-                if count_read:
-                    counts['from_memory'] += 1
-                return cached
-            flight = self._flights.get(key)
-            leader = flight is None
-            if leader:
-                flight = self._flights[key] = _Flight(urgent)
-            promoted = urgent and not flight.urgent
-            flight.urgent = flight.urgent or urgent
+                if cached and now - cached.started_at < max_age:
+                    if count_read:
+                        counts['from_memory'] += 1
+                    return cached
+                flight = self._flights.get(key)
+                leader = flight is None
+                if leader:
+                    flight = self._flights[key] = _Flight(urgent)
+                promoted = urgent and not flight.urgent
+                flight.urgent = flight.urgent or urgent
         if promoted:
             with self._slots:
                 self._slots.notify_all()          # a job's queued download is now a page's
@@ -479,28 +508,18 @@ class PulseFeed:
         self._sales_at = max(at, self._sales_at or at)
 
     def _drop_old_tables(self, now):
-        """Nobody asks for a table older than KEEP_SECONDS: drop those (caller holds the lock). A
-        kept-fresh table stays until its next background download has had time to replace it."""
-        def limit(key):
-            every = self._keep_every(key)
-            return max(KEEP_SECONDS, every + 2 * KEEPER_TICK + WAIT_FOR_DOWNLOAD) if every else KEEP_SECONDS
-        for key in [key for key, table in self._tables.items() if now - table.started_at > limit(key)]:
+        """A table nobody keeps is dropped KEEP_SECONDS after its download; an active one stays until
+        its next download replaces it (caller holds the lock)."""
+        for key in [key for key, table in self._tables.items()
+                    if key not in self._active and now - table.started_at > KEEP_SECONDS]:
             del self._tables[key]
 
-    def _keep_every(self, key):
-        """Seconds between a kept table's background downloads (the shorter of its two choices), or
-        None when it is not kept (caller holds the lock)."""
-        choices = [seconds for keys, seconds in ((self._kept, self._kept_seconds),
-                                                 (self._kept_for_profiles, self._profile_kept_seconds))
-                   if key in keys]
-        return min(choices) if choices else None
-
-    # ---- background jobs and the on/off switch ----------------------------------------------------
+    # ---- background jobs (slaves): who reads what --------------------------------------------------
 
     @contextmanager
     def job(self, job_id):
         """Mark this thread's reads as a background job's (*job_id*, declared with declare_job), so
-        a table switched off on the Pulse feed page is never downloaded for it."""
+        the Pulse feed page can say which slave reads which table."""
         previous = getattr(self._local, 'job', None)
         self._local.job = job_id
         try:
@@ -512,20 +531,12 @@ class PulseFeed:
         return getattr(self._local, 'job', None)
 
     def declare_job(self, job_id, label, schedule, tables, active=None, period=3600):
-        """A recurring job and the tables it fetches (*tables()* → [(market id, price type)];
+        """A recurring job and the tables it reads (*tables()* → [(market id, price type)];
         *active()* → whether it runs now; *period*: seconds between runs, or a callable), for the
         Pulse feed page."""
         self._jobs[job_id] = {'label': label, 'schedule': schedule, 'tables': tables, 'active': active,
                               'period': period}
         self._job_status_cache = None
-
-    def set_switched_off(self, keys):
-        with self._lock:
-            self._switched_off = {(str(market_id), str(price_type)) for market_id, price_type in keys}
-
-    def switched_off(self):
-        with self._lock:
-            return sorted(self._switched_off)
 
     def _job_status(self):
         """Each declared job with its tables (computed outside the lock: tables() may read settings),
@@ -557,15 +568,6 @@ class PulseFeed:
         self._job_status_cache = (self._clock(), out)
         return out
 
-    def declared_tables(self):
-        """{(market id, price type)} that a declared job fetches."""
-        return {tuple(key) for job in self._job_status() for key in job['tables']}
-
-    def seen_tables(self):
-        """{(market id, price type)} read, downloaded, kept or switched off since start."""
-        with self._lock:
-            return set(self._counts) | set(self._kept) | set(self._switched_off)
-
     # ---- one item --------------------------------------------------------------------------------
 
     def lookup(self, token, market_id, price_type, name):
@@ -595,17 +597,13 @@ class PulseFeed:
                 'second': _market_dict(_quote(found.get('secondMarket'), scale)),
                 'image': found.get('imageUrl'), 'checked_at': started}
 
-    def peek(self, market_id, price_type, max_age=FRESH):
-        """The table if it is in memory and younger than *max_age* (kept tables: the kept interval),
-        else None. Never downloads and does not count as a read."""
-        key = (market_id, price_type)
+    def peek(self, market_id, price_type, max_age=None):
+        """The table if it is in memory (and younger than *max_age*, when given), else None. Never
+        downloads and does not count as a read."""
         now = self._clock()
         with self._lock:
-            cached = self._tables.get(key)
-            every = self._keep_every(key)
-            if cached and every:
-                max_age = max(max_age, every)
-            return cached if cached and now - cached.started_at < max_age else None
+            cached = self._tables.get((market_id, price_type))
+            return cached if cached and (max_age is None or now - cached.started_at < max_age) else None
 
     def now(self):
         """The feed's clock (epoch seconds): ages of its tables are measured with it."""
@@ -628,93 +626,149 @@ class PulseFeed:
             wanted = self._sales if names is None else {name: self._sales[name] for name in names if name in self._sales}
             return {name: {market: count for market, (count, _) in sales.items()} for name, sales in wanted.items()}
 
-    # ---- kept fresh ------------------------------------------------------------------------------
+    # ---- active tables and the keeper ----------------------------------------------------------
 
-    def set_kept(self, keys, minutes=None):
-        """Keep these (market id, price type) tables fresh in the background, each downloaded again
-        every *minutes* (one of KEEP_FRESH_MINUTES)."""
-        clean = []
-        for market_id, price_type in keys:
-            if (market_id, price_type) not in clean:
-                clean.append((str(market_id), str(price_type)))
-        if len(clean) > MAX_KEPT_TABLES:
-            raise ValueError(f'at most {MAX_KEPT_TABLES} tables can be kept fresh ({len(clean)} chosen)')
-        with self._lock:
-            self._kept = clean
-            if minutes is not None:
-                self._kept_seconds = int(minutes) * 60
-            self._forget_failures()
-
-    def kept(self):
-        with self._lock:
-            return list(self._kept), self._kept_seconds // 60
-
-    def set_kept_for_profiles(self, keys, minutes=None):
-        """Keep these tables fresh for the Huginn profiles switched to "Keep fresh", each downloaded
-        again every *minutes* (one of KEEP_FRESH_MINUTES); separate from the Pulse feed page's own."""
+    def set_active(self, keys, minutes):
+        """Keep the active profiles' tables (*keys*) fresh, each downloaded again every *minutes*
+        (one of ACTIVE_MINUTES), plus REFERENCE_TABLES at their own interval (the shorter wins)."""
         clean = list(dict.fromkeys((str(market_id), str(price_type)) for market_id, price_type in keys))
-        if len(clean) > MAX_PROFILE_TABLES:
-            raise ValueError(f'at most {MAX_PROFILE_TABLES} tables can be kept fresh for profiles ({len(clean)} needed)')
+        if len(clean) > MAX_ACTIVE_TABLES:
+            raise ValueError(f'at most {MAX_ACTIVE_TABLES} tables can be active ({len(clean)} needed)')
+        active = dict(REFERENCE_TABLES)
+        for key in clean:
+            active[key] = min(active.get(key, int(minutes) * 60), int(minutes) * 60)
         with self._lock:
-            self._kept_for_profiles = clean
-            if minutes is not None:
-                self._profile_kept_seconds = int(minutes) * 60
-            self._forget_failures()
+            self._active = active
+            self._keeper_failed = {key: at for key, at in self._keeper_failed.items()
+                                   if key in active or key in self._once}
 
-    def kept_for_profiles(self):
+    def active(self):
+        """{(market id, price type): seconds between its downloads}."""
         with self._lock:
-            return list(self._kept_for_profiles), self._profile_kept_seconds // 60
+            return dict(self._active)
 
-    def _forget_failures(self):
-        """Drop the keeper's failure marks of tables no longer kept (caller holds the lock)."""
-        kept = set(self._kept) | set(self._kept_for_profiles)
-        self._keeper_failed = {key: at for key, at in self._keeper_failed.items() if key in kept}
+    def download_once(self, keys, give_up=None):
+        """Tables the keeper downloads once, after the active ones (the statistics seed); a listener
+        keeps what it needs. *give_up(key)* hears about one given up after ONCE_TRIES failures."""
+        with self._lock:
+            for key in keys:
+                if tuple(key) not in self._once:
+                    self._once.append(tuple(key))
+            if give_up:
+                self._once_give_up = give_up
+
+    def will_download(self, key):
+        """Whether the keeper is about to bring this table: active, inside the active hours, and
+        not failing."""
+        inside, _ = self._within_active_hours(self._clock())
+        with self._lock:
+            return inside and key in self._active and key not in self._keeper_failed
+
+    def set_active_hours(self, hours):
+        """(start, end) minutes of the local day the keeper downloads in (end before start: over
+        midnight; equal: all day), or None: always."""
+        with self._lock:
+            self._active_hours = tuple(hours) if hours else None
+
+    def _within_active_hours(self, now):
+        """Whether *now* (epoch seconds) is inside the active hours, and if not, when they start."""
+        with self._lock:
+            hours = self._active_hours
+        if not hours or hours[0] == hours[1]:
+            return True, None
+        start, end = hours
+        local = time.localtime(now)
+        minute = local.tm_hour * 60 + local.tm_min
+        inside = start <= minute < end if start < end else (minute >= start or minute < end)
+        if inside:
+            return True, None
+        wait = (start - minute) % (24 * 60)
+        return False, now - local.tm_sec + wait * 60
 
     def keep_fresh_once(self, token):
-        """Download every kept table older than its interval, one at a time (the keeper's tick)."""
+        """One keeper pass inside the active hours: every active table older than its interval, then
+        the one-time downloads, one at a time."""
+        inside, _ = self._within_active_hours(self._clock())
+        if not inside:
+            with self._lock:
+                self._keeper_last_run = self._clock()
+            return 0
         with self._lock:
-            kept = [(key, self._keep_every(key)) for key in dict.fromkeys(self._kept + self._kept_for_profiles)]
+            due = [(key, seconds) for key, seconds in self._active.items()] + [(key, None) for key in self._once]
             failed = dict(self._keeper_failed)
-        done = 0
-        for key, seconds in kept:
+        started, done = self._clock(), 0
+        for key, seconds in due:
             now = self._clock()
             with self._lock:
                 table = self._tables.get(key)
                 downloading = key in self._flights
-            if downloading or (table and now - table.started_at < seconds - KEEPER_TICK):
+            if downloading or (seconds and table and now - table.started_at < seconds - KEEPER_TICK):
                 continue
             if key in failed and now - failed[key] < KEEPER_RETRY_AFTER:
                 continue
             try:
-                self.table(token, key[0], key[1], max_age=seconds - KEEPER_TICK, count_read=False, keeper=True)
+                self.table(token, key[0], key[1], max_age=seconds - KEEPER_TICK if seconds else 0,
+                           count_read=False, keeper=True)
                 done += 1
                 with self._lock:
                     self._keeper_failed.pop(key, None)
+                    if seconds is None and key in self._once:
+                        self._once.remove(key)
             except Exception as error:
-                logger.warning('[PULSE] keeping %s %s fresh failed: %s', key[0], key[1], error)
+                logger.warning('[PULSE] keeper: %s %s failed: %s', key[0], key[1], error)
                 with self._lock:
                     self._keeper_failed[key] = self._clock()
+                    if seconds is None:
+                        tries = self._once_failures[key] = self._once_failures.get(key, 0) + 1
+                        if tries >= ONCE_TRIES and key in self._once:
+                            self._once.remove(key)      # e.g. needs pulse's Table subscription
+                            logger.warning('[PULSE] gave up the one-time download of %s %s', *key)
+                            give_up = getattr(self, '_once_give_up', None)
+                            if give_up:
+                                try:
+                                    give_up(key)
+                                except Exception as callback_error:
+                                    logger.warning('[PULSE] give-up callback: %s', callback_error)
         with self._lock:
             self._keeper_last_run = self._clock()
+            if done:
+                self._keeper_last_pass = {'at': started, 'seconds': round(self._clock() - started, 1), 'downloads': done}
         return done
 
+    def note_sleep(self, slept_from, slept_to):
+        """The Mac slept (the keeper's tick took far longer than a tick): forget the failures of the
+        sleep (the network was gone), so every table is tried again at once."""
+        with self._lock:
+            self._keeper_sleep = {'from': slept_from, 'to': slept_to}
+            self._keeper_failed = {}
+        logger.info('[PULSE] the Mac slept for %d minutes; the keeper starts again after one tick',
+                    round((slept_to - slept_from) / 60))
+
     def start_keeper(self, token_provider):
-        """The background thread that keeps the kept tables fresh (once; *token_provider()* gives
-        the current tradeon_token, nothing is downloaded while it is empty)."""
+        """The background thread that keeps the active tables fresh (once; *token_provider()* gives
+        the current tradeon_token, nothing is downloaded while it is empty). After the Mac slept it
+        waits one more tick for the network before downloading."""
         with self._lock:
             if self._keeper_started:
                 return
             self._keeper_started = True
 
         def loop():
+            last = time.time()                  # the end of the previous tick (its pass included)
             while True:
                 time.sleep(KEEPER_TICK)
+                now = time.time()
+                if now - last > SLEEP_GAP:      # only the sleep itself counts, never a long pass
+                    self.note_sleep(last, now)
+                    last = time.time()
+                    continue
                 try:
                     token = token_provider()
-                    if token and (self._kept or self._kept_for_profiles):
+                    if token and (self._active or self._once):
                         self.keep_fresh_once(token)
                 except Exception as error:      # never let the thread die
                     logger.warning('[PULSE] keeper: %s', error)
+                last = time.time()
         threading.Thread(target=loop, name='pulse-keeper', daemon=True).start()
 
     # ---- slaves that want every table --------------------------------------------------------
@@ -741,43 +795,58 @@ class PulseFeed:
 
     # ---- status ---------------------------------------------------------------------------------
 
+    def keeper_status(self):
+        """The keeper's state alone (cheap: the Active profiles panel polls it)."""
+        now = self._clock()
+        inside, resumes_at = self._within_active_hours(now)
+        with self._lock:
+            return self._keeper_view(inside, resumes_at)
+
+    def _keeper_view(self, inside, resumes_at):
+        """The keeper's state (caller holds the lock)."""
+        shortest = min((seconds for key, seconds in self._active.items() if key not in REFERENCE_TABLES), default=None)
+        last_pass = dict(self._keeper_last_pass) if self._keeper_last_pass else None
+        return {'running': self._keeper_started, 'last_run': self._keeper_last_run,
+                'last_pass': last_pass, 'sleep': dict(self._keeper_sleep) if self._keeper_sleep else None,
+                'active_hours': list(self._active_hours) if self._active_hours else None,
+                'paused': not inside, 'resumes_at': resumes_at,
+                # A pass that takes longer than the shortest interval cannot keep up.
+                'behind': bool(last_pass and shortest and last_pass['seconds'] > shortest),
+                'once_pending': [list(key) for key in self._once]}
+
     def status(self):
         jobs = self._job_status()
-        declared = {}
+        readers = {}
         for job in jobs:
             for market_id, price_type in job['tables']:
-                declared.setdefault((market_id, price_type), []).append(job['id'])
+                readers.setdefault((market_id, price_type), []).append(job['id'])
         now = self._clock()
+        inside, resumes_at = self._within_active_hours(now)
         with self._lock:
-            kept = set(self._kept) | set(self._kept_for_profiles)
-            keys = set(self._counts) | kept | set(declared) | self._switched_off
+            keys = set(self._counts) | set(self._active) | set(readers)
             tables = []
             for key in sorted(keys):
                 counts = self._counts.get(key) or _new_counts()
                 table = self._tables.get(key)
                 tables.append({'market': key[0], 'price_type': key[1], **counts,
-                               'jobs': dict(counts['jobs']), 'declared_jobs': declared.get(key, []),
-                               'switched_off': key in self._switched_off,
+                               'jobs': dict(counts['jobs']), 'declared_jobs': readers.get(key, []),
                                'items': len(table) if table else None,
                                'age_seconds': round(now - table.started_at) if table else None,
                                'download_seconds': table.seconds if table else None,
                                'downloading': key in self._flights,
-                               'kept': key in kept,
-                               'kept_by_you': key in self._kept,
-                               'kept_for_profiles': key in self._kept_for_profiles,
-                               'keep_seconds': self._keep_every(key),
+                               'active': key in self._active,
+                               'keep_seconds': self._active.get(key),
+                               'reference': key in REFERENCE_TABLES,
+                               'once': key in self._once,
                                'keeper_failed_at': self._keeper_failed.get(key)})
             downloads = sum(counts['downloads'] for counts in self._counts.values())
             reads = sum(counts['reads'] for counts in self._counts.values())
             from_memory = sum(counts['from_memory'] for counts in self._counts.values())
+            keeper = self._keeper_view(inside, resumes_at)
             return {'since': self._started, 'now': now, 'downloads': downloads, 'reads': reads,
                     'served_from_memory': from_memory,
                     'tables_in_memory': sum(1 for table in tables if table['items'] is not None),
-                    'fresh_seconds': FRESH, 'on_demand_seconds': ON_DEMAND, 'keep_seconds': KEEP_SECONDS,
-                    'kept_minutes': self._kept_seconds // 60, 'keep_fresh_choices': list(KEEP_FRESH_MINUTES),
-                    'max_kept_tables': MAX_KEPT_TABLES,
-                    'profile_kept_minutes': self._profile_kept_seconds // 60, 'max_profile_tables': MAX_PROFILE_TABLES,
-                    'keeper_running': self._keeper_started, 'keeper_last_run': self._keeper_last_run,
+                    'active_tables': len(self._active), 'keeper': keeper,
                     'lookups': dict(self._lookups), 'jobs': jobs,
                     'weekly_sales_items': len(self._sales), 'weekly_sales_at': self._sales_at,
                     'tables': tables}

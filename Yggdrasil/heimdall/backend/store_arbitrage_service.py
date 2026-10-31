@@ -49,7 +49,7 @@ import time
 
 from harvest_service import HarvestService
 from huginn_service import pulse_short_link
-from pulse_feed import FRESH, ON_DEMAND, SwitchedOff, is_stale
+from pulse_feed import FRESH, ON_DEMAND, NotActive, is_stale
 from jsonio import atomic_write_json, read_json
 from notifications import notification_channel, send_notification, telegram_visible_length, TELEGRAM_MESSAGE_LIMIT
 from storage_shop_service import GAME_STORE_CURRENCIES
@@ -75,6 +75,7 @@ REFERENCE_MARKET = 'Buff'           # its lowest listing is the sanity reference
 # Store prices move slowly; the Refresh button pulls on demand. 30 minutes keeps the ~35 sides
 # of the default set from being pulled again every 10 minutes while the page is open.
 INDEX_TTL = 30 * 60
+INACTIVE_RECHECK_SECONDS = 60     # a market no active profile keeps is looked at again after this
 RETRY_AFTER_FAILURE = 120
 WATCH_INTERVAL = 60 * 60
 WATCH_FIRST_WAIT = 5 * 60
@@ -520,6 +521,7 @@ class StoreArbitrageService:
         self._today = today or datetime.date.today
         self._lock = threading.Lock()
         self._indexes = {}       # (market id, side) -> (fetched at, {name: quote}) for catalogue names only
+        self._inactive = set()     # (market, side) no active Huginn profile keeps (empty, quiet re-checks)
         self._warming = set()   # pairs queued or being pulled
         self._queue = []        # pairs waiting for the one worker thread
         self._worker_running = False
@@ -614,7 +616,7 @@ class StoreArbitrageService:
         """({pair: index}, status, [failed pairs]). Serves what is cached and queues a warm for
         anything missing or stale; status: no_token | warming | refreshing | fresh | error."""
         now = time.time()
-        found, missing, stale, failed = {}, [], [], []
+        found, missing, stale, failed, quiet = {}, [], [], [], []
         with self._lock:
             for pair in pairs:
                 if pair == ('CsFloat', SIDE_INSTANT):
@@ -622,6 +624,11 @@ class StoreArbitrageService:
                 hit = self._indexes.get(pair)
                 if hit:
                     found[pair] = hit[1]
+                    if pair in self._inactive:
+                        # Not active: looked at again a minute later without saying "refreshing".
+                        if now - hit[0] >= INACTIVE_RECHECK_SECONDS:
+                            quiet.append(pair)
+                        continue
                     if now - hit[0] < INDEX_TTL or self._holds_newest(pair, hit[0]):
                         continue
                 failure = self._failures.get(pair)
@@ -638,8 +645,8 @@ class StoreArbitrageService:
                 log.info('[STORE-ARBITRAGE] CSFloat buy orders unavailable: %s', e)
         if not token:
             return found, 'no_token', failed
-        if missing or stale:
-            self._queue_warm(token, missing + stale)
+        if missing or stale or quiet:
+            self._queue_warm(token, missing + stale + quiet)
         if missing:                      # still loading others: keep polling fast
             return found, 'warming', failed
         if failed:
@@ -653,8 +660,8 @@ class StoreArbitrageService:
         fresh every 30 or 60 minutes is older than INDEX_TTL, yet nothing newer exists)."""
         try:
             key = self.huginn.pulse_table_of(*pair)
-            table = key and self.huginn.pulse.peek(*key)
-            return bool(table) and table.started_at <= started_at
+            table = self.huginn.pulse.peek(*key) if key else None
+            return table is not None and table.started_at <= started_at     # (an empty table still counts)
         except Exception:
             return False
 
@@ -693,16 +700,21 @@ class StoreArbitrageService:
                     # Stamped with when the prices were downloaded, never "now": a newer download
                     # announced by the feed (take_pull) must win over an older table read later.
                     hit = self._indexes.get(pair)
-                    if not hit or hit[0] <= downloaded_at:
+                    if not hit or hit[0] <= downloaded_at or pair in self._inactive:   # (an inactive marker is newer)
                         self._indexes[pair] = (downloaded_at, index)
+                    self._inactive.discard(pair)
                     self._failures.pop(pair, None)
                 self._record({pair: index})
                 log.info('[STORE-ARBITRAGE] %s %s: %d store items priced in %.0fs',
                          pair[0], pair[1], len(index), time.time() - started)
-            except SwitchedOff as e:
-                # Not a failure: only the background job may not download it. A page's next poll
-                # queues the side again on its own and downloads it.
-                log.info('[STORE-ARBITRAGE] %s %s skipped: %s', pair[0], pair[1], e)
+            except NotActive as e:
+                # No active Huginn profile keeps that market: no prices, not an error; stamped to be
+                # looked at again (a memory read) a minute later, in case a profile is made active.
+                log.debug('[STORE-ARBITRAGE] %s %s skipped: %s', pair[0], pair[1], e)
+                with self._lock:
+                    self._indexes[pair] = (time.time(), {})
+                    self._inactive.add(pair)
+                    self._failures.pop(pair, None)
             except Exception as e:
                 log.warning('[STORE-ARBITRAGE] %s %s prices failed: %s', pair[0], pair[1], e)
                 with self._lock:

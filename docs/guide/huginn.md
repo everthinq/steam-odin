@@ -56,15 +56,40 @@ hover the mark for why. It is a mark only: nothing is hidden or left out.
    An ⓘ marks GgSwap, GamerPay and SkinSwap (Trade): the pulse website does not
    show them and their prices can be old, so check the market before you trade.
    SkinSwap has two sides; see [SkinSwap](#skinswap-market-trade-and-one-balance) below.
-2. Press **Fetch live data**. Or switch on **Keep fresh** next to the profile: its
-   price tables are then downloaded in the background every 5 minutes (the
-   interval is on the Pulse feed page), and the profile opens by itself in about a
-   second whenever you pick it, with prices at most that old. Kept profiles have a
-   pin and are listed first under **Kept fresh** in the picker. **Fetch live data**
-   still downloads fresh prices (under a minute old).
-   Next to the button, **prices N min old** says how old the shown prices are (hover
-   for each table); **Newer prices ready · show** appears when the background
-   download has replaced them.
+2. Press **Fetch live data**. Or switch on **Active** next to the profile (a
+   profile you trade on): its price tables are then downloaded in the background
+   every 5 minutes, and the profile opens by itself in about a second, with prices
+   at most that old. Active profiles have a pin and are listed first under
+   **Active** in the picker. **Fetch live data** still downloads fresh prices.
+   Next to the button, **prices downloaded N minutes ago** says how old the shown
+   prices are (hover for each table); **Newer prices ready · show** appears when
+   the background download has replaced them.
+
+### Active profiles: the only prices Heimdall downloads
+
+Only Huginn Arbitrage downloads prices from pulse: the **active profiles**'
+tables (every 5 minutes), Buff163's lowest listing once a day (the off-Steam
+reference), **Fetch live data**, and **Live** for one item. Every other page,
+Case Arbitrage and its alerts, Harvest, Cross-Profile, Price dips, Store
+Catalogue, Store Boosts, Gjallarhorn and Draupnir, reads those tables from
+memory and never downloads; a market no active profile uses shows as **not
+active** there (the other tabs say which markets are covered).
+
+The **Active profiles** panel under the profile picker lists them with each
+table's age, opens one on a click, makes one inactive (×), and sets:
+
+- **Download every** 5 to 60 minutes.
+- **Active hours** (off by default): downloads only between the two times
+  (local; an end before the start runs over midnight). Outside them the pages
+  keep the last prices and Case Arbitrage alerts wait; the Counter-Strike 2 news
+  watcher still rings, so you can sleep.
+- **Price history**: every downloaded table adds one row a day per item
+  (average, lowest, highest, last), kept for good in `backend/cache/price_history`.
+  Price dips, Gjallarhorn and Store Boosts take their 30-day median from it
+  (from pulse's own 30-day prices, downloaded once, until an item has 7 days).
+
+When the Mac sleeps nothing is downloaded; afterwards the keeper waits a moment
+for the network and catches up (the panel says when it slept).
 3. The table lists items with buy price, sell price, profit and profit %, how
    many you own and on which accounts, and links to each market.
 4. **Live** (↻ on a row): checks that one item on both markets right now, in about
@@ -202,32 +227,13 @@ prices under a minute old.
 
 ## Pulse feed
 
-The **Pulse feed** button (top right of Huginn, or /huginn/pulse) is the switchboard
-for every price download. Each pulse table (one market × one price type, about
-5 MB compressed) is one switch:
-
-- **Amber, ticked**: a recurring job fetches it, named on the switch: **Case**
-  (Case Arbitrage, every hour), **Alerts** (Case Arbitrage alerts, every 10
-  minutes while they are on), **Store** (Store Catalogue Arbitrage, every hour
-  and after the 08:00 Get all items), **Boosts** (Store Boosts, every hour: Steam's
-  listing, buy orders and 30-day median, and Buff163's listing).
-- **Red, dashed**: switched off. Those jobs no longer download it (they use the
-  copy in memory if a page just downloaded it). Buttons you press still do.
-- **Blue, ticked**: kept fresh by you, every 5 to 60 minutes (at most 12 tables).
-  Boards and jobs then read it from memory instead of downloading it.
-- **Violet, ticked**: kept fresh for a Huginn profile switched to **Keep fresh** on
-  the Arbitrage page (switch it off there). The **Kept for Huginn profiles** card
-  lists them and sets their interval (5 minutes by default, at most 12 tables).
-- **Grey**: downloaded only when a page or a button asks.
-
-The job cards on top show each job's schedule, whether it runs, how many of its
-tables are on and its traffic, with **All on** / **All off**. The overview shows
-how much is fetched automatically and the traffic a day (on 2026-10-15: 33 tables,
-about 94 GB a day, most of it the 10-minute alert poll and Store Catalogue
-Arbitrage's 32 tables). After a change, the bar at the bottom shows how the
-traffic changes before you press **Save**; jobs use it from their next run.
-**Activity since start** lists every table read or downloaded, with a download
-button.
+The **Pulse feed** button (top right of Huginn, or /huginn/pulse) watches the
+price feed; it changes nothing. It shows the active profiles, the keeper (running,
+paused by the active hours, falling behind, when the Mac slept), the downloads
+since start and how many reads were served from memory, every table with why it
+is downloaded (an active profile, the Buff163 reference, the price history's
+seed, or a **Fetch live data**), its age, downloads, reads and which pages read
+it, and the background pages (slaves) with how many of their tables are in memory.
 
 ## LF Auctions and LF Arbitrage
 

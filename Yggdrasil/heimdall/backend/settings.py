@@ -164,21 +164,15 @@ DEFAULT_SETTINGS = {
     # Team Fortress 2 mode stops by itself after this many hours (0 = never), so a
     # release at night does not keep card farming paused on every account for days.
     "team_fortress_auto_stop_hours": 24,
-    # --- Pulse feed page (Huginn -> Pulse feed) ---
-    # Tables the master pulse feed keeps fresh in the background ("Steam:Sell", "Buff:Buy", ...),
-    # each downloaded again every pulse_keep_minutes (5, 10, 15, 30 or 60). Empty: nothing is
-    # downloaded unless a page or a job asks for it.
-    "pulse_kept_tables": [],
-    "pulse_keep_minutes": 10,
-    # Tables the recurring jobs (Case Arbitrage hourly and alert polls, Store Catalogue Arbitrage
-    # hourly and daily) may NOT download ("Steam:Sell", ...): unticked on the Pulse feed page.
-    # Buttons you press still download them.
-    "pulse_switched_off_tables": [],
-    # Huginn Arbitrage profiles switched to "Keep fresh" ("LisSkins:CsMoneyTrade:autobuy" = buy market,
-    # sell market, autobuy or min): their pulse tables are downloaded again every
-    # huginn_profile_keep_minutes, so the profile opens from memory (prices up to that old).
-    "huginn_kept_profiles": [],
-    "huginn_profile_keep_minutes": 5,
+    # --- Active profiles (Huginn -> Arbitrage): the only tables pulse is asked for ---
+    # huginn_active_profiles ("LisSkins:CsMoneyTrade:autobuy" = buy market, sell market, autobuy or
+    # min): None until first saved, and meanwhile the older huginn_kept_profiles is read (likewise
+    # huginn_active_minutes, None → huginn_profile_keep_minutes, else 5). Their tables are downloaded
+    # every huginn_active_minutes (5, 10, 15, 30 or 60), only inside the active hours when those are
+    # enabled (local time, "HH:MM"; end before start = over midnight).
+    "huginn_active_profiles": None,
+    "huginn_active_minutes": None,
+    "huginn_active_hours": {"enabled": False, "start": "08:00", "end": "01:00"},
 }
 
 # How many auto-store move records to keep in the history log.

@@ -434,6 +434,9 @@ const DraupnirPortfolio = () => {
                         {data.pricing === 'refreshing' && pollRef.current < MAX_POLLS && (
                             <p className="flex items-center gap-1.5 text-xs text-slate-400 -mt-2"><RefreshCw size={12} className="animate-spin" /> Fetching live prices…</p>
                         )}
+                        {data.pricing === 'inactive' && (
+                            <p className="text-xs text-amber-400/80 -mt-2">Live prices unavailable: no active Huginn profile keeps this valuation market (make one active on Huginn → Arbitrage, or pick another valuation market) — value/unrealized shown as cost basis only.</p>
+                        )}
                         {data.pricing === 'no_token' && (
                             <p className="text-xs text-amber-400/80 -mt-2">Live prices unavailable — set the Tradeon token (the same one Huginn uses) to value holdings; value/unrealized shown as cost basis only.</p>
                         )}

@@ -48,8 +48,8 @@ const SubHeading = ({ instant }) => (
 // `groupLabel` names each section (default "Buy on <market>"); Harvest uses the account.
 // A section holding both kinds is split into "sell instantly" (the target has buy
 // orders) and "list for sale"; the "Instant sell only" switch hides the second kind.
-// `keptIds` (optional): profiles kept fresh, marked with a pin and listed first under "Kept fresh".
-const ProfilePicker = ({ profiles, value, onChange, groupLabel = (from) => `Buy on ${from}`, searchPlaceholder = 'Search markets…', keptIds = null }) => {
+// `activeIds` (optional): the active profiles, marked with a pin and listed first under "Active".
+const ProfilePicker = ({ profiles, value, onChange, groupLabel = (from) => `Buy on ${from}`, searchPlaceholder = 'Search markets…', activeIds = null }) => {
     const [open, setOpen] = useState(false);
     const [query, setQuery] = useState('');
     const [instantOnly, setInstantOnly] = useState(false);
@@ -72,7 +72,7 @@ const ProfilePicker = ({ profiles, value, onChange, groupLabel = (from) => `Buy 
 
     const pick = (id) => { onChange(id); setOpen(false); setQuery(''); };
 
-    const kept = filtered.filter(p => keptIds?.has(p.id));
+    const activeProfiles = filtered.filter(p => activeIds?.has(p.id));
 
     const row = (p, withFrom = false) => {
         const isActive = p.id === value;
@@ -89,7 +89,7 @@ const ProfilePicker = ({ profiles, value, onChange, groupLabel = (from) => `Buy 
                 {p.toNotInPulseUi && <NotInPulseNote extra={p.toPriceNote} />}
                 <ReliabilityMark mark={p.toReliability} side={p.toReliabilitySide} />
                 <span className="ml-auto flex items-center gap-1.5 shrink-0">
-                    {keptIds?.has(p.id) && <Pin size={11} className="text-sky-400" aria-label="Kept fresh" />}
+                    {activeIds?.has(p.id) && <Pin size={11} className="text-sky-400" aria-label="Active" />}
                     {isActive && <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />}
                 </span>
             </button>
@@ -143,13 +143,13 @@ const ProfilePicker = ({ profiles, value, onChange, groupLabel = (from) => `Buy 
                         {filtered.length === 0 && (
                             <div className="px-4 py-3 text-xs text-slate-500">No matching pairs</div>
                         )}
-                        {kept.length > 0 && (
+                        {activeProfiles.length > 0 && (
                             <div className="pb-1 mb-1 border-b border-white/5">
                                 <div className="flex items-center gap-1.5 px-3 pt-2.5 pb-1 text-[10px] font-bold uppercase tracking-wider text-sky-400/80"
-                                    title="These profiles' prices are downloaded in the background, so they open at once">
-                                    <Pin size={10} /> Kept fresh
+                                    title="The profiles you trade on: only their prices are downloaded, in the background, so they open at once">
+                                    <Pin size={10} /> Active
                                 </div>
-                                {kept.map(p => row(p, true))}
+                                {activeProfiles.map(p => row(p, true))}
                             </div>
                         )}
                         {rankGroups(groupProfiles(filtered), q).map(group => {

@@ -1,34 +1,31 @@
-"""Read-only views built on the master pulse feed (pulse_feed.py), for Huginn's pages.
+"""Read-only views built on the master pulse feed (pulse_feed.py), for Huginn's pages, and the
+active profiles: the one list that decides what pulse is asked for.
 
-- ``price_dips``: a market's lowest listing against its own 30-day median (or average), with each
-  item's weekly sales and how fresh the price is (Huginn → Price dips tab).
+- ``price_dips``: a market's lowest listing against its own 30-day median (or average) from
+  Heimdall's price history (price_history.py), with each item's weekly sales and how fresh the
+  price is (Huginn → Price dips tab). Only markets an active profile keeps.
 - ``check_live``: one Arbitrage row checked again on pulse right now (two ~0.5 s name lookups
-  instead of two 59 MB tables), with the profit recomputed with the Fees editor's fee.
+  instead of two whole tables), with the profit recomputed with the Fees editor's fee.
 - ``steam_liquidity``: Gjallarhorn's liquidity (Steam sales in the last week, lowest listing,
-  highest buy order, 30-day median) from pulse instead of Steam's rate-limited endpoints.
-- ``profile_tables``: the pulse tables an Arbitrage profile reads, for "Keep fresh" on a profile
-  (settings huginn_kept_profiles, every huginn_profile_keep_minutes).
+  highest buy order, 30-day median) from memory and the price history, never a request.
+- **Active profiles** (``profile_tables``, ``parse_active_profiles``, ``apply_active_settings``,
+  ``active_status``): the Arbitrage profiles Ivan trades on (settings huginn_active_profiles,
+  every huginn_active_minutes, inside huginn_active_hours). Their tables, Buff163's daily
+  reference and the statistics seed are the only tables the keeper downloads.
 
 Every price comes through ``HuginnService._table`` / ``HuginnService.pulse``; nothing here builds a
 pulse request.
 """
-import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 
 from huginn_service import _AUTOBUY_VIA_CSFLOAT_SWEEP, _ESTIMATED_SELL, _MARKET_BY_ID
-from pulse_feed import FRESH, KEEP_FRESH_MINUTES, MAX_KEPT_TABLES, MAX_PROFILE_TABLES, STALE_SECONDS
-
-# Markets with price history on pulse (market-info isSupportHistory, 2026-10-15): they have the
-# statistics price types (Median30d, Average30d). Buff163 and WhiteMarket need pulse's Table
-# subscription. CSFloat answers a Median30d table but pulse does not list it, so it is left out.
-STATISTICS_MARKETS = ('Steam', 'Buff', 'CsMoneyTrade', 'CsMoneyMarket', 'Dmarket', 'Tm', 'Waxpeer',
-                      'Skinport', 'WhiteMarket', 'CsDeals', 'ShadowPay', 'CsTradeTrade', 'CsTradeMarket')
-STATISTICS_BASES = ('Median30d', 'Average30d')
+from price_history import BASES as STATISTICS_BASES, STATISTICS_MARKETS  # noqa: F401  (re-exported)
+from pulse_feed import ACTIVE_MINUTES, FRESH, MAX_ACTIVE_TABLES, REFERENCE_TABLES, STALE_SECONDS, NotActive
 
 
 def _parallel(calls):
-    """Run a few feed reads at once (the feed allows four downloads at a time)."""
+    """Run a few feed reads at once (lookups: the feed allows two at a time)."""
     with ThreadPoolExecutor(max_workers=max(1, min(4, len(calls)))) as pool:
         futures = [pool.submit(call) for call in calls]
         return [future.result() for future in futures]
@@ -38,37 +35,39 @@ def price_dips(huginn, token, market_id, basis='Median30d', max_age=FRESH):
     """Every item of *market_id* with its lowest listing and its 30-day *basis* price.
 
     Rows (no image: the page builds it from the name, keeping the answer small): name, price
-    (lowest listing), count, updated (when the market last refreshed the
-    listing), basis (the 30-day median or average), vs_basis_percent ((price / basis - 1) × 100:
-    negative = listed under its usual price), instant (the market's highest buy order, when it has
-    buy orders), and weekly sales on this market, Steam and Market.CSGO."""
+    (lowest listing), count, updated (when the market last refreshed the listing), basis (the
+    30-day median or average from the price history), vs_basis_percent ((price / basis - 1) × 100:
+    negative = listed under its usual price), instant (the market's highest buy order, when an
+    active profile keeps them), and weekly sales on this market, Steam and Market.CSGO."""
     market = _MARKET_BY_ID.get(market_id)
-    if market_id not in STATISTICS_MARKETS or not market:
-        raise ValueError(f'{market_id}: pulse has no 30-day prices for it')
+    if not market:
+        raise ValueError(f'{market_id}: unknown market')
     if basis not in STATISTICS_BASES:
         raise ValueError(f'{basis}: use one of {", ".join(STATISTICS_BASES)}')
     listing_type = market['buy_type'] if market['buy_type'] != _ESTIMATED_SELL else None
     if not listing_type:
         raise ValueError(f'{market_id} has no listings on pulse')
-    reads = [lambda: huginn._table(token, market_id, listing_type, max_age),
-             lambda: huginn._table(token, market_id, basis, max_age)]
+    listing_table = huginn._table(token, market_id, listing_type, max_age)     # NotActive: not kept
+    listing = listing_table.index()
     instant_type = market['autobuy'] if market_id not in _AUTOBUY_VIA_CSFLOAT_SWEEP else None
+    instant = {}
     if instant_type:
-        reads.append(lambda: huginn._table(token, market_id, instant_type, max_age))
-    tables = _parallel(reads)
-    listing, statistic = tables[0].index(), tables[1].index()
-    instant = tables[2].prices() if instant_type else {}
+        try:
+            instant = huginn._table(token, market_id, instant_type, max_age).prices()
+        except NotActive:
+            instant_type = None
+    typical = huginn.history.statistic(market_id, listing_type, basis, listing)
     sales = huginn.pulse.weekly_sales(listing)
     rows = []
     for name, quote in listing.items():
-        typical = (statistic.get(name) or {}).get('price')
-        if not typical:
+        usual = typical.get(name)
+        if not usual:
             continue
         weekly = sales.get(name) or {}
         rows.append({
             'name': name, 'price': quote['price'], 'count': quote['count'],
-            'updated': quote['updated'], 'basis': typical,
-            'vs_basis_percent': round((quote['price'] / typical - 1) * 100, 1),
+            'updated': quote['updated'], 'basis': usual,
+            'vs_basis_percent': round((quote['price'] / usual - 1) * 100, 1),
             'instant': instant.get(name),
             'sold_week': weekly.get(market_id), 'steam_sold_week': weekly.get('Steam'),
             'tm_sold_week': weekly.get('Tm'),
@@ -76,16 +75,20 @@ def price_dips(huginn, token, market_id, basis='Median30d', max_age=FRESH):
     rows.sort(key=lambda row: row['vs_basis_percent'])
     return {'market': market_id, 'display': market['display'], 'basis': basis,
             'listing_type': listing_type, 'has_instant': bool(instant_type),
-            'fee': huginn.market_fee(market_id),
-            'downloaded_at': min(table.started_at for table in tables),
+            'fee': huginn.market_fee(market_id), 'downloaded_at': listing_table.started_at,
+            'history': huginn.history.coverage(market_id, listing_type),
             'stale_seconds': STALE_SECONDS, 'rows': rows}
 
 
 def price_dips_markets(huginn):
-    """The markets the Price dips tab offers, in registry order."""
-    return [{'id': market_id, 'display': huginn.market_display(market_id),
-             'premium': _MARKET_BY_ID[market_id]['premium']}
-            for market_id in STATISTICS_MARKETS if market_id in _MARKET_BY_ID]
+    """The markets the Price dips tab offers: those whose lowest listing is kept (an active profile
+    or the reference), in registry order."""
+    active = huginn.pulse.active()
+    return [{'id': market_id, 'display': market['display'], 'premium': market['premium']}
+            for market_id, market in _MARKET_BY_ID.items()
+            if market['buy_type'] and market['buy_type'] != _ESTIMATED_SELL and (market_id, market['buy_type']) in active]
+
+
 
 
 def _side_types(buy_id, sell_id, mode):
@@ -137,49 +140,28 @@ def check_live(huginn, token, name, buy_id, sell_id, mode='autobuy'):
     return out
 
 
-STEAM_LIQUIDITY_TABLES = (('Steam', 'Sell'), ('Steam', 'Buy'), ('Steam', 'Median30d'))
-_liquidity_warming = threading.Lock()
-_liquidity_failed = {'at': None, 'error': None}   # the last background warm that failed
-LIQUIDITY_RETRY_AFTER = 5 * 60
+STEAM_LIQUIDITY_TABLES = (('Steam', 'Sell'), ('Steam', 'Buy'))
 
 
-def _warm_steam_liquidity(huginn, token, max_age):
-    """Download the missing Steam tables in the background (one warm at a time)."""
-    if not _liquidity_warming.acquire(blocking=False):
-        return
-
-    def run():
-        try:
-            _parallel([lambda key=key: huginn._table(token, *key, max_age) for key in STEAM_LIQUIDITY_TABLES])
-            _liquidity_failed['at'] = None
-        except Exception as error:        # the next page loads use Steam until the retry
-            _liquidity_failed['at'], _liquidity_failed['error'] = time.time(), str(error)[:200]
-        finally:
-            _liquidity_warming.release()
-    threading.Thread(target=run, name='gjallarhorn-pulse-warm', daemon=True).start()
-
-
-def steam_liquidity(huginn, token, names, max_age=FRESH, wait=True):
+def steam_liquidity(huginn, names):
     """{name: {volume7d, lowest, highest_buy, median30d, spreadPct, vsMedianPct, tm_volume7d}} for
-    the *names* pulse knows on Steam. spreadPct = (lowest listing − highest buy order) / lowest
-    listing × 100 (tight = liquid); vsMedianPct = lowest listing vs its 30-day median. With *wait*
-    False (a page request) it never downloads: when a table is not in memory it starts the download
-    in the background and returns None ("warming")."""
+    the *names* pulse knows on Steam, from memory (Steam's lowest listing and buy orders, kept by
+    the active profiles) and the price history (the 30-day median); never a request. spreadPct =
+    (lowest listing − highest buy order) / lowest listing × 100 (tight = liquid); vsMedianPct =
+    lowest listing vs its 30-day median. The buy orders are optional (a profile may keep only the
+    listing). None while an active Steam table is not in memory yet (after a restart: the keeper is
+    downloading it); NotActive when no active profile keeps Steam's listing."""
     if not names:
         return {}
-    if wait:
-        listing, orders, median = _parallel([lambda key=key: huginn._table(token, *key, max_age)
-                                             for key in STEAM_LIQUIDITY_TABLES])
-    else:
-        tables = [huginn.pulse.peek(*key, max_age) for key in STEAM_LIQUIDITY_TABLES]
-        if not all(tables):
-            failed_at = _liquidity_failed['at']
-            if failed_at and time.time() - failed_at < LIQUIDITY_RETRY_AFTER:
-                raise RuntimeError(f"pulse Steam tables unavailable: {_liquidity_failed['error']}")
-            _warm_steam_liquidity(huginn, token, max_age)
-            return None
-        listing, orders, median = tables
-    lowest, highest, typical = listing.prices(), orders.prices(), median.prices()
+    listing, orders = (huginn.pulse.peek(*key) for key in STEAM_LIQUIDITY_TABLES)
+    missing = [key for table, key in zip((listing, orders), STEAM_LIQUIDITY_TABLES) if table is None]
+    if missing and all(huginn.pulse.will_download(key) for key in missing):
+        return None                                        # the keeper is about to bring them (after a restart)
+    if listing is None:
+        raise NotActive('Steam Sell is not in memory: no active Huginn profile keeps it, it is outside '
+                        'the active hours, or its download is failing')
+    lowest, highest = listing.prices(), orders.prices() if orders is not None else {}
+    typical = huginn.history.trade_statistic('Steam', 'Sell', 'Buy', 'Median30d', names)
     sales = huginn.pulse.weekly_sales(names)
     out = {}
     for name in names:
@@ -197,85 +179,18 @@ def steam_liquidity(huginn, token, names, max_age=FRESH, wait=True):
     return out
 
 
-
-# ---- the Pulse feed page: which tables exist, which are kept fresh ------------------------------
-
 PRICE_TYPE_LABELS = {'Sell': 'Lowest listing', 'SellWithoutHold': 'Lowest listing (no trade hold)',
                      'Buy': 'Buy orders', 'Median30d': '30-day median', 'Average30d': '30-day average'}
 
 
-def pulse_choices():
-    """Every table the Pulse feed page offers to keep fresh: per market (registry order) its
-    lowest-listing table, its buy-orders table and, where pulse has them, the 30-day median and
-    average. Tradeon is no table of its own (it is every table's first market); SkinSwap (Trade)'s
-    estimated listings and CSFloat's swept buy orders are not pulse tables."""
-    out = []
-    for market_id, market in _MARKET_BY_ID.items():
-        if market_id == 'TradeOnMarket':
-            continue
-        types = []
-        if market['buy_type'] and market['buy_type'] != _ESTIMATED_SELL:
-            types.append(market['buy_type'])
-        if market['autobuy'] and market_id not in _AUTOBUY_VIA_CSFLOAT_SWEEP:
-            types.append(market['autobuy'])
-        if market_id in STATISTICS_MARKETS:
-            types += list(STATISTICS_BASES)
-        out.append({'market': market_id, 'display': market['display'], 'premium': market['premium'],
-                    'price_types': [{'price_type': price_type, 'label': PRICE_TYPE_LABELS.get(price_type, price_type)}
-                                    for price_type in types]})
-    return out
+def table_label(market_id, price_type):
+    market = _MARKET_BY_ID.get(market_id)
+    return f"{market['display'] if market else market_id} · {PRICE_TYPE_LABELS.get(price_type, price_type).lower()}"
 
 
-def _offered():
-    return {(choice['market'], option['price_type']) for choice in pulse_choices() for option in choice['price_types']}
+# ---- Active profiles: the one list that decides what pulse is asked for ----------------------
 
-
-def _parse_keys(values, allowed, what):
-    """["Steam:Sell", ["Buff", "Buy"], ...] → [(market id, price type)] in *allowed*, without repeats;
-    ValueError naming the first value that is not one."""
-    out = []
-    for value in values or []:
-        if isinstance(value, str):
-            key = tuple(value.split(':', 1))
-        elif isinstance(value, (list, tuple)):
-            key = tuple(value)
-        else:
-            raise ValueError(f'not a pulse table: {value!r}')
-        if len(key) != 2 or not all(isinstance(part, str) for part in key) or key not in allowed:
-            raise ValueError(f'not a pulse table {what}: {value}')
-        if key not in out:
-            out.append(key)
-    return out
-
-
-def downloadable(market_id, price_type, huginn):
-    """A table the page may download now: one it offers, or one a page or job has used since start."""
-    key = (market_id, price_type)
-    if not all(isinstance(part, str) and part for part in key):
-        raise ValueError('market and price_type are required')
-    if key not in _offered() and key not in huginn.pulse.seen_tables():
-        raise ValueError(f'not a pulse table Heimdall uses: {market_id} {price_type}')
-    return key
-
-
-def parse_kept(values):
-    """["Steam:Sell", ...] or [["Steam", "Sell"], ...] → [(market id, price type)], only the tables
-    pulse_choices() offers, at most MAX_KEPT_TABLES; ValueError otherwise."""
-    out = _parse_keys(values, _offered(), 'Heimdall offers')
-    if len(out) > MAX_KEPT_TABLES:
-        raise ValueError(f'at most {MAX_KEPT_TABLES} tables can be kept fresh ({len(out)} chosen)')
-    return out
-
-
-def parse_switched_off(values, huginn):
-    """["Steam:Sell", ...] → [(market id, price type)]: only tables a background job fetches or the
-    page offers (switching off anything else would mean nothing)."""
-    return _parse_keys(values, huginn.pulse.declared_tables() | _offered(), 'Heimdall fetches')
-
-
-# ---- Huginn profiles kept fresh -----------------------------------------------------------------
-
-PROFILE_KEEP_MINUTES = 5        # default interval of the tables kept fresh for profiles
+ACTIVE_DEFAULT_MINUTES = 5
 PROFILE_MODES = ('autobuy', 'min')
 
 
@@ -287,7 +202,8 @@ def _estimated_tables(market_id):
 def profile_tables(buy_id, sell_id, mode):
     """[(market id, price type)] an Arbitrage profile (buy market, sell market, 'autobuy' or 'min')
     reads from pulse, exactly as its fetch does (fetch_generated_pair, the curated profiles, the
-    LOOT.Farm feed profiles, CSFloat's swept buy orders); ValueError for a profile with none."""
+    LOOT.Farm feed profiles, CSFloat's swept buy orders); ValueError for a profile with none.
+    tests/test_active_profiles.py calls every profile route to prove the two agree."""
     buy, sell = _MARKET_BY_ID.get(buy_id), _MARKET_BY_ID.get(sell_id)
     if not buy or not sell or buy_id == sell_id or mode not in PROFILE_MODES:
         raise ValueError(f'not an Arbitrage profile: {buy_id} → {sell_id} ({mode})')
@@ -315,20 +231,16 @@ def profile_tables(buy_id, sell_id, mode):
     return list(dict.fromkeys(buy_tables + sell_tables))
 
 
-def profile_key(buy_id, sell_id, mode):
-    return f'{buy_id}:{sell_id}:{mode}'
-
-
 def profile_label(key):
     buy_id, sell_id, mode = key.split(':')
     display = lambda market_id: _MARKET_BY_ID[market_id]['display']  # noqa: E731
     return f'{display(buy_id)} → {display(sell_id)} ({mode})'
 
 
-def parse_kept_profiles(values):
+def parse_active_profiles(values):
     """["LisSkins:CsMoneyTrade:autobuy", ...] → ({profile key: [tables]}, [every table, once]);
     ValueError naming the first value that is not a profile with pulse tables, or when the
-    profiles need more than MAX_PROFILE_TABLES tables."""
+    profiles need more than MAX_ACTIVE_TABLES tables."""
     profiles = {}
     for value in values or []:
         parts = value.split(':') if isinstance(value, str) else []
@@ -336,68 +248,112 @@ def parse_kept_profiles(values):
             raise ValueError(f'not an Arbitrage profile: {value!r}')
         profiles[value] = profile_tables(*parts)
     tables = list(dict.fromkeys(key for keys in profiles.values() for key in keys))
-    if len(tables) > MAX_PROFILE_TABLES:
-        raise ValueError(f'these profiles need {len(tables)} pulse tables; at most {MAX_PROFILE_TABLES} '
-                         'can be kept fresh for profiles. Switch another profile off first.')
+    if len(tables) > MAX_ACTIVE_TABLES:
+        raise ValueError(f'these profiles need {len(tables)} pulse tables; at most {MAX_ACTIVE_TABLES} '
+                         'can be active. Switch another profile off first.')
     return profiles, tables
 
 
-def kept_profiles_status(huginn, settings):
-    """The Huginn profiles kept fresh: {minutes, max_tables, tables_used, profiles: {key: {label,
-    tables: [{market, price_type, age_seconds, downloading}]}}} (the ages straight from memory)."""
-    profiles, tables = parse_kept_profiles_leniently(settings.get('huginn_kept_profiles'))
-    ages = huginn.pulse.ages(tables)
-    _, minutes = huginn.pulse.kept_for_profiles()
-    return {'minutes': minutes, 'choices': list(KEEP_FRESH_MINUTES), 'max_tables': MAX_PROFILE_TABLES,
-            'tables_used': len(tables),
-            'profiles': {key: {'label': profile_label(key),
-                               'tables': [{'market': market_id, 'price_type': price_type,
-                                           'age_seconds': ages[(market_id, price_type)][0],
-                                           'downloading': ages[(market_id, price_type)][1]}
-                                          for market_id, price_type in keys]}
-                         for key, keys in profiles.items()}}
-
-
-def parse_kept_profiles_leniently(values):
-    """parse_kept_profiles for saved settings: a profile no longer valid is skipped, and the
-    profiles past MAX_PROFILE_TABLES tables are left out."""
+def parse_active_profiles_leniently(values):
+    """parse_active_profiles for saved settings: a profile no longer valid is skipped, and the
+    profiles past MAX_ACTIVE_TABLES tables are left out."""
     profiles, tables = {}, []
     for value in values or []:
         try:
-            keys = parse_kept_profiles([value])[0][value]
+            keys = parse_active_profiles([value])[0][value]
         except (ValueError, KeyError):
             continue
         more = [key for key in keys if key not in tables]
-        if len(tables) + len(more) > MAX_PROFILE_TABLES:
+        if len(tables) + len(more) > MAX_ACTIVE_TABLES:
             continue
         profiles[value], tables = keys, tables + more
     return profiles, tables
 
 
-def apply_kept_settings(huginn, settings):
-    """Hand the saved choice (settings pulse_kept_tables, pulse_keep_minutes,
-    pulse_switched_off_tables, huginn_kept_profiles, huginn_profile_keep_minutes) to the master
-    feed; anything no longer offered is skipped."""
-    profile_minutes = settings.get('huginn_profile_keep_minutes') or PROFILE_KEEP_MINUTES
-    if profile_minutes not in KEEP_FRESH_MINUTES:
-        profile_minutes = PROFILE_KEEP_MINUTES
-    huginn.pulse.set_kept_for_profiles(parse_kept_profiles_leniently(settings.get('huginn_kept_profiles'))[1],
-                                       profile_minutes)
-    switched_off = []
-    for value in settings.get('pulse_switched_off_tables') or []:
-        if isinstance(value, str) and ':' in value:
-            switched_off.append(tuple(value.split(':', 1)))
-    huginn.pulse.set_switched_off(switched_off)
-    minutes = settings.get('pulse_keep_minutes') or 10
-    if minutes not in KEEP_FRESH_MINUTES:
-        minutes = 10
-    offered = _offered()
-    keys = []
-    for value in settings.get('pulse_kept_tables') or []:
+def saved_profiles(settings):
+    """The saved active profiles (huginn_kept_profiles before 2026-10-31, still read once)."""
+    if settings.get('huginn_active_profiles') is not None:
+        return list(settings['huginn_active_profiles'])
+    return list(settings.get('huginn_kept_profiles') or [])
+
+
+def saved_minutes(settings):
+    minutes = settings.get('huginn_active_minutes')
+    if minutes is None:
+        minutes = settings.get('huginn_profile_keep_minutes') or ACTIVE_DEFAULT_MINUTES
+    return minutes if minutes in ACTIVE_MINUTES else ACTIVE_DEFAULT_MINUTES
+
+
+def parse_clock(text):
+    """'08:30' → minutes of the day; ValueError otherwise."""
+    try:
+        hours, minutes = (int(part) for part in str(text).split(':'))
+    except (TypeError, ValueError):
+        raise ValueError(f'not a time of day: {text!r} (use HH:MM)') from None
+    if not (0 <= hours < 24 and 0 <= minutes < 60):
+        raise ValueError(f'not a time of day: {text!r} (use HH:MM)')
+    return hours * 60 + minutes
+
+
+def saved_hours(settings):
+    """{enabled, start, end} of the active hours (off, 08:00 to 01:00 until changed)."""
+    hours = settings.get('huginn_active_hours')
+    if not isinstance(hours, dict):
+        hours = {}
+    return {'enabled': bool(hours.get('enabled')), 'start': hours.get('start') or '08:00',
+            'end': hours.get('end') or '01:00'}
+
+
+def apply_active_settings(huginn, settings):
+    """Hand the saved choice to the master feed: the active profiles' tables (plus the Buff163
+    reference), their interval, the active hours, and the statistics seed still missing."""
+    _, tables = parse_active_profiles_leniently(saved_profiles(settings))
+    huginn.pulse.set_active(tables, saved_minutes(settings))
+    hours = saved_hours(settings)
+    try:
+        window = (parse_clock(hours['start']), parse_clock(hours['end'])) if hours['enabled'] else None
+    except ValueError:
+        window = None
+    huginn.pulse.set_active_hours(window)
+    huginn.pulse.download_once(huginn.history.seeds_wanted(market_id for market_id, _ in huginn.pulse.active()),
+                               give_up=huginn.history.seed_unavailable)
+    return tables
+
+
+def _table_view(key, ages):
+    age, downloading = ages.get(key, (None, False))
+    return {'market': key[0], 'price_type': key[1], 'label': table_label(*key),
+            'age_seconds': age, 'downloading': downloading}
+
+
+def active_status(huginn, settings, preview=None):
+    """Everything the Active profiles panel shows: the profiles with their tables' ages, the
+    reference, the statistics (days of history, seeds), the interval and hours, the keeper's state
+    and, with *preview* (a profile key), what making it active would add."""
+    profiles, tables = parse_active_profiles_leniently(saved_profiles(settings))
+    keys = set(tables) | set(REFERENCE_TABLES)
+    ages = huginn.pulse.ages(keys)
+    out = {
+        'minutes': saved_minutes(settings), 'choices': list(ACTIVE_MINUTES), 'max_tables': MAX_ACTIVE_TABLES,
+        'tables_used': len(tables), 'hours': saved_hours(settings), 'keeper': huginn.pulse.keeper_status(),
+        'profiles': {key: {'label': profile_label(key), 'tables': [_table_view(table, ages) for table in keys_of]}
+                     for key, keys_of in profiles.items()},
+        'reference': [{**_table_view(key, ages), 'every_seconds': every,
+                       'note': 'off-Steam price reference, read once a day'}
+                      for key, every in REFERENCE_TABLES.items()],
+        'statistics': [{**_table_view(key, ages), **huginn.history.coverage(*key)}
+                       for key in sorted(keys) if key[1] in ('Sell', 'SellWithoutHold', 'Buy')],
+        'now': time.time(),
+    }
+    if preview:
         try:
-            keys += [key for key in _parse_keys([value], offered, 'Heimdall offers') if key not in keys]
-        except ValueError:
-            continue
-    keys = keys[:MAX_KEPT_TABLES]
-    huginn.pulse.set_kept(keys, minutes)
-    return keys, minutes
+            wanted = parse_active_profiles([preview])[1]
+        except ValueError as error:
+            out['preview'] = {'key': preview, 'error': str(error)}
+        else:
+            adds = sum(1 for key in wanted if key not in tables)
+            out['preview'] = {'key': preview, 'tables': [list(key) for key in wanted], 'adds': adds}
+            if preview not in profiles and len(tables) + adds > MAX_ACTIVE_TABLES:
+                out['preview']['error'] = (f"it needs {adds} more pulse table{'s' if adds != 1 else ''} and "
+                                           f'{len(tables)} of {MAX_ACTIVE_TABLES} are in use. Switch another profile off first.')
+    return out

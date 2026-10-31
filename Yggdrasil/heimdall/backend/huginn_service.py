@@ -12,7 +12,8 @@ import urllib.error
 import urllib.parse
 from datetime import datetime, timezone, timedelta
 from jsonio import atomic_write_json
-from pulse_feed import COUNT, FRESH, ON_DEMAND, PRICE, PulseFeed, SwitchedOff
+from price_history import PriceHistory
+from pulse_feed import COUNT, FRESH, ON_DEMAND, PRICE, NotActive, PulseFeed
 from notifications import (TELEGRAM_MESSAGE_LIMIT, delete_notification, edit_notification,
                            notification_channel, send_notification, telegram_visible_length)
 
@@ -543,6 +544,12 @@ class HuginnService:
         # reads self._post_tradeon at call time, so tests can replace the transport.
         self.pulse = PulseFeed(post=lambda url, token, body: self._post_tradeon(url, token, body),
                                scale=_MARKET_PRICE_SCALE)
+        # Heimdall's own statistics, built from every table Huginn Arbitrage downloads.
+        self.history = PriceHistory()
+        self.pulse.add_listener(self.history.record)
+        # The Case Arbitrage loop follows the keeper: a new alert-market table wakes it.
+        self._case_wake = threading.Event()
+        self.pulse.add_listener(self._wake_case_loop)
         # Parsed-file caches keyed by (modification time, size): the 16 MB inventory
         # scan and the ~3 MB case price history are re-read only when the file changes.
         self._scan_file_cache = None      # ((mtime_ns, size), parsed scan)
@@ -564,6 +571,7 @@ class HuginnService:
         self._auction_tracker_started = False
         self._container_cache = {}
         self._container_state = {}
+        self._container_checked_at = {}   # market -> when memory was last read for its snapshot
         self._container_failed_at = {}   # market -> epoch of the last failed snapshot refresh
         self._container_last_full = 0.0  # epoch of the last full refresh (restored from disk on start)
         self._container_refresh_started = False
@@ -1156,7 +1164,10 @@ class HuginnService:
         """{name: highest buy-order price} for a market (its 'Buy' table), at most
         _BUYORDER_TTL s old. These are instant-sell prices, unlike the valuation cache which
         holds listings ('Sell')."""
-        return self._table(token, self._BUYORDER_MARKETS[market], 'Buy', max_age=self._BUYORDER_TTL).prices()
+        try:
+            return self._table(token, self._BUYORDER_MARKETS[market], 'Buy', max_age=self._BUYORDER_TTL).prices()
+        except NotActive:
+            return {}               # no active profile keeps that market's buy orders: no exit there
 
     def lootfarm_arbitrage(self, token='', balance_rate=0.5208, unlocked=True, in_stock=True, settings=None):
         """The core play: buy LOOT.Farm balance cheap (from the USDT OTC trader) → acquire
@@ -2234,15 +2245,24 @@ class HuginnService:
     # Portfolio valuation prices are cached this long (per market). Skin prices
     # barely move minute-to-minute, so hour-stale is fine for tracking — and it
     # keeps every Draupnir page load from re-hitting pulse. Tweak freely.
-    _PRICE_CACHE_TTL_SEC = 60 * 60   # 1 hour
+    _PRICE_CACHE_TTL_SEC = 5 * 60    # rebuilt from the master feed's memory (no request), so cheap
+    # Case Arbitrage snapshots are stamped with their table's download time (a Buff163 reference is a
+    # day old), so freshness is when memory was last read for them, not that time.
+    _CONTAINER_CHECK_SEC = 60
 
     def _compute_price_map(self, token, market):
         if market == 'lowest':
             merged = {}
             for m in ('steam', 'buff', 'csfloat'):
-                for name, price in self._single_price_map(token, m).items():
+                try:
+                    prices = self._single_price_map(token, m)
+                except NotActive:
+                    continue            # not kept by an active profile: the others still price it
+                for name, price in prices.items():
                     if name not in merged or price < merged[name]:
                         merged[name] = price
+            if not merged:
+                raise NotActive('none of Steam, Buff163 and CSFloat is kept by an active Huginn profile')
             return merged
         if market not in self._PRICE_MARKETS:
             market = 'steam'
@@ -2306,6 +2326,11 @@ class HuginnService:
                 self._price_cache[market] = (time.time(), prices)
                 self._price_state[market] = 'ok'
                 self._price_cache_gen += 1
+        except NotActive as e:
+            logger.debug(f'[DRAUPNIR] valuation market not active ({market}): {e}')
+            with self._price_lock:
+                self._price_state[market] = 'inactive'
+                self._price_failed_at[market] = time.time()
         except Exception as e:
             logger.error(f'[DRAUPNIR] price refresh failed ({market}): {e}')
             with self._price_lock:
@@ -2334,15 +2359,15 @@ class HuginnService:
         # cold or stale → refresh in the background (single-flight per market)
         with self._price_lock:
             state = self._price_state.get(market)
-            backing_off = (state == 'error' and time.time() - self._price_failed_at.get(market, 0)
+            backing_off = (state in ('error', 'inactive') and time.time() - self._price_failed_at.get(market, 0)
                            < _WARM_RETRY_AFTER_FAILURE_SEC)
             if state != 'refreshing' and not backing_off:
                 self._price_state[market] = 'refreshing'
                 threading.Thread(target=self._refresh_prices_bg,
                                  args=(token, market), daemon=True).start()
                 state = 'refreshing'
-        if state == 'error':
-            return (cached[1] if cached else None), 'error'
+        if state in ('error', 'inactive'):
+            return (cached[1] if cached else None), state
         if cached:
             return cached[1], 'refreshing'          # serve stale while warming
         return None, 'refreshing'
@@ -2455,7 +2480,7 @@ class HuginnService:
 
     def case_job_tables(self, alerts=False):
         """The tables the Case Arbitrage loop fetches: every container market hourly, the alert
-        markets on every poll (for the Pulse feed page)."""
+        markets on every poll (for the Pulse feed monitor)."""
         markets = self._ALERT_MARKETS if alerts else self._CONTAINER_MARKETS
         return [self.container_table_key(market) for market in markets]
 
@@ -2466,32 +2491,61 @@ class HuginnService:
             with self._price_lock:
                 self._container_cache[market] = (downloaded_at, snap)
                 self._container_state[market] = 'ok'
-        except SwitchedOff as e:
-            logger.info(f'[HUGINN] container snapshot skipped ({market}): {e}')
-            with self._price_lock:
-                self._container_state[market] = 'ok' if self._container_cache.get(market) else None
+                self._container_checked_at[market] = time.time()
+        except NotActive as e:
+            logger.debug(f'[HUGINN] container snapshot skipped ({market}): {e}')
+            self._forget_inactive_snapshot(market)
         except Exception as e:
             logger.error(f'[HUGINN] container snapshot refresh failed ({market}): {e}')
             with self._price_lock:
                 self._container_state[market] = 'error'
                 self._container_failed_at[market] = time.time()
 
+    def _forget_inactive_snapshot(self, market):
+        """A market whose table no active profile keeps: its old snapshot (saved before, or restored
+        from disk) goes, so the page shows it as not active instead of old prices forever. An active
+        table not downloaded yet (after a restart) keeps the last prices meanwhile."""
+        active = self.container_table_key(market) in self.pulse.active()
+        with self._price_lock:
+            if not active:
+                self._container_cache.pop(market, None)
+            self._container_state[market] = 'ok' if self._container_cache.get(market) else 'inactive'
+            self._container_checked_at[market] = time.time()
+
     def _container_snapshot(self, token, market):
         """NON-BLOCKING {name:{price,count}} for one market. Serves cache instantly,
         warms cold/stale in the background (single-flight per market), like
-        prices_for_valuation. status: 'no_token'|'fresh'|'refreshing'|'error'.
+        prices_for_valuation. status: 'no_token'|'fresh'|'refreshing'|'error'|'inactive' (no active
+        Huginn profile keeps that market's table).
         A failed refresh is not retried for _WARM_RETRY_AFTER_FAILURE_SEC; the
         status is 'error' in that window (stale snapshot still served)."""
         with self._price_lock:
             cached = self._container_cache.get(market)
         if not token:
             return (cached[1] if cached else {}), 'no_token'
-        if cached and (time.time() - cached[0]) < self._PRICE_CACHE_TTL_SEC:
+        checked = self._container_checked_at.get(market, 0)
+        if cached and time.time() - checked < self._CONTAINER_CHECK_SEC:
+            return cached[1], 'fresh'
+        if cached:
+            # Served as it is while memory is read again in the background (milliseconds, never a
+            # download), at most once a check interval: no "refreshing" spinner for a memory read.
+            with self._price_lock:
+                self._container_checked_at[market] = time.time()
+            threading.Thread(target=self._refresh_container_bg,
+                             args=(token, market, self.pulse.current_job()), daemon=True).start()
             return cached[1], 'fresh'
         with self._price_lock:
             state = self._container_state.get(market)
             backing_off = (state == 'error' and time.time() - self._container_failed_at.get(market, 0)
                            < _WARM_RETRY_AFTER_FAILURE_SEC)
+            if state == 'inactive' and not cached:
+                # No active profile keeps it: look again (a memory read) at most once a check
+                # interval, without claiming to warm.
+                if time.time() - checked >= self._CONTAINER_CHECK_SEC:
+                    self._container_checked_at[market] = time.time()
+                    threading.Thread(target=self._refresh_container_bg,
+                                     args=(token, market, self.pulse.current_job()), daemon=True).start()
+                return {}, 'inactive'
             if state != 'refreshing' and not backing_off:
                 self._container_state[market] = 'refreshing'
                 threading.Thread(target=self._refresh_container_bg,
@@ -2825,6 +2879,7 @@ class HuginnService:
                     continue
                 self._container_cache[market] = (fetched_at, snapshot)
                 self._container_state[market] = 'ok'
+                self._container_checked_at[market] = time.time()   # served warm; read from memory again after a check
         try:
             self._container_last_full = float(data.get('last_full') or 0)
         except (TypeError, ValueError):
@@ -2846,8 +2901,10 @@ class HuginnService:
             with self._price_lock:
                 self._container_cache[market] = (downloaded_at, snap)
                 self._container_state[market] = 'ok'
-        except SwitchedOff as e:
-            logger.info(f'[HUGINN] container refresh skipped ({market}): {e}')   # last prices stay
+                self._container_checked_at[market] = time.time()
+        except NotActive as e:
+            logger.debug(f'[HUGINN] container refresh skipped ({market}): {e}')
+            self._forget_inactive_snapshot(market)
         except Exception as e:
             logger.error(f'[HUGINN] container refresh failed ({market}): {e}')
             with self._price_lock:
@@ -2872,6 +2929,12 @@ class HuginnService:
         else:
             for m in markets:
                 self._refresh_one(token, m, max_age)
+
+    def _wake_case_loop(self, table):
+        """The master feed's listener: a downloaded alert-market table wakes the Case Arbitrage loop,
+        so its alerts follow the keeper instead of a clock of their own."""
+        if (table.market_id, table.price_type) in set(self.case_job_tables(alerts=True)):
+            self._case_wake.set()
 
     def _container_refresh_loop(self, settings_provider, default_interval):
         # Persisted by the previous process, so a reload does not force an
@@ -2921,9 +2984,24 @@ class HuginnService:
                     logger.info('[HUGINN] container refresh skipped — no tradeon_token yet')
             except Exception as e:
                 logger.error(f'[HUGINN] container refresh loop error: {e}')
-            time.sleep(interval)
+            self._wait_for_case_wake(interval)
+
+    def _wait_for_case_wake(self, interval):
+        """Until the keeper's next alert-market table (the interval is only a fallback), then a short
+        wait for the rest of its pass, so one pass makes one alert run."""
+        if self._case_wake.wait(interval):
+            # The keeper downloads one table at a time: wait until no alert-market table has come
+            # for a while (at most a few minutes), then run once.
+            deadline = time.time() + self._CASE_WAKE_LONGEST_SEC
+            self._case_wake.clear()
+            while time.time() < deadline and self._case_wake.wait(self._CASE_WAKE_SETTLE_SEC):
+                self._case_wake.clear()
+        self._case_wake.clear()
 
     # --- Case Arbitrage price alerts (a buy market cheaper than CSFloat) ----
+
+    _CASE_WAKE_SETTLE_SEC = 30       # quiet this long after the keeper's last alert-market table: its pass is done
+    _CASE_WAKE_LONGEST_SEC = 5 * 60   # but never wait longer than this
 
     # Where you buy: each one that is cheaper than CSFloat is an alert.
     _ALERT_BUY_MARKETS = ('lisskins', 'buff', 'tradeon', 'csmoney_market', 'csmoney_trade', 'skinswap')
@@ -3089,7 +3167,7 @@ class HuginnService:
             min_pct = 3.0
         cats = settings.get('case_alert_categories') or ['case']
         data = self.cases_prices(token, cats)
-        # Never compare with old prices (a market switched off on the Pulse feed page keeps its
+        # Never compare with old prices (a market no active Huginn profile keeps has only its
         # last snapshot): a market whose snapshot is too old is left out, CSFloat's stops the run.
         now = time.time()
         with self._price_lock:
@@ -3097,7 +3175,7 @@ class HuginnService:
                        if not self._container_cache.get(m)
                        or now - self._container_cache[m][0] > self._ALERT_SNAPSHOT_MAX_AGE_SEC}
         if 'csfloat' in too_old:
-            return {'ran': False, 'reason': 'CSFloat prices are too old (switched off on the Pulse feed page?)'}
+            return {'ran': False, 'reason': 'CSFloat prices are too old (no active Huginn profile keeps CSFloat, or outside the active hours)'}
         active = {}
         for r in data['containers']:
             prices = r.get('prices') or {}

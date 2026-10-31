@@ -267,6 +267,8 @@ const CaseArbitrage = ({ byHash }) => {
 
     const warming = Object.values(data?.status || {}).some(s => s === 'refreshing');
     const noToken = Object.values(data?.status || {}).some(s => s === 'no_token');
+    // Markets no active Huginn profile keeps: only Huginn Arbitrage downloads prices (master-slave).
+    const inactive = MARKETS.filter(m => data?.status?.[m.key] === 'inactive').map(m => m.label);
 
     // ---- row renderers -------------------------------------------------
 
@@ -451,6 +453,12 @@ const CaseArbitrage = ({ byHash }) => {
                 <span className="text-slate-600">· profit is net of seller fee; flips buy on the cheapest market (CS.MONEY Trade in trade balance) and sell on Steam/Buff/CSFloat (fees from the Fees editor); DMarket is shown only (unfillable)</span>
             </div>
 
+            {inactive.length > 0 && (
+                <div className="shrink-0 px-4 py-2 text-xs border-b border-white/5 text-slate-400"
+                    title="Case Arbitrage reads its prices from the active Huginn profiles' tables and never downloads. Make a profile that uses these markets active on Huginn → Arbitrage to see them here.">
+                    Not active (no active Huginn profile uses them): {inactive.join(', ')}
+                </div>
+            )}
             {(warming || noToken || error) && (
                 <div className="shrink-0 px-4 py-2 text-xs border-b border-white/5 flex items-center gap-2">
                     {error ? (
@@ -458,7 +466,7 @@ const CaseArbitrage = ({ byHash }) => {
                     ) : noToken ? (
                         <span className="text-amber-400 flex items-center gap-1"><AlertTriangle size={12} /> Set tradeon_token in Settings to load prices.</span>
                     ) : (
-                        <span className="text-amber-400 flex items-center gap-1"><RefreshCw size={12} className="animate-spin" /> Warming prices from pulse — refreshes automatically…</span>
+                        <span className="text-amber-400 flex items-center gap-1"><RefreshCw size={12} className="animate-spin" /> Reading the active profiles' prices — refreshes automatically…</span>
                     )}
                 </div>
             )}

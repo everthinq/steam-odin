@@ -23,6 +23,7 @@ import logging
 import math
 from datetime import datetime, timezone
 
+from pulse_feed import NotActive
 from pulse_views import steam_liquidity
 
 logger = logging.getLogger(__name__)
@@ -96,11 +97,16 @@ class GjallarhornService:
             try:
                 # Never waits on a download: missing tables warm in the background ("warming",
                 # the page polls), and Steam is not asked meanwhile.
-                from_pulse = steam_liquidity(self.huginn, token, names, wait=False)
+                from_pulse = steam_liquidity(self.huginn, names)
                 if from_pulse is None:
                     # The Steam tables are downloading: the last figures meanwhile, never a blank list.
                     last = {name: self._last_pulse_views[name] for name in names if name in self._last_pulse_views}
                     return last, 'warming'
+            except NotActive:
+                # No active Huginn profile keeps Steam: never ask Steam's rate-limited endpoints for
+                # every held item instead (the page says Steam is not active).
+                last = {name: self._last_pulse_views[name] for name in names if name in self._last_pulse_views}
+                return last, 'inactive'
             except Exception as error:
                 logger.warning('[GJALLARHORN] pulse liquidity unavailable, using Steam: %s', error)
         views = {name: {'volume7d': view['volume7d'], 'spreadPct': view['spreadPct'],

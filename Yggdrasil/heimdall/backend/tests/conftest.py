@@ -38,3 +38,18 @@ def _no_real_pulse_request(monkeypatch):
         raise AssertionError(f'a test tried to reach pulse ({url}); fake _post_tradeon on the service')
 
     monkeypatch.setattr(huginn_service.HuginnService, '_post_tradeon', refused)
+
+
+@pytest.fixture(autouse=True)
+def _price_history_in_a_temporary_folder(monkeypatch, tmp_path):
+    """No test may write Heimdall's real price history (cache/price_history)."""
+    import price_history
+    monkeypatch.setattr(price_history, 'HISTORY_DIRECTORY', str(tmp_path / 'price_history'))
+
+
+@pytest.fixture(autouse=True)
+def _slaves_may_download_from_the_fake_pulse(monkeypatch):
+    """In the app only Huginn Arbitrage downloads (pulse_feed's gate); the tests of each slave's own
+    logic predate it and feed it tables from a fake pulse. The gate's tests switch this off."""
+    import pulse_feed
+    monkeypatch.setattr(pulse_feed.PulseFeed, 'slaves_may_download', True)

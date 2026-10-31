@@ -133,49 +133,54 @@ Errors are `{message, responseType}` with types such as `MarketSubscriptionRequi
   Price dips read it.
 - **Single items** (`lookup(token, market, price type, name)`): the name filter, exact name kept,
   not cached, shares the download limit; `status()['lookups']` counts them.
-- **Kept for Huginn profiles** (`set_kept_for_profiles(keys, minutes)`, `pulse_views.profile_tables`):
-  an Arbitrage profile switched to "Keep fresh" (settings `huginn_kept_profiles` as
-  `"BuyMarket:SellMarket:autobuy|min"`, `huginn_profile_keep_minutes`, default 5) has its pulse tables
-  kept by the same keeper, at most `MAX_PROFILE_TABLES` (12) on top of the page's own; a table kept
-  both ways is downloaded at the shorter interval. `profile_tables` mirrors each profile's fetch and
-  `tests/test_kept_profiles.py` calls every profile route to prove they match. The profile routes
-  (`@pulse_profile` in routes/huginn.py) take `?kept=1` (the page opening a kept profile by itself:
-  `with feed.reading(accept_kept=True)` accepts a kept table up to its interval even for an
-  `ON_DEMAND` read) and answer an `X-Pulse-Tables` header, `[[market, price type, seconds since its
-  download]]`, from which the page shows "prices N min old". Measured 2026-10-30: LisSkins →
-  CSMoney (Trade) opens from memory in 0.6-1 s (16.5 MB of JSON once Flask stopped indenting it,
-  `app.json.compact`); a fresh download on the slow line took 40 s.
-- **Kept fresh** (`set_kept(keys, minutes)`, `keep_fresh_once`, `start_keeper`): the tables ticked
-  on the Pulse feed page (settings `pulse_kept_tables` as `"Market:PriceType"`, `pulse_keep_minutes`
-  5/10/15/30/60, default none) are downloaded again by the `pulse-keeper` thread (30 s tick, one
-  table at a time, a failed table waits 5 minutes, its downloads are not counted as reads) and are
-  not dropped after `KEEP_SECONDS`. At most `MAX_KEPT_TABLES` (12). A background read (`max_age`
-  `FRESH` or more) of a kept table accepts it up to the kept interval, so boards never download
-  behind the keeper; `ON_DEMAND` reads (buttons) still want it under a minute. `peek()` returns a
-  table only if it is in memory (Gjallarhorn: `steam_liquidity(wait=False)` warms the three Steam
-  tables in the background and answers "warming"; after a failed warm it uses Steam for 5 minutes).
-  "Check live" asks for 500 rows per name (a short name is contained in many) and prices the sell
+- **Only Huginn Arbitrage downloads** (2026-10-31, Ivan's master-slave rule). `_read` is the gate:
+  a downloader is the keeper or a thread inside `feed.reading(download=True)`, which only the profile
+  routes open (one `before_request` hook on `/api/huginn/tradeon/`, routes/huginn.py). Every other
+  read is a slave: the copy in memory whatever its age, a download already under way, or `NotActive`
+  ("not kept by an active Huginn profile", or "active but not downloaded yet" right after a
+  restart). `PulseFeed.slaves_may_download` exists for the older slave tests only (conftest.py).
+- **Active tables** (`set_active(keys, minutes)`, `keep_fresh_once`, `start_keeper`): the tables of
+  the active profiles (settings `huginn_active_profiles` as `"BuyMarket:SellMarket:autobuy|min"`,
+  read from the older `huginn_kept_profiles` until first saved; `huginn_active_minutes` 5/10/15/30/60,
+  default 5; at most `MAX_ACTIVE_TABLES` 12) plus `REFERENCE_TABLES` (Buff163's lowest listing,
+  once a day). `download_once` adds one-time downloads (the price history's seed). The keeper (30 s
+  tick, one table at a time, a failed table waits 5 minutes) runs only inside `set_active_hours`
+  (settings `huginn_active_hours` {enabled, start, end}, local time); a tick that took over
+  `SLEEP_GAP` means the Mac slept: it forgets the failures, waits a tick for the network, then
+  catches up (`note_sleep`, `status()['keeper']['sleep']`). An active table is never dropped from
+  memory; others leave after `KEEP_SECONDS`. `profile_tables` mirrors each profile's fetch and
+  `tests/test_active_profiles.py` calls every profile route to prove they match. `?kept=1` (an
+  active profile opening by itself) accepts the keeper's copy up to its interval plus two ticks;
+  the profile routes answer `X-Pulse-Tables` ([[market, price type, seconds since download]]).
+- **Price history** (`price_history.py`, a listener): every listing or buy-orders table adds one
+  sample per item to the day's row (average, lowest, highest, last, samples), one gzipped file a day
+  per table in `cache/price_history/<market>/<price type>/`, kept for good. `statistic()` gives the
+  30-day median or average of the daily averages from 7 days on, pulse's Median30d/Average30d seed
+  (downloaded once for active markets pulse has them for, again monthly while active, ignored after
+  45 days; a seed pulse refuses is marked `.unavailable` for a month) before. Sold-out items and
+  prices their market has not refreshed for a day are not sampled; a table from before midnight that
+  finishes late is added to its own day; today's rows are saved every minute (a docker restart kills
+  the reloader's worker without atexit). `trade_statistic` (the middle of listing and buy orders)
+  is what Store Boosts and Gjallarhorn compare with. Price dips, Gjallarhorn and Store
+  Boosts read it. Measured before the switch (2026-10-31): 134 downloads an hour, about 17 GB a day;
+  after: the active tables only (7 tables at 5 minutes, about 10 GB a day, plus Buff163 daily).
+- "Check live" asks for 500 rows per name (a short name is contained in many) and prices the sell
   side exactly as `fetch_generated_pair` (`'Sell'` for a "min" target, LisSkins included).
-  `pulse_views.parse_kept` accepts only the tables `pulse_choices()` offers (no Tradeon table, no
-  estimates, no CSFloat sweep). Routes: `POST /api/huginn/pulse/kept`, `POST /api/huginn/pulse/download`.
+- Routes: `GET/POST /api/huginn/active` (one change per request, merged on the server: `add`,
+  `remove`, `minutes`, `hours`; `?preview=` says what making a profile active adds) and the
+  read-only `GET /api/huginn/pulse` (the Pulse feed monitor).
 - **Bonus balances** become real dollars once, on arrival (`_MARKET_PRICE_SCALE`, SkinSwap (Trade)
   ÷ 1.4), the page price kept as `pagePrice`.
 - **Slaves**: `add_listener(table)` after every download, on one background thread
   (`HuginnService.add_pull_listener` gives `(market, 'listing' | 'instant', table)`); Store
   Catalogue Arbitrage keeps the store items from every table this way.
-- **Jobs and the on/off switch**: the recurring jobs declare themselves (`declare_job(id, label,
-  schedule, tables(), active(), period)` in `app.py`: `case-arbitrage-hourly`,
-  `case-arbitrage-alerts`, `store-arbitrage`, `store-boosts`) and read inside `with feed.job(id):` (thread-local;
-  Case Arbitrage's parallel alert threads copy it; the store board's queue carries it). A table in
-  settings `pulse_switched_off_tables` is never downloaded for a job (`SwitchedOff`; a copy in
-  memory is still served); reads without a job (pages, buttons) always download. Saved with
-  `POST /api/huginn/pulse/kept {tables, minutes, switched_off}` (`parse_switched_off`: job tables
-  or offered ones). Threads a job starts inherit it (`_refresh_markets`, `_container_snapshot`'s
-  background refresh, the store board's queue defaults to the current job), so no path of a job
-  downloads a switched-off table. Case Arbitrage alerts leave out any market whose snapshot is over
-  30 minutes old (`_ALERT_SNAPSHOT_MAX_AGE_SEC`) and do not run when CSFloat's is, so a
-  switched-off market never alerts on old prices. Live on 2026-10-15 the jobs fetched 33 tables, about 1,600 downloads and 94 GB
-  a day; Store Catalogue Arbitrage alone 32 tables an hour.
+- **Jobs (slaves)**: the recurring jobs declare themselves (`declare_job(id, label, schedule,
+  tables(), active(), period)` in `app.py`: `case-arbitrage-hourly`, `case-arbitrage-alerts`,
+  `store-arbitrage`, `store-boosts`) and read inside `with feed.job(id):`, only so the monitor can
+  say who reads what: they never download. The Case Arbitrage loop wakes when the keeper brings an
+  alert-market table (`_wake_case_loop`, a listener) and runs its alerts after the pass settles,
+  instead of polling every 10 minutes. Case Arbitrage alerts leave out any market whose snapshot is
+  over 30 minutes old (`_ALERT_SNAPSHOT_MAX_AGE_SEC`), so a market not active never alerts on old prices.
 - **Status**: `GET /api/huginn/pulse`: per table downloads, reads, last read, age, failures, kept,
   the totals, lookups, weekly-sales coverage, `jobs` (declared, with tables and period), per table
   `jobs` (which read it, when), `declared_jobs`, `switched_off`, plus `choices` (the page's grid)

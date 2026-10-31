@@ -9,7 +9,9 @@ import InfoTip from './gjallarhorn/InfoTip';
 import { readJson } from '../utils/readJson';
 
 // Huginn → Price dips: one market's lowest listing against its own 30-day median (or average)
-// from Tradeon pulse, with the weekly sales pulse reports. "Under" = listed below its usual
+// from Heimdall's price history (backend price_history.py: the active profiles' tables, seeded once
+// from pulse), with the weekly sales pulse reports. Only markets an active profile keeps.
+// Nothing here downloads: the prices are the active profiles' copies in memory. "Under" = listed below its usual
 // month (a dip to buy, if it comes back); "Over" = listed above it (a spike: with "My Inventory",
 // the items you hold that sell above their usual price right now). Backend:
 // GET /api/huginn/price-dips (pulse_views.price_dips).
@@ -25,8 +27,9 @@ const loadSettings = () => {
 const money = (value) => (value == null ? '—' : `$${value.toFixed(2)}`);
 const BASIS_LABEL = { Median30d: '30-day median', Average30d: '30-day average' };
 
-const HELP = 'Lowest listing now vs the price the item usually had over the last 30 days (pulse’s 30-day '
-    + 'median or average on the same market). A median lags: an item that has been falling for a month '
+const HELP = 'Lowest listing now vs the price the item usually had over the last 30 days: the median (or '
+    + 'average) of its daily averages in Heimdall’s own price history, built from the active profiles’ '
+    + 'tables (pulse’s own 30-day price until an item has 7 days). A median lags: an item that has been falling for a month '
     + 'looks like a dip. Before buying, check that it sells every week (Sold / week) and look at the '
     + 'price chart (Steam icon). "Back to usual" is what you would make buying at the listing and '
     + 'selling at that usual price, after this market’s fee from the Fees editor.';
@@ -58,27 +61,29 @@ const PriceDips = ({ byHash }) => {
             .catch(() => {});
     }, []);
 
-    const load = async (fresh = false) => {
+    const load = async () => {
         const n = ++request.current;
         setLoading(true);
         setError(null);
         try {
             const params = new URLSearchParams({ market: settings.market, basis: settings.basis });
-            if (fresh) params.set('fresh', '1');
-            const res = await fetch(`/api/huginn/price-dips?${params}`);
-            const answer = await readJson(res);
+            const response = await fetch(`/api/huginn/price-dips?${params}`);
+            const answer = await readJson(response);
             if (n !== request.current) return;
-            if (!res.ok) throw new Error(answer.error || 'Could not load prices');
+            if (response.status === 409) {
+                setData(null);
+                throw new Error(`${answer.error}. Make a Huginn profile active that uses this market (Huginn → Arbitrage).`);
+            }
+            if (!response.ok) throw new Error(answer.error || 'Could not load prices');
             setData(answer);
-        } catch (err) {
-            if (n === request.current) setError(err.message);
+        } catch (failure) {
+            if (n === request.current) setError(failure.message);
         } finally {
             if (n === request.current) setLoading(false);
         }
     };
 
-    // Load when the market or the basis changes (pulse tables are shared and kept 10 minutes,
-    // so switching back is instant).
+    // Load when the market or the basis changes (from memory: instant).
     useEffect(() => {
         const timer = setTimeout(() => load(), 0);
         return () => clearTimeout(timer);
@@ -161,7 +166,13 @@ const PriceDips = ({ byHash }) => {
                     Hide stale
                 </button>
                 <InfoTip tip={HELP}><span className="text-xs text-slate-500 underline decoration-dotted cursor-help">how to read it</span></InfoTip>
-                <button type="button" onClick={() => load(true)} disabled={loading}
+                {data?.history && (
+                    <span className="text-xs text-slate-500" title="Days of Heimdall's own price history for this market's listing; until an item has 7, pulse's 30-day price (the seed) stands in">
+                        history: {data.history.days} of 30 days{data.history.seeded?.[settings.basis] ? ' + pulse seed' : ''}
+                    </span>
+                )}
+                <button type="button" onClick={() => load()} disabled={loading}
+                    title="Read the active profiles' newest prices from memory again (nothing is downloaded)"
                     className="ml-auto flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-600/70 hover:bg-amber-500 text-white text-xs font-medium disabled:opacity-50">
                     <RefreshCw size={12} className={loading ? 'animate-spin' : ''} />
                     {loading ? 'Loading…' : 'Refresh'}
@@ -188,7 +199,7 @@ const PriceDips = ({ byHash }) => {
                         My Inventory
                     </button>
                     <span className="text-sm text-slate-500 shrink-0">
-                        {data ? <>showing {Math.min(visible, rows.length)} of {rows.length} <span className="text-slate-600">({data.rows.length.toLocaleString()} {marketName} items with a {basisLabel})</span></> : loading ? 'Loading pulse tables…' : ''}
+                        {data ? <>showing {Math.min(visible, rows.length)} of {rows.length} <span className="text-slate-600">({data.rows.length.toLocaleString()} {marketName} items with a {basisLabel})</span></> : loading ? 'Reading prices…' : ''}
                     </span>
                 </div>
                 <div className="shrink-0 grid grid-cols-[minmax(0,2.4fr)_56px_84px_92px_84px_96px_84px_76px] gap-2 px-4 py-2 border-b border-white/5 text-[11px] font-bold tracking-wider text-slate-400 uppercase bg-black/20">

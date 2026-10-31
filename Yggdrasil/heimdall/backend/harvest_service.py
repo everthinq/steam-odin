@@ -18,7 +18,7 @@ import logging
 import threading
 import time
 
-from pulse_feed import is_stale
+from pulse_feed import NotActive, is_stale
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +26,7 @@ logger = logging.getLogger(__name__)
 class HarvestService:
     DEFAULT_MARKETS = ['CsMoneyTrade']
     _INDEX_TTL = 10 * 60        # seconds a market's autobuy index is served before re-warming
+    _INACTIVE_RECHECK = 60      # a market no active profile keeps is looked at again after this
     # A market whose warm failed is not retried for this long; the board reports
     # status 'error' (naming the market) in that window so the page stops polling.
     _RETRY_AFTER_FAILURE = 120
@@ -60,6 +61,7 @@ class HarvestService:
         self.draupnir = draupnir_service
         self._today = today or datetime.date.today
         self._indexes = {}      # market id -> (fetched_at, {name: {price, count, image}})
+        self._inactive = set()     # markets no active Huginn profile keeps (empty, quiet re-checks)
         self._warming = set()   # market ids queued or being pulled
         self._failures = {}     # market id -> (failed_at, error message) of the last failed warm
         self._lock = threading.Lock()
@@ -102,7 +104,7 @@ class HarvestService:
         _RETRY_AFTER_FAILURE: that one is not retried yet and makes the status
         'error' (see recent_failures for which market and why)."""
         now = time.time()
-        found, missing, stale, failed = {}, [], [], []
+        found, missing, stale, failed, quiet = {}, [], [], [], []
         for market_id in market_ids:
             if market_id in self.LIVE_MARKETS:
                 found[market_id] = self.huginn.market_autobuy_index(token, market_id) or {}
@@ -113,6 +115,11 @@ class HarvestService:
                 hit = self._indexes.get(market_id)
                 if hit:
                     found[market_id] = hit[1]
+                    if market_id in self._inactive:
+                        # Not active: looked at again a minute later without saying "refreshing".
+                        if now - hit[0] >= self._INACTIVE_RECHECK:
+                            quiet.append(market_id)
+                        continue
                     if now - hit[0] < self._INDEX_TTL:
                         continue
                 failure = self._failures.get(market_id)
@@ -124,7 +131,7 @@ class HarvestService:
                     missing.append(market_id)
         if not token:
             return found, 'no_token'
-        todo = missing + stale
+        todo = missing + stale + quiet
         if todo:
             self._queue_warm(token, todo)
         if failed:
@@ -154,9 +161,17 @@ class HarvestService:
                     downloaded_at, index = self.huginn.market_index_at(token, market_id, 'instant')
                 with self._lock:
                     self._indexes[market_id] = (downloaded_at, index or {})
+                    self._inactive.discard(market_id)
                     self._failures.pop(market_id, None)
                 logger.info('[HARVEST] %s autobuy index: %d items in %.0fs',
                             market_id, len(index), time.time() - started)
+            except NotActive:
+                # No active Huginn profile keeps that market: no prices, not an error (the tab says
+                # which markets the active profiles cover).
+                with self._lock:
+                    self._indexes[market_id] = (time.time(), {})
+                    self._inactive.add(market_id)
+                    self._failures.pop(market_id, None)
             except Exception as e:
                 logger.warning('[HARVEST] %s autobuy index failed: %s', market_id, e)
                 with self._lock:

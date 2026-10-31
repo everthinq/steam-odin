@@ -1,4 +1,5 @@
 from flask import Flask, jsonify
+import atexit
 import logging
 import os
 from steam_service import SteamService
@@ -7,7 +8,7 @@ from scheduler import ConfirmationScheduler
 from ratatoskr_service import RatatoskrService
 from huginn_service import CASE_ALERTS_JOB, CASE_FULL_JOB, HuginnService
 from notifications import notification_channel
-from pulse_views import apply_kept_settings
+from pulse_views import apply_active_settings
 from draupnir_service import DraupnirService
 from draupnir_backup_service import BackupService
 from mimir_service import MimirService
@@ -52,8 +53,12 @@ ratatoskr_service = RatatoskrService()
 huginn_service = HuginnService(steam_service, ratatoskr_service)
 # Every fee comes from the one Fees editor (settings huginn_market_fees).
 huginn_service.settings_provider = settings_manager.get_settings
-# The Pulse feed page's choice of tables to keep fresh (downloaded by the keeper thread below).
-apply_kept_settings(huginn_service, settings_manager.get_settings())
+# The active Huginn profiles: the only tables the keeper thread below downloads.
+apply_active_settings(huginn_service, settings_manager.get_settings())
+# Today's price history samples are saved at shutdown too (a reload on every .py save included).
+# A code reload exits normally (atexit runs); a docker restart kills the reloader's worker, so the
+# history also saves every minute (price_history.FLUSH_SECONDS).
+atexit.register(huginn_service.history.flush)
 draupnir_service = DraupnirService(huginn_service)
 # Draupnir point-in-time backups: snapshot portfolios.json on every change +
 # once daily, with GFS retention and safe restore.
@@ -120,7 +125,7 @@ store_arbitrage_service.market_names = store_boost_service.market_names
 
 # Expose the singletons to the route blueprints (read from context.ctx at
 # request time — see context.py and the routes/ package).
-# The recurring jobs that fetch pulse tables, so the Pulse feed page can show and switch them.
+# The recurring jobs (slaves) that read pulse tables from memory, so the Pulse feed monitor can show them.
 def _case_alerts_on():
     settings = settings_manager.get_settings()
     return bool(settings.get('tradeon_token') and settings.get('case_alerts_enabled')
@@ -133,7 +138,7 @@ huginn_service.pulse.declare_job(
     active=lambda: bool(settings_manager.get_settings().get('tradeon_token')))
 huginn_service.pulse.declare_job(
     CASE_ALERTS_JOB, 'Case Arbitrage alerts',
-    lambda: f"every {max(60, int(settings_manager.get_settings().get('case_poll_interval_sec') or 600)) // 60} minutes",
+    'after every keeper pass (from memory)',
     lambda: huginn_service.case_job_tables(alerts=True), active=_case_alerts_on,
     period=lambda: max(60, int(settings_manager.get_settings().get('case_poll_interval_sec') or 600)))
 huginn_service.pulse.declare_job(
@@ -245,7 +250,7 @@ if _should_start_background_scheduler():
     store_arbitrage_service.start_background(lambda: settings_manager.get_settings())
     # Store Boosts: the hourly pulse check and the Steam price history reader (one item at a time).
     store_boost_service.start_background(lambda: settings_manager.get_settings())
-    # Master pulse feed: keep the tables ticked on the Pulse feed page fresh (nothing when none).
+    # Master pulse feed: keep the active profiles' tables (and the Buff163 reference) fresh.
     huginn_service.pulse.start_keeper(lambda: settings_manager.get_settings().get('tradeon_token', ''))
 
 # Ensure all errors return JSON, not HTML

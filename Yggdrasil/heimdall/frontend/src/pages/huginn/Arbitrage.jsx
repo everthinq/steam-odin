@@ -21,7 +21,8 @@ import FeeEditor from '../../components/arbitrage/FeeEditor';
 import CsfloatBuyOrdersPanel from '../../components/arbitrage/CsfloatBuyOrdersPanel';
 import SkinSwapBalanceNote from '../../components/arbitrage/SkinSwapBalanceNote';
 import PriceDips from '../../components/PriceDips';
-import KeepFreshSwitch from '../../components/arbitrage/KeepFreshSwitch';
+import ActiveSwitch from '../../components/arbitrage/ActiveSwitch';
+import ActiveProfilesPanel from '../../components/arbitrage/ActiveProfilesPanel';
 import PricesAge from '../../components/arbitrage/PricesAge';
 import { useNowSeconds } from '../../utils/priceAge';
 import { failureMessage, readJson, readJsonOrThrow } from '../../utils/readJson';
@@ -76,9 +77,9 @@ const canCheckLive = (profile) => !!profile.buyMarket && !!profile.sellMarket
     && profile.sellMarket !== 'LootFarm' && !profile.autobuy
     && !profile.fromEstimated && !profile.toEstimated;
 
-// A profile's key on the backend (settings huginn_kept_profiles): buy market, sell market, autobuy or min.
+// A profile's key on the backend (settings huginn_active_profiles): buy market, sell market, autobuy or min.
 const profileKey = (profile) => `${profile.buyMarket}:${profile.sellMarket}:${profile.toSub === 'autobuy' ? 'autobuy' : 'min'}`;
-// ?kept=1: a kept profile opening by itself takes its kept tables from memory (up to their interval old).
+// ?kept=1: an active profile opening by itself takes the keeper's copy from memory (up to its interval old).
 const withKept = (endpoint) => `${endpoint}${endpoint.includes('?') ? '&' : '?'}kept=1`;
 // The pulse tables behind an answer, from its X-Pulse-Tables header: [[market, price type, seconds since download]].
 const pulseTablesOf = (response) => {
@@ -91,7 +92,7 @@ const pulseTablesOf = (response) => {
 };
 // When the oldest table behind shown prices was downloaded (browser milliseconds).
 const downloadedAt = ({ tables, receivedAt }) => receivedAt - Math.max(0, ...tables.map(table => table[2])) * 1000;
-const KEPT_POLL_MILLISECONDS = 15000;   // the kept profiles' table ages (memory only on the backend, cheap)
+const ACTIVE_POLL_MILLISECONDS = 15000; // the active profiles' table ages (memory only on the backend, cheap)
 
 const formatTs = (ts) => {
     if (!ts) return null;
@@ -121,12 +122,12 @@ const HuginnArbitrage = () => {
     const [pricesByProfile, setPricesByProfile] = useState({});
     const pricesRef = useRef({});
     const uploadedRef = useRef(new Set());                 // profiles showing a JSON file you loaded
-    // Profiles kept fresh (GET /api/huginn/arbitrage/kept-profiles) and when that answer arrived.
-    const [kept, setKept] = useState(null);
-    const [keptBusy, setKeptBusy] = useState(false);
-    const [keptError, setKeptError] = useState(null);
-    const [openingId, setOpeningId] = useState(null);      // a kept profile opening from memory
-    const keptRequest = useRef(0);                         // numbered: only the newest kept-profiles answer counts
+    // The active profiles (GET /api/huginn/active), the only ones pulse is asked for, and when that answer arrived.
+    const [activeStatus, setActiveStatus] = useState(null);
+    const [activeBusy, setActiveBusy] = useState(false);
+    const [activeError, setActiveError] = useState(null);
+    const [openingId, setOpeningId] = useState(null);      // an active profile opening from memory
+    const activeRequest = useRef(0);                       // numbered: only the newest active-profiles answer counts
     const [tradeonError, setTradeonError] = useState(null);
     const [tradeonFetching, setTradeonFetching] = useState(false);
     const [fetchSeconds, setFetchSeconds] = useState(0);   // how long the running fetch has waited
@@ -298,7 +299,7 @@ const HuginnArbitrage = () => {
     const activeProfile = allProfiles.find(p => p.id === profileId) ?? PROFILES[0];
 
     // Load a profile's deals: fresh (Fetch live data: every table under a minute old) or, for a
-    // kept profile, from the backend's memory (*fromMemory*: its kept tables, up to their interval).
+    // active profile, from the backend's memory (*fromMemory*: the keeper's copy, up to its interval).
     const loadProfile = async (profile, { fromMemory = false } = {}) => {
         let timer = null;
         if (fromMemory) {
@@ -346,66 +347,76 @@ const HuginnArbitrage = () => {
 
     // ---- Keep fresh ----------------------------------------------------------------------------
     const activeKey = profileKey(activeProfile);
-    const loadKept = useCallback(async (preview) => {
-        const request = ++keptRequest.current;
-        const response = await fetch(`/api/huginn/arbitrage/kept-profiles${preview ? `?preview=${encodeURIComponent(preview)}` : ''}`);
+    const loadActive = useCallback(async (preview) => {
+        const request = ++activeRequest.current;
+        const response = await fetch(`/api/huginn/active${preview ? `?preview=${encodeURIComponent(preview)}` : ''}`);
         const data = await readJsonOrThrow(response);
-        if (request === keptRequest.current) setKept({ ...data, receivedAt: Date.now() });
+        if (request === activeRequest.current) setActiveStatus({ ...data, receivedAt: Date.now() });
     }, []);
     useEffect(() => {
-        if (view !== 'arbitrage') return undefined;
-        const tick = () => loadKept(activeKey).catch(() => {});
-        const first = setTimeout(tick, 0);
-        const timer = setInterval(tick, KEPT_POLL_MILLISECONDS);
+        // Every Huginn tab shows what the active profiles cover; paused while the browser tab is hidden.
+        const tick = () => { if (!document.hidden) loadActive(activeKey).catch(() => {}); };
+        const first = setTimeout(() => loadActive(activeKey).catch(() => {}), 0);
+        const timer = setInterval(tick, ACTIVE_POLL_MILLISECONDS);
         return () => { clearTimeout(first); clearInterval(timer); };
-    }, [view, activeKey, loadKept]);
+    }, [activeKey, loadActive]);
 
-    const keptProfile = kept?.profiles?.[activeKey] || null;
-    const activeKept = !!keptProfile;
-    const keptWarming = activeKept && keptProfile.tables.some(table => table.age_seconds == null);
-    // Every kept table in memory and within its interval: opening it downloads nothing. Otherwise
+    // The markets whose prices the other tabs can show: the active profiles' tables and the reference.
+    const coveredMarkets = useMemo(() => {
+        if (!activeStatus) return null;
+        const ids = new Set([...Object.values(activeStatus.profiles || {}).flatMap(profile => profile.tables.map(table => table.market)),
+            ...(activeStatus.reference || []).map(table => table.market)]);
+        return [...ids].map(id => markets.find(m => m.id === id)?.display || id).sort((first, second) => first.localeCompare(second));
+    }, [activeStatus, markets]);
+
+    const selectedActive = activeStatus?.profiles?.[activeKey] || null;
+    const selectedIsActive = !!selectedActive;
+    const selectedWarming = selectedIsActive && selectedActive.tables.some(table => table.age_seconds == null);
+    // Every active table in memory and within its interval: opening it downloads nothing. Otherwise
     // (just switched on, or the background download failed) the page waits for the keeper, and
     // "Fetch live data" is the way to download now.
-    const keptReady = activeKept && keptProfile.tables.every(table => table.age_seconds != null && table.age_seconds < kept.minutes * 60);
-    const keptIds = useMemo(() => new Set(allProfiles.filter(p => kept?.profiles?.[profileKey(p)]).map(p => p.id)), [allProfiles, kept]);
+    const selectedReady = selectedIsActive && selectedActive.tables.every(table => table.age_seconds != null && table.age_seconds < activeStatus.minutes * 60);
+    const activeIds = useMemo(() => new Set(allProfiles.filter(p => activeStatus?.profiles?.[profileKey(p)]).map(p => p.id)), [allProfiles, activeStatus]);
 
-    // A kept profile with nothing shown yet opens by itself from memory, once its tables are ready
+    // An active profile with nothing shown yet opens by itself from memory, once its tables are ready
     // (switched on, first download done). Prices already shown are never swapped without asking:
     // "Newer prices ready · show" offers the background download's newer copy.
     useEffect(() => {
-        if (view === 'arbitrage' && keptReady && activeProfile.fetchEndpoint && !tradeonFetching
+        if (view === 'arbitrage' && selectedReady && activeProfile.fetchEndpoint && !tradeonFetching
             && !dataByProfile[profileId]) loadProfile(activeProfile, { fromMemory: true });
-    }, [view, profileId, keptReady]); // eslint-disable-line react-hooks/exhaustive-deps
+    }, [view, profileId, selectedReady]); // eslint-disable-line react-hooks/exhaustive-deps
 
     // The background download replaced a table since the prices shown were read: offer them.
     const shownPrices = pricesByProfile[profileId] || null;
     const newerReady = useMemo(() => {
-        if (!shownPrices || !keptProfile || !kept) return false;
+        if (!shownPrices || !selectedActive || !activeStatus) return false;
         const shownAt = Object.fromEntries(shownPrices.tables.map(([market, priceType, age]) => [`${market}:${priceType}`, shownPrices.receivedAt - age * 1000]));
-        return keptProfile.tables.some(table => table.age_seconds != null && shownAt[`${table.market}:${table.price_type}`] != null
-            && kept.receivedAt - table.age_seconds * 1000 > shownAt[`${table.market}:${table.price_type}`] + 10000);
-    }, [shownPrices, keptProfile, kept]);
+        return selectedActive.tables.some(table => table.age_seconds != null && shownAt[`${table.market}:${table.price_type}`] != null
+            && activeStatus.receivedAt - table.age_seconds * 1000 > shownAt[`${table.market}:${table.price_type}`] + 10000);
+    }, [shownPrices, selectedActive, activeStatus]);
 
-    const toggleKept = async () => {
-        const keys = Object.keys(kept?.profiles || {});
-        const next = activeKept ? keys.filter(key => key !== activeKey) : [...keys, activeKey];
-        setKeptBusy(true);
-        setKeptError(null);
-        const request = ++keptRequest.current;              // a poll answer from before the switch never wins
+    // One change at a time ({add}, {remove}, {minutes}, {hours}), merged on the server: another tab's
+    // change is never undone.
+    const changeActive = async (change) => {
+        setActiveBusy(true);
+        setActiveError(null);
+        const request = ++activeRequest.current;              // a poll answer from before the change never wins
         try {
-            const response = await fetch('/api/huginn/arbitrage/kept-profiles', {
+            const response = await fetch('/api/huginn/active', {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ profiles: next }),
+                body: JSON.stringify(change),
             });
             const data = await readJsonOrThrow(response);
-            if (request === keptRequest.current) setKept(previous => ({ ...data, preview: previous?.preview, receivedAt: Date.now() }));
-            loadKept(activeKey).catch(() => {});     // a fresh preview (what switching again would add)
+            if (request === activeRequest.current) setActiveStatus(previous => ({ ...data, preview: previous?.preview, receivedAt: Date.now() }));
+            loadActive(activeKey).catch(() => {});     // a fresh preview (what switching again would add)
         } catch (error) {
-            setKeptError(failureMessage(error));
+            setActiveError(failureMessage(error));
         } finally {
-            setKeptBusy(false);
+            setActiveBusy(false);
         }
     };
+    const toggleActive = () => changeActive(selectedIsActive ? { remove: activeKey } : { add: activeKey });
+    const profileIdOf = (key) => allProfiles.find(p => profileKey(p) === key)?.id || null;
 
     const marketName = useCallback((id) => markets.find(m => m.id === id)?.display || id, [markets]);
 
@@ -641,6 +652,13 @@ const HuginnArbitrage = () => {
             </div>
 
             <div className="flex-1 flex flex-col gap-3 p-6 overflow-hidden max-w-7xl w-full mx-auto">
+                {view !== 'arbitrage' && coveredMarkets && (
+                    <p className="shrink-0 text-xs text-slate-500"
+                        title="Only Huginn Arbitrage downloads prices: the active profiles' tables (and Buff163 once a day). This tab reads them from memory; a market no active profile uses shows as not active.">
+                        Prices on this tab come from your active profiles: {coveredMarkets.join(', ') || 'none yet'}.{' '}
+                        <button type="button" onClick={() => setView('arbitrage')} className="text-sky-300 hover:text-sky-200">Change them on Arbitrage</button>
+                    </p>
+                )}
                 {view === 'lfarb' ? <LootfarmArbitrage byHash={byHash} /> : view === 'auctions' ? <AuctionBoard /> : view === 'crossprofile' ? <CrossProfileArbitrage byHash={byHash} /> : view === 'harvest' ? <Harvest byHash={byHash} /> : view === 'cases' ? <CaseArbitrage byHash={byHash} /> : view === 'dips' ? <PriceDips byHash={byHash} /> : (<>
                 {scanError && (
                     <div className="shrink-0 bg-red-500/20 border border-red-500/30 text-red-300 px-4 py-3 rounded-lg text-sm">
@@ -675,19 +693,21 @@ const HuginnArbitrage = () => {
                         profiles={allProfiles}
                         value={profileId}
                         onChange={id => setProfileId(id)}
-                        keptIds={keptIds}
+                        activeIds={activeIds}
                     />
-                    {kept && activeProfile.fetchEndpoint && (
-                        <KeepFreshSwitch on={activeKept} busy={keptBusy} minutes={kept.minutes} warming={keptWarming}
-                            preview={kept.preview?.key === activeKey ? kept.preview : null} onToggle={toggleKept} />
+                    {activeStatus && activeProfile.fetchEndpoint && (
+                        <ActiveSwitch on={selectedIsActive} busy={activeBusy} minutes={activeStatus.minutes} warming={selectedWarming}
+                            preview={activeStatus.preview?.key === activeKey ? activeStatus.preview : null} onToggle={toggleActive} />
                     )}
                     {markets.length > 0 && <FeeEditor markets={markets} onSaved={refreshMarkets} />}
                 </div>
-                {keptError && (
+                {activeError && (
                     <p className="shrink-0 -mt-1 text-xs text-red-400 flex items-center gap-1">
-                        <AlertTriangle size={11} /> {keptError}
+                        <AlertTriangle size={11} /> {activeError}
                     </p>
                 )}
+                <ActiveProfilesPanel status={activeStatus} profileIdOf={profileIdOf} busy={activeBusy}
+                    onOpen={id => { if (id) setProfileId(id); }} onChange={changeActive} />
 
                 {/* SkinSwap's one balance, two views — only for SkinSwap profiles */}
                 {(SKINSWAP_MARKETS.has(activeProfile.buyMarket) || SKINSWAP_MARKETS.has(activeProfile.sellMarket)) && (
@@ -720,7 +740,7 @@ const HuginnArbitrage = () => {
                         </button>
                         {tradeonData && shownPrices && (
                             <PricesAge tables={shownPrices.tables} receivedAt={shownPrices.receivedAt} marketName={marketName}
-                                staleAfterSeconds={activeKept ? kept.minutes * 60 + 120 : 600}
+                                staleAfterSeconds={selectedIsActive ? activeStatus.minutes * 60 + 120 : 600}
                                 note={activeProfile.autobuy ? 'The CSFloat buy orders come from the CSFloat sweep (its panel above shows when it ran), not from these tables.'
                                     : activeProfile.sellMarket === 'LootFarm' ? 'The LOOT.Farm prices come from its own feed, read again at most a minute before.' : null} />
                         )}
@@ -760,9 +780,9 @@ const HuginnArbitrage = () => {
                                     )}
                                     {!tradeonData && !tradeonFetching && (
                                         <span className="text-xs text-slate-500">
-                                            {openingId === profileId ? 'Opening this kept profile from memory…'
-                                                : activeKept ? 'Kept fresh: it opens by itself once the background download has its prices (usually within a minute). "Fetch live data" downloads them now.'
-                                                    : 'Click "Fetch live data" to load prices from Tradeon, or switch on "Keep fresh" to have this profile open by itself.'}
+                                            {openingId === profileId ? 'Opening this active profile from memory…'
+                                                : selectedIsActive ? 'Active: it opens by itself once the background download has its prices (usually within a minute). "Fetch live data" downloads them now.'
+                                                    : 'Click "Fetch live data" to load prices from Tradeon, or make this profile Active to have it open by itself.'}
                                         </span>
                                     )}
                                 </div>
@@ -966,8 +986,8 @@ const HuginnArbitrage = () => {
                 ) : (
                     <div className="flex-1 flex items-center justify-center text-slate-600 text-sm">
                         {!tradeonData
-                            ? (openingId === profileId ? 'Opening this kept profile from memory…'
-                                : activeKept ? 'Waiting for the background download of this kept profile\'s prices, or click "Fetch live data".'
+                            ? (openingId === profileId ? 'Opening this active profile from memory…'
+                                : selectedIsActive ? 'Waiting for the background download of this active profile\'s prices, or click "Fetch live data".'
                                     : 'Click "Fetch live data" to load deals for this profile. "Get all items" highlights the ones you own.')
                             : 'No deals to show.'}
                     </div>

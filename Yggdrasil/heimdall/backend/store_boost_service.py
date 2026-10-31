@@ -65,7 +65,7 @@ from card_deals_service import RateLimited, parse_sale_history
 from huginn_service import pulse_short_link
 from jsonio import atomic_write_bytes, atomic_write_json, read_json
 from notifications import notification_channel, send_notification
-from pulse_feed import FRESH, ON_DEMAND, SwitchedOff, is_stale
+from pulse_feed import FRESH, ON_DEMAND, NotActive, is_stale
 from store_arbitrage_service import TRADE_HOLD_DAYS, split_items
 
 log = logging.getLogger(__name__)
@@ -629,8 +629,7 @@ class StoreBoostService:
             key = self.huginn.pulse_table_of(market_id, side)
             if key:
                 out.append(key)
-        out.append(('Steam', 'Median30d'))
-        return out
+        return out          # the 30-day median comes from price_history, not a pulse table
 
     def check_now(self, max_age=ON_DEMAND):
         """Run the pulse check in the background now (the Check now button)."""
@@ -695,9 +694,17 @@ class StoreBoostService:
                 return
             with self.huginn.pulse.job(BOOST_JOB):
                 _, listing = self.huginn.market_index_at(token, 'Steam', 'listing', max_age, names=names)
-                _, buy = self.huginn.market_index_at(token, 'Steam', 'instant', max_age, names=names)
-                _, buff = self.huginn.market_index_at(token, 'Buff', 'listing', max_age, names=names)
-                median = self.huginn._table(token, 'Steam', 'Median30d', max_age).index(names)
+                try:        # Steam's buy orders: only when an active profile keeps them
+                    _, buy = self.huginn.market_index_at(token, 'Steam', 'instant', max_age, names=names)
+                except NotActive:
+                    buy = {}
+                try:        # Buff163's listing: the daily reference, a hint only
+                    _, buff = self.huginn.market_index_at(token, 'Buff', 'listing', max_age, names=names)
+                except NotActive:
+                    buff = {}
+            # The 30-day trade price from Heimdall's own price history (seeded once from pulse's median
+            # of sales): the middle of Steam's listing and buy orders, the basis the thresholds expect.
+            median = self.huginn.history.trade_statistic('Steam', 'Sell', 'Buy', 'Median30d', names)
             now = self._clock()
             flagged = []
             with self._lock:
@@ -706,7 +713,7 @@ class StoreBoostService:
                              'listing_count': (listing.get(name) or {}).get('count'),
                              'buy': (buy.get(name) or {}).get('price'),
                              'buy_count': (buy.get(name) or {}).get('count'),
-                             'median30d': (median.get(name) or {}).get('price'),
+                             'median30d': median.get(name),
                              'buff': None if is_stale((buff.get(name) or {}).get('updated'), now)
                              else (buff.get(name) or {}).get('price'),
                              'updated': (listing.get(name) or {}).get('updated')}
@@ -730,9 +737,9 @@ class StoreBoostService:
                 self.read_now(name, reason='pulse')
             log.info('[STORE-BOOSTS] pulse check: %d items, %d flagged, %d queued for a Steam read (at most %d)',
                      len(names), all_flagged, len(flagged), PREFLAG_MAX_PER_CHECK)
-        except SwitchedOff as e:
+        except NotActive as e:
             with self._lock:
-                self._check['error'] = f'switched off on the Pulse feed page: {e}'
+                self._check['error'] = f'{e}: make a Huginn profile with Steam active'
         except Exception as e:
             log.warning('[STORE-BOOSTS] pulse check failed: %s', e)
             with self._lock:

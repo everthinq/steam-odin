@@ -111,6 +111,7 @@ const Gjallarhorn = () => {
         if (data.pricing === 'refreshing') bits.push('prices warming');
         else if (data.pricing === 'no_token') bits.push('no tradeon token');
         if (data.liquidity === 'warming') bits.push('Steam liquidity warming (items pulse does not know)');
+        if (data.liquidity === 'inactive') bits.push('Steam liquidity: Steam prices not in memory (no active Huginn profile uses Steam, or outside the active hours)');
         return bits.length ? bits.join(' · ') : null;
     };
 

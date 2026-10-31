@@ -284,9 +284,20 @@ class FakeFeed:
         return contextlib.nullcontext()
 
 
+class FakeHistory:
+    """Heimdall's price history: the 30-day median the pulse check compares with."""
+    def statistic(self, market_id, price_type, basis='Median30d', names=None):
+        values = {WORLD_EATERS: 0.2, FLICKSHOT: 1.04, CAPSULE: 0.97}
+        return {name: value for name, value in values.items() if names is None or name in names}
+
+    def trade_statistic(self, market_id, listing_type, buy_type, basis='Median30d', names=None):
+        return self.statistic(market_id, listing_type, basis, names)
+
+
 class FakeHuginn:
     def __init__(self):
         self.pulse = FakeFeed()
+        self.history = FakeHistory()
 
     def market_index_at(self, token, market_id, side, max_age=None, names=None):
         prices = {('Steam', 'listing'): {WORLD_EATERS: 0.31, FLICKSHOT: 1.05, CAPSULE: 0.95},
@@ -354,7 +365,7 @@ def test_the_pulse_check_reads_capsule_contents_and_flags_a_rising_price(tmp_pat
     assert set(service.huginn.pulse.jobs) == {'store-boosts'}         # every read as the Pulse feed job
     assert service._pulse[WORLD_EATERS]['preflag'] and not service._pulse[FLICKSHOT]['preflag']
     assert service._priority == [WORLD_EATERS]
-    assert service.job_tables() == [('Steam', 'Sell'), ('Steam', 'Buy'), ('Buff', 'Sell'), ('Steam', 'Median30d')]
+    assert service.job_tables() == [('Steam', 'Sell'), ('Steam', 'Buy'), ('Buff', 'Sell')]   # the median: price history
 
 
 def test_the_reader_reads_the_queue_first_alerts_on_a_boost_and_queues_the_capsule(tmp_path, histories):

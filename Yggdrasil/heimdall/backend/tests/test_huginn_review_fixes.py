@@ -375,7 +375,7 @@ def test_refresh_loop_skips_the_full_pull_after_a_recent_one(monkeypatch):
     def stop(seconds):
         raise StopLoop
 
-    monkeypatch.setattr(huginn_service.time, 'sleep', stop)
+    monkeypatch.setattr(service, '_wait_for_case_wake', stop)        # the loop waits for the keeper
     with pytest.raises(StopLoop):
         service._container_refresh_loop(lambda: {'tradeon_token': 'token'}, 600)
     assert refreshed == []                           # alerts off and a full run is recent

@@ -5,40 +5,58 @@ Extracted verbatim from the former monolithic app.py; behavior is unchanged.
 Services are read from :data:`context.ctx` at request time. The CSFloat sweep's
 one-at-a-time job state lives here as module state (it was app.py-global before).
 """
-import functools
 import json
 import logging
 import threading
 import time
+from contextlib import ExitStack
 from datetime import datetime
 
-from flask import Blueprint, jsonify, make_response, request
+from flask import Blueprint, g, jsonify, request
 
 from context import ctx
 from huginn_service import load_csfloat_keys, load_csfloat_proxy, classify_proxy_error, detect_public_ip
 from notifications import notification_channel, send_notification
 import pulse_views
-from pulse_feed import KEEP_FRESH_MINUTES, ON_DEMAND
+from pulse_feed import ACTIVE_MINUTES, NotActive
 
 bp = Blueprint('huginn', __name__)
 logger = logging.getLogger(__name__)
 
 
-def pulse_profile(view):
-    """An Arbitrage profile's route: ?kept=1 (the profile opening by itself, switched to "Keep
-    fresh") accepts its kept tables up to their interval instead of downloading them again; the
-    answer's X-Pulse-Tables header lists every pulse table read, [[market, price type, seconds
-    since its download started], ...], so the page can say how old the prices are."""
-    @functools.wraps(view)
-    def wrapped(*args, **kwargs):
-        pulse = ctx.huginn_service.pulse
-        with pulse.reading(accept_kept=request.args.get('kept') == '1') as reads:
-            response = make_response(view(*args, **kwargs))
-        now = pulse.now()
+# Every Arbitrage profile route: Huginn Arbitrage is the only page whose requests may download from
+# pulse (Fetch live data; ?kept=1 is an active profile opening by itself, which accepts the keeper's
+# copy up to its interval). The answer's X-Pulse-Tables header lists every pulse table read,
+# [[market, price type, seconds since its download started], ...], so the page says how old the
+# prices are. One hook for the whole prefix, so a new profile route can never miss it.
+PROFILE_ROUTES = '/api/huginn/tradeon/'
+
+
+@bp.before_request
+def _profile_reads_begin():
+    if request.path.startswith(PROFILE_ROUTES):
+        stack = ExitStack()
+        g.pulse_reads = stack.enter_context(ctx.huginn_service.pulse.reading(
+            download=True, accept_kept=request.args.get('kept') == '1'))
+        g.pulse_reading = stack
+
+
+@bp.after_request
+def _profile_reads_header(response):
+    reads = g.pop('pulse_reads', None)
+    if reads is not None:
+        now = ctx.huginn_service.pulse.now()
         response.headers['X-Pulse-Tables'] = json.dumps(
             [[market_id, price_type, round(now - started_at, 1)] for (market_id, price_type), started_at in reads.items()])
-        return response
-    return wrapped
+    return response
+
+
+@bp.teardown_request
+def _profile_reads_end(error=None):
+    stack = g.pop('pulse_reading', None)
+    if stack is not None:
+        stack.close()
+
 
 # Background CSFloat buy-order sweep state (one at a time). Progress is polled by the UI.
 _csfloat_job_lock = threading.Lock()
@@ -101,129 +119,97 @@ def huginn_scan():
 
 @bp.route('/api/huginn/pulse', methods=['GET'])
 def huginn_pulse_status():
-    """The master pulse feed (pulse_feed.py): every price table, its age, downloads and reads
-    since boot, so you can see how many requests the shared tables saved."""
-    status = ctx.huginn_service.pulse.status()
-    status['choices'] = pulse_views.pulse_choices()
-    status['kept_profiles'] = pulse_views.kept_profiles_status(
-        ctx.huginn_service, ctx.settings_manager.get_settings())['profiles']
-    status['token_set'] = bool(ctx.settings_manager.get_settings().get('tradeon_token'))
-    return jsonify(status)
-
-
-@bp.route('/api/huginn/arbitrage/kept-profiles', methods=['GET'])
-def huginn_kept_profiles():
-    """The Arbitrage profiles kept fresh, each with its pulse tables' ages (memory only, cheap);
-    ?preview=LisSkins:Steam:autobuy adds that profile's tables and how many keeping it would add."""
-    status = pulse_views.kept_profiles_status(ctx.huginn_service, ctx.settings_manager.get_settings())
-    preview = request.args.get('preview')
-    if preview:
-        try:
-            tables = pulse_views.parse_kept_profiles([preview])[1]
-        except ValueError as error:
-            status['preview'] = {'key': preview, 'error': str(error)}
-        else:
-            used = {(table['market'], table['price_type'])
-                    for profile in status['profiles'].values() for table in profile['tables']}
-            adds = sum(1 for key in tables if key not in used)
-            status['preview'] = {'key': preview, 'tables': [list(key) for key in tables], 'adds': adds}
-            if preview not in status['profiles'] and status['tables_used'] + adds > status['max_tables']:
-                status['preview']['error'] = (
-                    f"it needs {adds} more pulse table{'s' if adds != 1 else ''} and "
-                    f"{status['tables_used']} of {status['max_tables']} are in use. Switch another profile off first.")
-    return jsonify(status)
-
-
-@bp.route('/api/huginn/arbitrage/kept-profiles', methods=['POST'])
-def huginn_kept_profiles_save():
-    """Save the Arbitrage profiles kept fresh: {"profiles": ["LisSkins:CsMoneyTrade:autobuy", ...],
-    "minutes": 5}. Either may be left out: without "profiles" only the interval changes (the Pulse
-    feed page), so a profile switched on meanwhile on the Arbitrage page is never undone."""
-    body = request.get_json(silent=True) or {}
+    """The master pulse feed (pulse_feed.py), read-only: every price table, its age, downloads,
+    reads and readers since boot, the keeper's state and the active profiles behind it."""
     settings = ctx.settings_manager.get_settings()
+    status = ctx.huginn_service.pulse.status()
+    status['active'] = pulse_views.active_status(ctx.huginn_service, settings)
+    status['labels'] = {f"{table['market']}:{table['price_type']}": pulse_views.table_label(table['market'], table['price_type'])
+                        for table in status['tables']}
+    status['token_set'] = bool(settings.get('tradeon_token'))
+    return jsonify(status)
+
+
+@bp.route('/api/huginn/active', methods=['GET'])
+def huginn_active():
+    """The active profiles (the only tables pulse is asked for), their tables' ages, the reference,
+    the statistics, the interval, the active hours and the keeper's state (memory only, cheap);
+    ?preview=LisSkins:Steam:autobuy adds what making that profile active would add."""
+    return jsonify(pulse_views.active_status(ctx.huginn_service, ctx.settings_manager.get_settings(),
+                                             request.args.get('preview')))
+
+
+@bp.route('/api/huginn/active', methods=['POST'])
+def huginn_active_save():
+    """Change one thing at a time, merged on the server so two tabs never undo each other:
+    {"add": "LisSkins:Steam:autobuy"}, {"remove": "..."}, {"minutes": 5} or
+    {"hours": {"enabled": true, "start": "08:00", "end": "01:00"}}."""
+    body = request.get_json(silent=True)
+    if not isinstance(body, dict):
+        return jsonify({'error': 'send a JSON object'}), 400
+    with _active_lock:                  # read, change and save as one step: two tabs never undo each other
+        return _save_active_change(body)
+
+
+_active_lock = threading.Lock()
+
+
+def _save_active_change(body):
+    settings = ctx.settings_manager.get_settings()
+    profiles = list(pulse_views.parse_active_profiles_leniently(pulse_views.saved_profiles(settings))[0])
+    changes = {}
     try:
-        if 'profiles' in body:
-            values = body['profiles']
-            if not isinstance(values, list):
-                raise ValueError('profiles must be a list')
-            profiles, _ = pulse_views.parse_kept_profiles(values)
-        else:
-            profiles, _ = pulse_views.parse_kept_profiles_leniently(settings.get('huginn_kept_profiles'))
-        minutes = int(body.get('minutes') or settings.get('huginn_profile_keep_minutes')
-                      or pulse_views.PROFILE_KEEP_MINUTES)
+        if 'add' in body:
+            if body['add'] not in profiles:
+                pulse_views.parse_active_profiles(profiles + [body['add']])      # valid, within the limit
+                profiles.append(body['add'])
+            changes['huginn_active_profiles'] = profiles
+        if 'remove' in body:
+            changes['huginn_active_profiles'] = [key for key in profiles if key != body['remove']]
+        if 'minutes' in body:
+            minutes = int(body['minutes'])
+            if minutes not in ACTIVE_MINUTES:
+                raise ValueError(f'minutes must be one of {list(ACTIVE_MINUTES)}')
+            changes['huginn_active_minutes'] = minutes
+        if 'hours' in body:
+            hours = body['hours']
+            if not isinstance(hours, dict):
+                raise ValueError('hours must be {"enabled", "start", "end"}')
+            clean = {'enabled': bool(hours.get('enabled')), 'start': str(hours.get('start') or '08:00'),
+                     'end': str(hours.get('end') or '01:00')}
+            pulse_views.parse_clock(clean['start'])
+            pulse_views.parse_clock(clean['end'])
+            changes['huginn_active_hours'] = clean
     except (TypeError, ValueError) as error:
         return jsonify({'error': str(error)}), 400
-    if minutes not in KEEP_FRESH_MINUTES:
-        return jsonify({'error': f'minutes must be one of {list(KEEP_FRESH_MINUTES)}'}), 400
-    if not ctx.settings_manager.save_settings({'huginn_kept_profiles': list(profiles),
-                                               'huginn_profile_keep_minutes': minutes}):
+    if not changes:
+        return jsonify({'error': 'nothing to change: send add, remove, minutes or hours'}), 400
+    if not ctx.settings_manager.save_settings(changes):
         return jsonify({'error': 'Failed to save settings'}), 500
     settings = ctx.settings_manager.get_settings()
-    pulse_views.apply_kept_settings(ctx.huginn_service, settings)
-    return jsonify(pulse_views.kept_profiles_status(ctx.huginn_service, settings))
-
-
-@bp.route('/api/huginn/pulse/kept', methods=['POST'])
-def huginn_pulse_kept():
-    """Save automatic fetching: the tables the feed keeps fresh itself and how often, and the
-    tables background jobs may not download:
-    {"tables": ["Steam:Sell", ...], "minutes": 10, "switched_off": ["Buff:Sell", ...]}."""
-    body = request.get_json(silent=True) or {}
-    try:
-        keys = pulse_views.parse_kept(body.get('tables') or [])
-        switched_off = pulse_views.parse_switched_off(body.get('switched_off') or [], ctx.huginn_service)
-        minutes = int(body.get('minutes') or 10)
-    except (TypeError, ValueError) as e:
-        return jsonify({'error': str(e)}), 400
-    if minutes not in KEEP_FRESH_MINUTES:
-        return jsonify({'error': f'minutes must be one of {list(KEEP_FRESH_MINUTES)}'}), 400
-    as_text = lambda pairs: [f'{market}:{price_type}' for market, price_type in pairs]  # noqa: E731
-    saved = ctx.settings_manager.save_settings({
-        'pulse_kept_tables': as_text(keys), 'pulse_keep_minutes': minutes,
-        'pulse_switched_off_tables': as_text(switched_off)})
-    if not saved:
-        return jsonify({'error': 'Failed to save settings'}), 500
-    pulse_views.apply_kept_settings(ctx.huginn_service, ctx.settings_manager.get_settings())
-    return jsonify({'tables': as_text(keys), 'minutes': minutes, 'switched_off': as_text(switched_off)})
-
-
-@bp.route('/api/huginn/pulse/download', methods=['POST'])
-def huginn_pulse_download():
-    """Download one pulse table now ({"market", "price_type"}), unless it is under a minute old."""
-    body = request.get_json(silent=True) or {}
-    token = ctx.settings_manager.get_settings().get('tradeon_token', '')
-    if not token:
-        return jsonify({'error': 'tradeon_token not set in settings'}), 400
-    try:
-        market, price_type = pulse_views.downloadable(body.get('market'), body.get('price_type'), ctx.huginn_service)
-    except (TypeError, ValueError) as e:
-        return jsonify({'error': str(e)}), 400
-    try:
-        table = ctx.huginn_service._table(token, market, price_type, ON_DEMAND)
-    except Exception as e:                      # pulse's fault, not the request's
-        return jsonify({'error': str(e)}), 502
-    return jsonify({'market': market, 'price_type': price_type, 'items': len(table),
-                    'downloaded_at': table.started_at})
+    pulse_views.apply_active_settings(ctx.huginn_service, settings)
+    return jsonify(pulse_views.active_status(ctx.huginn_service, settings, body.get('add') or body.get('remove')))
 
 
 @bp.route('/api/huginn/price-dips/markets', methods=['GET'])
 def huginn_price_dips_markets():
-    """The markets Price dips offers (those with 30-day prices on pulse)."""
+    """The markets Price dips offers (those whose lowest listing an active profile keeps)."""
     return jsonify({'markets': pulse_views.price_dips_markets(ctx.huginn_service),
                     'bases': list(pulse_views.STATISTICS_BASES), 'stale_seconds': pulse_views.STALE_SECONDS})
 
 
 @bp.route('/api/huginn/price-dips', methods=['GET'])
 def huginn_price_dips():
-    """One market's lowest listings against their 30-day median (or average), with weekly sales.
-    ?market=Steam&basis=Median30d&fresh=1 (fresh: not older than a minute, for the Refresh button)."""
+    """One market's lowest listings against their 30-day median (or average) from the price
+    history, with weekly sales: ?market=Steam&basis=Median30d. From memory only (the active profiles)."""
     token = ctx.settings_manager.get_settings().get('tradeon_token', '')
     if not token:
         return jsonify({'error': 'tradeon_token not set in settings'}), 400
-    max_age = ON_DEMAND if request.args.get('fresh') else pulse_views.FRESH
     try:
         return jsonify(pulse_views.price_dips(ctx.huginn_service, token, request.args.get('market', 'Steam'),
-                                              request.args.get('basis', 'Median30d'), max_age))
+                                              request.args.get('basis', 'Median30d')))
+    except NotActive as e:
+        return jsonify({'error': str(e), 'inactive': True}), 409
     except ValueError as e:
         return jsonify({'error': str(e)}), 400
     except Exception as e:
@@ -419,7 +405,6 @@ def start_csfloat_sweep():
     return True, 'started', 202
 
 @bp.route('/api/huginn/tradeon/steam', methods=['GET'])
-@pulse_profile
 def huginn_tradeon_steam():
     """Proxy Tradeon → Steam arbitrage data."""
     settings = ctx.settings_manager.get_settings()
@@ -433,7 +418,6 @@ def huginn_tradeon_steam():
         return jsonify({'error': str(e)}), 500
 
 @bp.route('/api/huginn/tradeon/buff', methods=['GET'])
-@pulse_profile
 def huginn_tradeon_buff():
     """Proxy Tradeon → Buff163 arbitrage data."""
     settings = ctx.settings_manager.get_settings()
@@ -447,7 +431,6 @@ def huginn_tradeon_buff():
         return jsonify({'error': str(e)}), 500
 
 @bp.route('/api/huginn/tradeon/csfloat', methods=['GET'])
-@pulse_profile
 def huginn_tradeon_csfloat():
     """Proxy Tradeon → CSFloat arbitrage data."""
     settings = ctx.settings_manager.get_settings()
@@ -461,7 +444,6 @@ def huginn_tradeon_csfloat():
         return jsonify({'error': str(e)}), 500
 
 @bp.route('/api/huginn/tradeon/dmarket', methods=['GET'])
-@pulse_profile
 def huginn_tradeon_dmarket():
     """Proxy Tradeon → DMarket (autobuy) arbitrage data."""
     settings = ctx.settings_manager.get_settings()
@@ -506,7 +488,6 @@ def huginn_markets_fees():
     return jsonify({'huginn_market_fees': current})
 
 @bp.route('/api/huginn/tradeon/pair', methods=['GET'])
-@pulse_profile
 def huginn_tradeon_pair():
     """Generated arbitrage pair: ?buy=<id>&sell=<id>&mode=autobuy|min[&fee=<fraction>].
     Buys at the buy market's min listing and sells at the sell market's autobuy (or min),
@@ -797,7 +778,6 @@ def huginn_lootfarm_auctions_track():
         return jsonify({'error': str(e)}), 500
 
 @bp.route('/api/huginn/tradeon/lootfarm', methods=['GET'])
-@pulse_profile
 def huginn_tradeon_lootfarm():
     """Tradeon (buy) → LOOT.Farm (sell) arbitrage. LootFarm price + limits come
     from LOOT.Farm's own feed; the fee is the LOOT.Farm fee from the Fees editor."""
@@ -813,7 +793,6 @@ def huginn_tradeon_lootfarm():
         return jsonify({'error': str(e)}), 500
 
 @bp.route('/api/huginn/tradeon/lisskins-lootfarm', methods=['GET'])
-@pulse_profile
 def huginn_tradeon_lisskins_lootfarm():
     """LisSkins (buy) → LOOT.Farm (sell/autobuy). LootFarm price + limits from LOOT.Farm's
     own feed; ?fee= is your LOOT.Farm acceptance fee % (default 5)."""
@@ -829,7 +808,6 @@ def huginn_tradeon_lisskins_lootfarm():
         return jsonify({'error': str(e)}), 500
 
 @bp.route('/api/huginn/tradeon/csfloat-autobuy', methods=['GET'])
-@pulse_profile
 def huginn_tradeon_csfloat_autobuy():
     """Tradeon (min) buy + CSFloat buy-order (autobuy) sell, for owned items."""
     settings = ctx.settings_manager.get_settings()
@@ -843,7 +821,6 @@ def huginn_tradeon_csfloat_autobuy():
         return jsonify({'error': str(e)}), 500
 
 @bp.route('/api/huginn/tradeon/lisskins-steam', methods=['GET'])
-@pulse_profile
 def huginn_tradeon_lisskins_steam():
     """Fetch LisSkins buy + Steam sell prices and combine into arbitrage data."""
     settings = ctx.settings_manager.get_settings()
@@ -857,7 +834,6 @@ def huginn_tradeon_lisskins_steam():
         return jsonify({'error': str(e)}), 500
 
 @bp.route('/api/huginn/tradeon/lisskins-buff', methods=['GET'])
-@pulse_profile
 def huginn_tradeon_lisskins_buff():
     """Fetch LisSkins buy + Buff163 sell prices and combine into arbitrage data."""
     settings = ctx.settings_manager.get_settings()
@@ -871,7 +847,6 @@ def huginn_tradeon_lisskins_buff():
         return jsonify({'error': str(e)}), 500
 
 @bp.route('/api/huginn/tradeon/lisskins-csfloat', methods=['GET'])
-@pulse_profile
 def huginn_tradeon_lisskins_csfloat():
     """Fetch LisSkins buy + CSFloat sell (min listing) prices and combine into arbitrage data."""
     settings = ctx.settings_manager.get_settings()
@@ -885,7 +860,6 @@ def huginn_tradeon_lisskins_csfloat():
         return jsonify({'error': str(e)}), 500
 
 @bp.route('/api/huginn/tradeon/lisskins-csfloat-autobuy', methods=['GET'])
-@pulse_profile
 def huginn_tradeon_lisskins_csfloat_autobuy():
     """LisSkins (min) buy + CSFloat buy-order (autobuy) sell, for owned items."""
     settings = ctx.settings_manager.get_settings()
@@ -899,7 +873,6 @@ def huginn_tradeon_lisskins_csfloat_autobuy():
         return jsonify({'error': str(e)}), 500
 
 @bp.route('/api/huginn/tradeon/buff-steam', methods=['GET'])
-@pulse_profile
 def huginn_tradeon_buff_steam():
     """Fetch Buff163 buy + Steam sell prices and combine into arbitrage data."""
     settings = ctx.settings_manager.get_settings()
@@ -913,7 +886,6 @@ def huginn_tradeon_buff_steam():
         return jsonify({'error': str(e)}), 500
 
 @bp.route('/api/huginn/tradeon/buff-csfloat', methods=['GET'])
-@pulse_profile
 def huginn_tradeon_buff_csfloat():
     """Fetch Buff163 buy + CSFloat sell (min listing) prices and combine into arbitrage data."""
     settings = ctx.settings_manager.get_settings()
@@ -927,7 +899,6 @@ def huginn_tradeon_buff_csfloat():
         return jsonify({'error': str(e)}), 500
 
 @bp.route('/api/huginn/tradeon/buff-csfloat-autobuy', methods=['GET'])
-@pulse_profile
 def huginn_tradeon_buff_csfloat_autobuy():
     """Buff163 (min) buy + CSFloat buy-order (autobuy) sell, for owned items."""
     settings = ctx.settings_manager.get_settings()
@@ -941,7 +912,6 @@ def huginn_tradeon_buff_csfloat_autobuy():
         return jsonify({'error': str(e)}), 500
 
 @bp.route('/api/huginn/tradeon/csfloat-steam', methods=['GET'])
-@pulse_profile
 def huginn_tradeon_csfloat_steam():
     """Fetch CSFloat min buy + Steam autobuy sell prices and combine into arbitrage data."""
     settings = ctx.settings_manager.get_settings()
@@ -955,7 +925,6 @@ def huginn_tradeon_csfloat_steam():
         return jsonify({'error': str(e)}), 500
 
 @bp.route('/api/huginn/tradeon/csfloat-buff', methods=['GET'])
-@pulse_profile
 def huginn_tradeon_csfloat_buff():
     """Fetch CSFloat min buy + Buff163 autobuy sell prices and combine into arbitrage data."""
     settings = ctx.settings_manager.get_settings()
@@ -969,7 +938,6 @@ def huginn_tradeon_csfloat_buff():
         return jsonify({'error': str(e)}), 500
 
 @bp.route('/api/huginn/tradeon/lisskins-dmarket', methods=['GET'])
-@pulse_profile
 def huginn_tradeon_lisskins_dmarket():
     """Fetch LisSkins min buy + DMarket autobuy sell prices and combine into arbitrage data."""
     settings = ctx.settings_manager.get_settings()
@@ -983,7 +951,6 @@ def huginn_tradeon_lisskins_dmarket():
         return jsonify({'error': str(e)}), 500
 
 @bp.route('/api/huginn/tradeon/buff-dmarket', methods=['GET'])
-@pulse_profile
 def huginn_tradeon_buff_dmarket():
     """Fetch Buff163 min buy + DMarket autobuy sell prices and combine into arbitrage data."""
     settings = ctx.settings_manager.get_settings()
@@ -997,7 +964,6 @@ def huginn_tradeon_buff_dmarket():
         return jsonify({'error': str(e)}), 500
 
 @bp.route('/api/huginn/tradeon/csfloat-dmarket', methods=['GET'])
-@pulse_profile
 def huginn_tradeon_csfloat_dmarket():
     """Fetch CSFloat min buy + DMarket autobuy sell prices and combine into arbitrage data."""
     settings = ctx.settings_manager.get_settings()
@@ -1011,7 +977,6 @@ def huginn_tradeon_csfloat_dmarket():
         return jsonify({'error': str(e)}), 500
 
 @bp.route('/api/huginn/tradeon/dmarket-steam', methods=['GET'])
-@pulse_profile
 def huginn_tradeon_dmarket_steam():
     """Fetch DMarket min buy + Steam autobuy sell prices and combine into arbitrage data."""
     settings = ctx.settings_manager.get_settings()
@@ -1025,7 +990,6 @@ def huginn_tradeon_dmarket_steam():
         return jsonify({'error': str(e)}), 500
 
 @bp.route('/api/huginn/tradeon/dmarket-buff', methods=['GET'])
-@pulse_profile
 def huginn_tradeon_dmarket_buff():
     """Fetch DMarket min buy + Buff163 autobuy sell prices and combine into arbitrage data."""
     settings = ctx.settings_manager.get_settings()
@@ -1039,7 +1003,6 @@ def huginn_tradeon_dmarket_buff():
         return jsonify({'error': str(e)}), 500
 
 @bp.route('/api/huginn/tradeon/dmarket-csfloat', methods=['GET'])
-@pulse_profile
 def huginn_tradeon_dmarket_csfloat():
     """Fetch DMarket min buy + CSFloat min sell prices and combine into arbitrage data."""
     settings = ctx.settings_manager.get_settings()
@@ -1053,7 +1016,6 @@ def huginn_tradeon_dmarket_csfloat():
         return jsonify({'error': str(e)}), 500
 
 @bp.route('/api/huginn/tradeon/dmarket-csfloat-autobuy', methods=['GET'])
-@pulse_profile
 def huginn_tradeon_dmarket_csfloat_autobuy():
     """Fetch DMarket min buy + CSFloat autobuy (buy-order) sell prices and combine."""
     settings = ctx.settings_manager.get_settings()
