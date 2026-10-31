@@ -146,15 +146,26 @@ path prefix — add your page there. No catch-all route, no Settings page.
 ## Ratatoskr Transfer: tradable now vs trade hold
 
 `groupItemsByName` (`utils/transferItems.js`) splits every name + wear line by trade status: the
-copies tradable now and the copies on trade hold (`trade_unlock` in the future) are separate lines,
-sorted tradable first; `holdSplit` marks an item that has both (the tradable line gets the
+copies tradable now, on a plain trade hold (`trade_unlock` in the future) and under trade
+protection (`trade_protected_until` in the future, see below) are separate lines, sorted in that
+order; `holdSplit` marks an item that has both (the tradable line gets the
 "Tradable now" badge). A held line's `floatVariants` are its floats (skins) or, for float-less
 items, one variant per unlock time (`variantKind: 'unlock'`, `trade_unlock`), sorted soonest
 first. `formatTradeHoldLabel` gives the time left ("14h", "6d", range "1h–6d"),
 `formatTradeUnlock` the unlock moment in the browser's time zone; a held line whose copies all
 unlock at one moment carries `trade_unlock` ("Unlocks …" under the name). The queue entries carry
-`tradeHold` (shown in `TransferQueueModal`) and the CSV export a range. Trade-held items can go into
-a Storage Unit; nothing about the hold blocks selection.
+`tradeHold` (shown in `TransferQueueModal`) and the CSV export a range.
+
+- **Two holds, two rules** (game data verified live 2026-10-31, Ivan's test items). A plain trade
+  hold (`trade_unlock`, attribute 75 — e.g. a Steam Community Market purchase) does NOT block a
+  Storage Unit. **Trade protection** (attribute 312, an item received in a trade; Ratatoskr's
+  `trade_locked` + `trade_protected_until`, only while ahead) DOES. Lines split three ways
+  (`tradable` / `hold` / `protected`, `isItemTradeProtected`); protected lines get a red "Trade
+  protected" badge. In To mode `isHeldForDeposit` (= `tradeProtected`) makes the line's and its
+  variants' selectable quantity 0 — select button and `GroupQtyInput` locked (`totalQty` still
+  shows the count), Select all skips them, `selectTitle` says how long is left — and `handleMove`
+  drops protected and unstorable ids before planning. Plain-hold lines stay selectable. Never key
+  storability on `trade_unlock` alone. From mode is unaffected.
 
 - **The page clock:** holds are judged at the `now` option of `groupItemsByName` (milliseconds);
   Transfer passes `useNowSeconds()` (`utils/priceAge.js`, ticks every minute) and lists it in the
@@ -190,6 +201,8 @@ even when the Game Coordinator refuses it, so an over-filled unit would fail sil
 would just stay in the inventory. Fill order is
 fullest-with-room first (Ivan chose it: fewest units touched, emptier units stay free); the
 batches run one after another at the normal move delay, never in parallel (rate limits).
+Auto-Store (backend `scheduler.py`, `_plan_casket_moves` and `_is_storable`) follows the same two
+rules — fullest first, trade-protected and unstorable items skipped; change them together.
 
 ## Ratatoskr: items a Storage Unit cannot hold
 

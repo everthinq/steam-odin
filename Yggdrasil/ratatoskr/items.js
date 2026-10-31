@@ -345,14 +345,23 @@ class items {
       // console.log(value, returnDict)
 
       // Items received via a trade carry econ attribute def_index 312
-      // ("trade protection"). Unlike a plain market-purchase cooldown
+      // ("trade protection"), its value the date the protection ends (the same
+      // date as tradable_after). Unlike a plain market-purchase cooldown
       // (attribute 75), attribute 312 prevents the item from being deposited
       // into a storage unit. Verified against live inventories: traded cases
       // had attributes [75, 312] and the GC refused to store them, while
-      // market-bought cases had [75] (or none) and stored fine even mid-cooldown.
-      returnDict['trade_locked'] = (value['attribute'] || []).some(
-        (a) => a.def_index === 312
-      );
+      // market-bought cases had [75] (or none) and stored fine even mid-cooldown
+      // (again 2026-10-31: a market-bought Cologne 2026 sticker stored, traded
+      // cases did not). `trade_locked` (Auto-Store) and `trade_protected_until`
+      // (Transfer page) count only while the date is ahead.
+      const tradeProtectedBytes = getAttributeValueBytes(value, 312);
+      const tradeProtectedUntil = tradeProtectedBytes && tradeProtectedBytes.length >= 4
+        ? new Date(tradeProtectedBytes.readUInt32LE(0) * 1000)
+        : null;
+      returnDict['trade_locked'] = !!tradeProtectedUntil && tradeProtectedUntil > new Date();
+      if (returnDict['trade_locked']) {
+        returnDict['trade_protected_until'] = tradeProtectedUntil;
+      }
 
       returnList.push(returnDict);
     }

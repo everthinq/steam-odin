@@ -36,6 +36,7 @@ import {
     formatTradeHoldLabel,
     formatTradeUnlock,
     itemsHaveTradeHold,
+    isItemTradeProtected,
     canGoIntoStorageUnit,
 } from '../../utils/transferItems';
 import UnstorableSwitch from '../../components/transfer/UnstorableSwitch';
@@ -592,9 +593,13 @@ const RatatoskrTransfer = () => {
 
     const handleMove = async () => {
         if (!hasStorageSelection || !transferMode || moveProgress?.running) return;
-        // Never send the Game Coordinator an item a Storage Unit cannot hold.
+        // Never send the Game Coordinator an item a Storage Unit cannot take: one it can never hold,
+        // or one under trade protection (received in a trade; taken only once the protection ends).
+        // A plain trade hold (a Steam Market purchase) can be stored.
         const unstorableIds = new Set(
-            inventory.filter((i) => !canGoIntoStorageUnit(i)).map((i) => i.item_id)
+            inventory
+                .filter((i) => !canGoIntoStorageUnit(i) || isItemTradeProtected(i))
+                .map((i) => i.item_id)
         );
         const itemsToMove = transferMode === 'to'
             ? selectedInvItems.filter((id) => !unstorableIds.has(id))
@@ -856,9 +861,25 @@ const RatatoskrTransfer = () => {
      * Full qty in both directions — deposit-all to storage, withdraw-all from storage — except a
      * line of items a Storage Unit cannot hold: shown when asked for, never selectable.
      */
-    const getMaxSelectableQty = (group) => (group.unstorable ? 0 : group.qty);
+    // To mode: a line under trade protection (received in a trade) is shown but not selectable — a
+    // Storage Unit takes it only once the protection ends (Select all skips it too). A plain trade
+    // hold (a Steam Market purchase) does not block a Storage Unit.
+    const isHeldForDeposit = (group) => transferMode === 'to' && !!group.tradeProtected;
 
-    const getVariantMaxSelectableQty = (lineGroup, variant) => (lineGroup.unstorable ? 0 : variant.qty);
+    const getMaxSelectableQty = (group) =>
+        group.unstorable || isHeldForDeposit(group) ? 0 : group.qty;
+
+    const getVariantMaxSelectableQty = (lineGroup, variant) =>
+        lineGroup.unstorable || isHeldForDeposit(lineGroup) || isHeldForDeposit(variant) ? 0 : variant.qty;
+
+    /** Select button tooltip; says why a line cannot be selected. */
+    const selectTitle = (group, qty, what) => {
+        if (group.unstorable) return "A Storage Unit can't hold this item";
+        if (isHeldForDeposit(group)) {
+            return `Trade protected (${formatTradeHoldLabel(group.items)} left, received in a trade) — a Storage Unit takes it once the protection ends`;
+        }
+        return `Select all ${qty}${what}`;
+    };
 
     const setIdsSelectedQty = (itemIds, qty) => {
         const n = Math.max(0, Math.min(itemIds.length, Number.isFinite(qty) ? qty : 0));
@@ -1368,10 +1389,17 @@ const RatatoskrTransfer = () => {
                                                     {lineGroup.item_name}
                                                 </span>
                                                 <SteamMarketLink itemName={lineGroup.item_name} />
-                                                {lineGroup.onTradeHold && (
+                                                {lineGroup.tradeProtected ? (
+                                                    <span
+                                                        className="shrink-0 px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wide bg-red-500/20 text-red-300 border border-red-500/30"
+                                                        title="Trade protected (received in a trade): cannot be traded, sold or put into a Storage Unit until the protection ends"
+                                                    >
+                                                        Trade protected · {formatTradeHoldLabel(lineGroup.items)}
+                                                    </span>
+                                                ) : lineGroup.onTradeHold && (
                                                     <span
                                                         className="shrink-0 px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wide bg-orange-500/25 text-orange-300 border border-orange-500/30"
-                                                        title="On trade hold: can go into a Storage Unit, cannot be traded or sold yet"
+                                                        title="Trade hold (e.g. a Steam Market purchase): cannot be traded or sold yet, but can go into a Storage Unit"
                                                     >
                                                         Trade hold · {formatTradeHoldLabel(lineGroup.items)}
                                                     </span>
@@ -1427,6 +1455,7 @@ const RatatoskrTransfer = () => {
                                     <GroupQtyInput
                                         selectedQty={selectedQty}
                                         maxQty={getMaxSelectableQty(lineGroup)}
+                                        totalQty={lineGroup.qty}
                                         onCommit={(n) => setGroupSelectedQty(lineGroup, n)}
                                     />
 
@@ -1435,9 +1464,7 @@ const RatatoskrTransfer = () => {
                                             sel,
                                             () => toggleGroupCheckbox(lineGroup),
                                             getMaxSelectableQty(lineGroup) === 0,
-                                            lineGroup.unstorable
-                                                ? "A Storage Unit can't hold this item"
-                                                : `Select all ${lineGroup.qty}`
+                                            selectTitle(lineGroup, lineGroup.qty, '')
                                         )}
                                     </div>
                                 </div>
@@ -1483,6 +1510,7 @@ const RatatoskrTransfer = () => {
                                                 <GroupQtyInput
                                                     selectedQty={vSelected}
                                                     maxQty={vMax}
+                                                    totalQty={variant.qty}
                                                     onCommit={(n) =>
                                                         setFloatVariantSelectedQty(lineGroup, variant, n)
                                                     }
@@ -1493,7 +1521,11 @@ const RatatoskrTransfer = () => {
                                                         vSel,
                                                         () => toggleFloatVariantCheckbox(lineGroup, variant),
                                                         vMax === 0,
-                                                        `Select all ${variant.qty} at this float`
+                                                        selectTitle(
+                                                            isHeldForDeposit(variant) ? variant : lineGroup,
+                                                            variant.qty,
+                                                            variant.variantKind === 'unlock' ? ' unlocking then' : ' at this float'
+                                                        )
                                                     )}
                                                 </div>
                                             </div>

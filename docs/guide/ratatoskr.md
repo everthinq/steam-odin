@@ -38,10 +38,22 @@ Stable" means ready. **Auto-disconnect when idle** frees the session after
 **Tradable now and trade hold** are separate rows: when you hold copies of an
 item that can be traded now and copies still on trade hold (a fresh purchase,
 a trade), the item gets two rows next to each other — "Tradable now" (green)
-and "Trade hold · 6–7d" (orange, the time left, in hours under a day). Both can
-go into a Storage Unit. A held case or sticker opens (the arrow) into one line
-per unlock time ("Unlocks Thu 6 Nov, 08:00"), so you can move exactly the
-batch you want; a held skin opens into its floats, each with its hold. A held
+and "Trade hold · 6–7d" (orange, the time left, in hours under a day).
+Two kinds of hold look alike on Steam but differ for Storage Units:
+
+- **Trade hold** (orange) — e.g. an item **bought on the Steam Community
+  Market**: it cannot be traded or sold yet, but it **can go into a Storage
+  Unit**. Selectable as usual.
+- **Trade protected** (red) — an item **received in a trade with another
+  player**: it **cannot go into a Storage Unit** until the protection ends (a
+  game rule). In To mode its row shows how many you have but cannot be
+  selected, **Select all** skips it, and Move would leave it out anyway. Hover
+  the select button to see how long is left.
+
+Each kind gets its own row, under the "Tradable now" row of the same item. A held case or sticker opens
+(the arrow) into one line per unlock time ("Unlocks Thu 6 Nov, 08:00"), so you
+see when each batch frees up; a held skin opens into its floats, each with its
+hold. A held
 row whose copies all unlock at once says when under its name. The queue and
 the CSV export repeat the hold. The page checks the holds every minute: copies
 whose hold ends while the page is open move to the "Tradable now" row by
@@ -72,6 +84,9 @@ How it works underneath — worth knowing, nothing to do:
 - Each unit's share is sent as its own batch, one after another, with the same
   pause between items as always (no extra speed, no extra risk of Steam
   limits); the progress bar adds them up into one.
+- Only what a Storage Unit takes is ever sent: never items it can never hold
+  (medals, coins, badges, the default music kit) and never trade-protected
+  copies (received in a trade). Market purchases on a trade hold are sent.
 - If the selection is bigger than the free space, nothing is sent: the panel
   turns red, says how many items are too many, and Move stays disabled until
   you remove some or buy more Storage Units.
@@ -87,9 +102,15 @@ inventory can see what you hold — and reports what moved.
 ### Auto-Store
 
 Watches chosen accounts and moves listed items (exact names, for example a
-case you collect) from the inventory into a Storage Unit with room, every
+case you collect) from the inventory into your Storage Units, every
 confirmation-check cycle. Switch the watcher on, switch "Act on this account"
 on, add item names, **Sweep now** to run it once. The history shows every move.
+
+It follows exactly the rules of Transfer's To mode: the Storage Units are one
+storage, the **fullest unit with room fills first**; items **bought on the
+Steam Market** are stored even during their trade hold; items **received in a
+trade** (trade protected) and items a Storage Unit can never hold are skipped.
+Items that do not fit anywhere wait for the next sweep.
 
 ## Buy Storage Units
 

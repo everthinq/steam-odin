@@ -1,7 +1,10 @@
 import { useState, useEffect } from 'react';
 
 // Numeric "N / max" quantity input for a group of items, clamped to [0, max]. From Transfer.jsx.
-const GroupQtyInput = ({ selectedQty, maxQty, onCommit }) => {
+// `totalQty` (default `maxQty`) is the count shown after the slash: a line that cannot be selected
+// (maxQty 0, e.g. trade protected in To mode) still shows how many copies it has, the input locked.
+const GroupQtyInput = ({ selectedQty, maxQty, onCommit, totalQty = maxQty }) => {
+    const locked = maxQty === 0 && totalQty > 0;
     const [draft, setDraft] = useState(String(selectedQty));
 
     useEffect(() => {
@@ -38,10 +41,11 @@ const GroupQtyInput = ({ selectedQty, maxQty, onCommit }) => {
                         e.currentTarget.blur();
                     }
                 }}
-                className="w-10 h-7 text-center bg-black/40 border border-white/10 rounded text-white focus:outline-none focus:border-amber-500/50"
+                disabled={locked}
+                className="w-10 h-7 text-center bg-black/40 border border-white/10 rounded text-white focus:outline-none focus:border-amber-500/50 disabled:opacity-30 disabled:cursor-not-allowed"
                 aria-label={`Quantity to move out of ${maxQty}`}
             />
-            <span className="text-slate-400 whitespace-nowrap font-medium">/ {maxQty}</span>
+            <span className="text-slate-400 whitespace-nowrap font-medium">/ {totalQty}</span>
         </div>
     );
 };

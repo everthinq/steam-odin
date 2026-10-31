@@ -117,6 +117,14 @@ const tradeHoldMs = (item, now = Date.now()) => {
 
 export const isItemOnTradeHold = (item, now) => tradeHoldMs(item, now) > 0;
 
+/**
+ * Trade protection (Ratatoskr's `trade_protected_until`, game attribute 312): set on items received
+ * in a trade with another player. Such an item cannot go into a Storage Unit until it ends. A plain
+ * trade hold (a Steam Market purchase) has no protection and can be stored.
+ */
+export const isItemTradeProtected = (item, now = Date.now()) =>
+    !!item?.trade_protected_until && new Date(item.trade_protected_until).getTime() > now;
+
 /** "14h" under a day, otherwise whole days rounded up ("6d"). */
 const formatHoldDuration = (ms) =>
     ms < DAY_MS ? `${Math.max(1, Math.ceil(ms / HOUR_MS))}h` : `${Math.ceil(ms / DAY_MS)}d`;
@@ -163,11 +171,12 @@ export const compareFloatVariantsWithTradeHoldLast = (a, b) => {
 };
 
 /**
- * Group by name + wear (and storage when requested), then split by trade status: the copies
- * tradable now and the copies on trade hold are separate lines (`onTradeHold`), so a mixed stack
- * shows both. Each line nests `floatVariants` for the expandable picker: one per distinct float
- * (skins), or, for float-less items on hold (cases, stickers), one per unlock time
- * (`variantKind: 'unlock'`). `holdSplit` marks the lines whose item also has a line of the other
+ * Group by name + wear (and storage when requested), then split by trade status: copies tradable
+ * now, copies on a plain trade hold (`onTradeHold`, e.g. a Steam Market purchase — can be stored)
+ * and copies under trade protection (`tradeProtected`, received in a trade — cannot be stored) are
+ * separate lines, so a mixed stack shows each. Each line nests `floatVariants` for the
+ * expandable picker: one per distinct float (skins), or, for float-less items on hold (cases,
+ * stickers), one per unlock time (`variantKind: 'unlock'`). `holdSplit` marks the lines whose item also has a line of the other
  * trade status; `trade_unlock` is set on a held line whose copies all unlock at the same moment.
  * `now` (milliseconds) is the moment holds are judged at: pass a clock that ticks, so a hold that
  * ends while the page is open moves its copies to the tradable line.
@@ -183,8 +192,9 @@ export const groupItemsByName = (items, { includeStorage = false, markUnstorable
         // so a line is all one or the other. Items already in a Storage Unit can always come out.
         const unstorable = markUnstorable && !canGoIntoStorageUnit(item);
         const onHold = isItemOnTradeHold(item, now);
+        const tradeStatus = isItemTradeProtected(item, now) ? 'protected' : onHold ? 'hold' : 'tradable';
         const statusKey = `${storageKey}\0${unstorable ? 'unstorable' : 'storable'}`;
-        const key = `${statusKey}\0${onHold ? 'hold' : 'tradable'}`;
+        const key = `${statusKey}\0${tradeStatus}`;
 
         if (!map.has(key)) {
             map.set(key, {
@@ -247,6 +257,7 @@ export const groupItemsByName = (items, { includeStorage = false, markUnstorable
                     ...v,
                     qty: v.item_ids.length,
                     onTradeHold: itemsHaveTradeHold(v.items, now),
+                    tradeProtected: v.items.some((item) => isItemTradeProtected(item, now)),
                     tradeHoldDays: getTradeHoldDaysForItems(v.items),
                 }))
                 .sort(compareFloatVariantsWithTradeHoldLast);
@@ -262,6 +273,7 @@ export const groupItemsByName = (items, { includeStorage = false, markUnstorable
                 hasMultipleFloats: floatVariants.length > 1,
                 variantKind: floatVariants[0]?.variantKind || 'none',
                 onTradeHold,
+                tradeProtected: line.items.some((item) => isItemTradeProtected(item, now)),
                 tradeHoldDays: getTradeHoldDaysForItems(line.items),
                 trade_unlock: onTradeHold && unlockTimes.size === 1 ? line.items[0].trade_unlock : null,
                 holdSplit: linesPerStatus.get(line.status_key) > 1,
@@ -274,8 +286,9 @@ export const groupItemsByName = (items, { includeStorage = false, markUnstorable
             if (name !== 0) return name;
             const wear = (a.item_wear_name || '').localeCompare(b.item_wear_name || '');
             if (wear !== 0) return wear;
-            // Same item: tradable now first, the trade hold right under it.
-            return (a.onTradeHold ? 1 : 0) - (b.onTradeHold ? 1 : 0);
+            // Same item: tradable now first, then the plain trade hold, then trade protection.
+            const rank = (line) => (line.tradeProtected ? 2 : line.onTradeHold ? 1 : 0);
+            return rank(a) - rank(b);
         });
 };
 

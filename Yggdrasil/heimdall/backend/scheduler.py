@@ -8,7 +8,7 @@ import notifications
 
 logger = logging.getLogger(__name__)
 
-# Storage units hold up to 1000 items (mirrors STORAGE_CAPACITY in the frontend).
+# Storage units hold up to 1000 items (mirrors STORAGE_CAPACITY in frontend/src/utils/transferView.js).
 STORAGE_CAPACITY = 1000
 # Drop an in-flight move from the guard set after this long so a stuck/failed
 # move gets retried on a later sweep instead of being skipped forever.
@@ -475,8 +475,9 @@ class ConfirmationScheduler:
         A move is only real once the item has left the loose inventory (it's now
         inside a storage unit) — that's when we log it. Fire-and-forget GC adds
         give no acknowledgement, so this is the only trustworthy signal. Items
-        that linger after the queue has drained were refused by the GC (almost
-        always a trade hold) and are dropped so they aren't counted or stuck.
+        that linger after the queue has drained were refused by the GC (trade-protected
+        items are already skipped by `_is_storable`, so this is rare: a unit filled meanwhile,
+        a lost session) and are dropped so they aren't counted or stuck.
         """
         inflight = self._auto_store_inflight.setdefault(steamid, {})
         if not inflight:
@@ -494,7 +495,7 @@ class ConfirmationScheduler:
                 slot["items"][name] = slot["items"].get(name, 0) + 1
                 inflight.pop(iid, None)
             elif not queue_busy and (now - meta.get("issued_at", now)) > _INFLIGHT_TTL_SEC:
-                logger.info(f"[AUTO-STORE] {steamid}: item {iid} never moved (likely trade-held) — releasing guard")
+                logger.info(f"[AUTO-STORE] {steamid}: item {iid} never moved (refused by the Game Coordinator) — releasing guard")
                 inflight.pop(iid, None)
 
         if not confirmed:
@@ -535,22 +536,21 @@ class ConfirmationScheduler:
 
     @staticmethod
     def _plan_casket_moves(item_ids, caskets):
-        """Pick a random storage unit with room for all items; split across units if none fits.
+        """Split the items over the Storage Units as if they were one storage: the fullest unit
+        with room fills first, then the next fullest, full units skipped.
 
-        Returns (plan, unplaced) where plan is a list of (casket_id, [item_ids]).
+        The same rule as the Transfer page's To mode (`planBulkDeposit`, utils/transferView.js),
+        which Ivan chose: a sweep touches as few units as it can and the emptier ones stay free.
+        Each unit holds STORAGE_CAPACITY items; the Game Coordinator moves an item into one
+        specific unit, so the plan is one batch per unit.
+
+        Returns (plan, unplaced): plan is a list of (casket_id, [item_ids]); unplaced are the
+        items no unit has room for.
         """
         def free(c):
             return max(0, STORAGE_CAPACITY - int(c.get("item_storage_total") or 0))
 
-        n = len(item_ids)
-        fits = [c for c in caskets if free(c) >= n]
-        if fits:
-            target = random.choice(fits)
-            return [(target.get("item_id"), list(item_ids))], []
-
-        # No single unit fits — spread greedily across random units with any room.
-        units = [c for c in caskets if free(c) > 0]
-        random.shuffle(units)
+        units = sorted((c for c in caskets if free(c) > 0), key=free)
         plan = []
         remaining = list(item_ids)
         for c in units:

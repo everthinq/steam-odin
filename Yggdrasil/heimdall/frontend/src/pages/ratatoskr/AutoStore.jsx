@@ -185,8 +185,8 @@ const RatatoskrAutoStore = () => {
                 <div>
                     <h1 className="text-3xl font-bold text-white font-serif mb-1">Auto-Store</h1>
                     <p className="text-sm text-slate-400 leading-relaxed">
-                        Watched items are swept out of inventory into a random storage unit with room,
-                        as soon as they arrive from your buy orders.
+                        Watched items are swept out of inventory into your Storage Units as one storage
+                        (the fullest unit with room first), as soon as they arrive from your buy orders.
                     </p>
                     <p className="text-xs text-slate-500 leading-relaxed mt-1.5 flex items-center gap-1.5">
                         <Lock size={12} className="shrink-0" />
