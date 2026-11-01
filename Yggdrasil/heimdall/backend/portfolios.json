@@ -13803,7 +13803,7 @@
       "id": "99c18756f9ee",
       "name": "everthinklol1",
       "created_at": "2026-07-21T14:49:46.392883+00:00",
-      "updated_at": "2026-11-01T07:58:47.235774+00:00",
+      "updated_at": "2026-11-01T08:01:12.100296+00:00",
       "transactions": [
         {
           "id": "ed83a19ba6bc",
@@ -18270,6 +18270,19 @@
           "fee_percent": 0.0,
           "is_arbitrage": true,
           "created_at": "2026-10-31T17:22:56.159455+00:00"
+        },
+        {
+          "id": "e20041bb292b",
+          "item_name": "Sticker | Cluck (Holo)",
+          "type": "buy",
+          "qty": 1,
+          "price": 0.78,
+          "platform": "dmarket",
+          "date": "2026-11-01T10:00:00",
+          "note": "BOOST",
+          "fee_percent": 0.0,
+          "is_arbitrage": false,
+          "created_at": "2026-11-01T08:01:12.100253+00:00"
         }
       ]
     },
