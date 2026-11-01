@@ -110,6 +110,9 @@ Container names (compose project = directory name):
 - `steam-odin-ratatoskr-1`
 - `steam-odin-asf-1` (first run: `make asf-setup`, then `make asf`)
 
+All four have a Docker health check (`docker ps` shows `healthy`) and restart after a
+crash. ASF's own image check only sees that its process runs.
+
 ---
 
 ## Gotchas that will bite you (read before editing)

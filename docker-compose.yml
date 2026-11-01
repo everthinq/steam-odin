@@ -1,12 +1,8 @@
-version: '3.8'
-
 services:
   # HEIMDALL: Authenticator (The Watchman)
   heimdall-backend:
     restart: unless-stopped
     build: ./Yggdrasil/heimdall/backend
-    # Note: With network_mode: "host", ports mapping is ignored.
-    # The app will be accessible directly on host:5000 (or PORT env var)
     ports:
       - "127.0.0.1:5001:5000"   # this Mac only: the API has no login
     volumes:
@@ -47,6 +43,8 @@ services:
 
   heimdall-frontend:
     build: ./Yggdrasil/heimdall/frontend
+    # Start again after a crash, like the backend and Ratatoskr.
+    restart: unless-stopped
     ports:
       - "127.0.0.1:3000:5173"   # this Mac only: the UI has no login
     volumes:
@@ -56,6 +54,13 @@ services:
       - WATCHPACK_POLLING=true
     depends_on:
       - heimdall-backend
+    # Vite answers the page: "healthy" in `docker ps` and on the System health page.
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:5173/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
 
   # RATATOSKR: Casemove/Courier Service (Node.js)
   ratatoskr:
