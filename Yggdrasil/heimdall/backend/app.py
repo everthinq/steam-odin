@@ -32,6 +32,7 @@ from store_catalogue_service import StoreCatalogueService
 from morning_routine import MorningRoutine
 from telegram_caller import TelegramCaller
 from logging_setup import setup_logging
+import error_handlers
 import request_guard
 from context import ctx
 from routes import register_blueprints
@@ -262,18 +263,8 @@ if _should_start_background_scheduler():
     # Master pulse feed: keep the active profiles' tables (and the Buff163 reference) fresh.
     huginn_service.pulse.start_keeper(lambda: settings_manager.get_settings().get('tradeon_token', ''))
 
-# Ensure all errors return JSON, not HTML
-@app.errorhandler(404)
-def not_found(error):
-    return jsonify({"error": "Not found"}), 404
-
-@app.errorhandler(500)
-def internal_error(error):
-    return jsonify({"error": "Internal server error"}), 500
-
-@app.errorhandler(Exception)
-def handle_exception(e):
-    return jsonify({"error": f"Unexpected error: {str(e)}"}), 500
+# Every error answers JSON with its real status (error_handlers.py).
+error_handlers.install(app)
 
 @app.route('/health', methods=['GET'])
 def health_check():

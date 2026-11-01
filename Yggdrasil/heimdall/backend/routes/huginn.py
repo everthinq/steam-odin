@@ -1213,7 +1213,7 @@ def card_deals_buy_plan():
 
 @bp.route('/api/huginn/card-deals/buy/run', methods=['POST'])
 def card_deals_buy_run():
-    """{"selection": [{"steamid": ..., "app_ids": [...]}], "dry_run": bool, "plan_created_at":
+    """{"selection": [{"steamid": ..., "app_ids": [...]}], "dry_run": bool (only false buys; missing means a dry run), "plan_created_at":
     the plan the page showed}: buys only games that plan marks "buy"; every purchase is
     price-guarded."""
     body = request.get_json(silent=True) or {}
@@ -1221,6 +1221,6 @@ def card_deals_buy_run():
         plan_created_at = float(body['plan_created_at']) if body.get('plan_created_at') is not None else None
     except (TypeError, ValueError):
         return jsonify({'started': False, 'error': 'plan_created_at must be a number'}), 400
-    result = ctx.store_purchase_service.start_purchase(body.get('selection'), bool(body.get('dry_run')),
+    result = ctx.store_purchase_service.start_purchase(body.get('selection'), body.get('dry_run') is not False,
                                                        plan_created_at, body.get('empty_cart', True) is not False)
     return jsonify(result), (200 if result['started'] else 400)

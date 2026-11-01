@@ -297,14 +297,28 @@ def test_password_route_returns_one_password(mimir_client):
     client, service = mimir_client
     record = service.add(login='one', password='p;@ss with spaces ')
     service.add(login='two', password='other')
-    response = client.get(f"/api/mimir/credentials/{record['id']}/password")
+    response = client.post(f"/api/mimir/credentials/{record['id']}/password")
     assert response.status_code == 200
     assert response.get_json() == {'password': 'p;@ss with spaces '}
 
 
+def test_password_and_export_are_post_only_and_logged(mimir_client, caplog):
+    """GET would skip the request guard's Origin check (other websites); every reveal is logged, never the password."""
+    client, service = mimir_client
+    record = service.add(login='logged_login', password='never-in-the-log')
+    assert client.get(f"/api/mimir/credentials/{record['id']}/password").status_code == 405
+    assert client.get('/api/mimir/export').status_code == 405
+    with caplog.at_level('INFO', logger='routes.mimir'):
+        client.post(f"/api/mimir/credentials/{record['id']}/password")
+        exported = client.post('/api/mimir/export')
+    assert 'never-in-the-log' in exported.get_json()['text']
+    assert 'password sent to the page (Reveal, Copy or Edit) for logged_login' in caplog.text and 'vault exported (1 credentials)' in caplog.text
+    assert 'never-in-the-log' not in caplog.text
+
+
 def test_password_route_unknown_id_is_404(mimir_client):
     client, _ = mimir_client
-    response = client.get('/api/mimir/credentials/does-not-exist/password')
+    response = client.post('/api/mimir/credentials/does-not-exist/password')
     assert response.status_code == 404
     assert 'password' not in response.get_json()
 

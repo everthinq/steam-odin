@@ -670,7 +670,7 @@ class StorageShopService:
 
     # ---- purchase ------------------------------------------------------------------------------
 
-    def start_purchase(self, selection, dry_run=False, plan_created_at=None, item=None):
+    def start_purchase(self, selection, dry_run=True, plan_created_at=None, item=None):
         """*selection*: [{steamid, quantity}] from the plan the screen showed; *item*: the
         price sheet entry the screen shows (it must be the plan's)."""
         if not isinstance(selection, list) or not all(isinstance(item, dict) for item in selection):
@@ -680,7 +680,9 @@ class StorageShopService:
             history = list(self._history)
         if not plan:
             return {'started': False, 'error': 'check the accounts first'}
-        if plan_created_at is None or abs(float(plan_created_at) - plan['created_at']) > 1e-6:
+        if plan_created_at is None:
+            return {'started': False, 'error': 'the plan time (plan_created_at) is missing: look at the plan again'}
+        if abs(float(plan_created_at) - plan['created_at']) > 1e-6:
             return {'started': False, 'error': 'the plan changed since this page loaded: look at it again'}
         if time.time() - plan['created_at'] > PLAN_TIME_TO_LIVE_SECONDS:
             return {'started': False, 'error': 'the plan is older than 30 minutes: check the accounts again'}

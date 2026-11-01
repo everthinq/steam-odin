@@ -282,14 +282,14 @@ def storage_shop_plan():
 
 @bp.route('/api/ratatoskr/storage-shop/run', methods=['POST'])
 def storage_shop_run():
-    """{"selection": [{"steamid": ..., "quantity": n}], "dry_run": bool, "plan_created_at":
+    """{"selection": [{"steamid": ..., "quantity": n}], "dry_run": bool (only false buys; missing means a dry run), "plan_created_at":
     the plan the page showed, "item": its entry}: buys only on accounts that plan marks "buy"."""
     body = request.get_json(silent=True) or {}
     try:
         plan_created_at = float(body['plan_created_at']) if body.get('plan_created_at') is not None else None
     except (TypeError, ValueError):
         return jsonify({'started': False, 'error': 'plan_created_at must be a number'}), 400
-    result = ctx.storage_shop_service.start_purchase(body.get('selection'), bool(body.get('dry_run')),
+    result = ctx.storage_shop_service.start_purchase(body.get('selection'), body.get('dry_run') is not False,
                                                      plan_created_at, body.get('item') or 'casket')
     return jsonify(result), (200 if result['started'] else 400)
 

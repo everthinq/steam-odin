@@ -15,14 +15,14 @@ import { readJson } from '../../utils/readJson';
 // exists, so Ratatoskr can log it on) and "No maFile" (credential stored only).
 //
 // The list endpoint never sends passwords (only a has_password flag). A single
-// password is fetched on demand from /api/mimir/credentials/<id>/password when
+// password is fetched on demand (POST /api/mimir/credentials/<id>/password) when
 // the row is revealed, copied, or opened for editing.
 
 // How long a revealed password stays on screen before it is hidden again.
 const REVEAL_TIMEOUT_MILLISECONDS = 30000;
 
 const fetchPassword = async (credentialId) => {
-    const res = await fetch(`/api/mimir/credentials/${credentialId}/password`);
+    const res = await fetch(`/api/mimir/credentials/${credentialId}/password`, { method: 'POST' });
     const data = await readJson(res).catch(() => null);
     if (!res.ok || !data || typeof data.password !== 'string') {
         throw new Error(data?.error || `the backend answered HTTP ${res.status}`);
@@ -288,7 +288,7 @@ const MimirVault = () => {
 
     const exportVault = async () => {
         try {
-            const res = await fetch('/api/mimir/export');
+            const res = await fetch('/api/mimir/export', { method: 'POST' });
             const data = await readJson(res).catch(() => null);
             // Never save a file unless the backend really sent the export: a
             // failed request would otherwise download an empty credentials file.

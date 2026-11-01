@@ -450,7 +450,7 @@ class StorePurchaseService:
 
     # ---- buy ---------------------------------------------------------------------------------
 
-    def start_purchase(self, selection, dry_run=False, plan_created_at=None, empty_cart=True):
+    def start_purchase(self, selection, dry_run=True, plan_created_at=None, empty_cart=True):
         """*selection*: [{steamid, app_ids}]; each game must be planned as "buy" in the
         plan the screen showed (*plan_created_at*), younger than PLAN_TIME_TO_LIVE_SECONDS,
         and not bought (or paid for) since that plan was made."""
@@ -461,7 +461,9 @@ class StorePurchaseService:
             history = list(self._history)
         if not plan:
             return {'started': False, 'error': 'check the accounts first'}
-        if plan_created_at is not None and abs(float(plan_created_at) - plan['created_at']) > 1e-6:
+        if plan_created_at is None:
+            return {'started': False, 'error': 'the plan time (plan_created_at) is missing: look at the plan again'}
+        if abs(float(plan_created_at) - plan['created_at']) > 1e-6:
             return {'started': False, 'error': 'the plan changed since this page loaded: look at it again'}
         if time.time() - plan['created_at'] > PLAN_TIME_TO_LIVE_SECONDS:
             return {'started': False, 'error': 'the plan is older than 30 minutes: check the accounts again'}

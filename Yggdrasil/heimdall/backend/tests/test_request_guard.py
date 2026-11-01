@@ -11,7 +11,11 @@ def client(monkeypatch):
     app = Flask(__name__)
     request_guard.install(app)
 
-    @app.route('/api/mimir/export')
+    @app.route('/api/steam-guard/codes')
+    def codes():
+        return jsonify({'code': 'secret'})
+
+    @app.route('/api/mimir/export', methods=['POST'])
     def export():
         return jsonify({'text': 'secret'})
 
@@ -24,20 +28,20 @@ def client(monkeypatch):
 @pytest.mark.parametrize('host', ['localhost:5001', '127.0.0.1:5001', '[::1]:5001',
                                   'heimdall-backend:5000', 'localhost', 'heimdall.lan:5001'])
 def test_own_hosts_pass(client, host):
-    assert client.get('/api/mimir/export', headers={'Host': host}).status_code == 200
+    assert client.get('/api/steam-guard/codes', headers={'Host': host}).status_code == 200
 
 
 @pytest.mark.parametrize('host', ['evil.example', 'evil.example:5001', '192.168.1.5:5001',
                                   'localhost.evil.example', ''])
 def test_foreign_hosts_refused(client, host):
-    response = client.get('/api/mimir/export', headers={'Host': host})
+    response = client.get('/api/steam-guard/codes', headers={'Host': host})
     assert response.status_code == 403 and b'secret' not in response.data
 
 
 def test_cors_only_for_the_frontend(client):
-    foreign = client.get('/api/mimir/export', headers={'Host': 'localhost:5001', 'Origin': 'https://evil.example'})
+    foreign = client.get('/api/steam-guard/codes', headers={'Host': 'localhost:5001', 'Origin': 'https://evil.example'})
     assert 'Access-Control-Allow-Origin' not in foreign.headers
-    own = client.get('/api/mimir/export', headers={'Host': 'localhost:5001', 'Origin': 'http://localhost:3000'})
+    own = client.get('/api/steam-guard/codes', headers={'Host': 'localhost:5001', 'Origin': 'http://localhost:3000'})
     assert own.headers.get('Access-Control-Allow-Origin') == 'http://localhost:3000'
 
 
@@ -58,5 +62,11 @@ def test_writes_only_from_the_frontend_origin(client, origin, expected):
 
 def test_reads_are_not_origin_checked(client):
     # A foreign origin may send a GET, but CORS keeps the answer from it.
-    response = client.get('/api/mimir/export', headers={'Host': 'localhost:5001', 'Origin': 'https://evil.example'})
+    response = client.get('/api/steam-guard/codes', headers={'Host': 'localhost:5001', 'Origin': 'https://evil.example'})
     assert response.status_code == 200 and 'Access-Control-Allow-Origin' not in response.headers
+
+
+def test_a_foreign_website_cannot_post_for_the_export(client):
+    # Why the Mímir export and password routes are POST: writes are Origin-checked.
+    response = client.post('/api/mimir/export', headers={'Host': 'localhost:5001', 'Origin': 'https://evil.example'})
+    assert response.status_code == 403 and b'secret' not in response.data

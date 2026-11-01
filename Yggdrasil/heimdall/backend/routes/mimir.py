@@ -7,18 +7,25 @@ Steam account (and which are parked with no maFile).
 
 Passwords never leave the backend in bulk: every record the routes return has
 its password replaced by a ``has_password`` flag, and one password at a time is
-served by ``GET /api/mimir/credentials/<id>/password`` (the Vault page fetches it
-on demand for Reveal / Copy / Edit). The export route is the one deliberate
-exception — it exists to produce the full plaintext backup.
+served by ``POST /api/mimir/credentials/<id>/password`` (the Vault page fetches it
+on demand for Reveal / Copy / Edit). The export route (``POST /api/mimir/export``)
+is the one deliberate exception — it exists to produce the full plaintext backup.
+Both are POST so the request guard refuses them from any other website (it checks
+the ``Origin`` of every write), and both are logged: which login and when, never
+the password.
 
 The Market access check (``market_access_service.py``) also lives here: Mímir is
 the accounts page, so its button starts the check and the Dashboard only shows
 the saved result.
 """
+import logging
+
 from flask import Blueprint, jsonify, request
 
 from context import ctx
 from mimir_service import VaultUnreadableError
+
+logger = logging.getLogger(__name__)
 
 bp = Blueprint('mimir', __name__)
 
@@ -64,13 +71,14 @@ def list_credentials():
     })
 
 
-@bp.route('/api/mimir/credentials/<rec_id>/password', methods=['GET'])
+@bp.route('/api/mimir/credentials/<rec_id>/password', methods=['POST'])
 def get_credential_password(rec_id):
     """Return the password of one credential — the only route besides the
     export that sends a password to the browser."""
     record = ctx.mimir_service.get(rec_id)
     if not record:
-        return jsonify({'error': 'credential not found'}), 404
+        return jsonify({'error': 'credential not found', 'code': 'credential_unknown'}), 404
+    logger.info('[MIMIR] password sent to the page (Reveal, Copy or Edit) for %s', record['login'])
     return jsonify({'password': record['password']})
 
 
@@ -161,9 +169,10 @@ def test_login(rec_id):
     return jsonify({'ok': ok, 'error': result.get('error'), 'steamid': steamid})
 
 
-@bp.route('/api/mimir/export', methods=['GET'])
+@bp.route('/api/mimir/export', methods=['POST'])
 def export_credentials():
     """Return the whole vault as importable ``login;password;email;comment`` text."""
+    logger.info('[MIMIR] vault exported (%d credentials)', len(ctx.mimir_service.list()))
     return jsonify({'text': ctx.mimir_service.export_text()})
 
 

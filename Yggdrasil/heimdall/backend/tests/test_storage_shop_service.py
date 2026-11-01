@@ -415,7 +415,7 @@ def test_start_purchase_guards(tmp_path):
         [{'steamid': STEAMID, 'quantity': 1}] * 2, plan_created_at=created)['error']
     assert 'plan changed' in service.start_purchase([{'steamid': STEAMID, 'quantity': 1}],
                                                     plan_created_at=created - 5)['error']
-    assert 'plan changed' in service.start_purchase([{'steamid': STEAMID, 'quantity': 1}])['error']   # time required
+    assert 'plan time (plan_created_at) is missing' in service.start_purchase([{'steamid': STEAMID, 'quantity': 1}])['error']
     service._plan['created_at'] = created = time.time() - shop.PLAN_TIME_TO_LIVE_SECONDS - 1
     assert 'older than 30 minutes' in service.start_purchase([{'steamid': STEAMID, 'quantity': 1}],
                                                              plan_created_at=created)['error']

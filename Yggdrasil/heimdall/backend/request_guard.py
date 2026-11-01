@@ -5,7 +5,7 @@ codes, the Mímir password export and trade confirmations. Two browser attacks
 could otherwise reach it from any page open on this Mac:
 
 * **Cross-origin reads** — with CORS open to every origin, any website could
-  ``fetch('http://localhost:5001/api/mimir/export')`` and read the answer.
+  ``fetch('http://localhost:5001/api/accounts')`` and read the Steam Guard codes.
   The frontend calls the API through Vite's same-origin proxy and needs no
   CORS at all, so only the Heimdall frontend's own origins are allowed.
 * **DNS rebinding** — a website points its own domain at 127.0.0.1, making the
