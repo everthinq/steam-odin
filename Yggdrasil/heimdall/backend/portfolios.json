@@ -4,7 +4,7 @@
       "id": "fbf692611b3c",
       "name": "everthinklol",
       "created_at": "2026-07-21T13:40:18.177768+00:00",
-      "updated_at": "2026-11-01T19:16:39.631580+00:00",
+      "updated_at": "2026-11-01T21:57:57.417566+00:00",
       "transactions": [
         {
           "id": "3ea474874554",
@@ -11884,6 +11884,19 @@
           "fee_percent": 0.0,
           "is_arbitrage": false,
           "created_at": "2026-11-01T19:16:39.631548+00:00"
+        },
+        {
+          "id": "0ef360ec4831",
+          "item_name": "Sticker | G2 (Gold) | 2020 RMR",
+          "type": "buy",
+          "qty": 1,
+          "price": 2.34,
+          "platform": "buff.market",
+          "date": "2026-11-02T00:00:00",
+          "note": "ev1 arbitrage",
+          "fee_percent": 0.0,
+          "is_arbitrage": true,
+          "created_at": "2026-11-01T21:57:22.005999+00:00"
         }
       ]
     },
@@ -13842,7 +13855,7 @@
       "id": "99c18756f9ee",
       "name": "everthinklol1",
       "created_at": "2026-07-21T14:49:46.392883+00:00",
-      "updated_at": "2026-11-01T08:01:12.100296+00:00",
+      "updated_at": "2026-11-01T21:58:41.330335+00:00",
       "transactions": [
         {
           "id": "ed83a19ba6bc",
@@ -18322,6 +18335,19 @@
           "fee_percent": 0.0,
           "is_arbitrage": false,
           "created_at": "2026-11-01T08:01:12.100253+00:00"
+        },
+        {
+          "id": "0a7cd6c1f420",
+          "item_name": "Sticker | G2 (Gold) | 2020 RMR",
+          "type": "sell",
+          "qty": 1,
+          "price": 2.54,
+          "platform": "cs.money.trade",
+          "date": "2026-11-02T00:00:00",
+          "note": "ev arbitrage",
+          "fee_percent": 0.0,
+          "is_arbitrage": true,
+          "created_at": "2026-11-01T21:58:41.330300+00:00"
         }
       ]
     },
