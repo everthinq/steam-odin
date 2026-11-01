@@ -148,15 +148,6 @@ def _get_steam_debug_logger():
     os.makedirs(log_dir, exist_ok=True)
     log_path = os.path.join(log_dir, 'steam_debug.log')
 
-    from logging_setup import is_reloader_parent
-    if is_reloader_parent():
-        # The werkzeug watcher process must not open (and rotate) the same file
-        # as the serving child; it gets a handler-less, non-propagating logger.
-        quiet = logging.getLogger('steam_debug')
-        quiet.propagate = False
-        _steam_debug_logger = quiet
-        return quiet
-
     # Shrink any huge pre-rotation file before attaching the handler.
     _trim_steam_log(log_path)
 

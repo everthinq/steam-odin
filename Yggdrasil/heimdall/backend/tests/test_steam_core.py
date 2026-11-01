@@ -505,19 +505,3 @@ def test_process_account_logs_each_accepted_confirmation(caplog):
     assert steam.items == [('1', 'n1')]
     assert "headline='lootfarm bot'" in caplog.text and 'creator_id=555' in caplog.text
     assert 'You will give 1 item' in caplog.text
-
-
-# ---- 13. logging in the reloader parent ---------------------------------------
-
-def test_reloader_parent_detection(monkeypatch):
-    import sys
-    from logging_setup import is_reloader_parent
-    monkeypatch.setattr(sys, 'argv', ['app.py'])
-    monkeypatch.setenv('FLASK_ENV', 'development')
-    monkeypatch.delenv('WERKZEUG_RUN_MAIN', raising=False)
-    assert is_reloader_parent() is True
-    monkeypatch.setenv('WERKZEUG_RUN_MAIN', 'true')
-    assert is_reloader_parent() is False
-    monkeypatch.delenv('WERKZEUG_RUN_MAIN')
-    monkeypatch.setenv('FLASK_ENV', 'production')
-    assert is_reloader_parent() is False

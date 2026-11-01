@@ -50,7 +50,7 @@ CASE_ALERT_STATE_FILE = os.path.join(os.path.dirname(__file__), 'cache', 'case_a
 # resale reference at capture, cleared-detection) accumulated over time for the backtest.
 LOOTFARM_AUCTION_LOG = os.path.join(os.path.dirname(__file__), 'cache', 'lootfarm_auction_log.json')
 # Last full container refresh (per-market snapshots + when the full pull ran), so a
-# werkzeug reload does not trigger a fresh six-market pulse pull straight away.
+# backend restart does not trigger a fresh six-market pulse pull straight away.
 CONTAINER_SNAPSHOT_FILE = os.path.join(os.path.dirname(__file__), 'cache', 'huginn_container_snapshots.json')
 # atomic_write_json leaves '.tmp-*.json' behind only when the process is killed
 # mid-write; ones older than this are swept from cache/ on boot.
@@ -2863,7 +2863,7 @@ class HuginnService:
 
     def _load_container_snapshots(self, path=None):
         """Restore the last full refresh's per-market snapshots and its time, so a
-        restart (every werkzeug reload) serves warm prices and does not re-run the
+        restart (`make reload`) serves warm prices and does not re-run the
         six-market pull until the full-refresh interval has really passed."""
         path = path or CONTAINER_SNAPSHOT_FILE
         try:

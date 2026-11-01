@@ -13,10 +13,8 @@ one, delete its line.
 | Ratatoskr's code defaults to port 3030; Docker uses 3000 | `ratatoskr/server.js` `PORT`, backend `ratatoskr_service.py` `RATATOSKR_URL` fallback | Only matters when running outside Docker |
 | CI runs Python 3.11 and Node 20; the images run Python 3.9 and Node 22 | `.github/workflows/ci.yml` vs the Dockerfiles | Code must work on both; a 3.10+ feature would pass CI and crash the container |
 | CI lint and `ruff` are non-blocking (`|| true`) | `ci.yml` | Lint errors do not fail a push; keep them at zero by hand |
-| The backend Dockerfile's `gunicorn` command is overridden by compose (`python app.py`) | `docker-compose.yml` | The development server with auto-reload is what actually runs |
 | Only the backend and Ratatoskr have a healthcheck; the frontend has no restart policy | `docker-compose.yml` | A crashed frontend stays down until `make raid` |
 | A stale compose comment mentions `network_mode: host` | `docker-compose.yml` | None |
-| `make ratatoskr` and `make huginn` only print a message | `Makefile` | Use `docker compose up -d ratatoskr` |
 | `cors` and `dotenv` are declared but unused | `ratatoskr/package.json` | None |
 | The setting `csfloat_api_key` is never read | `backend/settings.py` | CSFloat keys come from `csfloat_keys.json` |
 | `system_ops.trigger_restart` is not wired to anything | `backend/system_ops.py` | None |

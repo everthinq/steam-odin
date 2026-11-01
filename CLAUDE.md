@@ -90,6 +90,7 @@ not a separate deployable):
 | `make saga` (`logs`) | `docker compose logs -f` |
 | `make sleep` (`down`) | `docker compose down` |
 | `make ragnarok` (`clean`) | down + remove orphans + prune images |
+| `make reload` | restart the backend after editing its code (it never reloads by itself) |
 
 Ports: **frontend** http://localhost:3000, **backend** http://localhost:5001
 (container 5000). Ratatoskr is **not published**: only the backend reaches it,
@@ -116,18 +117,18 @@ Container names (compose project = directory name):
 Numbered "Gotcha 1" to "Gotcha 9", so they are never confused with the
 numbered [Working rules](#working-rules-binding--read-every-session) ("rule 9").
 
-- Gotcha 1: **The backend auto-reloads on every `.py` save — including half-finished
-   edits and test files.** `docker-compose.yml` runs it with
-   `FLASK_ENV=development`, so werkzeug's file watcher restarts `app.py` (and
-   every background loop: auto-confirm, Case Arbitrage refresh, Gjallarhorn
-   news, Andvari card deals) the moment a file under `backend/` changes; watch
-   `logs/heimdall.log` for `Detected change … reloading`. So an edit is live
-   before you run anything: when a background loop has outward effects (Steam
-   calls, Telegram alerts), test long runs in a separate sandbox script (own
-   cache file, stubbed notifier) rather than in the app. A clean
-   `docker restart steam-odin-heimdall-backend-1` is still the way to reload a
-   changed cache file. The frontend hot-reloads too (Vite); Ratatoskr does
-   **not** (`docker restart steam-odin-ratatoskr-1` after editing its `.js`).
+- Gotcha 1: **The backend does not reload by itself — `make reload` after editing
+   a `.py` file.** It runs as one process with no auto-reloader (since Phase 2;
+   before, every save restarted it and all background loops, half-finished
+   edits included). Until you run `make reload` (restarts the backend container
+   only) the old code keeps running, so a passing test does not mean the app
+   runs it yet. A restart also starts every background loop (auto-confirm,
+   Case Arbitrage refresh, Gjallarhorn news, Andvari card deals): when a loop has
+   outward effects (Steam calls, Telegram alerts), test long runs in a separate
+   sandbox script (own cache file, stubbed notifier) rather than in the app. The
+   frontend still hot-reloads (Vite); Ratatoskr does not either
+   (`docker restart steam-odin-ratatoskr-1` after editing its `.js`, which drops
+   its Steam sessions).
 
 - Gotcha 2: **`context.ctx` is empty outside the running app.** The singletons are wired
    only by `app.py` at boot. A bare `python -c` / `docker exec … python` shell

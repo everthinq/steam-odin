@@ -13,7 +13,6 @@ services:
       - ./Yggdrasil/heimdall/backend:/app
       - /etc/localtime:/etc/localtime:ro
     environment:
-      - FLASK_ENV=development
       - PORT=5000
       - RATATOSKR_URL=http://ratatoskr:3000
       # ArchiSteamFarm API (card farming). Empty password = ASF integration off;
@@ -37,6 +36,7 @@ services:
       #
       # Example: SOCKS_PROXY=socks5://127.0.0.1:1080 (local SOCKS proxy)
       # Example: HTTP_PROXY=http://proxy.example.com:8080
+    # One process, no auto-reloader: after editing a .py file run `make reload`.
     command: python app.py
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5000/health', timeout=4)"]

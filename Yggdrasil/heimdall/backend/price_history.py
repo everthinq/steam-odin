@@ -39,7 +39,7 @@ STATISTICS_MARKETS = ('Steam', 'Buff', 'CsMoneyTrade', 'CsMoneyMarket', 'Dmarket
                       'Skinport', 'WhiteMarket', 'CsDeals', 'ShadowPay', 'CsTradeTrade', 'CsTradeMarket')
 WINDOW_DAYS = 30
 MIN_DAYS = 7                    # an item's own history replaces the seed from this many full days
-FLUSH_SECONDS = 60              # often: a docker restart under the reloader kills the worker unsaved
+FLUSH_SECONDS = 60              # often: a hard kill (crash, Docker's stop timeout) skips the atexit save
 SEED_MAX_AGE_DAYS = 30          # pulse's 30-day seed is downloaded again once a month while active
 SEED_TRUSTED_DAYS = 45          # an older seed is no longer used (its market stopped being active)
 SEED_UNAVAILABLE_DAYS = 30      # a seed pulse refused (its Table subscription) is not asked again for this long

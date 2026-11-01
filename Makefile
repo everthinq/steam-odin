@@ -4,7 +4,7 @@
 # Use 'make help' (or just 'make') to hear the songs of the commands.
 
 .PHONY: help odin forge raid bifrost sleep ragnarok helheim saga
-.PHONY: all build up dev down clean prune logs asf-setup asf asf-password ratatoskr-secret
+.PHONY: all build up dev down clean prune logs reload heimdall ratatoskr huginn asf-setup asf asf-password ratatoskr-secret
 
 # Default: Speak the wisdom
 help:
@@ -17,6 +17,7 @@ help:
 	@echo "  \033[0;32mbifrost\033[0m   (dev)    Open the bridge (Attached logs/interactive)"
 	@echo "  \033[0;32msleep\033[0m     (down)   Rest the warriors"
 	@echo "  \033[0;32msaga\033[0m      (logs)   Read the tales of the execution"
+	@echo "  \033[0;32mreload\033[0m             Restart the backend after editing its code (it never reloads by itself)"
 	@echo "  \033[0;32mragnarok\033[0m  (clean)  Destruction and renewal (Stop + remove orphans)"
 	@echo "  \033[0;32mhelheim\033[0m   (prune)  Send unused spirits to the underworld"
 	@echo "  \033[0;32masf-setup\033[0m          One-time ArchiSteamFarm setup (password + hardened config)"
@@ -78,15 +79,17 @@ helheim:
 heimdall:
 	docker compose up -d heimdall-backend heimdall-frontend
 
-# RATATOSKR: The Courier (Casemove)
+# RATATOSKR: The Courier (moves items between Storage Units and the inventory)
 ratatoskr:
-	# Assuming future service name 'ratatoskr'
-	@echo "Ratatoskr is still growing in the World Tree..."
+	docker compose up -d ratatoskr
 
-# HUGINN: The Scout (Skinsprice)
-huginn:
-	# Assuming future service name 'huginn'
-	@echo "Huginn is flying over Midgard..."
+# HUGINN: The Scout lives inside Heimdall (backend + frontend)
+huginn: heimdall
+
+# RELOAD: the backend has no auto-reloader; restart it after editing a .py file.
+# Only the backend restarts: Ratatoskr keeps its Steam sessions.
+reload:
+	docker compose restart heimdall-backend
 
 # ASF: ArchiSteamFarm, the card farmer Andvari drives (see Yggdrasil/asf/README.md)
 asf-setup:

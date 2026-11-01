@@ -90,8 +90,9 @@ All are bound to **127.0.0.1 only** — the app has no login; never expose it.
 - **Frontend:** `npm run lint` and `npm run build` in `Yggdrasil/heimdall/frontend`.
 - **CI** (`.github/workflows/ci.yml`) runs backend pytest + ruff + `pip-audit`
   and frontend lint + build on every push and pull request.
-- The backend reloads itself on every `.py` save; Ratatoskr needs
-  `docker restart steam-odin-ratatoskr-1` after a change.
+- The backend does not reload by itself: run `make reload` after editing a
+  `.py` file. Ratatoskr needs `docker restart steam-odin-ratatoskr-1` after a
+  change.
 
 ## 🔒 Security
 

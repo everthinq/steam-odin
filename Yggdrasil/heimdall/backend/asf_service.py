@@ -21,8 +21,8 @@ HTTP API:
 * **Ratatoskr coordination** — Steam allows one "playing" session per account,
   and Ratatoskr must play Counter-Strike 2 to reach its Game Coordinator. Before
   a Ratatoskr login, the account's bot is paused; once Ratatoskr's session is
-  gone the bot resumes. The paused set is persisted, because the backend reloads
-  on every save and must never strand a bot paused.
+  gone the bot resumes. The paused set is persisted, because a backend restart
+  (`make reload`) must never strand a bot paused.
 * **Only accounts with work run** — ASF's FAQ recommends at most 10 bots (Ivan
   chose 20, see ``MAX_RUNNING_BOTS``), and an idle logged-in bot is pure risk. So a bot
   is switched on only while its account has cards to farm (ASF's own queue,

@@ -14,8 +14,8 @@ Draupnir, Mímir and the Ratatoskr pages.
 
 The normal way is Docker from the repository root (`make odin`): frontend on
 http://localhost:3000, backend on http://localhost:5001, both bound to
-127.0.0.1. In Docker the backend runs `python app.py` with
-`FLASK_ENV=development`, so it **reloads on every `.py` save**.
+127.0.0.1. In Docker the backend runs `python app.py` as one process with no
+auto-reloader: after editing a `.py` file, run **`make reload`**.
 
 Running outside Docker is possible but not the supported path: the frontend's
 Vite proxy points at the Docker host name `heimdall-backend`, and the backend

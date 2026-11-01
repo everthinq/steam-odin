@@ -2,6 +2,8 @@ from flask import Flask, jsonify
 import atexit
 import logging
 import os
+import signal
+import sys
 from steam_service import SteamService
 from settings import SettingsManager
 from scheduler import ConfirmationScheduler
@@ -43,8 +45,8 @@ setup_logging()
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
-# Compact JSON even in development mode (Flask indents it there): a Huginn profile answer is
-# ~23,000 rows, and the indentation made it about a third bigger and slower to send.
+# Compact JSON, kept explicit (Flask indents it in debug mode): a Huginn profile answer is
+# ~23,000 rows, and indentation makes it about a third bigger and slower to send.
 app.json.compact = True
 # CORS only for the Heimdall frontend + refuse foreign Host headers (DNS
 # rebinding): no website open in the browser can read this login-less API.
@@ -63,9 +65,9 @@ huginn_service = HuginnService(steam_service, ratatoskr_service)
 huginn_service.settings_provider = settings_manager.get_settings
 # The active Huginn profiles: the only tables the keeper thread below downloads.
 apply_active_settings(huginn_service, settings_manager.get_settings())
-# Today's price history samples are saved at shutdown too (a reload on every .py save included).
-# A code reload exits normally (atexit runs); a docker restart kills the reloader's worker, so the
-# history also saves every minute (price_history.FLUSH_SECONDS).
+# Today's price history samples are saved at shutdown too: a docker stop / `make reload`
+# exits through stop_on_sigterm, so atexit runs. A hard kill (crash, Docker's timeout) skips
+# it, so the history also saves every minute (price_history.FLUSH_SECONDS).
 atexit.register(huginn_service.history.flush)
 draupnir_service = DraupnirService(huginn_service)
 # Draupnir point-in-time backups: snapshot portfolios.json on every change +
@@ -222,18 +224,10 @@ morning_routine = MorningRoutine(
 ctx.morning_routine = morning_routine
 
 
-def _should_start_background_scheduler():
-    """
-    Start the scheduler in the process that actually serves requests.
-    With FLASK debug + reloader, only the child has WERKZEUG_RUN_MAIN=true;
-    the old guard skipped the child, so auto-confirm never ran in Docker dev.
-    """
-    if os.environ.get('FLASK_ENV') != 'development':
-        return True
-    return os.environ.get('WERKZEUG_RUN_MAIN') == 'true'
-
-
-if _should_start_background_scheduler():
+def start_background():
+    """Start every background loop, once. Called only by ``python app.py`` below:
+    importing this module (a test, a script, ``python -c 'import app'``) builds
+    the services but never starts a second set of loops next to the live server."""
     scheduler.start()
     # Keep Case Arbitrage container prices warm: pull all markets from pulse hourly,
     # then fire alerts when a buy market is newly cheaper than CSFloat.
@@ -263,6 +257,7 @@ if _should_start_background_scheduler():
     # Master pulse feed: keep the active profiles' tables (and the Buff163 reference) fresh.
     huginn_service.pulse.start_keeper(lambda: settings_manager.get_settings().get('tradeon_token', ''))
 
+
 # Every error answers JSON with its real status (error_handlers.py).
 error_handlers.install(app)
 
@@ -278,8 +273,17 @@ def health_check():
         },
     }), 200
 
+def stop_on_sigterm(signal_number, frame):
+    """``docker stop`` / ``make reload`` send SIGTERM. As the container's first process,
+    Python would ignore it (Docker then kills it 10 seconds later, skipping atexit).
+    Exiting here ends at once and runs atexit (today's price history is saved)."""
+    sys.exit(0)
+
+
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
-    # Disable debug in production!
-    debug_mode = os.environ.get('FLASK_ENV') == 'development'
-    app.run(debug=debug_mode, host='0.0.0.0', port=port)
+    signal.signal(signal.SIGTERM, stop_on_sigterm)
+    start_background()
+    # One process, no debug mode and no auto-reloader: a saved file never restarts
+    # the backend (it used to restart every background loop); `make reload` does.
+    app.run(host='0.0.0.0', port=port, threaded=True, debug=False, use_reloader=False)

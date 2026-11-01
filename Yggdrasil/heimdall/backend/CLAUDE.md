@@ -45,16 +45,15 @@ Deep dives on single features live in [docs/internals/](../../../docs/internals/
 
 4. hangs the singletons on `context.ctx` and registers the blueprints
    (`routes/__init__.py`: accounts, settings, draupnir, ratatoskr, huginn, mimir, jobs);
-5. starts the background threads — **only in the reloader child**
-   (`WERKZEUG_RUN_MAIN == 'true'`) when `FLASK_ENV=development`, so they never
-   run twice — then `app.run(threaded=True)`.
+5. starts the background threads, once (one process, no auto-reloader), then
+   `app.run(threaded=True, use_reloader=False)`.
 
 > **`ctx` is populated only here.** In a bare `python -c` or `docker exec`
 > shell, `ctx.steam_service` etc. are `None`. Construct services directly or
 > mirror this wiring if you need to script against them.
 
-> **A constructor that raises takes the whole backend down** (and the
-> auto-reloader keeps restarting into the same crash). Compile before saving
+> **A constructor that raises takes the whole backend down** (Docker restarts
+> it into the same crash). Compile before `make reload`
 > (`python -m py_compile file.py`) and mind the order of attributes inside
 > `__init__` (load state before deriving from it).
 
@@ -82,7 +81,8 @@ On-demand threads: CSFloat sweep, trade-alert sender, market/cross-arbitrage/
 Harvest warmers, card-deals scans, `andvari-{kind}` store-purchase jobs,
 `storage-shop-{kind}` jobs (`plan`, `purchase`, `delivery`, `price sheet`), `store-arbitrage-warm`, `store-arbitrage-daily`, `store-boosts-check`, `store-boosts-ring`, `team-fortress-sell-now`, `market-access-check`.
 
-**Every one of these restarts when any `.py` file is saved** (see below).
+They start once, in `start_background()`, only when the backend runs as `python app.py`
+(importing `app` starts none). They all start again on `make reload` (see below).
 
 ## File map
 
@@ -176,17 +176,16 @@ Every setting with its default is in `settings.py` (`DEFAULT_SETTINGS`); the
 Settings route accepts known keys only and type-casts them. Notes:
 `csfloat_api_key` is a dead setting (keys come from `csfloat_keys.json`).
 
-Environment: `FLASK_ENV`, `PORT` (5000), `RATATOSKR_URL` (compose:
+Environment: `PORT` (5000), `RATATOSKR_URL` (compose:
 `http://ratatoskr:3000`; code fallback `:3030`), `ASF_URL`, `ASF_IPC_PASSWORD`
 (ASF off when empty), `HEIMDALL_SECRET_KEY`, `HEIMDALL_ALLOWED_HOSTS`,
 `HEIMDALL_LOG_LEVEL`, proxy variables.
 
 ## Running & testing
 
-Backend **auto-reloads on every `.py` save** (`FLASK_ENV=development` in
-`docker-compose.yml` enables werkzeug's watcher; see `Detected change … reloading`
-in `logs/heimdall.log`), and every background loop restarts with it — so an edit
-is live immediately, half-finished or not. Test long runs with outward effects
+The backend **does not reload by itself**: after editing a `.py` file run
+`make reload` (restarts this container only; every background loop starts again
+with it). Until then the old code runs. Test long runs with outward effects
 (Steam calls, Telegram alerts) in a sandbox script with its own cache file and a
 stubbed notifier.
 

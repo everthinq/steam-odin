@@ -165,8 +165,8 @@ Errors are `{message, responseType}` with types such as `MarketSubscriptionRequi
   (downloaded once for active markets pulse has them for, again monthly while active, ignored after
   45 days; a seed pulse refuses is marked `.unavailable` for a month) before. Sold-out items and
   prices their market has not refreshed for a day are not sampled; a table from before midnight that
-  finishes late is added to its own day; today's rows are saved every minute (a docker restart kills
-  the reloader's worker without atexit). Recording reads `PulseTable.quotes()` ({name: (price, count,
+  finishes late is added to its own day; today's rows are saved every minute (a docker restart stops
+  the process without atexit). Recording reads `PulseTable.quotes()` ({name: (price, count,
   updated)}, no dictionary per item) and gzips the day file outside the main lock (a separate
   writer lock), so `statistic()` readers never wait for a save. Statistics are computed once a day
   per table, both bases in one read of the window; only the results are kept (merged with the seed,
