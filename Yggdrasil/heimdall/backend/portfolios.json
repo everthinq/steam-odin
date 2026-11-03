@@ -4,7 +4,7 @@
       "id": "fbf692611b3c",
       "name": "everthinklol",
       "created_at": "2026-07-21T13:40:18.177768+00:00",
-      "updated_at": "2026-11-03T11:35:33.105994+00:00",
+      "updated_at": "2026-11-03T12:48:16.006247+00:00",
       "transactions": [
         {
           "id": "3ea474874554",
@@ -12025,7 +12025,7 @@
           "date": "2026-11-03T03:31:00",
           "note": "",
           "fee_percent": 0.0,
-          "is_arbitrage": false,
+          "is_arbitrage": true,
           "created_at": "2026-11-03T01:30:29.394688+00:00"
         },
         {
@@ -12049,7 +12049,7 @@
           "price": 0.18,
           "platform": "steam",
           "date": "2026-11-03T13:35:00",
-          "note": "",
+          "note": "for buff.market buy order of $0.25",
           "fee_percent": 0.0,
           "is_arbitrage": false,
           "created_at": "2026-11-03T11:34:55.306353+00:00"
@@ -12066,6 +12066,32 @@
           "fee_percent": 0.0,
           "is_arbitrage": false,
           "created_at": "2026-11-03T11:35:33.105978+00:00"
+        },
+        {
+          "id": "1edf6ec9bdf9",
+          "item_name": "MAC-10 | Malachite (Minimal Wear)",
+          "type": "sell",
+          "qty": 1,
+          "price": 2.44,
+          "platform": "cs.money.market",
+          "date": "2026-11-03T00:41:00",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": true,
+          "created_at": "2026-11-03T12:08:58.359634+00:00"
+        },
+        {
+          "id": "4b2f3a7d827c",
+          "item_name": "Fever Case",
+          "type": "sell",
+          "qty": 2,
+          "price": 0.58,
+          "platform": "buff.market",
+          "date": "2026-11-03T03:31:00",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": true,
+          "created_at": "2026-11-03T12:48:16.006212+00:00"
         }
       ]
     },
