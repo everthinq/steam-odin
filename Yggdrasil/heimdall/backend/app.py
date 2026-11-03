@@ -10,6 +10,7 @@ from scheduler import ConfirmationScheduler
 from ratatoskr_service import RatatoskrService
 from jobs import JobRegistry
 from storage_deposit import DepositService
+from storage_rename import RenameService
 from huginn_service import CASE_ALERTS_JOB, CASE_FULL_JOB, HuginnService
 from notifications import notification_channel
 from pulse_views import apply_active_settings
@@ -61,6 +62,8 @@ jobs = JobRegistry()
 deposit_service = DepositService(ratatoskr_service, jobs)
 # Nothing logs an account out of Ratatoskr between two batches of a move run.
 ratatoskr_service.moves_in_progress = deposit_service.busy
+# Rename Storage Unit tab; never renames while a move runs (the unit's id changes).
+rename_service = RenameService(ratatoskr_service, deposit_service.busy)
 huginn_service = HuginnService(steam_service, ratatoskr_service)
 # Every fee comes from the one Fees editor (settings huginn_market_fees).
 huginn_service.settings_provider = settings_manager.get_settings
@@ -168,6 +171,7 @@ ctx.steam_service = steam_service
 ctx.ratatoskr_service = ratatoskr_service
 ctx.jobs = jobs
 ctx.deposit_service = deposit_service
+ctx.rename_service = rename_service
 ctx.huginn_service = huginn_service
 ctx.draupnir_service = draupnir_service
 ctx.draupnir_backup = draupnir_backup

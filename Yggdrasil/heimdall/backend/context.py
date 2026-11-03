@@ -14,6 +14,7 @@ class _Context:
     ratatoskr_service = None
     jobs = None
     deposit_service = None
+    rename_service = None
     huginn_service = None
     draupnir_service = None
     draupnir_backup = None

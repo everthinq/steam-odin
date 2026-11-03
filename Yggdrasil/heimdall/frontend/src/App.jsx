@@ -12,6 +12,7 @@ const Confirmations = lazy(() => import('./pages/Confirmations'));
 const RatatoskrLayout = lazy(() => import('./pages/RatatoskrLayout'));
 const RatatoskrTransfer = lazy(() => import('./pages/ratatoskr/Transfer'));
 const RatatoskrAutoStore = lazy(() => import('./pages/ratatoskr/AutoStore'));
+const RatatoskrRenameStorageUnits = lazy(() => import('./pages/ratatoskr/RenameStorageUnits'));
 const RatatoskrStorageShop = lazy(() => import('./pages/ratatoskr/StorageShop'));
 const RatatoskrStoreCatalogue = lazy(() => import('./pages/ratatoskr/StoreCatalogue'));
 const HuginnArbitrage = lazy(() => import('./pages/huginn/Arbitrage'));
@@ -108,6 +109,7 @@ function App() {
             <Route path="inventory" element={<Navigate to="../transfer" replace />} />
             <Route path="transfer" element={<RatatoskrTransfer />} />
             <Route path="auto-store" element={<RatatoskrAutoStore />} />
+            <Route path="rename-storage-units" element={<RatatoskrRenameStorageUnits />} />
           </Route>
 
         </Routes>

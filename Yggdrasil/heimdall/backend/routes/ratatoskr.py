@@ -201,6 +201,33 @@ def ratatoskr_casket_rename():
     return jsonify(result)
 
 
+# ---- Rename Storage Unit (storage_rename.py) ---------------------------------------
+
+@bp.route('/api/ratatoskr/storage-units/<steamid>', methods=['GET'])
+def ratatoskr_storage_units(steamid):
+    """Every Storage Unit of the account: name, items held, named or not."""
+    return _command(lambda: ctx.rename_service.units(steamid))
+
+
+@bp.route('/api/ratatoskr/storage-units/<steamid>/rename', methods=['POST'])
+def ratatoskr_storage_unit_rename(steamid):
+    """Rename one Storage Unit: {item_id, name}."""
+    body = request.json or {}
+    return _command(lambda: ctx.rename_service.rename(steamid, body.get('item_id'), body.get('name')))
+
+
+@bp.route('/api/ratatoskr/storage-units/<steamid>/name-unnamed/plan', methods=['POST'])
+def ratatoskr_storage_units_name_plan(steamid):
+    """Plan: a "Storage N" name for every Storage Unit without one."""
+    return _command(lambda: ctx.rename_service.plan_name_unnamed(steamid))
+
+
+@bp.route('/api/ratatoskr/storage-units/name-plans/<plan_id>/execute', methods=['POST'])
+def ratatoskr_storage_units_name_execute(plan_id):
+    """Execute a naming plan, once."""
+    return _command(lambda: ctx.rename_service.execute(plan_id))
+
+
 @bp.route('/api/ratatoskr/auto-store', methods=['GET'])
 def get_auto_store():
     """Return auto-store watcher config + recent move history (newest first)."""

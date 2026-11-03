@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Outlet, Link, useParams, useLocation, useNavigate } from 'react-router-dom';
-import { ArrowRightLeft, Database, LayoutDashboard, Plug, Unplug, Timer, Boxes, Archive, Tags } from 'lucide-react';
+import { ArrowRightLeft, Database, LayoutDashboard, Plug, Unplug, Timer, Boxes, Archive, Tags, Pencil } from 'lucide-react';
 import { readJson } from '../utils/readJson';
 
 const STATUS_POLL_MS = 90 * 1000;
@@ -154,6 +154,7 @@ const RatatoskrLayout = () => {
     const navItems = [
         { path: 'transfer', icon: ArrowRightLeft, label: 'Transfer' },
         { path: 'auto-store', icon: Boxes, label: 'Auto-Store' },
+        { path: 'rename-storage-units', icon: Pencil, label: 'Rename Storage Unit' },
     ];
 
     const accountLabel = account?.account_name || 'Unknown account';
