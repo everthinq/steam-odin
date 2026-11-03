@@ -4,7 +4,7 @@
       "id": "fbf692611b3c",
       "name": "everthinklol",
       "created_at": "2026-07-21T13:40:18.177768+00:00",
-      "updated_at": "2026-11-03T17:43:39.034209+00:00",
+      "updated_at": "2026-11-03T18:33:01.530541+00:00",
       "transactions": [
         {
           "id": "3ea474874554",
@@ -12105,6 +12105,71 @@
           "fee_percent": 0.0,
           "is_arbitrage": true,
           "created_at": "2026-11-03T17:39:05.793524+00:00"
+        },
+        {
+          "id": "6512e9059314",
+          "item_name": "AUG | Tom Cat (Well-Worn)",
+          "type": "buy",
+          "qty": 10,
+          "price": 0.27,
+          "platform": "lisskins",
+          "date": "2026-11-03T20:00:00",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": true,
+          "created_at": "2026-11-03T18:09:48.850793+00:00"
+        },
+        {
+          "id": "928dbb3788a0",
+          "item_name": "AUG | Tom Cat (Well-Worn)",
+          "type": "sell",
+          "qty": 9,
+          "price": 0.43,
+          "platform": "steam",
+          "date": "2026-11-03T20:00:00",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": true,
+          "created_at": "2026-11-03T18:12:22.351445+00:00"
+        },
+        {
+          "id": "9f69b6484391",
+          "item_name": "Desert Eagle | Heat Treated (Field-Tested)",
+          "type": "buy",
+          "qty": 2,
+          "price": 0.9,
+          "platform": "lisskins",
+          "date": "2026-11-03T20:22:00",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": true,
+          "created_at": "2026-11-03T18:23:24.889234+00:00"
+        },
+        {
+          "id": "a658cc41f424",
+          "item_name": "Desert Eagle | Heat Treated (Field-Tested)",
+          "type": "sell",
+          "qty": 2,
+          "price": 1.04,
+          "platform": "csfloat",
+          "date": "2026-11-03T20:22:00",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": true,
+          "created_at": "2026-11-03T18:24:00.342386+00:00"
+        },
+        {
+          "id": "c9bfbfccd1d5",
+          "item_name": "Desert Eagle | Heat Treated (Field-Tested)",
+          "type": "buy",
+          "qty": 9,
+          "price": 0.9,
+          "platform": "lisskins",
+          "date": "2026-11-03T20:32:00",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": false,
+          "created_at": "2026-11-03T18:33:01.530512+00:00"
         }
       ]
     },
