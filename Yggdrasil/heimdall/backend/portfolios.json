@@ -4,7 +4,7 @@
       "id": "fbf692611b3c",
       "name": "everthinklol",
       "created_at": "2026-07-21T13:40:18.177768+00:00",
-      "updated_at": "2026-11-03T01:33:45.576237+00:00",
+      "updated_at": "2026-11-03T09:39:30.940420+00:00",
       "transactions": [
         {
           "id": "3ea474874554",
@@ -12027,6 +12027,19 @@
           "fee_percent": 0.0,
           "is_arbitrage": false,
           "created_at": "2026-11-03T01:30:29.394688+00:00"
+        },
+        {
+          "id": "c6a48289eedc",
+          "item_name": "AK-47 | Redline (Field-Tested)",
+          "type": "sell",
+          "qty": 1,
+          "price": 24.02,
+          "platform": "cs.money.trade",
+          "date": "2026-11-03T03:10:00",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": true,
+          "created_at": "2026-11-03T09:39:30.939828+00:00"
         }
       ]
     },
