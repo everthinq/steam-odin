@@ -4,7 +4,7 @@
       "id": "fbf692611b3c",
       "name": "everthinklol",
       "created_at": "2026-07-21T13:40:18.177768+00:00",
-      "updated_at": "2026-11-03T18:33:01.530541+00:00",
+      "updated_at": "2026-11-03T20:40:51.912853+00:00",
       "transactions": [
         {
           "id": "3ea474874554",
@@ -12162,7 +12162,7 @@
           "id": "c9bfbfccd1d5",
           "item_name": "Desert Eagle | Heat Treated (Field-Tested)",
           "type": "buy",
-          "qty": 9,
+          "qty": 15,
           "price": 0.9,
           "platform": "lisskins",
           "date": "2026-11-03T20:32:00",
@@ -12170,6 +12170,19 @@
           "fee_percent": 0.0,
           "is_arbitrage": false,
           "created_at": "2026-11-03T18:33:01.530512+00:00"
+        },
+        {
+          "id": "ac3508ef1789",
+          "item_name": "Sticker | dexter (Holo) | Paris 2023",
+          "type": "buy",
+          "qty": 2,
+          "price": 1.7,
+          "platform": "lisskins",
+          "date": "2026-11-03T22:40:00",
+          "note": "ev1 arbitrage",
+          "fee_percent": 0.0,
+          "is_arbitrage": true,
+          "created_at": "2026-11-03T20:40:51.912792+00:00"
         }
       ]
     },
@@ -14128,7 +14141,7 @@
       "id": "99c18756f9ee",
       "name": "everthinklol1",
       "created_at": "2026-07-21T14:49:46.392883+00:00",
-      "updated_at": "2026-11-03T17:39:51.454828+00:00",
+      "updated_at": "2026-11-03T20:42:01.280759+00:00",
       "transactions": [
         {
           "id": "ed83a19ba6bc",
@@ -18634,6 +18647,19 @@
           "fee_percent": 0.0,
           "is_arbitrage": true,
           "created_at": "2026-11-03T01:12:38.217610+00:00"
+        },
+        {
+          "id": "ffc24d199870",
+          "item_name": "Sticker | dexter (Holo) | Paris 2023",
+          "type": "sell",
+          "qty": 2,
+          "price": 1.85,
+          "platform": "csfloat",
+          "date": "2026-11-03T22:40:00",
+          "note": "ev arbitrage",
+          "fee_percent": 0.0,
+          "is_arbitrage": true,
+          "created_at": "2026-11-03T20:41:56.990397+00:00"
         }
       ]
     },
