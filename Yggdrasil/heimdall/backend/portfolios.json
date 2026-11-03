@@ -4,7 +4,7 @@
       "id": "fbf692611b3c",
       "name": "everthinklol",
       "created_at": "2026-07-21T13:40:18.177768+00:00",
-      "updated_at": "2026-11-03T09:39:30.940420+00:00",
+      "updated_at": "2026-11-03T11:35:33.105994+00:00",
       "transactions": [
         {
           "id": "3ea474874554",
@@ -11997,7 +11997,7 @@
           "price": 111.87,
           "platform": "csfloat",
           "date": "2026-11-03T03:21:00",
-          "note": "",
+          "note": "sell in 1 week on cs.trade",
           "fee_percent": 0.0,
           "is_arbitrage": false,
           "created_at": "2026-11-03T01:21:26.744322+00:00"
@@ -12040,6 +12040,32 @@
           "fee_percent": 0.0,
           "is_arbitrage": true,
           "created_at": "2026-11-03T09:39:30.939828+00:00"
+        },
+        {
+          "id": "f577c75c6739",
+          "item_name": "Sticker | Blinky",
+          "type": "buy",
+          "qty": 5,
+          "price": 0.18,
+          "platform": "steam",
+          "date": "2026-11-03T13:35:00",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": false,
+          "created_at": "2026-11-03T11:34:55.306353+00:00"
+        },
+        {
+          "id": "d2c401f3e447",
+          "item_name": "Buckshot | NSWC SEAL",
+          "type": "buy",
+          "qty": 1,
+          "price": 6.48,
+          "platform": "steam",
+          "date": "2026-11-03T13:35:00",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": false,
+          "created_at": "2026-11-03T11:35:33.105978+00:00"
         }
       ]
     },
