@@ -4,7 +4,7 @@
       "id": "fbf692611b3c",
       "name": "everthinklol",
       "created_at": "2026-07-21T13:40:18.177768+00:00",
-      "updated_at": "2026-11-03T20:40:51.912853+00:00",
+      "updated_at": "2026-11-03T21:37:51.227667+00:00",
       "transactions": [
         {
           "id": "3ea474874554",
@@ -11980,7 +11980,7 @@
           "id": "ec29198794f7",
           "item_name": "AK-47 | Redline (Field-Tested)",
           "type": "buy",
-          "qty": 1,
+          "qty": 2,
           "price": 23.56,
           "platform": "csfloat",
           "date": "2026-11-03T03:10:00",
@@ -11997,7 +11997,7 @@
           "price": 111.87,
           "platform": "csfloat",
           "date": "2026-11-03T03:21:00",
-          "note": "sell in 1 week on cs.trade",
+          "note": "sell in 1 week on cs.money.trade",
           "fee_percent": 0.0,
           "is_arbitrage": false,
           "created_at": "2026-11-03T01:21:26.744322+00:00"
@@ -12032,7 +12032,7 @@
           "id": "c6a48289eedc",
           "item_name": "AK-47 | Redline (Field-Tested)",
           "type": "sell",
-          "qty": 1,
+          "qty": 2,
           "price": 24.02,
           "platform": "cs.money.trade",
           "date": "2026-11-03T03:10:00",
@@ -12183,6 +12183,19 @@
           "fee_percent": 0.0,
           "is_arbitrage": true,
           "created_at": "2026-11-03T20:40:51.912792+00:00"
+        },
+        {
+          "id": "161e82b9ba66",
+          "item_name": "Five-SeveN | Berries And Cherries (Minimal Wear)",
+          "type": "buy",
+          "qty": 1,
+          "price": 92.0,
+          "platform": "skinswap_cn",
+          "date": "2026-11-03T23:15:00",
+          "note": "sell in 1 week on cs.money.trade",
+          "fee_percent": 0.0,
+          "is_arbitrage": false,
+          "created_at": "2026-11-03T21:23:40.901634+00:00"
         }
       ]
     },
