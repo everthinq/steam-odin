@@ -4,7 +4,7 @@
       "id": "fbf692611b3c",
       "name": "everthinklol",
       "created_at": "2026-07-21T13:40:18.177768+00:00",
-      "updated_at": "2026-11-02T22:59:11.806800+00:00",
+      "updated_at": "2026-11-03T01:33:45.576237+00:00",
       "transactions": [
         {
           "id": "3ea474874554",
@@ -11958,10 +11958,75 @@
           "price": 1.71,
           "platform": "buff.market",
           "date": "2026-11-03T00:59:00",
-          "note": "",
+          "note": "ev1 arbitrage",
           "fee_percent": 0.0,
           "is_arbitrage": true,
           "created_at": "2026-11-02T22:59:11.806775+00:00"
+        },
+        {
+          "id": "6c3dd505a4fc",
+          "item_name": "Sticker | Hello PP-Bizon",
+          "type": "buy",
+          "qty": 1,
+          "price": 0.14,
+          "platform": "csfloat",
+          "date": "2026-11-03T03:00:00",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": false,
+          "created_at": "2026-11-03T01:00:44.557585+00:00"
+        },
+        {
+          "id": "ec29198794f7",
+          "item_name": "AK-47 | Redline (Field-Tested)",
+          "type": "buy",
+          "qty": 1,
+          "price": 23.56,
+          "platform": "csfloat",
+          "date": "2026-11-03T03:10:00",
+          "note": "$24 arb to cs.money.trade",
+          "fee_percent": 0.0,
+          "is_arbitrage": true,
+          "created_at": "2026-11-03T01:10:58.385742+00:00"
+        },
+        {
+          "id": "9b1362341f4b",
+          "item_name": "\u2605 Shadow Daggers | Stained (Factory New)",
+          "type": "buy",
+          "qty": 1,
+          "price": 111.87,
+          "platform": "csfloat",
+          "date": "2026-11-03T03:21:00",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": false,
+          "created_at": "2026-11-03T01:21:26.744322+00:00"
+        },
+        {
+          "id": "968db4cf8d62",
+          "item_name": "Kilowatt Case",
+          "type": "buy",
+          "qty": 13,
+          "price": 0.07,
+          "platform": "cs.money.trade",
+          "date": "2026-11-03T03:30:00",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": false,
+          "created_at": "2026-11-03T01:29:17.158581+00:00"
+        },
+        {
+          "id": "87255a855bf6",
+          "item_name": "Fever Case",
+          "type": "buy",
+          "qty": 2,
+          "price": 0.48,
+          "platform": "cs.money.trade",
+          "date": "2026-11-03T03:31:00",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": false,
+          "created_at": "2026-11-03T01:30:29.394688+00:00"
         }
       ]
     },
@@ -13920,7 +13985,7 @@
       "id": "99c18756f9ee",
       "name": "everthinklol1",
       "created_at": "2026-07-21T14:49:46.392883+00:00",
-      "updated_at": "2026-11-01T21:58:41.330335+00:00",
+      "updated_at": "2026-11-03T01:12:54.783035+00:00",
       "transactions": [
         {
           "id": "ed83a19ba6bc",
@@ -18413,6 +18478,19 @@
           "fee_percent": 0.0,
           "is_arbitrage": true,
           "created_at": "2026-11-01T21:58:41.330300+00:00"
+        },
+        {
+          "id": "3a55e3bdf4d9",
+          "item_name": "Sticker | Snax (Gold) | Shanghai 2024",
+          "type": "sell",
+          "qty": 1,
+          "price": 1.74,
+          "platform": "cs.money.trade",
+          "date": "2026-11-03T00:59:00",
+          "note": "ev arbitrage",
+          "fee_percent": 0.0,
+          "is_arbitrage": true,
+          "created_at": "2026-11-03T01:12:38.217610+00:00"
         }
       ]
     },
