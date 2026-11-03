@@ -240,6 +240,10 @@ Counts and wallets are remembered per account (`known` in
 `cache/storage_shop.json`) so the page shows the last values with their age
 without reading Steam.
 
+### 5.1 New units are named at once (2026-11-03)
+
+A new Storage Unit has no name, and the Game Coordinator refuses items into it until it gets one. So after every delivered Storage Unit purchase (and after Deliver again), `_name_new_units` names each unnamed unit on the account "Storage N", N going on from the highest number already used (`next_storage_names`; "Storage3" and "Storage 3" both count). Ivan's rule: the name does not matter, it only activates the unit. One rename after another; a failed naming never fails the purchase: the purchase record keeps `named` or `naming_error`, and the log says which (then rename it in Transfer, From mode). The rename itself: [known-issues.md](known-issues.md).
+
 ## 6. What failed live, and the fix
 
 | Symptom | Cause | Fix |

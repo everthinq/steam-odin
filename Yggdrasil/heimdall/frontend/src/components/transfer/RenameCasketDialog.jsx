@@ -5,7 +5,7 @@ import { readJson } from '../../utils/readJson';
 export const CASKET_NAME_MAX_LENGTH = 20;
 
 /**
- * Renames one Storage Unit (free in the game, up to 20 characters). `onRenamed(updatedCasket)` after
+ * Renames one Storage Unit (free in the game, up to 20 characters). `onRenamed(updatedCasket, previousItemId)` after
  * the backend confirmed the new name; `onClose` on Cancel, Escape or a click outside. Mount it with
  * `key={casket.item_id}` so the draft starts from that unit's name.
  */
@@ -39,7 +39,11 @@ const RenameCasketDialog = ({ steamid, casket, onClose, onRenamed }) => {
                 throw new Error(data.error || 'Failed to rename storage unit');
             }
             setSaving(false);
-            onRenamed(data.casket || { ...casket, item_customname: data.custom_name || trimmed || undefined });
+            // The Game Coordinator may give the renamed unit a new item id: pass the old one along.
+            onRenamed(
+                data.casket || { ...casket, item_id: data.item_id || casket.item_id, item_customname: data.custom_name || trimmed || undefined },
+                data.previous_item_id || casket.item_id
+            );
         } catch (err) {
             console.error(err);
             setError(err.message || 'Rename failed');

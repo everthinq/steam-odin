@@ -1589,10 +1589,18 @@ const RatatoskrTransfer = () => {
                     steamid={steamid}
                     casket={renamingCasket}
                     onClose={() => setRenamingCasket(null)}
-                    onRenamed={(updated) => {
+                    onRenamed={(updated, previousId) => {
                         setCaskets((prev) =>
-                            prev.map((c) => (c.item_id === updated.item_id ? { ...c, ...updated } : c))
+                            prev.map((c) => (c.item_id === previousId ? { ...c, ...updated } : c))
                         );
+                        if (updated.item_id !== previousId) {
+                            // The first naming gives the unit a new id: what was read under the
+                            // old one (All storage units) is read again.
+                            invalidateAllStorageCache();
+                            setSelectedCasketIds((prev) =>
+                                prev.map((id) => (id === previousId ? updated.item_id : id))
+                            );
+                        }
                         setRenamingCasket(null);
                     }}
                 />

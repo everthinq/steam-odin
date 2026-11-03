@@ -232,6 +232,20 @@ class FakeRatatoskr:
         self.status, self.pending_moves, self.finalize_errors = status, 0, 0
         self.request_changes, self.no_request = {}, False
         self.item_definitions = []
+        self.caskets = [{'item_id': '1', 'item_customname': 'Storage0'}, {'item_id': '2', 'item_customname': 'Storage 3'}]
+        self.rename_error = None
+
+    def get_caskets(self, steamid):
+        return {'success': True, 'caskets': [dict(unit) for unit in self.caskets]}
+
+    def rename_casket(self, steamid, casket_id, name):
+        self.calls.append(('rename', casket_id, name))
+        if self.rename_error:
+            return {'error': self.rename_error}
+        for unit in self.caskets:
+            if unit['item_id'] == casket_id:
+                unit['item_customname'] = name
+        return {'success': True, 'item_id': casket_id, 'custom_name': name}
 
     def get_status(self, steamid):
         return {'status': 'connected' if self.connected else self.status}
@@ -275,6 +289,7 @@ class FakeRatatoskr:
             return {'error': 'No active GC session', 'status_code': 401}
         if self.finalize_result == 1:
             self.units += 2
+            self.caskets += [{'item_id': '11', 'item_customname': None}, {'item_id': '12', 'item_customname': None}]
             return {'result': 1, 'itemIds': ['11', '12'], 'storageUnits': self.units}
         return {'result': self.finalize_result, 'itemIds': []}
 
@@ -869,3 +884,42 @@ def test_wallets_and_sheet_entries_need_no_steam_call(tmp_path):
     assert len(wallets) == 1 and wallets[0]['currency'] == 'USD'
     assert service.sheet_entries()['casket']['USD'] == 199
     assert service.exchange_rates() == RATES
+
+
+def test_next_storage_names_go_on_from_the_highest_number():
+    assert shop.next_storage_names(['Storage0', 'Storage 3', 'Main', None, 'storage2'], 2) == ['Storage 4', 'Storage 5']
+    assert shop.next_storage_names([None, 'Cases'], 1) == ['Storage 1']
+    assert shop.next_storage_names(['Storage1'], 0) == []
+
+
+def test_new_storage_units_are_named_after_delivery(tmp_path):
+    service = _service(tmp_path)
+    ratatoskr = service.ratatoskr
+    result = {}
+    service._name_new_units(STEAMID, result)
+    assert result == {} and not [c for c in ratatoskr.calls if c[0] == 'rename']
+    ratatoskr.caskets += [{'item_id': '11', 'item_customname': None}, {'item_id': '12', 'item_customname': ' '}]
+    service._name_new_units(STEAMID, result)
+    assert [c for c in ratatoskr.calls if c[0] == 'rename'] == [('rename', '11', 'Storage 4'), ('rename', '12', 'Storage 5')]
+    assert result == {'named': ['Storage 4', 'Storage 5']}
+
+
+def test_a_failed_naming_never_fails_the_purchase(tmp_path):
+    service = _service(tmp_path)
+    ratatoskr = service.ratatoskr
+    ratatoskr.caskets.append({'item_id': '11', 'item_customname': None})
+    ratatoskr.rename_error = 'Rename timed out waiting for GC'
+    result = {'ok': True}
+    service._name_new_units(STEAMID, result)
+    assert result['ok'] is True and 'named' not in result
+    assert 'Rename timed out' in result['naming_error']
+
+
+def test_a_delivered_unit_not_listed_yet_is_reported(tmp_path):
+    service = _service(tmp_path)
+    ratatoskr = service.ratatoskr
+    ratatoskr.caskets.append({'item_id': '11', 'item_customname': None})
+    result = {'item_ids': ['11', '99']}
+    service._name_new_units(STEAMID, result)
+    assert result['named'] == ['Storage 4']
+    assert 'not in the Storage Unit list yet: 99' in result['naming_error']

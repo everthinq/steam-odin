@@ -125,6 +125,16 @@ const { enqueueMoves, getMoveQueueStatus, hasActiveMoveWork, dropMoveQueue } = c
 });
 
 const CASKET_NAME_MAX_LENGTH = 20;
+const COUNTER_STRIKE_APP_ID = 730;
+
+// The rename message the Game Coordinator accepts since 2026-10-08 (Valve's
+// base_gcmessages.proto in GameTracking-CS2). protobufjs comes with globaloffensive.
+// keepCase: otherwise protobufjs expects camelCase keys and encodes an empty message.
+const ModifyItemStringAttr = require('protobufjs').parse(
+    'syntax = "proto2"; message CMsgModifyItemStringAttr { optional uint64 tool_item_id = 1; '
+    + 'optional uint64 subject_item_id = 2; optional uint32 attr_def = 3; optional string attr_value = 4; }',
+    { keepCase: true }
+).root.lookupType('CMsgModifyItemStringAttr');
 
 // Helper to get session
 const getSession = (steamID) => sessions[steamID];
@@ -132,6 +142,10 @@ const getSession = (steamID) => sessions[steamID];
 const renameCasket = (session, casketId, name) => {
     const { csgo } = session;
     const trimmed = String(name ?? '').trim();
+    // A unit without a name refuses items, so a name is never removed (Ivan, 2026-11-03).
+    if (!trimmed) {
+        return Promise.reject(new Error('A Storage Unit needs a name: without one it refuses items'));
+    }
     if (trimmed.length > CASKET_NAME_MAX_LENGTH) {
         return Promise.reject(
             new Error(`Name must be ${CASKET_NAME_MAX_LENGTH} characters or less`)
@@ -158,37 +172,68 @@ const renameCasket = (session, casketId, name) => {
             GlobalOffensive.ItemCustomizationNotification.RemoveItemName,
         ]);
 
-        const finish = () => {
-            const updated = csgo.inventory?.find((item) => String(item.id) === idStr);
+        // The Game Coordinator may hand the renamed unit a NEW item id (seen live 2026-11-03:
+        // the old id is removed, the unit comes back under a new one), so the answer names it.
+        const finish = (newId) => {
+            const id = String(newId ?? idStr);
+            const updated = csgo.inventory?.find((item) => String(item.id) === id);
             cleanup();
             resolve({
-                item_id: idStr,
+                item_id: id,
+                previous_item_id: idStr,
                 custom_name: updated?.custom_name ?? (trimmed || null),
             });
         };
 
         const onChanged = (oldItem, item) => {
-            if (String(item?.id) !== idStr) return;
-            finish();
+            // A move changes the unit too (its item count): only the new name counts.
+            if (String(item?.id) !== idStr || (item.custom_name ?? '') !== trimmed) return;
+            finish(idStr);
+        };
+
+        const onAcquired = (item) => {
+            if (item?.def_index !== 1201) return;
+            if ((item.custom_name ?? '') !== trimmed) return;
+            finish(item.id);
         };
 
         const onNotif = (itemIds, notificationType) => {
-            if (!itemIds?.some((id) => String(id) === idStr)) return;
             if (!doneTypes.has(notificationType)) return;
-            finish();
+            const ids = (itemIds || []).map(String);
+            if (ids.includes(idStr)) return finish(idStr);
+            const renamed = ids.find((id) =>
+                csgo.inventory?.some((item) => String(item.id) === id && item.def_index === 1201)
+            );
+            if (renamed) finish(renamed);
         };
 
         const cleanup = () => {
             clearTimeout(timeout);
             csgo.removeListener('itemChanged', onChanged);
+            csgo.removeListener('itemAcquired', onAcquired);
             csgo.removeListener('itemCustomizationNotification', onNotif);
         };
 
         csgo.on('itemChanged', onChanged);
+        csgo.on('itemAcquired', onAcquired);
         csgo.on('itemCustomizationNotification', onNotif);
 
         try {
-            csgo.nameItem('0', idStr, trimmed);
+            // Since the Counter-Strike 2 update of 2026-10-08 the Game Coordinator silently
+            // ignores the old binary NameItem that `csgo.nameItem` sends; it takes the protobuf
+            // CMsgModifyItemStringAttr under the same message id (1006). No name tag
+            // (tool_item_id 0) and attr_def left unset — with 111 there is no answer.
+            // Verified live 2026-11-03; docs/internals/known-issues.md.
+            session.user.sendToGC(
+                COUNTER_STRIKE_APP_ID,
+                GlobalOffensive.ItemCustomizationNotification.NameItem,
+                {},
+                Buffer.from(ModifyItemStringAttr.encode(ModifyItemStringAttr.fromObject({
+                    tool_item_id: '0',
+                    subject_item_id: idStr,
+                    attr_value: trimmed,
+                })).finish())
+            );
             session.lastActivity = Date.now();
         } catch (err) {
             cleanup();
@@ -574,12 +619,14 @@ app.post('/casket/rename', (req, res) => {
     renameCasket(session, casketID, name)
         .then((result) => {
             const raw = session.csgo.inventory?.find(
-                (item) => String(item.id) === String(casketID)
+                (item) => String(item.id) === String(result.item_id)
             );
             const formatted = raw ? itemsProcessor.inventoryConverter([raw]) : [];
+            if (res.headersSent) return;
             res.json({
                 success: true,
                 item_id: result.item_id,
+                previous_item_id: result.previous_item_id,
                 custom_name: result.custom_name,
                 casket: formatted[0] || {
                     item_id: result.item_id,

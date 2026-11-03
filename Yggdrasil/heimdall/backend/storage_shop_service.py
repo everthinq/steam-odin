@@ -116,6 +116,20 @@ class ShopError(RuntimeError):
 
 # ---- pure helpers (unit-tested) ------------------------------------------------------------
 
+STORAGE_NAME_PATTERN = re.compile(r'^storage\s*(\d+)$', re.IGNORECASE)
+
+
+def next_storage_names(existing_names, count):
+    """`count` names "Storage N" for new Storage Units, N going on from the highest number already
+    used ("Storage3" and "Storage 3" both count; none used = start at 1). The name only
+    activates the unit: the Game Coordinator refuses items into a unit that has none (Ivan,
+    2026-11-03: any name will do)."""
+    numbers = [int(match.group(1)) for match in
+               (STORAGE_NAME_PATTERN.match((name or '').strip()) for name in existing_names) if match]
+    start = max(numbers) + 1 if numbers else 1
+    return [f'Storage {number}' for number in range(start, start + count)]
+
+
 def decode_price_sheet(raw):
     """The store's price sheet as a dict. *raw* is Valve's LZMA container ("LZMA",
     uncompressed size, compressed size, 5 property bytes, data) holding binary
@@ -863,6 +877,8 @@ class StorageShopService:
                 after = (self.ratatoskr.store_user_data(steamid) or {}).get('storage_units')
             result['storage_units_after'] = after
             result['ok'] = True
+            if storage_units:
+                self._name_new_units(steamid, result)
             # Paid: the wallet is lower by the total (re-read on the next check).
             self._remember(steamid, balance=balance - expected, checked_at=time.time(),
                            **({'storage_units': after, 'storage_units_at': time.time()} if after is not None else {}))
@@ -927,6 +943,39 @@ class StorageShopService:
             return {'started': False, 'error': 'no unclear purchase with that time'}
         return self._start('delivery', self._deliver_again, (entry,))
 
+    def _name_new_units(self, steamid, result):
+        """Give every Storage Unit without a name a "Storage N" name, so it takes items (a new unit
+        refuses them until it is named). Never fails the purchase: what happened is kept on the
+        result (`named`, `naming_error`). One rename after another (rule 21)."""
+        named, problems = [], []
+        try:
+            delivered = {str(item_id) for item_id in result.get('item_ids') or []}
+            for attempt in range(COUNT_TRIES):      # the new units can reach the list a moment late
+                caskets = (self.ratatoskr.get_caskets(steamid) or {}).get('caskets') or []
+                if delivered <= {str(unit.get('item_id')) for unit in caskets}:
+                    break
+                self._sleep(COUNT_GAP_SECONDS)
+            missing = delivered - {str(unit.get('item_id')) for unit in caskets}
+            if missing:
+                problems.append(f'not in the Storage Unit list yet: {", ".join(sorted(missing))}')
+            unnamed = [unit for unit in caskets if not (unit.get('item_customname') or '').strip()]
+            names = next_storage_names([unit.get('item_customname') for unit in caskets], len(unnamed))
+            for unit, name in zip(unnamed, names):
+                answer = self.ratatoskr.rename_casket(steamid, unit.get('item_id'), name) or {}
+                if answer.get('error'):
+                    problems.append(f'{unit.get("item_id")}: {answer["error"]}')
+                else:
+                    named.append(name)
+        except Exception as e:      # the purchase itself succeeded; naming is a follow-up
+            problems.append(str(e))
+        if named:
+            result['named'] = named
+            log.info('[STORAGE-SHOP] named new Storage Units on %s: %s', steamid, ', '.join(named))
+        if problems:
+            result['naming_error'] = ('could not name every new Storage Unit (name it in Transfer, From mode): '
+                                      + '; '.join(problems))
+            log.warning('[STORAGE-SHOP] %s: %s', steamid, result['naming_error'])
+
     def _deliver_again(self, entry):
         self._set_job(total=1, phase=f'delivering again: {entry["account_name"]}')
         self._step(entry['steamid'], 'delivering')
@@ -941,6 +990,8 @@ class StorageShopService:
                 if storage_units and finalized.get('storageUnits') is not None:
                     self._remember(entry['steamid'], storage_units=finalized['storageUnits'], storage_units_at=time.time())
                 self._mark_plan(entry['steamid'], 'bought')
+                if storage_units:
+                    self._name_new_units(entry['steamid'], entry)
             else:
                 entry['error'] = (f'delivering again failed (result {finalized.get("error") or finalized.get("result")})'
                                   ' — it MAY BE PAID: check the account (Steam → account → purchase history)')
