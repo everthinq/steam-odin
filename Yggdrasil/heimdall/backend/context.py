@@ -22,6 +22,7 @@ class _Context:
     steam_market_service = None
     gjallarhorn_service = None
     gjallarhorn_news_service = None
+    gjallarhorn_reminders = None
     cross_arbitrage_service = None
     harvest_service = None
     morning_routine = None

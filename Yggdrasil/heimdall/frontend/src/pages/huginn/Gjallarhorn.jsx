@@ -8,6 +8,7 @@ import MarketHoldEditor from '../../components/gjallarhorn/MarketHoldEditor';
 import TargetBasket from '../../components/gjallarhorn/TargetBasket';
 import ReadinessPanel from '../../components/gjallarhorn/ReadinessPanel';
 import NewsWatcher from '../../components/gjallarhorn/NewsWatcher';
+import ResellReminders from '../../components/gjallarhorn/ResellReminders';
 import { failureMessage, readJson } from '../../utils/readJson';
 
 // Reference markets the "current price" can be read on (mirrors the backend
@@ -200,6 +201,11 @@ const Gjallarhorn = () => {
                 {/* News watcher (bullet 4): rings when Valve limits a case/collection */}
                 <div className="shrink-0">
                     <NewsWatcher />
+                </div>
+
+                {/* Resell reminders: a Telegram text when an item's trade lock ends */}
+                <div className="shrink-0">
+                    <ResellReminders />
                 </div>
 
                 {/* Controls row */}

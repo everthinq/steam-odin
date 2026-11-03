@@ -19,6 +19,7 @@ from mimir_service import MimirService
 from steam_market_service import SteamMarketService
 from gjallarhorn_service import GjallarhornService
 from gjallarhorn_news_service import GjallarhornNewsService
+from gjallarhorn_reminders import ResellReminderService
 from cross_arbitrage_service import CrossArbitrageService
 from harvest_service import HarvestService
 from card_deals_service import CardDealsService
@@ -91,6 +92,7 @@ telegram_caller = TelegramCaller()
 # Gjallarhorn news watcher (bullet 4): polls the official CS2 update feed and
 # rings + texts when Valve adds/removes a case/collection/capsule/souvenir.
 gjallarhorn_news_service = GjallarhornNewsService(settings_manager, telegram_caller)
+gjallarhorn_reminders = ResellReminderService(settings_manager)
 # Cross-profile arbitrage: best buy-min -> autobuy-sell route per held item,
 # pooled across all Draupnir accounts (Huginn pulse prices + Draupnir holdings).
 cross_arbitrage_service = CrossArbitrageService(huginn_service, draupnir_service)
@@ -174,6 +176,7 @@ ctx.mimir_service = mimir_service
 ctx.steam_market_service = steam_market_service
 ctx.gjallarhorn_service = gjallarhorn_service
 ctx.gjallarhorn_news_service = gjallarhorn_news_service
+ctx.gjallarhorn_reminders = gjallarhorn_reminders
 ctx.cross_arbitrage_service = cross_arbitrage_service
 ctx.harvest_service = harvest_service
 ctx.telegram_caller = telegram_caller
@@ -240,6 +243,8 @@ def start_background():
     huginn_service.start_auction_tracker(lambda: settings_manager.get_settings())
     # Gjallarhorn: watch the CS2 update feed for case/collection limiting events.
     gjallarhorn_news_service.start()
+    # Gjallarhorn: one Telegram text when a held item's trade lock ends (never rings).
+    gjallarhorn_reminders.start()
     # Andvari: rescan card deals on the configured interval (sale scope first).
     card_deals_service.start_background()
     # ASF: provision bots, assist logins, resume bots after Ratatoskr sessions.

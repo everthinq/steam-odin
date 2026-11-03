@@ -92,6 +92,8 @@ def test_huginn_blueprint_registers_all_routes():
                  '/api/huginn/gjallarhorn/news/status',
                  '/api/huginn/gjallarhorn/news/check',
                  '/api/huginn/gjallarhorn/news/test',
+                 '/api/huginn/gjallarhorn/reminders',
+                 '/api/huginn/gjallarhorn/reminders/<reminder_id>',
                  '/api/huginn/arbitrage/cross-profile',
                  '/api/huginn/arbitrage/cross-profile/config',
                  '/api/huginn/harvest', '/api/huginn/harvest/options', '/api/huginn/morning-routine', '/api/huginn/pulse',
@@ -114,7 +116,7 @@ def test_huginn_blueprint_registers_all_routes():
     # +5 Team Fortress 2 rules: status, play, check-news, detect, sell-now; +1 card auto-sell status;
     # +3 Buy games: status, plan, run; +5 pulse feed: kept, download, price dips (+ markets), check live;
     # Active profiles (GET+POST) replaced the Pulse feed switchboard (kept, download) on 2026-10-31.
-    assert _rule_count(bp, "/api/huginn") == 81
+    assert _rule_count(bp, "/api/huginn") == 84
 
 
 def test_register_blueprints_wires_onto_app():

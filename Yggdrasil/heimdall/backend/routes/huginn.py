@@ -728,6 +728,33 @@ def gjallarhorn_news_test():
     return jsonify({'hits': detect(text)})
 
 
+@bp.route('/api/huginn/gjallarhorn/reminders', methods=['GET'])
+def gjallarhorn_reminders_list():
+    """Resell reminders: items to resell when their trade lock ends."""
+    return jsonify(ctx.gjallarhorn_reminders.list())
+
+
+@bp.route('/api/huginn/gjallarhorn/reminders', methods=['POST'])
+def gjallarhorn_reminders_add():
+    """{item_name, unlock_at (ISO with offset), note} → one Telegram text at that time."""
+    from gjallarhorn_reminders import CommandError
+    body = request.get_json(silent=True) or {}
+    try:
+        return jsonify(ctx.gjallarhorn_reminders.add(body.get('item_name'), body.get('unlock_at'), body.get('note')))
+    except CommandError as e:
+        return jsonify({'error': str(e), 'code': e.code}), 400
+
+
+@bp.route('/api/huginn/gjallarhorn/reminders/<reminder_id>', methods=['DELETE'])
+def gjallarhorn_reminders_remove(reminder_id):
+    from gjallarhorn_reminders import CommandError
+    try:
+        ctx.gjallarhorn_reminders.remove(reminder_id)
+    except CommandError as e:
+        return jsonify({'error': str(e), 'code': e.code}), 404
+    return jsonify({'ok': True})
+
+
 @bp.route('/api/huginn/lootfarm/arbitrage', methods=['GET'])
 def huginn_lootfarm_arbitrage():
     """Buy LF balance cheap → acquire LF item → instant-sell into Steam/Buff/CSFloat buy
