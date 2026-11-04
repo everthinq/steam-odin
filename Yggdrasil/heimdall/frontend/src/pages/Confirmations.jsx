@@ -3,15 +3,6 @@ import { useParams, Link, useNavigate } from 'react-router-dom';
 import { ArrowLeft, RefreshCw, CheckCircle2, XCircle, AlertCircle } from 'lucide-react';
 import { readJson } from '../utils/readJson';
 
-const typeLabels = {
-    1: 'Test',
-    2: 'Trade',
-    3: 'Market Listing',
-    4: 'Feature Opt-Out',
-    5: 'Phone Number Change',
-    6: 'Account Recovery'
-};
-
 const Confirmations = () => {
     const { steamid } = useParams();
     const navigate = useNavigate();
@@ -65,10 +56,7 @@ const Confirmations = () => {
             const res = await fetch(`/api/accounts/${steamid}/confirmations/${conf.id}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    ck: conf.nonce || conf.key,
-                    op
-                })
+                body: JSON.stringify({ op })
             });
             const data = await readJson(res);
 
@@ -153,7 +141,7 @@ const Confirmations = () => {
                 ) : (
                     <div className="space-y-4">
                         {confirmations.map((conf) => {
-                            const typeLabel = typeLabels[conf.type] || 'Unknown';
+                            const typeLabel = conf.type_name;
                             const headline = conf.headline || 'Confirmation';
                             const summary = conf.summary || [];
                             return (
@@ -179,7 +167,6 @@ const Confirmations = () => {
                                         </div>
                                         <div className="text-left md:text-right text-[10px] text-frost-white/30 font-mono w-full md:w-auto">
                                             <div>CID: {conf.id}</div>
-                                            <div>CK: {conf.nonce || conf.key}</div>
                                         </div>
                                     </div>
                                     <div className="flex justify-end gap-3">

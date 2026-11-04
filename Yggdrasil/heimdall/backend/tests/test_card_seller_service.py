@@ -8,6 +8,7 @@ import time
 import pytest
 
 import card_seller_service
+from steam_service import describe_confirmation
 from card_seller_service import CardSellerService, inventory_cards, sales_statistics, MAX_SELL_TRIES
 
 
@@ -127,7 +128,7 @@ class FakeSteam:
         return {}
 
     def get_confirmations(self, steamid):
-        return {'success': True, 'confirmations': list(self.confirmations)}
+        return {'success': True, 'confirmations': [describe_confirmation(c) for c in self.confirmations]}
 
     def act_on_confirmations_batch(self, steamid, items, operation):
         self.accepted.append((steamid, list(items)))

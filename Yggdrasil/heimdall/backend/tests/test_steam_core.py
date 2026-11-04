@@ -20,7 +20,7 @@ import settings as settings_module
 import steam_service as steam_service_module
 from scheduler import ConfirmationScheduler
 from settings import SettingsManager
-from steam_service import SteamService, _redact_body, _redact_url
+from steam_service import SteamService, _redact_body, _redact_url, describe_confirmation
 
 STEAMID = '76561198000000001'
 
@@ -524,11 +524,11 @@ def test_should_auto_accept(conf, settings, expected):
 def test_process_account_logs_each_accepted_confirmation(caplog):
     class Steam:
         def get_confirmations(self, steamid):
-            return {'success': True, 'confirmations': [
+            return {'success': True, 'confirmations': [describe_confirmation(c) for c in [
                 {'id': '1', 'nonce': 'n1', 'type': 2, 'type_name': 'Trade Offer',
                  'headline': 'lootfarm bot', 'summary': ['You will give 1 item'], 'creator_id': '555'},
                 {'id': '2', 'nonce': 'n2', 'type': 9, 'type_name': 'API Key', 'headline': 'key'},
-            ]}
+            ]]}
 
         def act_on_confirmations_batch(self, steamid, items, operation):
             self.items = items

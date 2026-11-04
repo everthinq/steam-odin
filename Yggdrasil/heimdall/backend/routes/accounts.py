@@ -56,31 +56,18 @@ def list_confirmations(steamid):
         return jsonify({"error": f"Unexpected error: {str(e)}"}), 500
 
 
+_RESPOND_STATUS = {'confirmation_not_found': 404, 'confirmations_unavailable': 502, 'steam_refused': 502}
+
+
 @bp.route('/api/accounts/<steamid>/confirmations/<cid>', methods=['POST'])
 def act_on_confirmation(steamid, cid):
-    """Approve or deny a specific confirmation."""
-    try:
-        if not request.json:
-            return jsonify({"error": "Missing JSON body"}), 400
-
-        body = request.json
-        ck = body.get('ck')
-        operation = body.get('op', 'allow')
-
-        if not ck:
-            return jsonify({"error": "Missing confirmation key (ck)"}), 400
-
-        if operation not in ('allow', 'cancel'):
-            return jsonify({"error": "Invalid operation; must be 'allow' or 'cancel'"}), 400
-
-        result = ctx.steam_service.act_on_confirmation(steamid, cid, ck, operation=operation)
-
-        if not result.get('success'):
-            return jsonify({"error": result.get('message', 'Failed to act on confirmation'), "details": result.get('details'), "raw": result.get('raw')}), 400
-
-        return jsonify({"status": "success"})
-    except Exception as e:
-        return jsonify({"error": f"Unexpected error: {str(e)}"}), 500
+    """Approve or deny one confirmation: body {op: 'allow' | 'cancel'}. The
+    backend finds the confirmation's key itself."""
+    body = request.get_json(silent=True) or {}
+    result = ctx.steam_service.respond_to_confirmation(steamid, cid, body.get('op'))
+    if 'error' in result:
+        return jsonify(result), _RESPOND_STATUS.get(result.get('code'), 400)
+    return jsonify(result)
 
 
 @bp.route('/api/accounts', methods=['DELETE'])

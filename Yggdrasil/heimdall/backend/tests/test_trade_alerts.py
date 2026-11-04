@@ -7,6 +7,7 @@ import pytest
 import notifications
 import scheduler as scheduler_module
 from scheduler import ConfirmationScheduler
+from steam_service import describe_confirmation
 
 STEAMID = '76561198000000001'
 CONFIGURED = {'auto_confirm_trades': True, 'auto_confirm_market': True,
@@ -30,7 +31,7 @@ class _Steam:
         self.batches = []
 
     def get_confirmations(self, steamid):
-        return {'success': True, 'confirmations': self.confirmations}
+        return {'success': True, 'confirmations': [describe_confirmation(c) for c in self.confirmations]}
 
     def act_on_confirmations_batch(self, steamid, items, operation):
         self.batches.append((items, operation))

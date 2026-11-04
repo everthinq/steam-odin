@@ -126,7 +126,12 @@ Accounts, Draupnir and Mímir, then Huginn and Andvari.
   `portfolio_not_found` 404); `POST …/import/plans/<id>/execute` writes it once (`already_executed` 409,
   `unknown_plan` 404, `IMPORT_PLAN_LIFETIME_SECONDS`); the old `/import` route is gone. The page shows every
   file's plan (skipped lines included) before Import and reports a file that failed.
-- 6 Confirmations: page picks nonce/key; type 12 unknown -> backend looks up the key, sends type_name.
+- 6 Confirmations **DONE 2026-11-04**: every listed confirmation carries `key` and
+  `type_name` (`describe_confirmation`: Steam's own `type_name`, else `CONFIRMATION_TYPE_NAMES`, else
+  "Unknown type N"); `POST /api/accounts/<steamid>/confirmations/<cid> {op}` finds the key itself
+  (`respond_to_confirmation`: the last list, else one fresh read; `confirmation_not_found` 404,
+  `invalid_operation`, `confirmations_unavailable` 502, `steam_refused` 502); the scheduler reads `key`
+  too; the page sends only the id and the operation.
 - 7 Remove All accounts: phrase only in page, DELETE removes accounts added later -> plan/execute.
 - 8 Draupnir return_pct, holdings visibility differs between views, oversold flag never shown, transaction total.
 - 9 live price status: page gives up after 8 polls; inactive/error unhandled in Portfolios, CombinedLedger, ArbitrageDeals.

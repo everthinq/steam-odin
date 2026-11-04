@@ -251,11 +251,11 @@ class ConfirmationScheduler:
         skipped = 0
         for conf in confirmations:
             cid = conf.get('id')
-            ck = conf.get('nonce') or conf.get('key')
+            ck = conf.get('key')
             if cid is None or not ck:
                 logger.warning(
                     f"[SCHEDULER] Skipping malformed confirmation for {steamid}: "
-                    f"id={cid!r} nonce/key={ck!r} keys={list(conf.keys())}"
+                    f"id={cid!r} key={ck!r} keys={list(conf.keys())}"
                 )
                 continue
 

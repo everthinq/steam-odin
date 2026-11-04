@@ -165,6 +165,31 @@ def _get_steam_debug_logger():
     return logger
 
 
+# Names of Steam's mobile confirmation types, used only when Steam's own answer
+# has no `type_name`. A type missing here is shown as "Unknown type N".
+CONFIRMATION_TYPE_NAMES = {
+    1: 'Test',
+    2: 'Trade',
+    3: 'Market Listing',
+    4: 'Feature Opt-Out',
+    5: 'Phone Number Change',
+    6: 'Account Recovery',
+}
+
+
+def describe_confirmation(conf):
+    """One confirmation from Steam plus `key` (the nonce that authorises an
+    answer) and `type_name`, so no caller picks between nonce and key or names
+    the type itself."""
+    described = dict(conf)
+    described['key'] = conf.get('nonce') or conf.get('key')
+    type_name = conf.get('type_name')
+    if not type_name:
+        type_name = CONFIRMATION_TYPE_NAMES.get(conf.get('type'), f"Unknown type {conf.get('type')}")
+    described['type_name'] = type_name
+    return described
+
+
 class SteamService:
     # Exponential backoff for mobileconf.
     #
@@ -192,6 +217,9 @@ class SteamService:
         # Pause all mobileconf traffic until this timestamp after a transient error.
         self._mobileconf_cooldown_until = 0
         self._mobileconf_backoff_sec = self._MOBILECONF_COOLDOWN_BASE
+        # The key of every confirmation in each account's last list, by id:
+        # {steamid: {confirmation id: key}}. Lets an answer name only the id.
+        self._confirmation_keys = {}
         # One lock per SteamID64 around every read-modify-write of a maFile, so the
         # scheduler, keep-alive, request threads and Ratatoskr callbacks never
         # overwrite each other's Session changes. Held only for the disk work,
@@ -1083,10 +1111,11 @@ class SteamService:
 
             last_payload = payload
             if self._steam_json_success(payload.get('success')):
-                return {
-                    'success': True,
-                    'confirmations': self._normalize_confirmation_list(payload.get('conf')),
-                }
+                confirmations = [describe_confirmation(conf)
+                                 for conf in self._normalize_confirmation_list(payload.get('conf'))]
+                self._confirmation_keys[str(steamid)] = {
+                    str(conf.get('id')): conf['key'] for conf in confirmations if conf['key']}
+                return {'success': True, 'confirmations': confirmations}
             if self._is_needauth(payload):
                 # The token was refused; the m= variant does not change that.
                 break
@@ -1201,6 +1230,28 @@ class SteamService:
         buffer = struct.pack('>Q', timestamp) + tag.encode('ascii')
         key = hmac.new(base64.b64decode(identity_secret), buffer, sha1).digest()
         return base64.b64encode(key).decode('ascii')
+
+    def respond_to_confirmation(self, steamid, cid, operation):
+        """Approve ('allow') or deny ('cancel') one confirmation by its id. The
+        key comes from the account's last list; when the id is not there the list
+        is read from Steam once. Errors are {error, code}."""
+        if operation not in ('allow', 'cancel'):
+            return {'error': "The operation must be 'allow' or 'cancel'.", 'code': 'invalid_operation'}
+        key = self._confirmation_keys.get(str(steamid), {}).get(str(cid))
+        if not key:
+            listed = self.get_confirmations(steamid)
+            if not listed.get('success'):
+                return {'error': listed.get('message') or 'Could not read the confirmations from Steam.',
+                        'code': 'confirmations_unavailable'}
+            key = self._confirmation_keys.get(str(steamid), {}).get(str(cid))
+        if not key:
+            return {'error': 'This confirmation is no longer pending on Steam.',
+                    'code': 'confirmation_not_found'}
+        result = self.act_on_confirmation(steamid, cid, key, operation=operation)
+        if not result.get('success'):
+            return {'error': result.get('message') or 'Steam refused the answer.', 'code': 'steam_refused'}
+        self._confirmation_keys.get(str(steamid), {}).pop(str(cid), None)
+        return {'status': 'success'}
 
     def act_on_confirmation(self, steamid, cid, ck, operation='allow'):
         """Approve or deny a specific confirmation with a single retry logic."""

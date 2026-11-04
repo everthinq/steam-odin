@@ -232,11 +232,11 @@ def confirmation_item_names(confirmation):
 
 
 def matching_listing_confirmations(confirmations, names):
-    """[(id, nonce)] of the Market-listing confirmations whose item is exactly one
+    """[(id, key)] of the Market-listing confirmations whose item is exactly one
     of *names* (case-insensitive): a short name like "Scout" never matches
     another listing that merely contains it."""
     wanted = {name.strip().lower() for name in names if name}
-    return [(str(confirmation.get('id')), str(confirmation.get('nonce') or confirmation.get('key')))
+    return [(str(confirmation.get('id')), str(confirmation.get('key')))
             for confirmation in confirmations or []
             if is_market_listing_confirmation(confirmation) and confirmation_item_names(confirmation) & wanted]
 

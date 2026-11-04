@@ -6,6 +6,7 @@ import time
 import pytest
 
 import team_fortress_service
+from steam_service import describe_confirmation
 from team_fortress_service import (TeamFortressService, US_DOLLAR_WALLET, buyer_pays_for, detect_new_cases,
                                    listing_price, parse_price_minor_units, parse_wallet_info, sellable_items,
                                    seller_receives, MAX_SELL_TRIES, SELL_AFTER_STOP_SECONDS)
@@ -169,7 +170,7 @@ class FakeSteam:
         return {'ok': True}
 
     def get_confirmations(self, steamid):
-        return {'success': True, 'confirmations': list(self.confirmations)}
+        return {'success': True, 'confirmations': [describe_confirmation(c) for c in self.confirmations]}
 
     def act_on_confirmations_batch(self, steamid, items, operation):
         self.accepted.append((steamid, list(items), operation))
@@ -481,4 +482,4 @@ def test_confirmation_matching_is_exact_and_knows_type_twelve():
         {'id': '4', 'nonce': 'd', 'type': 12, 'type_name': 'Something else', 'summary': ['Scout']},
         {'id': '5', 'nonce': 'e', 'type': 2, 'summary': ['Scout']},
     ]
-    assert team_fortress_service.matching_listing_confirmations(confirmations, ['Scout']) == [('1', 'a'), ('3', 'c')]
+    assert team_fortress_service.matching_listing_confirmations([describe_confirmation(c) for c in confirmations], ['Scout']) == [('1', 'a'), ('3', 'c')]
