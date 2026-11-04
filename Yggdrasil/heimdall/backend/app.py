@@ -6,6 +6,7 @@ import signal
 import sys
 from steam_service import SteamService
 from settings import SettingsManager
+from auto_store import AutoStore
 from scheduler import ConfirmationScheduler
 from ratatoskr_service import RatatoskrService
 from jobs import JobRegistry
@@ -79,6 +80,12 @@ draupnir_service = DraupnirService(huginn_service)
 draupnir_backup = BackupService(draupnir_service.path)
 draupnir_service.set_backup(draupnir_backup)
 scheduler = ConfirmationScheduler(settings_manager, steam_service, ratatoskr_service, deposit_service)
+auto_store = AutoStore(settings_manager, steam_service, deposit_service,
+                       on_change=scheduler._sync_protected_accounts)
+try:
+    auto_store.migrate_shared_watchlist()
+except Exception as error:  # optional one-time copy: tried again at the next start
+    logging.getLogger(__name__).error('Auto-Store: could not copy the shared watchlist: %s', error)
 # Mimir: encrypted credential vault (login/password/email/comment), sharing the
 # maFile encryption key. SteamService.get_password falls back to it by login.
 mimir_service = MimirService(steam_service.storage)
@@ -178,6 +185,7 @@ ctx.huginn_service = huginn_service
 ctx.draupnir_service = draupnir_service
 ctx.draupnir_backup = draupnir_backup
 ctx.scheduler = scheduler
+ctx.auto_store = auto_store
 ctx.mimir_service = mimir_service
 ctx.steam_market_service = steam_market_service
 ctx.gjallarhorn_service = gjallarhorn_service

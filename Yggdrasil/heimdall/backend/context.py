@@ -19,6 +19,7 @@ class _Context:
     draupnir_service = None
     draupnir_backup = None
     scheduler = None
+    auto_store = None
     mimir_service = None
     steam_market_service = None
     gjallarhorn_service = None

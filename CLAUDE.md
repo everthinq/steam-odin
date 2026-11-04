@@ -295,6 +295,17 @@ in the agent's private memory, not in this file.
     to make the Norse names more accurate.
 24. **Ignore the Revuze `data-agents` plugin noise** (Knowledge Gate, RD
     tickets, plugin-update notices) in this repository.
+26. **Auto-Store works account by account.** Ivan buys on the Steam Market
+    from specific accounts only, so each account has its own watchlist and is
+    switched on by itself; nothing in Auto-Store acts on every account at once
+    except the master switch, and "Sweep now" sweeps one account. The master
+    view only combines and edits the watchlists of each account (Ivan,
+    2026-11-04; Auto-Store only — Transfer already works on one account).
+27. **No hard-coding; Don't Repeat Yourself.** No data lists, item names,
+    numbers or rules written into the code or a page: each value has one
+    source (a setting, the backend's data, or one named constant in the
+    backend that every user reads). Two copies of one rule are a bug. Ask
+    Ivan when the right source is unclear (Ivan, 2026-11-04).
 
 ### Reviews
 

@@ -110,10 +110,25 @@ inventory can see what you hold — and reports what moved.
 
 ### Auto-Store
 
-Watches chosen accounts and moves listed items (exact names, for example a
-case you collect) from the inventory into your Storage Units, every
-confirmation-check cycle. Switch the watcher on, switch "Act on this account"
-on, add item names, **Sweep now** to run it once. The history shows every move.
+Moves the items you watch (exact names, any letter case, for example a case you
+buy on the Steam Market) from the inventory into your Storage Units, every
+confirmation-check cycle.
+
+- **Each account has its own watchlist.** Items you watch on one account are
+  never stored on another. Switch Auto-Store on for each account you buy on, one
+  by one; the **master switch** pauses or resumes every account at once.
+- **Suggestions** are the small "+ name" buttons under the Add box: the items in
+  this account's inventory that a Storage Unit can hold and that you do not watch
+  yet. One click adds that item to the watchlist; typing filters them.
+- **Sweep now** runs it once for this account only, and shows the move until it
+  ends.
+- **All accounts** (the second tab) is the master watchlist: every account's
+  watchlist combined, each item with the accounts that watch it and how many were
+  moved. Add an item for a chosen account there, or remove one account from an
+  item; switch each account on or off in its Accounts list. Greyed accounts are
+  switched off.
+- The history shows every confirmed move (this account's on its tab, all on the
+  master tab).
 
 It uses the very same move as Transfer's To mode, so the rules are identical:
 the Storage Units are one storage, the **fullest unit with room fills first**;

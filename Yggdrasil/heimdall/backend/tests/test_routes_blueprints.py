@@ -51,7 +51,10 @@ def test_ratatoskr_blueprint_registers_all_routes():
                  '/api/ratatoskr/storage-units/<steamid>/rename',
                  '/api/ratatoskr/storage-units/<steamid>/name-unnamed/plan',
                  '/api/ratatoskr/storage-units/name-plans/<plan_id>/execute',
-                 '/api/ratatoskr/auto-store/sweep', '/api/ratatoskr/storage-shop',
+                 '/api/ratatoskr/auto-store/sweep', '/api/ratatoskr/auto-store/enabled',
+                 '/api/ratatoskr/auto-store/account', '/api/ratatoskr/auto-store/items/add',
+                 '/api/ratatoskr/auto-store/items/remove', '/api/ratatoskr/auto-store/suggestions/<steamid>',
+                 '/api/ratatoskr/storage-shop',
                  '/api/ratatoskr/storage-shop/plan', '/api/ratatoskr/storage-shop/plans/<plan_id>',
                  '/api/ratatoskr/storage-shop/plans/<plan_id>/execute', '/api/ratatoskr/storage-shop/quote',
                  '/api/ratatoskr/storage-shop/deliver-again', '/api/ratatoskr/store-catalogue',
@@ -62,7 +65,7 @@ def test_ratatoskr_blueprint_registers_all_routes():
                  '/api/ratatoskr/store-boosts/check', '/api/ratatoskr/store-boosts/test-alert',
                  '/api/ratatoskr/store-boosts/track']:
         assert want in rules, f'missing ratatoskr route: {want}'
-    assert _rule_count(bp, '/api/ratatoskr') == 41
+    assert _rule_count(bp, '/api/ratatoskr') == 45
 
 
 def test_accounts_blueprint_registers_all_routes():

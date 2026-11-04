@@ -139,7 +139,7 @@ is unconfirmed is offered again at the next sweep.
 | Storage rules, planner, commands | `backend/storage_deposit.py` (`storage_block`, `plan_deposit`, `DepositService`); tests `backend/tests/test_storage_deposit.py` |
 | Jobs | `backend/jobs.py`, `backend/routes/jobs.py` |
 | Routes | `backend/routes/ratatoskr.py` (`/storage`, `/deposit/plan`, `/withdraw/plan`, `/plans/<id>/execute`) |
-| Auto-Store | `backend/scheduler.py` (`_auto_store_account`, `_auto_store_finished`) |
+| Auto-Store | `backend/auto_store.py` (one watchlist per account, the switches, the master view, suggestions; one item per command), `backend/scheduler.py` (`_auto_store_sweep`, `sweep_account`, `_auto_store_account`, `_auto_store_finished`); tests `backend/tests/test_auto_store.py` |
 | Page | `frontend/src/pages/ratatoskr/Transfer.jsx`, `utils/moveCommands.js` (commands and jobs), `utils/useTransferSelection.js` (what can be selected), `components/transfer/StorageSpacePanel.jsx`; `utils/transferItems.js` reads `storage_block` |
 
 ## 6. Reading the raw Game Coordinator data

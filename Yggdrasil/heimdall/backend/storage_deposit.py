@@ -135,6 +135,10 @@ class DepositService:
 
     # ---- reading ----------------------------------------------------------
 
+    def inventory(self, steamid):
+        """The loose inventory (Auto-Store's suggestions read it)."""
+        return self._inventory(steamid)
+
     def _inventory(self, steamid, retry_empty=0):
         """The loose inventory; asked again (1 s apart) while empty — it can lag a fresh connect."""
         for attempt in range(retry_empty + 1):

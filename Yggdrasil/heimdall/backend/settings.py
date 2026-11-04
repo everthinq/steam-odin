@@ -32,13 +32,14 @@ DEFAULT_SETTINGS = {
     # markets without a confirmed fee default to 0 until set here. Editable from the
     # Huginn arbitrage UI. settings.json is gitignored.
     "huginn_market_fees": {},
-    # --- Ratatoskr auto-store watcher ---
-    # When enabled, the scheduler watches the connected (or auto-connected)
-    # accounts in `auto_store_accounts` and moves any loose inventory item whose
-    # name is in `auto_store_items` into a randomly-picked storage unit with room.
+    # --- Ratatoskr auto-store watcher (auto_store.py reads and changes these) ---
+    # When enabled, the scheduler watches each account in `auto_store_accounts`
+    # (connected, or connected automatically) and stores the loose inventory items
+    # named on that account's own watchlist, the fullest Storage Unit with room first.
     "auto_store_enabled": False,
-    "auto_store_items": [],       # list of item names, e.g. ["Fracture Case"]
-    "auto_store_accounts": [],    # list of SteamID64 the watcher acts on
+    "auto_store_items": [],       # the old shared watchlist; copied to each account at boot, then emptied
+    "auto_store_accounts": [],    # SteamID64 of the accounts switched on, one by one
+    "auto_store_watchlists": {},  # {SteamID64: [item names]}, one watchlist per account
     "auto_store_history": [],     # append-only move log (capped), written by the sweep
     # --- Case Arbitrage price alerts ---
     # Ping a channel when a buy market (LisSkins, Buff, Tradeon, CS.MONEY Market,

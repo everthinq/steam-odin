@@ -74,15 +74,27 @@ real purchase (Ivan's hands-on test list is in the session reminders).
 
 ## Bullet 4 — the rest of the backlog (from three page audits)
 
-### Ratatoskr, next
-- B1 Auto-Store "Sweep now": sweeps ALL accounts though enabled per account; bare thread, page waits 4 s. -> sweep {steamid} returns the deposit job, page follows it. (rule 20: tell Ivan)
-- B2 Auto-Store list edits post whole lists; Enter while saving drops an item; two tabs overwrite. -> add/remove/toggle commands.
-- B3 suggestions: hard-coded case list + def_index 1201 in page -> GET auto-store/suggestions.
+Split into three groups (Ivan, 2026-11-04), done one by one: Ratatoskr, then
+Accounts, Draupnir and Mímir, then Huginn and Andvari.
+
+### Ratatoskr
+- B1, B2, B3 **DONE 2026-11-04** (`auto_store.py`, rules 26 and 27): each
+  account has its own watchlist (Ivan: the other accounts do not need to know
+  what one account buys); the old shared list was copied to each switched-on
+  account once; a master view ("All accounts") combines and edits every
+  watchlist; every change is one command for one item or one account
+  (`auto-store/enabled`, `/account`, `/items/add`, `/items/remove`), so nothing
+  is lost; "Sweep now" sweeps one account (`sweep {steamid}`) and the page
+  follows its job; suggestions come from `GET auto-store/suggestions/<steamid>`
+  (the account's inventory, the backend's storage rules); the hard-coded case
+  list is gone. Rule 20: Auto-Store only, Transfer already works on one account.
+- C and D (Store Arbitrage, Store Boosts): Ivan says they do not belong under
+  Ratatoskr; decide where they go after B1 to B3, then fix them.
 - C1/C2 Store Arbitrage: page picks sell offer and profit; board, count and Telegram use three different rules -> one backend function with profile + cash_only; summary.profitable.
 - C3 near band, C4 settings unchecked -> store-arbitrage/settings route, C5 job follow, C6 owned.
 - D1-D5 Store Boosts: recommend_buy flag, thresholds from data.thresholds (page copies disagree), moving flags, opening_beats_store, tradable_if_bought_now.
 
-### Accounts / Draupnir / Mímir, next
+### Accounts, Draupnir and Mímir
 - 3 Add Account: 4-step flow + rollback in page -> one import command (authenticate before writing). Bugs: re-import overwrites a working maFile before authentication; rollback DELETE unchecked; password trimmed.
 - 4 Draupnir transaction: NOT a bug (Ivan, 2026-11-04): a case-different name staying its own holding is fine, he picks names from the hints and can price any item; never raise it again. Still open: required fields only in page; unknown_item confirm should be a code from POST /transactions.
 - 5 Draupnir CSV import: answers ignored, 400 and skipped rows silently lost -> import plan/execute.
@@ -94,7 +106,7 @@ real purchase (Ivan's hands-on test list is in the session reminders).
 - 12 copied date normaliser and valuation market list.
 - Other bugs: no success checks (delete transaction, rename, delete portfolio navigates away on failure, create/delete portfolio); "Drip last" drops is_arbitrage; old search answers win; Dashboard transient error filter misses readJson/Safari messages (use failureMessage).
 
-### Huginn / Andvari
+### Huginn and Andvari
 - 1 MONEY Andvari Buy games: freshness by browser clock (BuyPanel 59-60, hardcoded 30 min), default selection, totals summed in page, single /buy/run with selection (no plan id), only window.confirm, no ref double-click guard -> purchase-plan + plans/<id>/execute job. OPEN QUESTION to Ivan: require a passed dry run of the same plan before a real buy?
 - 2 Auto-sell settings (SellingPanel 38-83, TeamFortress 93-116) via raw /api/settings, app ids parsed in page, "also cards held before" saves on tick w/o confirm (rule 16) -> selling/config + team-fortress/config with clean_config; include-held as separate confirmed command.
 - 3 card selling return computed in page from two endpoints, own currency map, "buy order" text search -> return_on_purchases + listed code.

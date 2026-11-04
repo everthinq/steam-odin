@@ -4,6 +4,7 @@ import threading
 import time
 from datetime import datetime, timezone
 
+import auto_store
 import notifications
 from storage_deposit import CommandError
 
@@ -48,6 +49,9 @@ class ConfirmationScheduler:
         self.thread = None
         # steamid -> {item_id: refused_at_epoch}: items the Game Coordinator refused.
         self._auto_store_refused = {}
+        # One Auto-Store run per account at a time: the loop and Sweep now never log in twice.
+        self._auto_store_locks = {}
+        self._auto_store_locks_guard = threading.Lock()
         # Last time the proactive token keep-alive sweep ran (0 = run on first loop).
         self._last_keepalive = 0.0
         # Held for the whole confirmation sweep so the "Check now" button and the
@@ -78,11 +82,7 @@ class ConfirmationScheduler:
 
     @staticmethod
     def _auto_store_on(settings):
-        return bool(
-            settings.get("auto_store_enabled")
-            and settings.get("auto_store_items")
-            and settings.get("auto_store_accounts")
-        )
+        return bool(auto_store.sweep_accounts(settings))
 
     @classmethod
     def _should_poll(cls, settings):
@@ -95,7 +95,7 @@ class ConfirmationScheduler:
         loop so it self-heals after a Ratatoskr restart."""
         if not self.ratatoskr_service:
             return
-        protected = (settings.get("auto_store_accounts") or []) if settings.get("auto_store_enabled") else []
+        protected = auto_store.protected_accounts(settings)
         try:
             self.ratatoskr_service.set_protected_accounts(protected)
         except Exception as e:
@@ -385,64 +385,78 @@ class ConfirmationScheduler:
     # Auto-store watcher: sweep watched items from inventory into storage.
     # ------------------------------------------------------------------
     def _auto_store_sweep(self, settings):
+        """Each switched-on account stores the items of its own watchlist (auto_store.py)."""
         if not self.ratatoskr_service or not self.deposit_service:
             return
-
-        watch = {
-            str(name).strip().lower()
-            for name in (settings.get("auto_store_items") or [])
-            if str(name).strip()
-        }
-        accounts = [str(s) for s in (settings.get("auto_store_accounts") or [])]
-        if not watch or not accounts:
-            return
-
-        for steamid in accounts:
+        for steamid in auto_store.sweep_accounts(settings):
             try:
-                self._auto_store_account(steamid, watch)
+                self._auto_store_account(steamid, auto_store.watch_for(settings, steamid))
+            except CommandError as e:
+                if e.code in ('busy', 'plan_stale'):
+                    logger.info(f"[AUTO-STORE] {steamid}: not now ({e.message}); next sweep")
+                else:
+                    logger.error(f"[AUTO-STORE] {steamid}: {e.message}")
             except Exception as e:
                 logger.error(f"[AUTO-STORE] Failed for {steamid}: {e}")
+
+    def sweep_account(self, steamid):
+        """"Sweep now" for one account: its own watchlist, only while Auto-Store is on for it.
+
+        Answers {job} (follow it with GET /api/jobs/<id>) or {job: None, nothing: <code>}."""
+        settings = self.settings_manager.get_settings()
+        steamid = str(steamid or '')
+        refusal = auto_store.sweep_refusal(settings, steamid)
+        if refusal:
+            raise CommandError(refusal['code'], refusal['reason'])
+        watch = auto_store.watch_for(settings, steamid)
+        if not self.ratatoskr_service or not self.deposit_service:
+            raise CommandError('ratatoskr_unavailable', 'Ratatoskr is not available', 503)
+        return self._auto_store_account(steamid, watch)
 
     def _auto_store_account(self, steamid, watch):
         """Deposit the watched items through the deposit command, Transfer's own rules:
         refused items (trade protected, unstorable) are never sent, the fullest unit with
-        room fills first, what has no room waits for the next sweep."""
+        room fills first, what has no room waits for the next sweep.
+
+        Answers {job} or {job: None, nothing: <code>}; raises CommandError when it cannot start."""
+        with self._auto_store_locks_guard:
+            lock = self._auto_store_locks.setdefault(steamid, threading.Lock())
+        if not lock.acquire(blocking=False):
+            raise CommandError('busy', 'Auto-Store is already working on this account', 409)
+        try:
+            return self._auto_store_run(steamid, watch)
+        finally:
+            lock.release()
+
+    def _auto_store_run(self, steamid, watch):
         # A deposit still running (this sweep's or Transfer's) finishes first.
         if self.deposit_service.busy(steamid):
-            return
+            raise CommandError('busy', 'Items are already moving on this account', 409)
         if not self._ensure_connected(steamid):
-            logger.error(f"[AUTO-STORE] {steamid} not connected and could not auto-connect — skipping")
-            return
+            raise CommandError('not_connected', 'Not connected, and the automatic connect failed', 502)
         status = self.ratatoskr_service.get_move_status(steamid) or {}
         if status.get("running"):
-            return
+            raise CommandError('busy', 'Items are already moving on this account', 409)
 
         now = time.time()
         refused = self._auto_store_refused.setdefault(steamid, {})
         for item_id in [i for i, at in list(refused.items()) if now - at > _AUTO_STORE_REFUSED_RETRY_SEC]:
             refused.pop(item_id, None)
 
-        try:
-            # The inventory can come back empty right after a connect: asked again up to 3 times.
-            plan = self.deposit_service.plan_deposit(
-                steamid, names=watch, exclude=set(refused), allow_overflow=True, retry_empty=3)
-        except CommandError as e:
-            logger.error(f"[AUTO-STORE] {steamid}: {e.message}")
-            return
+        # The inventory can come back empty right after a connect: asked again up to 3 times.
+        plan = self.deposit_service.plan_deposit(
+            steamid, names=watch, exclude=set(refused), allow_overflow=True, retry_empty=3)
         if not plan["moves"]:
             if plan["overflow"]:
                 logger.info(f"[AUTO-STORE] {steamid}: no storage room for {plan['overflow']} item(s)")
-            return
-        try:
-            self.deposit_service.execute(plan["plan_id"], on_finish=self._auto_store_finished)
-        except CommandError as e:
-            # A Transfer move started or finished on this account just now (busy, plan_stale).
-            logger.info(f"[AUTO-STORE] {steamid}: not now ({e.message}); next sweep")
-            return
+                return {"job": None, "nothing": "no_room", "overflow": plan["overflow"]}
+            return {"job": None, "nothing": "nothing_to_store"}
+        job = self.deposit_service.execute(plan["plan_id"], on_finish=self._auto_store_finished)
         units = ", ".join(f"{b['count']} → '{b['casket_name']}'" for b in plan["batches"])
         logger.info(f"[AUTO-STORE] {steamid}: storing {plan['moves']} item(s): {units}")
         if plan["overflow"]:
             logger.info(f"[AUTO-STORE] {steamid}: {plan['overflow']} item(s) had no room left")
+        return {"job": job, "overflow": plan["overflow"]}
 
     def _auto_store_finished(self, plan, job):
         """Record what the Game Coordinator confirmed; remember what it refused.

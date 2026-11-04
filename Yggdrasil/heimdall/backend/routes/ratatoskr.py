@@ -228,63 +228,54 @@ def ratatoskr_storage_units_name_execute(plan_id):
     return _command(lambda: ctx.rename_service.execute(plan_id))
 
 
+# ---- Auto-Store (auto_store.py): one watchlist per account, one item per command ----
+# Every change names one account and one item, so nothing the page did not mean can be lost.
+
 @bp.route('/api/ratatoskr/auto-store', methods=['GET'])
 def get_auto_store():
-    """Return auto-store watcher config + recent move history (newest first)."""
-    s = ctx.settings_manager.get_settings()
-    history = list(s.get("auto_store_history") or [])
-    history.reverse()
-    return jsonify({
-        "enabled": bool(s.get("auto_store_enabled")),
-        "items": s.get("auto_store_items") or [],
-        "accounts": s.get("auto_store_accounts") or [],
-        "history": history,
-        "moved_total": sum(int(r.get("count", 0)) for r in history),
-    })
+    """The switches, every account's watchlist, the master view and the move history."""
+    return _command(ctx.auto_store.status)
 
 
-@bp.route('/api/ratatoskr/auto-store', methods=['POST'])
-def update_auto_store():
-    """Update the auto-store toggle, watched item names, and enabled accounts."""
-    data = request.json or {}
-    patch = {}
-    if "enabled" in data:
-        patch["auto_store_enabled"] = bool(data["enabled"])
-    if "items" in data and isinstance(data["items"], list):
-        # De-dup while preserving order, drop blanks.
-        seen, items = set(), []
-        for name in data["items"]:
-            name = str(name).strip()
-            if name and name.lower() not in seen:
-                seen.add(name.lower())
-                items.append(name)
-        patch["auto_store_items"] = items
-    if "accounts" in data and isinstance(data["accounts"], list):
-        patch["auto_store_accounts"] = [str(a) for a in data["accounts"]]
+@bp.route('/api/ratatoskr/auto-store/enabled', methods=['POST'])
+def auto_store_enabled():
+    """The master switch: {enabled: true|false}."""
+    body = request.get_json(silent=True) or {}
+    return _command(lambda: ctx.auto_store.set_enabled(body.get('enabled')))
 
-    if not patch:
-        return jsonify({"error": "Nothing to update"}), 400
-    if not ctx.settings_manager.save_settings(patch):
-        return jsonify({"error": "Failed to save settings"}), 500
 
-    # Keep the idle-disconnect exemption in sync immediately (also re-asserted by the scheduler).
-    s = ctx.settings_manager.get_settings()
-    protected = (s.get("auto_store_accounts") or []) if s.get("auto_store_enabled") else []
-    ctx.ratatoskr_service.set_protected_accounts(protected)
+@bp.route('/api/ratatoskr/auto-store/account', methods=['POST'])
+def auto_store_account():
+    """Switch Auto-Store on or off for one account: {steamid, on: true|false}."""
+    body = request.get_json(silent=True) or {}
+    return _command(lambda: ctx.auto_store.set_account(body.get('steamid'), body.get('on')))
 
-    return get_auto_store()
+
+@bp.route('/api/ratatoskr/auto-store/items/add', methods=['POST'])
+def auto_store_add_item():
+    """Add one item to one account's watchlist: {steamid, name}."""
+    body = request.get_json(silent=True) or {}
+    return _command(lambda: ctx.auto_store.add_item(body.get('steamid'), body.get('name')))
+
+
+@bp.route('/api/ratatoskr/auto-store/items/remove', methods=['POST'])
+def auto_store_remove_item():
+    """Remove one item from one account's watchlist: {steamid, name}."""
+    body = request.get_json(silent=True) or {}
+    return _command(lambda: ctx.auto_store.remove_item(body.get('steamid'), body.get('name')))
+
+
+@bp.route('/api/ratatoskr/auto-store/suggestions/<steamid>', methods=['GET'])
+def auto_store_suggestions(steamid):
+    """Names in this account's inventory a Storage Unit can hold and it does not watch yet."""
+    return _command(lambda: ctx.auto_store.suggestions(steamid))
 
 
 @bp.route('/api/ratatoskr/auto-store/sweep', methods=['POST'])
 def trigger_auto_store_sweep():
-    """Run an auto-store sweep immediately (background) for instant feedback."""
-    settings = ctx.settings_manager.get_settings()
-    if not ctx.scheduler._auto_store_on(settings):
-        return jsonify({"error": "Auto-store is off or has no items/accounts configured"}), 400
-    threading.Thread(
-        target=lambda: ctx.scheduler._auto_store_sweep(settings), daemon=True
-    ).start()
-    return jsonify({"status": "sweeping"})
+    """Sweep now, one account: {steamid}. Answers {job} to follow, or {job: null, nothing}."""
+    body = request.get_json(silent=True) or {}
+    return _command(lambda: ctx.scheduler.sweep_account(body.get('steamid')), 202)
 
 
 # ---- Buy Storage Units, or any in-game store item (storage_shop_service.py) ----
