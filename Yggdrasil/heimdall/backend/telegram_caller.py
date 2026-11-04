@@ -45,7 +45,7 @@ def load_caller_config():
 class TelegramCaller:
     """Rings a fixed target from the configured caller account. Best-effort."""
 
-    # One ring at a time across every feature (Gjallarhorn, Team Fortress 2, Store Boosts): two
+    # One ring at a time across every feature (Gjallarhorn, Team Fortress 2, CS2 Store Boosts): two
     # Telethon clients on the same session at once can get the session revoked.
     _ring_lock = threading.Lock()
 

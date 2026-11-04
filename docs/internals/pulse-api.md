@@ -90,7 +90,7 @@ Errors are `{message, responseType}` with types such as `MarketSubscriptionRequi
 - **The only code that builds a pulse request.** Huginn (curated profiles, generated pairs,
   LOOT.Farm boards, auctions), Harvest, Cross-Profile, Case Arbitrage (hourly refresh and the
   10-minute alert polls), the portfolio valuation (Draupnir, Gjallarhorn), Gjallarhorn's
-  liquidity, Price dips, the kept-fresh keeper and Store Catalogue Arbitrage all read
+  liquidity, Price dips, the kept-fresh keeper and CS2 Store Arbitrage all read
   `table(token, market, price_type, max_age)`; "Check live" uses `lookup(...)`. The read-only views
   on top of it live in `backend/pulse_views.py`.
 - **Single flight**: while a table downloads, every other caller of the same table waits for that
@@ -170,7 +170,7 @@ Errors are `{message, responseType}` with types such as `MarketSubscriptionRequi
   updated)}, no dictionary per item) and gzips the day file outside the main lock (a separate
   writer lock), so `statistic()` readers never wait for a save. Statistics are computed once a day
   per table, both bases in one read of the window; only the results are kept (merged with the seed,
-  and own-history only). `trade_statistic` (what Store Boosts and Gjallarhorn compare with) is the
+  and own-history only). `trade_statistic` (what CS2 Store Boosts and Gjallarhorn compare with) is the
   middle of the listing's and buy orders' **own** statistics, either alone when only one side has 7
   days of its own (a side no active profile records never mixes pulse's seed in), and the seed only
   when neither has. Price dips, Gjallarhorn and Store
@@ -230,7 +230,7 @@ Errors are `{message, responseType}` with types such as `MarketSubscriptionRequi
 3. **Stale prices: done (2026-10-15).** Measured: almost every price minutes old; some Steam
    listings 600+ days. A price whose market has not updated it for a day is greyed out on Arbitrage
    (`PriceCell` `updated`/`now`, `utils/priceAge.js`), flagged on Harvest, hidden by default on
-   Price dips, and on Store Catalogue Arbitrage treated like a suspicious one (never best, BUY
+   Price dips, and on CS2 Store Arbitrage treated like a suspicious one (never best, BUY
    signal or Telegram post: `store_arbitrage_service.is_stale`).
 4. **Spike check: done (2026-10-15)** as Huginn → **Price dips** (`pulse_views.price_dips`,
    `GET /api/huginn/price-dips?market=&basis=Median30d|Average30d`): a market's lowest listing vs

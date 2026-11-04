@@ -1311,3 +1311,113 @@ def card_deals_buy_purchase_plan_execute(purchase_plan_id):
     body = request.get_json(silent=True) or {}
     return _purchase_command(lambda: ctx.store_purchase_service.execute_purchase_plan(
         purchase_plan_id, dry_run=body.get('dry_run') is not False), 202)
+
+
+# ---- CS2 Store Arbitrage: in-game store items that resell above the store price (store_arbitrage_service.py) ----
+# Moved here from routes/ratatoskr.py (Ivan, 2026-11-04): both store tabs are Huginn price scouts.
+
+@bp.route('/api/huginn/store-arbitrage', methods=['GET'])
+def store_arbitrage_board():
+    """CS2 Store Arbitrage: every tradable store item against what the chosen markets pay
+    (?markets=Buff,Steam; default markets otherwise). Read-only and non-blocking: serves cached
+    prices and warms missing markets in the background (status 'warming' until they arrive)."""
+    settings = ctx.settings_manager.get_settings()
+    markets = [m for m in (request.args.get('markets') or '').split(',') if m]
+    try:
+        return jsonify(ctx.store_arbitrage_service.board(settings.get('tradeon_token', ''), markets, settings))
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@bp.route('/api/huginn/store-arbitrage/refresh', methods=['POST'])
+def store_arbitrage_refresh():
+    """Pull the board's markets again now (the Refresh button); body {markets: [ids]} or none
+    for the default set. A side pulled in the last minute is not pulled again."""
+    settings = ctx.settings_manager.get_settings()
+    body = request.get_json(silent=True) or {}
+    markets = body.get('markets') if isinstance(body.get('markets'), list) else None
+    markets = [m for m in (markets or []) if isinstance(m, str)]
+    result = ctx.store_arbitrage_service.refresh(settings.get('tradeon_token', ''), markets, settings)
+    return jsonify(result), (400 if result.get('error') else 200)
+
+
+@bp.route('/api/huginn/store-arbitrage/alerts/send', methods=['POST'])
+def store_arbitrage_send_alerts():
+    """Post today's profitable store items to the Huginn Telegram bot now ("Send now")."""
+    result = ctx.store_arbitrage_service.send_alerts(ctx.settings_manager.get_settings(), daily=True, force=True)
+    return jsonify(result), (200 if result['sent'] else 400)
+
+
+@bp.route('/api/huginn/store-arbitrage/options', methods=['GET'])
+def store_arbitrage_options():
+    """The markets the Arbitrage tab can price against, and its default choice."""
+    return jsonify(ctx.store_arbitrage_service.options(ctx.settings_manager.get_settings()))
+
+
+# ---- CS2 Store Boosts: catch a Steam price boost of a store item early (store_boost_service.py) ----
+
+@bp.route('/api/huginn/store-boosts', methods=['GET'])
+def store_boosts_board():
+    """Every store item (and every sticker inside the store capsules) with its boost level, the
+    Steam reader and the hourly pulse check. Read-only; never waits on Steam or pulse."""
+    try:
+        return jsonify(ctx.store_boost_service.board())
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@bp.route('/api/huginn/store-boosts/item', methods=['GET'])
+def store_boosts_item():
+    """?name=…: one item's hourly Steam prices and sales (last 14 days) and its analysis."""
+    found = ctx.store_boost_service.item(request.args.get('name') or '')
+    return (jsonify(found), 200) if found else (jsonify({'error': 'not read yet'}), 404)
+
+
+@bp.route('/api/huginn/store-boosts/read', methods=['POST'])
+def store_boosts_read():
+    """{"name": item}: read its Steam price history next (front of the queue)."""
+    name = (request.get_json(silent=True) or {}).get('name')
+    if not isinstance(name, str) or not name.strip() or len(name) > 200:
+        return jsonify({'queued': False, 'error': 'name must be an item name'}), 400
+    return jsonify(ctx.store_boost_service.read_now(name.strip()))
+
+
+_track_lock = threading.Lock()
+
+
+@bp.route('/api/huginn/store-boosts/track', methods=['POST'])
+def store_boosts_track():
+    """{"name": item, "tracked": bool}: track an item (shown on top, read on the normal schedule) or stop."""
+    body = request.get_json(silent=True) or {}
+    name, tracked = body.get('name'), body.get('tracked', True)
+    if not isinstance(name, str) or not name.strip() or len(name) > 200:
+        return jsonify({'error': 'name must be an item name'}), 400
+    if not isinstance(tracked, bool):
+        return jsonify({'error': 'tracked must be true or false'}), 400
+    name = name.strip()
+    with _track_lock:                    # two quick pins never overwrite each other
+        names = [n for n in ctx.store_boost_service.tracked() if n != name]
+        if tracked:
+            names.insert(0, name)
+        if len(names) > 30:
+            return jsonify({'error': 'at most 30 tracked items'}), 400
+        if not ctx.settings_manager.save_settings({'store_boost_tracked': names}):
+            return jsonify({'error': 'the setting was not saved'}), 500
+    if tracked:
+        ctx.store_boost_service.read_now(name, reason='tracked')
+    return jsonify({'tracked': names})
+
+
+@bp.route('/api/huginn/store-boosts/check', methods=['POST'])
+def store_boosts_check():
+    """Run the pulse check now (Steam and Buff163 prices of every watched item)."""
+    result = ctx.store_boost_service.check_now()
+    return jsonify(result), (200 if result['started'] else 400)
+
+
+@bp.route('/api/huginn/store-boosts/test-alert', methods=['POST'])
+def store_boosts_test_alert():
+    """{"ring": bool}: send a test boost alert to the Huginn bot (and ring the phone when asked)."""
+    ring = bool((request.get_json(silent=True) or {}).get('ring'))
+    result = ctx.store_boost_service.send_test(ring=ring)
+    return jsonify(result), (200 if result['sent'] or result.get('rang') else 400)

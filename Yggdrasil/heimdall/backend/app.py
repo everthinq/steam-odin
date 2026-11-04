@@ -136,10 +136,10 @@ storage_shop_service = StorageShopService(steam_service, ratatoskr_service, card
 # Store Catalogue: every item the game store sells, with its price (read-only). It takes
 # every price sheet the storage shop reads.
 store_catalogue_service = StoreCatalogueService(ratatoskr_service, storage_shop_service)
-# Store Catalogue Arbitrage (the catalogue's Arbitrage tab): store items against what markets pay.
+# CS2 Store Arbitrage (the catalogue's Arbitrage tab): store items against what markets pay.
 store_arbitrage_service = StoreArbitrageService(huginn_service, store_catalogue_service,
                                                 storage_shop_service, draupnir_service)
-# Store Boosts (the catalogue's Boosts tab): a Steam price boost of a store item or of a sticker
+# CS2 Store Boosts (the catalogue's Boosts tab): a Steam price boost of a store item or of a sticker
 # inside a store capsule, caught on its first day; Telegram + a phone ring (read-only).
 store_boost_service = StoreBoostService(huginn_service, store_catalogue_service, ratatoskr_service,
                                         steam_service, store_arbitrage_service, telegram_caller)
@@ -166,11 +166,11 @@ huginn_service.pulse.declare_job(
     lambda: huginn_service.case_job_tables(alerts=True), active=_case_alerts_on,
     period=lambda: max(60, int(settings_manager.get_settings().get('case_poll_interval_sec') or 600)))
 huginn_service.pulse.declare_job(
-    STORE_JOB, 'Store Catalogue Arbitrage', 'every hour, and after the 08:00 Get all items',
+    STORE_JOB, 'CS2 Store Arbitrage', 'every hour, and after the 08:00 Get all items',
     lambda: store_arbitrage_service.job_tables(settings_manager.get_settings()),
     active=lambda: bool(settings_manager.get_settings().get('tradeon_token')))
 huginn_service.pulse.declare_job(
-    BOOST_JOB, 'Store Boosts', 'every hour',
+    BOOST_JOB, 'CS2 Store Boosts', 'every hour',
     store_boost_service.job_tables,
     active=lambda: bool(settings_manager.get_settings().get('tradeon_token')
                         and settings_manager.get_settings().get('store_boost_enabled', True)))
@@ -234,7 +234,7 @@ morning_routine = MorningRoutine(
     start_sweep=lambda: huginn_routes.start_csfloat_sweep()[:2],
     last_scan_at=_last_scan_at,
     sweep_state=huginn_routes.csfloat_sweep_state,
-    # Ratatoskr anyway: read the store price sheet, re-price the Store Catalogue Arbitrage
+    # Ratatoskr anyway: read the store price sheet, re-price the CS2 Store Arbitrage
     # markets and post the profitable store items to Telegram.
     after_scan=lambda: store_arbitrage_service.start_daily_refresh(settings_manager.get_settings),
 )
@@ -269,9 +269,9 @@ def start_background():
     card_seller_service.start()
     # Daily "Get all items" + CSFloat sweep (catches up after the Mac slept).
     morning_routine.start_background()
-    # Store Catalogue Arbitrage: warm the default markets hourly so the price history grows.
+    # CS2 Store Arbitrage: warm the default markets hourly so the price history grows.
     store_arbitrage_service.start_background(lambda: settings_manager.get_settings())
-    # Store Boosts: the hourly pulse check and the Steam price history reader (one item at a time).
+    # CS2 Store Boosts: the hourly pulse check and the Steam price history reader (one item at a time).
     store_boost_service.start_background(lambda: settings_manager.get_settings())
     # Master pulse feed: keep the active profiles' tables (and the Buff163 reference) fresh.
     huginn_service.pulse.start_keeper(lambda: settings_manager.get_settings().get('tradeon_token', ''))

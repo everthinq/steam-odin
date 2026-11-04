@@ -57,7 +57,7 @@ DEFAULT_SETTINGS = {
     # CSFloat ~1min and Steam ~5min, so hourly is too slow to catch cheap-case windows.
     # The full 6-market UI/history refresh still runs hourly regardless.
     "case_poll_interval_sec": 600,      # 10 minutes
-    # --- Store Catalogue Arbitrage (Ratatoskr) ---
+    # --- CS2 Store Arbitrage (Ratatoskr) ---
     # The buy signal: CSMoney (Trade)'s instant offer at least this % of the store price.
     "store_arbitrage_signal_pct": 100.0,
     # After the daily refresh (morning routine) post the in-game store items that sell for
@@ -65,7 +65,7 @@ DEFAULT_SETTINGS = {
     # the hourly check posts items that became profitable since (each at most once a day).
     "store_arbitrage_alerts_enabled": True,
     "store_arbitrage_alert_min_pct": 0.0,   # only items whose profit is at least this % (0 = any profit)
-    # --- Store Boosts (Ratatoskr, store_boost_service.py) ---
+    # --- CS2 Store Boosts (Ratatoskr, store_boost_service.py) ---
     # Watch every store item and the stickers inside store capsules for a Steam price boost:
     # pulse every hour, Steam's price history one item at a time (at least this many seconds
     # apart, never under 10). Alerts go to the shared Huginn bot; a boost also rings the phone.

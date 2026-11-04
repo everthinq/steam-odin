@@ -1,4 +1,4 @@
-"""Store Boosts: catch a price boost of an in-game store item on its first day.
+"""CS2 Store Boosts: catch a price boost of an in-game store item on its first day.
 
 A **price boost** (Ivan's definition): someone suddenly buys an item on the Steam Community
 Market in large portions and at higher and higher prices, to resell the same item on
@@ -9,7 +9,7 @@ cannot be traded for 7 days, so only a purchase on the first day unlocks while t
 
 Read-only, a recommendation and an alarm: nothing here buys or sells.
 
-**What is watched**: every tradable store item (the Store Catalogue Arbitrage's candidates) and
+**What is watched**: every tradable store item (the CS2 Store Arbitrage's candidates) and
 every sticker or patch inside the store's sticker capsules and patch packs (Ratatoskr's
 ``/items/capsule-contents``). A boosted sticker warned about its capsule about 20 hours early in
 October 2026 (Sticker | World Eaters 1 → the Warhammer 40,000 Traitor Astartes capsule).
@@ -37,7 +37,7 @@ had about 30 sales spikes of 5–76 times with no price move); the signal is sal
   holds 70% of the peak, ``second_wave`` when it climbs 1.3 times off its low since the peak,
   ``fading`` (sell) when it fell under 70% of the peak but is still 1.2 times usual.
 
-**Confirmed**: a store item whose best cash buy order (Store Catalogue Arbitrage's markets,
+**Confirmed**: a store item whose best cash buy order (CS2 Store Arbitrage's markets,
 after fees) pays at least the store price; a capsule whose opening value (Buff163 listings of its
 contents, weighted by rarity odds) beats its store price.
 

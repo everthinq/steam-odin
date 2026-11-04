@@ -1,11 +1,9 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Link } from 'react-router-dom';
-import { Tags, LayoutDashboard, Search, RefreshCw, AlertTriangle, Loader2, X, Archive, ShoppingCart, TrendingUp, List, Rocket } from 'lucide-react';
+import { Tags, LayoutDashboard, Search, RefreshCw, AlertTriangle, Loader2, X, Archive, ShoppingCart, TrendingUp, Rocket } from 'lucide-react';
 import { useColumnSort, sortRows } from '../../components/draupnir/columnSort';
 import SortHeader from '../../components/ratatoskr/SortHeader';
 import SteamMarketLink from '../../components/SteamMarketLink';
-import StoreArbitrage from '../../components/ratatoskr/StoreArbitrage';
-import StoreBoosts from '../../components/ratatoskr/StoreBoosts';
 import { failureMessage, readJson, readJsonOrThrow } from '../../utils/readJson';
 
 // Ratatoskr "Store Catalogue": every item the Counter-Strike 2 in-game store sells, with its
@@ -14,10 +12,8 @@ import { failureMessage, readJson, readJsonOrThrow } from '../../utils/readJson'
 // Buy Storage Units for that item).
 // Backend: /api/ratatoskr/store-catalogue. The sheet is refreshed whenever Buy Storage Units
 // reads it; "Read prices again" reads it now (one account logs in to Ratatoskr and out again).
-// Three tabs: the catalogue (/store-catalogue), Arbitrage (/store-catalogue/arbitrage), which
-// prices every tradable store item against what the markets pay (components/ratatoskr/StoreArbitrage),
-// and Boosts (/store-catalogue/boosts), which catches a Steam price boost of a store item or of a
-// sticker inside a store capsule on its first day (components/ratatoskr/StoreBoosts).
+// Its former Arbitrage and Boosts tabs are Huginn price scouts now (Ivan, 2026-11-04): Huginn →
+// CS2 Store Arbitrage and CS2 Store Boosts; the header links to them, and their old addresses redirect.
 
 const SORT_VALUES = {
     item: (i) => i.name,
@@ -38,7 +34,7 @@ const ago = (epochSeconds) => {
 // What the shared job is doing when it is not this page's price sheet read.
 const BUSY = { plan: 'checking wallets', purchase: 'buying Storage Units', delivery: 'delivering Storage Units' };
 
-const StoreCatalogue = ({ tab = 'catalogue' }) => {
+const StoreCatalogue = () => {
     const [state, setState] = useState(null);
     const [error, setError] = useState(null);
     const [search, setSearch] = useState('');
@@ -104,13 +100,15 @@ const StoreCatalogue = ({ tab = 'catalogue' }) => {
                 <div className="mr-auto">
                     <h1 className="text-2xl font-bold text-amber-100 font-serif">Store Catalogue</h1>
                     <p className="text-xs text-slate-300 [text-shadow:0_1px_3px_rgb(0_0_0)]">
-                        {tab === 'arbitrage'
-                            ? 'Which store items resell for more than the store charges, market by market, after fees. A recommendation only: Buy opens the item’s guarded buy page.'
-                            : tab === 'boosts'
-                                ? 'Price boosts on the Steam Market, caught on the first day: store items and the stickers inside store capsules. An alarm only: Buy opens the item’s guarded buy page.'
-                                : <>Every item the Counter-Strike 2 in-game store sells, with its US dollar price. Buy opens the item&apos;s own buy page for any of your accounts.</>}
+                        Every item the Counter-Strike 2 in-game store sells, with its US dollar price. Buy opens the item&apos;s own buy page for any of your accounts.
                     </p>
                 </div>
+                <Link to="/huginn?view=store-arbitrage" title="Huginn → CS2 Store Arbitrage: store items that resell above the store price" className="flex items-center gap-2 px-3 py-2 rounded-lg text-slate-400 hover:text-white hover:bg-white/5">
+                    <TrendingUp size={14} /> CS2 Store Arbitrage
+                </Link>
+                <Link to="/huginn?view=store-boosts" title="Huginn → CS2 Store Boosts: Steam price boosts of store items" className="flex items-center gap-2 px-3 py-2 rounded-lg text-slate-400 hover:text-white hover:bg-white/5">
+                    <Rocket size={14} /> CS2 Store Boosts
+                </Link>
                 <Link to="/buy-storage-units" className="flex items-center gap-2 px-3 py-2 rounded-lg text-slate-400 hover:text-white hover:bg-white/5">
                     <Archive size={14} /> Buy Storage Units
                 </Link>
@@ -127,26 +125,6 @@ const StoreCatalogue = ({ tab = 'catalogue' }) => {
                 </div>
             )}
 
-            <nav className="flex gap-1 mb-3 text-sm" aria-label="Store Catalogue tabs">
-                {[{ id: 'catalogue', to: '/store-catalogue', label: 'Catalogue', Icon: List },
-                    { id: 'arbitrage', to: '/store-catalogue/arbitrage', label: 'Arbitrage', Icon: TrendingUp },
-                    { id: 'boosts', to: '/store-catalogue/boosts', label: 'Boosts', Icon: Rocket }].map(({ id, to, label, Icon }) => (
-                    <Link key={id} to={to} aria-current={tab === id ? 'page' : undefined}
-                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border ${tab === id ? 'border-amber-500/40 bg-amber-600/20 text-amber-200' : 'border-white/10 bg-slate-950/70 text-slate-400 hover:text-white'}`}>
-                        <Icon size={14} /> {label}
-                    </Link>
-                ))}
-            </nav>
-
-            {tab === 'arbitrage' ? (
-                <section className="rounded-xl border border-white/10 bg-slate-950/85 backdrop-blur-md shadow-xl min-w-0" aria-label="Store arbitrage">
-                    <StoreArbitrage />
-                </section>
-            ) : tab === 'boosts' ? (
-                <section className="rounded-xl border border-white/10 bg-slate-950/85 backdrop-blur-md shadow-xl min-w-0" aria-label="Store boosts">
-                    <StoreBoosts />
-                </section>
-            ) : (
             <section className="rounded-xl border border-white/10 bg-slate-950/85 backdrop-blur-md shadow-xl min-w-0" aria-label="Store items">
                 <div className="flex flex-wrap items-center gap-2 p-3 border-b border-white/10">
                     <label className="relative flex-1 min-w-[12rem]">
@@ -228,7 +206,6 @@ const StoreCatalogue = ({ tab = 'catalogue' }) => {
                     Cases on the store front only link to the Steam Market: the store does not sell them.
                 </p>
             </section>
-            )}
         </div>
     );
 };

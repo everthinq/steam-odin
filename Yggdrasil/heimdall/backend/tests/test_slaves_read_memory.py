@@ -61,7 +61,7 @@ def test_harvest_says_nothing_is_wrong_for_a_market_not_active_and_picks_it_up_l
     assert service.asked.count(('CsMoneyTrade', 'Buy')) == 1                # downloaded by Huginn Arbitrage only
 
 
-# ---- Store Catalogue Arbitrage -----------------------------------------------------------------------
+# ---- CS2 Store Arbitrage -----------------------------------------------------------------------
 
 def test_store_catalogue_shows_a_market_not_active_as_empty_and_takes_it_once_active(service, tmp_path, monkeypatch):
     store = StoreArbitrageService(service, None, None, None, history_path=str(tmp_path / 'history.json.gz'))

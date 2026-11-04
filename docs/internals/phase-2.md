@@ -88,11 +88,14 @@ Accounts, Draupnir and Mímir, then Huginn and Andvari.
   follows its job; suggestions come from `GET auto-store/suggestions/<steamid>`
   (the account's inventory, the backend's storage rules); the hard-coded case
   list is gone. Rule 20: Auto-Store only, Transfer already works on one account.
-- C and D (Store Arbitrage, Store Boosts): Ivan says they do not belong under
-  Ratatoskr; decide where they go after B1 to B3, then fix them.
-- C1/C2 Store Arbitrage: page picks sell offer and profit; board, count and Telegram use three different rules -> one backend function with profile + cash_only; summary.profitable.
+- C and D (CS2 Store Arbitrage, CS2 Store Boosts): moved to Huginn (Ivan, 2026-11-04) as two
+  tabs of the Arbitrage page (`/huginn?view=store-arbitrage`, `?view=store-boosts`;
+  the old Store Catalogue addresses redirect), routes `/api/huginn/store-arbitrage…`
+  and `/api/huginn/store-boosts…`. Step 1, the move with no change in behaviour, is
+  done; step 2 fixes C1 to C6 and D1 to D5 below.
+- C1/C2 CS2 Store Arbitrage: page picks sell offer and profit; board, count and Telegram use three different rules -> one backend function with profile + cash_only; summary.profitable.
 - C3 near band, C4 settings unchecked -> store-arbitrage/settings route, C5 job follow, C6 owned.
-- D1-D5 Store Boosts: recommend_buy flag, thresholds from data.thresholds (page copies disagree), moving flags, opening_beats_store, tradable_if_bought_now.
+- D1-D5 CS2 Store Boosts: recommend_buy flag, thresholds from data.thresholds (page copies disagree), moving flags, opening_beats_store, tradable_if_bought_now.
 
 ### Accounts, Draupnir and Mímir
 - 3 Add Account: 4-step flow + rollback in page -> one import command (authenticate before writing). Bugs: re-import overwrites a working maFile before authentication; rollback DELETE unchecked; password trimmed.

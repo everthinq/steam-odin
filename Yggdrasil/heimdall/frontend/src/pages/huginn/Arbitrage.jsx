@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useDeferredValue, useRef, useCallback } from 'react';
-import { Link } from 'react-router-dom';
-import { LayoutDashboard, RefreshCw, AlertTriangle, Search, ChevronDown, Coins, Boxes, Repeat, Gavel, Users, Wheat, TrendingDown, Radio, RotateCw } from 'lucide-react';
+import { Link, useSearchParams } from 'react-router-dom';
+import { LayoutDashboard, RefreshCw, AlertTriangle, Search, ChevronDown, Boxes, Repeat, Users, Wheat, TrendingDown, Radio, RotateCw, Store, Rocket } from 'lucide-react';
 import { matchesSearchQuery } from '../../utils/transferItems';
 import SteamMarketLink from '../../components/SteamMarketLink';
 import BuffMarketLink from '../../components/BuffMarketLink';
@@ -11,8 +11,6 @@ import { parsePrice, useStoredFilters } from '../../utils/arbitrageFilters';
 import CaseArbitrage from '../../components/CaseArbitrage';
 import CrossProfileArbitrage from '../../components/CrossProfileArbitrage';
 import Harvest from '../../components/Harvest';
-import AuctionBoard from '../../components/AuctionBoard';
-import LootfarmArbitrage from '../../components/LootfarmArbitrage';
 import PriceCell from '../../components/arbitrage/PriceCell';
 import OverstockCell from '../../components/arbitrage/OverstockCell';
 import LootfarmSellCell from '../../components/arbitrage/LootfarmSellCell';
@@ -21,6 +19,8 @@ import FeeEditor from '../../components/arbitrage/FeeEditor';
 import CsfloatBuyOrdersPanel from '../../components/arbitrage/CsfloatBuyOrdersPanel';
 import SkinSwapBalanceNote from '../../components/arbitrage/SkinSwapBalanceNote';
 import PriceDips from '../../components/PriceDips';
+import StoreArbitrage from '../../components/StoreArbitrage';
+import StoreBoosts from '../../components/StoreBoosts';
 import ActiveSwitch from '../../components/arbitrage/ActiveSwitch';
 import ActiveProfilesPanel from '../../components/arbitrage/ActiveProfilesPanel';
 import PricesAge from '../../components/arbitrage/PricesAge';
@@ -103,9 +103,16 @@ const formatTs = (ts) => {
     return diffH < 24 ? `${diffH}h ago` : new Date(ts).toLocaleDateString();
 };
 
+// Every tab of this page; the first is the default. The LF Auctions and LF Arbitrage tabs were
+// removed (Ivan, 2026-11-04); their components (AuctionBoard, LootfarmArbitrage) and backend stay for now.
+const VIEWS = ['arbitrage', 'harvest', 'cases', 'crossprofile', 'dips', 'store-arbitrage', 'store-boosts'];
+
 const HuginnArbitrage = () => {
     // Top-level view: cross-market item arbitrage (default) vs the container/case tracker.
-    const [view, setView] = useState('arbitrage');
+    // ?view=<tab> opens that tab when the page opens (the old Store Catalogue tab addresses redirect here).
+    const [searchParams] = useSearchParams();
+    const viewParam = searchParams.get('view');
+    const [view, setView] = useState(VIEWS.includes(viewParam) ? viewParam : 'arbitrage');
     const [scanData, setScanData] = useState(null);
     // Daily "Get all items" (backend morning routine): time + last result, for the header.
     const [morning, setMorning] = useState(null);
@@ -601,17 +608,19 @@ const HuginnArbitrage = () => {
                     </button>
                     <button
                         type="button"
-                        onClick={() => setView('auctions')}
-                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${view === 'auctions' ? 'bg-amber-600 text-white' : 'text-slate-400 hover:text-white'}`}
+                        onClick={() => setView('store-arbitrage')}
+                        title="In-game store items that resell for more than the store charges, after fees"
+                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${view === 'store-arbitrage' ? 'bg-amber-600 text-white' : 'text-slate-400 hover:text-white'}`}
                     >
-                        <Gavel size={13} /> LF Auctions
+                        <Store size={13} /> CS2 Store Arbitrage
                     </button>
                     <button
                         type="button"
-                        onClick={() => setView('lfarb')}
-                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${view === 'lfarb' ? 'bg-amber-600 text-white' : 'text-slate-400 hover:text-white'}`}
+                        onClick={() => setView('store-boosts')}
+                        title="Steam price boosts of in-game store items and capsule stickers, caught on the first day"
+                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${view === 'store-boosts' ? 'bg-amber-600 text-white' : 'text-slate-400 hover:text-white'}`}
                     >
-                        <Coins size={13} /> LF Arbitrage
+                        <Rocket size={13} /> CS2 Store Boosts
                     </button>
                 </div>
 
@@ -659,7 +668,11 @@ const HuginnArbitrage = () => {
                         <button type="button" onClick={() => setView('arbitrage')} className="text-sky-300 hover:text-sky-200">Change them on Arbitrage</button>
                     </p>
                 )}
-                {view === 'lfarb' ? <LootfarmArbitrage byHash={byHash} /> : view === 'auctions' ? <AuctionBoard /> : view === 'crossprofile' ? <CrossProfileArbitrage byHash={byHash} /> : view === 'harvest' ? <Harvest byHash={byHash} /> : view === 'cases' ? <CaseArbitrage byHash={byHash} /> : view === 'dips' ? <PriceDips byHash={byHash} /> : (<>
+                {view === 'store-arbitrage' ? (
+                    <section className="rounded-xl border border-white/10 bg-slate-950/85 backdrop-blur-md shadow-xl min-w-0" aria-label="Store arbitrage"><StoreArbitrage /></section>
+                ) : view === 'store-boosts' ? (
+                    <section className="rounded-xl border border-white/10 bg-slate-950/85 backdrop-blur-md shadow-xl min-w-0" aria-label="Store boosts"><StoreBoosts /></section>
+                ) : view === 'crossprofile' ? <CrossProfileArbitrage byHash={byHash} /> : view === 'harvest' ? <Harvest byHash={byHash} /> : view === 'cases' ? <CaseArbitrage byHash={byHash} /> : view === 'dips' ? <PriceDips byHash={byHash} /> : (<>
                 {scanError && (
                     <div className="shrink-0 bg-red-500/20 border border-red-500/30 text-red-300 px-4 py-3 rounded-lg text-sm">
                         {scanError}

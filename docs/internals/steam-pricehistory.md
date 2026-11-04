@@ -20,7 +20,7 @@ Cookie: steamLoginSecure=…   (a logged-in web session)
 - **It answers in the session's wallet currency**, whatever `currency=1` says. The answer names it
   only by symbol: `price_prefix` `"$"` and an empty `price_suffix` mean US dollars. Never mix
   answers from accounts with different wallets: `card_deals_service.parse_sale_history` returns
-  nothing unless the answer is in dollars, and Store Boosts skips such an account for 6 hours.
+  nothing unless the answer is in dollars, and CS2 Store Boosts skips such an account for 6 hours.
 
 ## The answer
 
@@ -40,11 +40,11 @@ Cookie: steamLoginSecure=…   (a logged-in web session)
 
 | Answer | Meaning | What to do |
 |--------|---------|------------|
-| HTTP 429 | Too many requests (from this address) | Back off: Store Boosts waits 10 minutes, doubling to 2 hours |
+| HTTP 429 | Too many requests (from this address) | Back off: CS2 Store Boosts waits 10 minutes, doubling to 2 hours |
 | HTTP 500 (also 400) | A name Steam does not know (live 2026-10-25: `Bestiary Sticker Capsule`, whose market name is `Bestiary Capsule`) | The item's own error; check the market name |
 | HTTP 401 / 403 | The session is refused | Use another account |
 | No `success`, or an empty answer | No session, or no history | Treat as no data |
-| Many items failing in a row | Usually expired sessions (the keep-alive failed) | Pause, say so (Store Boosts: 8 in a row) |
+| Many items failing in a row | Usually expired sessions (the keep-alive failed) | Pause, say so (CS2 Store Boosts: 8 in a row) |
 
 ## Store items have market names of their own
 
@@ -62,10 +62,10 @@ game files (Ratatoskr's `/items/capsule-contents` returns it as `capsule`). See
 | Gjallarhorn liquidity (items pulse lacks) | `steam_market_service.py` | 3 s + 2 s gaps, deferred while the page is in use, 24-hour cache |
 | Andvari card sale prices | `card_deals_service.py` (`parse_sale_history`, app 753) | capped per scan, a day per card |
 | Andvari card auto-sell | `market_seller.py` (`parse_price_history`) | history kept 6 hours, `community_pacer` |
-| Store Boosts | `store_boost_service.py` | one item every 30 seconds (setting, 10 to 3600), `community_pacer`, 429 back-off |
+| CS2 Store Boosts | `store_boost_service.py` | one item every 30 seconds (setting, 10 to 3600), `community_pacer`, 429 back-off |
 
 They do not share one pacer or one back-off ([known-issues.md](known-issues.md)): a 429 seen by
-one does not slow the others. Live, Store Boosts read 100–107 items an hour at its 30-second gap
+one does not slow the others. Live, CS2 Store Boosts read 100–107 items an hour at its 30-second gap
 and met two 429s on its first evening (it backed off 10, then 20 minutes, and carried on).
 
 ## Reading one by hand

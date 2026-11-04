@@ -58,14 +58,11 @@ def test_ratatoskr_blueprint_registers_all_routes():
                  '/api/ratatoskr/storage-shop/plan', '/api/ratatoskr/storage-shop/plans/<plan_id>',
                  '/api/ratatoskr/storage-shop/plans/<plan_id>/execute', '/api/ratatoskr/storage-shop/quote',
                  '/api/ratatoskr/storage-shop/deliver-again', '/api/ratatoskr/store-catalogue',
-                 '/api/ratatoskr/store-catalogue/refresh', '/api/ratatoskr/store-arbitrage',
-                 '/api/ratatoskr/store-arbitrage/options', '/api/ratatoskr/store-arbitrage/refresh',
-                 '/api/ratatoskr/store-arbitrage/alerts/send', '/api/ratatoskr/store-boosts',
-                 '/api/ratatoskr/store-boosts/item', '/api/ratatoskr/store-boosts/read',
-                 '/api/ratatoskr/store-boosts/check', '/api/ratatoskr/store-boosts/test-alert',
-                 '/api/ratatoskr/store-boosts/track']:
+                 '/api/ratatoskr/store-catalogue/refresh']:
         assert want in rules, f'missing ratatoskr route: {want}'
-    assert _rule_count(bp, '/api/ratatoskr') == 45
+    # CS2 Store Arbitrage and CS2 Store Boosts moved to Huginn (Ivan, 2026-11-04): 10 rules fewer.
+    assert not [rule for rule in rules if rule.startswith(('/api/ratatoskr/store-arbitrage', '/api/ratatoskr/store-boosts'))]
+    assert _rule_count(bp, '/api/ratatoskr') == 35
 
 
 def test_accounts_blueprint_registers_all_routes():
@@ -117,7 +114,12 @@ def test_huginn_blueprint_registers_all_routes():
                  '/api/huginn/card-deals/buy', '/api/huginn/card-deals/buy/plan',
                  '/api/huginn/card-deals/buy/purchase-plan',
                  '/api/huginn/card-deals/buy/purchase-plans/<purchase_plan_id>',
-                 '/api/huginn/card-deals/buy/purchase-plans/<purchase_plan_id>/execute']:
+                 '/api/huginn/card-deals/buy/purchase-plans/<purchase_plan_id>/execute',
+                 '/api/huginn/store-arbitrage', '/api/huginn/store-arbitrage/options',
+                 '/api/huginn/store-arbitrage/refresh', '/api/huginn/store-arbitrage/alerts/send',
+                 '/api/huginn/store-boosts', '/api/huginn/store-boosts/item', '/api/huginn/store-boosts/read',
+                 '/api/huginn/store-boosts/check', '/api/huginn/store-boosts/test-alert',
+                 '/api/huginn/store-boosts/track']:
         assert want in rules, f'missing huginn route: {want}'
     # A real purchase only through a purchase plan's dry run: the old bare route is gone.
     assert '/api/huginn/card-deals/buy/run' not in rules
@@ -129,7 +131,8 @@ def test_huginn_blueprint_registers_all_routes():
     # +5 Team Fortress 2 rules: status, play, check-news, detect, sell-now; +1 card auto-sell status;
     # +5 Buy games: status, plan, purchase plan, purchase plan (GET), execute (run removed); +5 pulse feed: kept, download, price dips (+ markets), check live;
     # Active profiles (GET+POST) replaced the Pulse feed switchboard (kept, download) on 2026-10-31.
-    assert _rule_count(bp, "/api/huginn") == 87
+    # +10 CS2 Store Arbitrage (4) and CS2 Store Boosts (6), moved from Ratatoskr on 2026-11-04.
+    assert _rule_count(bp, "/api/huginn") == 97
 
 
 def test_register_blueprints_wires_onto_app():

@@ -104,7 +104,7 @@ const PulseFeed = () => {
                         Every price Heimdall shows comes from Tradeon pulse, and <span className="text-slate-100">only Huginn Arbitrage downloads</span>:
                         the keeper keeps your active profiles' tables fresh{minutes ? ` (every ${minutes} minutes)` : ''} and Buff163's lowest
                         listing once a day, "Fetch live data" downloads a profile now, and "Check live" asks for one item. Every other page
-                        (Case Arbitrage and its alerts, Store Catalogue, Store Boosts, Harvest, Cross-Profile, Price dips, Gjallarhorn,
+                        (Case Arbitrage and its alerts, Store Catalogue, CS2 Store Boosts, Harvest, Cross-Profile, Price dips, Gjallarhorn,
                         Draupnir) reads these tables from memory and never downloads. This page only watches.{' '}
                         <Link to="/huginn" className="text-sky-300 hover:text-sky-200 whitespace-nowrap">Choose the active profiles on Huginn → Arbitrage</Link>.
                     </div>

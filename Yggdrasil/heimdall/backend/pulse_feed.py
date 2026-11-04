@@ -3,8 +3,8 @@
 **Only Huginn Arbitrage downloads** (Ivan's master-slave rule, 2026-10-31): the keeper keeps the
 tables of the active Huginn profiles fresh (``set_active``), "Fetch live data" and a profile
 opening by itself download through ``reading(download=True)``, and "Check live" asks pulse for one
-item (``lookup``). Every other reader (Case Arbitrage and its alerts, Store Catalogue Arbitrage,
-Store Boosts, Harvest, Cross-Profile, Price dips, Gjallarhorn, Draupnir's valuation, the LOOT.Farm
+item (``lookup``). Every other reader (Case Arbitrage and its alerts, CS2 Store Arbitrage,
+CS2 Store Boosts, Harvest, Cross-Profile, Price dips, Gjallarhorn, Draupnir's valuation, the LOOT.Farm
 boards) is a slave: it gets the copy in memory, whatever its age, waits for a download already
 under way, and otherwise gets ``NotActive``. It never causes a request.
 
@@ -14,7 +14,7 @@ one price type (``Sell`` = lowest listing, ``SellWithoutHold``, ``Buy`` = buy or
 So a table is fully named by (market id, price type), and this module is the only code that builds
 that request. Huginn's Arbitrage profiles and generated pairs, Harvest, Cross-Profile, Case
 Arbitrage (refresh and alert polls), the portfolio valuation, Gjallarhorn, the LOOT.Farm boards,
-Price dips and Store Catalogue Arbitrage all call ``table()`` (through ``HuginnService``) and share
+Price dips and CS2 Store Arbitrage all call ``table()`` (through ``HuginnService``) and share
 its answers:
 
 - **One download per table at a time** (single flight): a caller that asks while that table is
@@ -52,7 +52,7 @@ its answers:
 - **Bonus-balance markets** are turned into real dollars once, on arrival (``scale``, SkinSwap
   (Trade) ÷ 1.4), keeping the page price as ``pagePrice``.
 - **Listeners** (``add_listener``) hear about every downloaded table on one background thread, so
-  a slave can keep what it needs (Store Catalogue Arbitrage keeps the store items).
+  a slave can keep what it needs (CS2 Store Arbitrage keeps the store items).
 - ``status()`` lists every table, its age, downloads, reads, its readers and whether it is active,
   and the keeper's state (active hours, last pass, the last sleep).
 
@@ -80,7 +80,7 @@ WAIT_FOR_DOWNLOAD = 600         # seconds a caller waits on another caller's dow
 ACTIVE_MINUTES = (5, 10, 15, 30, 60)
 MAX_ACTIVE_TABLES = 12          # tables the active profiles may need together
 # Read once a day: Buff163 is the main market, not tradeable yet, but its price belongs in the
-# statistics and is the off-Steam reference (Case Arbitrage, Store Boosts, valuation).
+# statistics and is the off-Steam reference (Case Arbitrage, CS2 Store Boosts, valuation).
 REFERENCE_TABLES = {('Buff', 'Sell'): 24 * 60 * 60}
 SLEEP_GAP = 3 * 30              # the keeper's tick took this long: the Mac (and Docker) slept
 ONCE_TRIES = 3                  # a one-time download (the seed) is given up after this many failures

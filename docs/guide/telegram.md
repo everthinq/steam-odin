@@ -13,8 +13,8 @@ like `123456789:AA…`). To find a chat id, message your bot once and open
 | Case Arbitrage alerts (one board message, updated as prices move) and a note for each **auto-confirmed trade** | The shared "Huginn" bot | Huginn → Case Arbitrage → **Alerts** (bot token + chat id, or a Discord/Slack webhook) |
 | Gjallarhorn news (a case or collection limited) | The shared bot | Gjallarhorn → news watcher → **Alert chat id** (empty = the Huginn chat) |
 | Team Fortress 2 new case, auto-stop | The shared bot | Team Fortress 2 → settings → **Telegram chat** (empty = the Huginn chat) |
-| **In-game store items that sell above the store price**: once a day after the morning refresh, and when an item newly turns profitable (each item at most once a day) | The shared bot (the Huginn chat) | Store Catalogue → Arbitrage → **Telegram: daily post** (on by default) and **Send now** |
-| **Price boosts** of store items and of stickers inside store capsules: each new level (watch, boost, second wave, fading), once per boost | The shared bot (the Huginn chat), and a **phone ring** on a boost | Store Catalogue → Boosts → **Alerts** (Telegram, ring, **Test message**, **Test ring**) |
+| **In-game store items that sell above the store price**: once a day after the morning refresh, and when an item newly turns profitable (each item at most once a day) | The shared bot (the Huginn chat) | Huginn → CS2 Store Arbitrage → **Telegram: daily post** (on by default) and **Send now** |
+| **Price boosts** of store items and of stickers inside store capsules: each new level (watch, boost, second wave, fading), once per boost | The shared bot (the Huginn chat), and a **phone ring** on a boost | Huginn → CS2 Store Boosts → **Alerts** (Telegram, ring, **Test message**, **Test ring**) |
 | **Andvari** deal alerts and card-sale summaries | **Andvari's own bot only** | Andvari → **Settings** → Andvari bot token + chat id, then **Test alert** |
 
 Andvari never uses the Huginn bot: without its own bot it stays silent. Give
@@ -29,7 +29,7 @@ signal" when it reaches the threshold), and a link to the Steam Community Market
 A price boost message names the item, Steam's price now against its usual, the sales of the last
 24 hours against the usual, the store price (and what another market pays at once in money), the
 capsules it is in with their opening value, the date copies bought now become tradable, and a link to
-the Steam Community Market. See [ratatoskr.md](ratatoskr.md#boosts-tab).
+the Steam Community Market. See [huginn.md](huginn.md#cs2-store-boosts).
 
 Buy Storage Units, the Store Catalogue's own tab, Buy games and card farming send no messages.
 
@@ -37,8 +37,8 @@ Buy Storage Units, the Store Catalogue's own tab, Buy games and card farming sen
 
 A Telegram bot cannot make calls, so rings come from a **spare Telegram user
 account** (a second number) that calls your main account: Gjallarhorn news,
-a Team Fortress 2 case release, a price boost of a store item (Store Catalogue →
-Boosts), and the **Ring test** button. The call has no
+a Team Fortress 2 case release, a price boost of a store item (Huginn →
+CS2 Store Boosts), and the **Ring test** button. The call has no
 sound content — it is just the ringing, after a message saying why. Rings never overlap:
 a second one waits until the first has finished (about 3 minutes).
 

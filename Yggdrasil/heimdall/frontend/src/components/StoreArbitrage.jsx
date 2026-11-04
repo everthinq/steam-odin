@@ -4,25 +4,25 @@ import {
     Search, AlertTriangle, Loader2, ShoppingCart, ChevronRight, ChevronDown, TrendingUp, TrendingDown, Info,
     RefreshCw, ArrowUp, ArrowDown, Zap, Send, Clock, Tags,
 } from 'lucide-react';
-import { useColumnSort, sortRows } from '../draupnir/columnSort';
-import InfoTip from '../gjallarhorn/InfoTip';
-import ProfilePicker from '../arbitrage/ProfilePicker';
-import PriceCell from '../arbitrage/PriceCell';
-import FeeEditor from '../arbitrage/FeeEditor';
-import ArbitrageFilters, { ActiveFilterChips } from '../arbitrage/ArbitrageFilters';
-import { activeFilterCount, buildOptions, collectionByName, priceInRange, useStoredFilters } from '../../utils/arbitrageFilters';
-import SteamMarketLink from '../SteamMarketLink';
-import BuffMarketLink from '../BuffMarketLink';
-import CSFloatMarketLink from '../CSFloatMarketLink';
-import { failureMessage, readJson, readJsonOrThrow } from '../../utils/readJson';
+import { useColumnSort, sortRows } from './draupnir/columnSort';
+import InfoTip from './gjallarhorn/InfoTip';
+import ProfilePicker from './arbitrage/ProfilePicker';
+import PriceCell from './arbitrage/PriceCell';
+import FeeEditor from './arbitrage/FeeEditor';
+import ArbitrageFilters, { ActiveFilterChips } from './arbitrage/ArbitrageFilters';
+import { activeFilterCount, buildOptions, collectionByName, priceInRange, useStoredFilters } from '../utils/arbitrageFilters';
+import SteamMarketLink from './SteamMarketLink';
+import BuffMarketLink from './BuffMarketLink';
+import CSFloatMarketLink from './CSFloatMarketLink';
+import { failureMessage, readJson, readJsonOrThrow } from '../utils/readJson';
 
-// Store Catalogue → Arbitrage tab, laid out like Huginn's Arbitrage: a profile is
+// Huginn → CS2 Store Arbitrage tab (moved from the Store Catalogue, 2026-11-04), laid out like Huginn's Arbitrage: a profile is
 // "In-game store → market (autobuy or min)", default CSMoney (Trade) autobuy. The
 // CSMoney (Trade) column is the indicator: what it pays at once, as a share of the store
 // price; at the threshold (100% by default) the row signals BUY, meaning the item is worth
 // buying in the in-game store and selling where the profile's market pays most.
 // A recommendation board only: Buy opens the item's guarded buy page (dry run first).
-// Backend: GET /api/ratatoskr/store-arbitrage?markets=… (non-blocking: it warms missing
+// Backend: GET /api/huginn/store-arbitrage?markets=… (non-blocking: it warms missing
 // markets in the background, so the page polls while warming or refreshing),
 // POST …/refresh (the Refresh button), POST …/alerts/send (Telegram "Send now"),
 // GET …/options (markets, default set, indicator, alert switch). The morning routine
@@ -151,7 +151,7 @@ const StoreArbitrage = () => {
         .catch(() => {}), []);
 
     useEffect(() => {
-        fetch('/api/ratatoskr/store-arbitrage/options')
+        fetch('/api/huginn/store-arbitrage/options')
             .then(readJsonOrThrow)
             .then((o) => { setOptions(o); setAlerts(o.alerts || null); })
             .catch((error) => setError(failureMessage(error)));
@@ -207,7 +207,7 @@ const StoreArbitrage = () => {
     const load = useCallback(() => {
         if (!marketsKey) return Promise.resolve();
         const number = ++requests.current;
-        return fetch(`/api/ratatoskr/store-arbitrage?markets=${encodeURIComponent(marketsKey)}`)
+        return fetch(`/api/huginn/store-arbitrage?markets=${encodeURIComponent(marketsKey)}`)
             .then(async (r) => {
                 const body = await readJson(r).catch(() => null);
                 if (number !== requests.current) return;
@@ -232,7 +232,7 @@ const StoreArbitrage = () => {
 
     const refresh = () => {
         setRefreshNote(null);
-        fetch('/api/ratatoskr/store-arbitrage/refresh', {
+        fetch('/api/huginn/store-arbitrage/refresh', {
             method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ markets: requestMarkets }),
         })
             .then(async (r) => {
@@ -302,7 +302,7 @@ const StoreArbitrage = () => {
         if (sending) return;
         setSending(true);
         setAlertNote(null);
-        fetch('/api/ratatoskr/store-arbitrage/alerts/send', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })
+        fetch('/api/huginn/store-arbitrage/alerts/send', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })
             .then(async (r) => {
                 const body = await readJson(r).catch(() => ({}));
                 setAlertNote(body.sent ? `Sent: ${body.items} item${body.items === 1 ? '' : 's'}` : `Not sent: ${body.error || `HTTP ${r.status}`}`);

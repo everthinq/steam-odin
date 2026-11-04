@@ -94,7 +94,7 @@ or unconfirmed rather than refused. Refresh the page and move again. See
 See [ratatoskr.md](ratatoskr.md#buy-storage-units): check the account's purchase
 history on Steam, then press **Deliver again** (it cannot charge twice).
 
-## Store Boosts: "not read yet" or "No Steam web session"
+## CS2 Store Boosts: "not read yet" or "No Steam web session"
 
 - Steam's price history is read one item at a time, 30 seconds apart: the
   whole list (about 200 store items and 575 capsule stickers) takes hours the
@@ -107,7 +107,7 @@ history on Steam, then press **Deliver again** (it cannot charge twice).
   for the first time is only recorded, unless its rise began in the last 48
   hours.
 
-## Store Catalogue Arbitrage shows nothing
+## CS2 Store Arbitrage shows nothing
 
 - "Reading market prices…": each market is read one after another (about 5
   seconds each); wait a minute. After a backend restart the prices are read

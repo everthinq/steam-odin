@@ -306,10 +306,10 @@ Storage Units). Ratatoskr's `/store/purchase/init` takes `itemDefinitionIndex`
 (default 1201). Storage Units are counted only when buying Storage Units. The
 page is the same component (`StorageShop.jsx`) at `/store-catalogue/buy/:item`.
 
-## 6b. Store Catalogue Arbitrage (read-only)
+## 6b. CS2 Store Arbitrage (read-only)
 
-`store_arbitrage_service.py` (the catalogue's Arbitrage tab,
-`GET /api/ratatoskr/store-arbitrage?markets=…`, `POST …/refresh`,
+`store_arbitrage_service.py` (Huginn's CS2 Store Arbitrage tab, moved from the Store Catalogue on 2026-11-04,
+`GET /api/huginn/store-arbitrage?markets=…`, `POST …/refresh`,
 `POST …/alerts/send` and `GET …/options`) prices every tradable catalogue item
 against the markets. Nothing in it buys anything.
 
@@ -397,9 +397,9 @@ against the markets. Nothing in it buys anything.
   like Flickshot's (sold for $1.34–$1.57 in January 2026, store $0.99) are the
   opportunity the history is there to catch.
 
-## 6c. Store Boosts (read-only)
+## 6c. CS2 Store Boosts (read-only)
 
-`store_boost_service.py` (the catalogue's Boosts tab, `GET /api/ratatoskr/store-boosts`,
+`store_boost_service.py` (Huginn's CS2 Store Boosts tab, moved from the Store Catalogue on 2026-11-04, `GET /api/huginn/store-boosts`,
 `GET …/item?name=`, `POST …/read`, `POST …/check`, `POST …/test-alert`) catches a Steam
 price boost of a store item, or of a sticker inside a store capsule, on its first day.
 Nothing in it buys anything.

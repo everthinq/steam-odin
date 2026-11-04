@@ -1,4 +1,4 @@
-"""Store Catalogue Arbitrage: the CSMoney (Trade) indicator, the Refresh button, the daily
+"""CS2 Store Arbitrage: the CSMoney (Trade) indicator, the Refresh button, the daily
 refresh after "Get all items" and the Telegram post of profitable store items."""
 import time
 

@@ -1,4 +1,4 @@
-"""Store Boosts: the detector on three real boosts, the alerts, capsule values and the reader.
+"""CS2 Store Boosts: the detector on three real boosts, the alerts, capsule values and the reader.
 
 The fixture holds Steam's own price history (public market prices, read 2026-10-24) of the two
 boosts Ivan sent: Sticker | Flickshot (January 2026, daily points by then) and Sticker | World
@@ -623,7 +623,7 @@ def test_the_track_route_pins_unpins_and_refuses_a_text_flag(monkeypatch):
     from flask import Flask
 
     from context import ctx
-    from routes import ratatoskr as ratatoskr_routes
+    from routes import huginn as huginn_routes
 
     class Settings:
         saved = {'store_boost_tracked': []}
@@ -645,9 +645,9 @@ def test_the_track_route_pins_unpins_and_refuses_a_text_flag(monkeypatch):
     monkeypatch.setattr(ctx, 'settings_manager', settings, raising=False)
     monkeypatch.setattr(ctx, 'store_boost_service', Boosts(), raising=False)
     app = Flask(__name__)
-    app.register_blueprint(ratatoskr_routes.bp)
+    app.register_blueprint(huginn_routes.bp)
     client = app.test_client()
-    url = '/api/ratatoskr/store-boosts/track'
+    url = '/api/huginn/store-boosts/track'
     assert client.post(url, json={'name': FLICKSHOT, 'tracked': 'false'}).status_code == 400
     assert client.post(url, json={'name': FLICKSHOT}).get_json() == {'tracked': [FLICKSHOT]}
     assert client.post(url, json={'name': WORLD_EATERS, 'tracked': True}).get_json() == {'tracked': [WORLD_EATERS, FLICKSHOT]}

@@ -1,4 +1,4 @@
-"""Store Catalogue Arbitrage: which in-game store items resell for more than the store charges.
+"""CS2 Store Arbitrage: which in-game store items resell for more than the store charges.
 
 Read-only, a recommendation board: nothing here buys or sells. Each row is one item the
 Counter-Strike 2 in-game store sells (the Store Catalogue's price sheet), priced against
@@ -538,7 +538,7 @@ class StoreArbitrageService:
         self._board_markets_cache = None
         self._save_timer_pending = False
         # {store name: Steam Market name} for items the store names differently ("Bestiary Sticker
-        # Capsule" is "Bestiary Capsule" on every market); app.py points it at Store Boosts' resolver.
+        # Capsule" is "Bestiary Capsule" on every market); app.py points it at CS2 Store Boosts' resolver.
         self.market_names = lambda: {}
         # Every full pulse table Huginn pulls (the Case Arbitrage refresh and alert polls, the
         # portfolio valuation, other tabs) also prices the store items it holds: no second download.
@@ -1106,7 +1106,7 @@ class StoreArbitrageService:
         """{name: {market, display, gross, net}}: the best buy order paid as money (not a site
         balance or the Steam wallet) for each of *names*, after the market's fee, from the prices
         already held (no pull), through the board's own rules (``item_row``: crossed-out and stale
-        prices never count). Store Boosts uses it to confirm a boost: a cash buy order at or above
+        prices never count). CS2 Store Boosts uses it to confirm a boost: a cash buy order at or above
         the store price."""
         with self._lock:
             indexes = {pair: hit[1] for pair, hit in self._indexes.items()}

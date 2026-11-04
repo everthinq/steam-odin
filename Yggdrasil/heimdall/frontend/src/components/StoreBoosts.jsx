@@ -4,16 +4,16 @@ import {
     Search, Loader2, ShoppingCart, ChevronRight, ChevronDown, RefreshCw, Rocket, Eye, TrendingDown, Repeat,
     Activity, PhoneCall, Send, AlertTriangle, Package, Flag, Radio, BellRing, Hourglass, CircleHelp, ShieldCheck, Pin, PinOff,
 } from 'lucide-react';
-import SteamMarketLink from '../SteamMarketLink';
-import { failureMessage, readJson } from '../../utils/readJson';
+import SteamMarketLink from './SteamMarketLink';
+import { failureMessage, readJson } from '../utils/readJson';
 
-// Store Catalogue → Boosts tab: a Steam price boost of an in-game store item, or of a sticker inside
+// Huginn → CS2 Store Boosts tab (moved from the Store Catalogue, 2026-11-04): a Steam price boost of an in-game store item, or of a sticker inside
 // a store capsule, caught on its first day. A price boost (Ivan's definition): someone buys an item on
 // the Steam Community Market in large portions at rising prices, to resell it on third-party markets.
 // The store sells any number of copies at one price, but they cannot be traded for 7 days, so only a
 // day-one purchase unlocks while the price is high.
 // Read-only: an alarm and a recommendation; Buy opens the item's guarded buy page (dry run first).
-// Backend (store_boost_service.py): GET /api/ratatoskr/store-boosts (board), GET …/item?name= (the
+// Backend (store_boost_service.py): GET /api/huginn/store-boosts (board), GET …/item?name= (the
 // 14-day hourly chart), POST …/read {name} (read Steam now), POST …/check (pulse check now),
 // POST …/test-alert {ring}. Switches are settings keys (store_boost_*), posted on their own.
 
@@ -205,7 +205,7 @@ const Detail = ({ row, now, tradeHoldDays, onRead, owned, tracking, onTrack }) =
     const [failed, setFailed] = useState(false);
     useEffect(() => {
         let alive = true;
-        fetch(`/api/ratatoskr/store-boosts/item?name=${encodeURIComponent(row.name)}`)
+        fetch(`/api/huginn/store-boosts/item?name=${encodeURIComponent(row.name)}`)
             .then((row) => (row.ok ? readJson(row) : null))
             .then((answer) => { if (alive) { setDetail(answer); setFailed(!answer); } })
             .catch(() => { if (alive) setFailed(true); });
@@ -405,7 +405,7 @@ const StoreBoosts = () => {
 
     const load = useCallback(() => {
         const number = ++loads.current;
-        return fetch('/api/ratatoskr/store-boosts')
+        return fetch('/api/huginn/store-boosts')
             .then(readJson)
             .then((answer) => {
                 if (number !== loads.current) return;
@@ -434,18 +434,18 @@ const StoreBoosts = () => {
     };
     const post = (url, body) => fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}) })
         .then((response) => readJson(response).then((answer) => ({ ok: response.ok, ...answer })));
-    const track = (name, tracked) => post('/api/ratatoskr/store-boosts/track', { name, tracked })
+    const track = (name, tracked) => post('/api/huginn/store-boosts/track', { name, tracked })
         .then((answer) => setNote(answer.error ? answer.error
             : tracked ? `Tracking ${name}: shown on top.` : `Stopped tracking ${name}.`))
         .catch((error) => setNote(failureMessage(error)))
         .finally(load);
-    const readNow = (name) => post('/api/ratatoskr/store-boosts/read', { name })
+    const readNow = (name) => post('/api/huginn/store-boosts/read', { name })
         .then((answer) => setNote(answer.queued ? `${name}: queued for a Steam read (position ${answer.position}).` : answer.error))
         .catch((error) => setNote(failureMessage(error)))
         .finally(load);
     const checkNow = () => {
         setBusy('check');
-        post('/api/ratatoskr/store-boosts/check')
+        post('/api/huginn/store-boosts/check')
             .then((answer) => setNote(answer.started ? 'Pulse check started: Steam and Buff163 prices of every watched item.' : answer.error))
             .catch((error) => setNote(failureMessage(error)))
             .finally(() => { setBusy(null); load(); });
@@ -454,7 +454,7 @@ const StoreBoosts = () => {
         if (sending.current) return;
         sending.current = true;
         setBusy(ring ? 'ring' : 'test');
-        post('/api/ratatoskr/store-boosts/test-alert', { ring })
+        post('/api/huginn/store-boosts/test-alert', { ring })
             .then((answer) => setNote(answer.sent ? `Test sent to Telegram${answer.rang ? ', and the phone is ringing' : ''}.`
                 : answer.rang ? 'The phone is ringing; the Telegram message failed: ' + (answer.error || '') : `Test failed: ${answer.error}`))
             .catch((error) => setNote(failureMessage(error)))
@@ -487,7 +487,7 @@ const StoreBoosts = () => {
         return (
             <div className="p-8 flex items-center justify-center text-slate-400">
                 {error ? <span className="text-red-300 flex items-center gap-2"><AlertTriangle size={15} /> {error}</span>
-                    : <><Loader2 className="animate-spin mr-2" size={18} /> Loading Store Boosts…</>}
+                    : <><Loader2 className="animate-spin mr-2" size={18} /> Loading CS2 Store Boosts…</>}
             </div>
         );
     }

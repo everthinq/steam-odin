@@ -233,7 +233,7 @@ def test_no_pulse_request_has_a_price_floor():
 
 
 def test_every_table_shows_items_tradeon_has_sold_out_of(monkeypatch):
-    # Harvest, Cross-Profile and Store Catalogue Arbitrage look up what a market PAYS for
+    # Harvest, Cross-Profile and CS2 Store Arbitrage look up what a market PAYS for
     # items you hold, so an item Tradeon itself does not list must not vanish. Every table
     # is one normalised request with sold-out items shown (on 2026-10-15 the switch changed
     # no table's item count), so a market's 'Buy' table is downloaded once for everyone.

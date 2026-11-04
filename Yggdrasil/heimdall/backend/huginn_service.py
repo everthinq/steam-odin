@@ -1297,7 +1297,7 @@ class HuginnService:
     def add_pull_listener(self, listener):
         """listener(market_id, side, table) after every table the master feed downloads, with
         side 'listing' (the market's lowest listing price type) or 'instant' (its buy orders),
-        on the feed's listener thread. Store Catalogue Arbitrage takes the store items this way
+        on the feed's listener thread. CS2 Store Arbitrage takes the store items this way
         instead of downloading the same tables again."""
         def relay(table):
             market = _MARKET_BY_ID.get(table.market_id)
@@ -1532,7 +1532,7 @@ class HuginnService:
     def market_autobuy_index(self, token, market_id, max_age=FRESH):
         """{name: {price,count,image}} of a market's autobuy / buy orders (what you'd get
         selling instantly). Empty if the market has no autobuy. Every table shows items Tradeon
-        has sold out of, so Harvest, Cross-Profile and Store Catalogue Arbitrage see what a
+        has sold out of, so Harvest, Cross-Profile and CS2 Store Arbitrage see what a
         market pays for those too."""
         return self.market_index_at(token, market_id, 'instant', max_age)[1]
 

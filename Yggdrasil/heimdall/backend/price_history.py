@@ -10,12 +10,12 @@ active profiles' tables, Buff163's daily reference, "Fetch live data"), never fr
 - **Statistics** (``statistic``): an item's 30-day median (or average) of its daily averages, once
   it has MIN_DAYS full days; before that, pulse's own 30-day value from a one-time seed.
   ``trade_statistic``: the middle of the lowest listing's and the buy orders' (where a sale lands,
-  like pulse's median of sales), for Store Boosts and Gjallarhorn.
+  like pulse's median of sales), for CS2 Store Boosts and Gjallarhorn.
 - **Seed** (``seeds_wanted`` → the keeper's ``download_once``): pulse's Median30d and Average30d
   tables, downloaded once per active market that has them (Steam, Buff163, CSMoney (Trade)...),
   cache/price_history/seed/<market>_<basis>.json.gz.
 
-Price dips, Gjallarhorn's liquidity and Store Boosts read their 30-day prices here.
+Price dips, Gjallarhorn's liquidity and CS2 Store Boosts read their 30-day prices here.
 """
 import gzip
 import json

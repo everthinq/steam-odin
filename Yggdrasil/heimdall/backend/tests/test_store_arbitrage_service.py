@@ -1,4 +1,4 @@
-"""Store Catalogue Arbitrage: store items against what markets pay, net of fees."""
+"""CS2 Store Arbitrage: store items against what markets pay, net of fees."""
 import contextlib
 import datetime
 
