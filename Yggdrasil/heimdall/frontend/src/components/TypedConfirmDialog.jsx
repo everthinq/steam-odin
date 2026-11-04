@@ -23,7 +23,7 @@ const TypedConfirmDialog = ({
     const handleSubmit = (event) => {
         event.preventDefault();
         if (!matches || busy) return;
-        onConfirm();
+        onConfirm(typed.trim());
     };
 
     return createPortal(

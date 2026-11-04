@@ -132,7 +132,10 @@ Accounts, Draupnir and Mímir, then Huginn and Andvari.
   (`respond_to_confirmation`: the last list, else one fresh read; `confirmation_not_found` 404,
   `invalid_operation`, `confirmations_unavailable` 502, `steam_refused` 502); the scheduler reads `key`
   too; the page sends only the id and the operation.
-- 7 Remove All accounts: phrase only in page, DELETE removes accounts added later -> plan/execute.
+- 7 Remove All accounts **DONE 2026-11-04**: `POST /api/accounts/remove-all/plan` names the accounts and the
+  phrase (`DELETE N`) and writes nothing (`no_accounts`); `POST /api/accounts/remove-all/plans/<id>/execute {phrase}`
+  soft-deletes only the plan's accounts, once (`phrase_mismatch`, `unknown_plan` 404, `already_executed` 409,
+  `REMOVE_ALL_PLAN_LIFETIME_SECONDS`); an account added after the plan stays; `DELETE /api/accounts` is gone.
 - 8 Draupnir return_pct, holdings visibility differs between views, oversold flag never shown, transaction total.
 - 9 live price status: page gives up after 8 polls; inactive/error unhandled in Portfolios, CombinedLedger, ArbitrageDeals.
 - 11 Confirmation settings: interval 1-9 silently raised to 10; check-all synchronous, 409 shown as HTTP 409; wording.

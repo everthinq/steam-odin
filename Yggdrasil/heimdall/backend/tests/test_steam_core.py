@@ -111,12 +111,23 @@ def test_delete_missing_or_unsafe_name_returns_false(service):
     assert service.storage.delete_account('.heimdall_key') is False
 
 
-def test_remove_all_accounts_soft_deletes_each_and_listing_stays_empty(service):
+def test_remove_all_plan_then_execute_soft_deletes_only_the_planned_accounts(service):
     for index in range(3):
         service.storage.save_account(f'7656119800000000{index}', {'shared_secret': 's'})
-    assert service.remove_all_accounts() == 3
-    assert service.storage.list_accounts() == []
-    assert service.get_all_accounts_data() == []
+    plan = service.plan_remove_all()
+    assert plan['count'] == 3 and plan['phrase'] == 'DELETE 3'
+    assert service.storage.list_accounts().__len__() == 3  # the plan writes nothing
+    service.storage.save_account('76561198000000009', {'shared_secret': 's'})  # added later
+    assert service.execute_remove_all(plan['id'], 'DELETE 4')['code'] == 'phrase_mismatch'
+    result = service.execute_remove_all(plan['id'], 'DELETE 3')
+    assert result['count'] == 3
+    assert service.storage.list_accounts() == ['76561198000000009']
+    assert service.execute_remove_all(plan['id'], 'DELETE 3')['code'] == 'already_executed'
+    assert service.execute_remove_all('nope', 'DELETE 3')['code'] == 'unknown_plan'
+
+
+def test_remove_all_plan_with_no_accounts_is_refused(service):
+    assert service.plan_remove_all()['code'] == 'no_accounts'
 
 
 def test_delete_routes_do_not_restart_the_backend(service, monkeypatch):
@@ -137,8 +148,15 @@ def test_delete_routes_do_not_restart_the_backend(service, monkeypatch):
     response = client.delete(f'/api/accounts/{STEAMID}')
     assert response.status_code == 200 and response.get_json()['status'] == 'success'
     assert client.delete(f'/api/accounts/{STEAMID}').status_code == 404
-    response = client.delete('/api/accounts')
-    assert response.status_code == 200 and response.get_json()['count'] == 0
+    assert client.post('/api/accounts/remove-all/plan').get_json()['code'] == 'no_accounts'
+    service.storage.save_account(STEAMID, {'shared_secret': 's'})
+    plan = client.post('/api/accounts/remove-all/plan').get_json()
+    url = f"/api/accounts/remove-all/plans/{plan['id']}/execute"
+    assert client.post(url, json={'phrase': 'wrong'}).status_code == 400
+    response = client.post(url, json={'phrase': plan['phrase']})
+    assert response.status_code == 200 and response.get_json()['count'] == 1
+    assert client.post(url, json={'phrase': plan['phrase']}).status_code == 409
+    assert client.post('/api/accounts/remove-all/plans/nope/execute', json={}).status_code == 404
 
 
 # ---- 3. settings corruption guard -------------------------------------------

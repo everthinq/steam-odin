@@ -167,6 +167,10 @@ def _get_steam_debug_logger():
 
 # Names of Steam's mobile confirmation types, used only when Steam's own answer
 # has no `type_name`. A type missing here is shown as "Unknown type N".
+# How long a Remove All accounts plan can be executed after it was made.
+REMOVE_ALL_PLAN_LIFETIME_SECONDS = 10 * 60
+
+
 CONFIRMATION_TYPE_NAMES = {
     1: 'Test',
     2: 'Trade',
@@ -220,6 +224,9 @@ class SteamService:
         # The key of every confirmation in each account's last list, by id:
         # {steamid: {confirmation id: key}}. Lets an answer name only the id.
         self._confirmation_keys = {}
+        # Remove All accounts plans by id (memory only): which accounts, the phrase.
+        self._remove_all_plans = {}
+        self._remove_all_lock = threading.Lock()
         # One lock per SteamID64 around every read-modify-write of a maFile, so the
         # scheduler, keep-alive, request threads and Ratatoskr callbacks never
         # overwrite each other's Session changes. Held only for the disk work,
@@ -399,13 +406,37 @@ class SteamService:
         with self._account_lock(steamid):
             return self.storage.delete_account(steamid)
 
-    def remove_all_accounts(self):
-        accounts = self.storage.list_accounts()
-        count = 0
-        for steamid in accounts:
-            if self.remove_account(steamid):
-                count += 1
-        return count
+    def plan_remove_all(self):
+        """Remove All accounts, step 1: name the accounts it would remove and the
+        phrase to type. Writes nothing."""
+        steamids = sorted(self.storage.list_accounts())
+        if not steamids:
+            return {'error': 'there are no accounts to remove', 'code': 'no_accounts'}
+        now = time.time()
+        plan = {'id': secrets.token_hex(16), 'steamids': steamids,
+                'phrase': f'DELETE {len(steamids)}',
+                'expires_at': now + REMOVE_ALL_PLAN_LIFETIME_SECONDS, 'executed': False}
+        with self._remove_all_lock:
+            for plan_id in [k for k, old in self._remove_all_plans.items() if old['expires_at'] < now]:
+                del self._remove_all_plans[plan_id]
+            self._remove_all_plans[plan['id']] = plan
+        return {'id': plan['id'], 'steamids': steamids, 'count': len(steamids),
+                'phrase': plan['phrase'], 'expires_at': plan['expires_at']}
+
+    def execute_remove_all(self, plan_id, phrase):
+        """Remove All accounts, step 2: soft-delete only the plan's accounts, once,
+        when `phrase` is the plan's phrase. An account added after the plan stays."""
+        with self._remove_all_lock:
+            plan = self._remove_all_plans.get(plan_id)
+            if not plan or plan['expires_at'] < time.time():
+                return {'error': 'no such plan, or it expired: start again', 'code': 'unknown_plan'}
+            if plan['executed']:
+                return {'error': 'this plan already ran', 'code': 'already_executed'}
+            if (phrase or '').strip() != plan['phrase']:
+                return {'error': f'type {plan["phrase"]} to confirm', 'code': 'phrase_mismatch'}
+            plan['executed'] = True
+        removed = [steamid for steamid in plan['steamids'] if self.remove_account(steamid)]
+        return {'status': 'success', 'count': len(removed), 'removed': removed}
 
     def _query_time(self, force=False):
         """Seconds to add to this clock to get Steam's. Asked again every 5 minutes, when

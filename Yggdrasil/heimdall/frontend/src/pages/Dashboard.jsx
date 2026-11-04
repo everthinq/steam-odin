@@ -29,9 +29,9 @@ const Dashboard = () => {
     const [removeAllOpen, setRemoveAllOpen] = useState(false);
     const [removeAllBusy, setRemoveAllBusy] = useState(false);
     const [removeAllError, setRemoveAllError] = useState(null);
-    // Freezes the count shown in the phrase while the dialog is open, so a poll
-    // that changes the account list does not change what must be typed.
-    const [removeAllCount, setRemoveAllCount] = useState(0);
+    // The backend's Remove All plan: which accounts and the phrase to type. Only
+    // these accounts are removed, so one added while the dialog is open stays.
+    const [removeAllPlan, setRemoveAllPlan] = useState(null);
     const aliveRef = useRef(true);
     // Market access: the result of the check Mímir runs (read-only here).
     const { status: marketAccess } = useMarketAccess();
@@ -62,18 +62,27 @@ const Dashboard = () => {
         }
     };
 
-    const openRemoveAll = () => {
-        setRemoveAllCount(accounts.length);
+    const openRemoveAll = async () => {
         setRemoveAllError(null);
-        setRemoveAllOpen(true);
+        try {
+            const response = await fetch('/api/accounts/remove-all/plan', { method: 'POST' });
+            setRemoveAllPlan(await readJsonOrThrow(response));
+            setRemoveAllOpen(true);
+        } catch (err) {
+            setError(err.message);
+        }
     };
 
-    const handleRemoveAll = async () => {
+    const handleRemoveAll = async (phrase) => {
         setRemoveAllBusy(true);
         setRemoveAllError(null);
         try {
-            const response = await fetch('/api/accounts', { method: 'DELETE' });
-            if (!response.ok) await readJsonOrThrow(response);
+            const response = await fetch(`/api/accounts/remove-all/plans/${removeAllPlan.id}/execute`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ phrase }),
+            });
+            await readJsonOrThrow(response);
             setRemoveAllOpen(false);
             await fetchAccounts();
         } catch (err) {
@@ -168,11 +177,11 @@ const Dashboard = () => {
     return (
         <div className="min-h-screen text-white p-4 md:p-8">
             <GlobalConfirmationsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
-            {removeAllOpen && (
+            {removeAllOpen && removeAllPlan && (
                 <TypedConfirmDialog
                     title="Remove all accounts"
-                    message={`This removes all ${removeAllCount} accounts and their maFiles from Heimdall. It cannot be undone.`}
-                    phrase={`DELETE ${removeAllCount}`}
+                    message={`This removes all ${removeAllPlan.count} accounts and their maFiles from Heimdall. It cannot be undone.`}
+                    phrase={removeAllPlan.phrase}
                     confirmLabel="Remove All"
                     busy={removeAllBusy}
                     error={removeAllError}

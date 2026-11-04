@@ -69,13 +69,14 @@ def test_ratatoskr_blueprint_registers_all_routes():
 def test_accounts_blueprint_registers_all_routes():
     from routes.accounts import bp
     rules = _rules_for(bp)
-    for want in ['/api/accounts', '/api/accounts/import',
+    for want in ['/api/accounts', '/api/accounts/import', '/api/accounts/remove-all/plan',
+                 '/api/accounts/remove-all/plans/<plan_id>/execute',
                  '/api/accounts/<steamid>/confirmations',
                  '/api/accounts/<steamid>/confirmations/<cid>',
                  '/api/accounts/<steamid>', '/api/confirmations/check-all',
                  '/api/accounts/update-session', '/api/accounts/clear-web-session']:
         assert want in rules, f'missing account route: {want}'
-    assert _rule_count(bp, '/api/accounts') == 8  # incl. GET+DELETE on /api/accounts; /authenticate merged into /import
+    assert _rule_count(bp, '/api/accounts') == 9  # Remove All is plan + execute; /authenticate merged into /import
 
 
 def test_settings_blueprint_registers_all_routes():

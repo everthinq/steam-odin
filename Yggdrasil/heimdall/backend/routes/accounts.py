@@ -70,13 +70,27 @@ def act_on_confirmation(steamid, cid):
     return jsonify(result)
 
 
-@bp.route('/api/accounts', methods=['DELETE'])
-def remove_all_accounts():
-    """Remove all accounts"""
-    # Soft delete (maFiles move to maFiles/.deleted/). Every service reads the
-    # account list from disk on each use, so no backend restart is needed.
-    count = ctx.steam_service.remove_all_accounts()
-    return jsonify({"status": "success", "message": f"Removed {count} accounts.", "count": count}), 200
+_REMOVE_ALL_STATUS = {'unknown_plan': 404, 'already_executed': 409}
+
+
+@bp.route('/api/accounts/remove-all/plan', methods=['POST'])
+def plan_remove_all_accounts():
+    """Remove All accounts, step 1: which accounts and the phrase to type. Writes nothing."""
+    result = ctx.steam_service.plan_remove_all()
+    if 'error' in result:
+        return jsonify(result), 400
+    return jsonify(result)
+
+
+@bp.route('/api/accounts/remove-all/plans/<plan_id>/execute', methods=['POST'])
+def execute_remove_all_accounts(plan_id):
+    """Remove All accounts, step 2: body {phrase}. Soft-deletes only the plan's
+    accounts (maFiles move to maFiles/.deleted/), once."""
+    body = request.get_json(silent=True) or {}
+    result = ctx.steam_service.execute_remove_all(plan_id, body.get('phrase'))
+    if 'error' in result:
+        return jsonify(result), _REMOVE_ALL_STATUS.get(result.get('code'), 400)
+    return jsonify(result)
 
 
 @bp.route('/api/accounts/<steamid>', methods=['DELETE'])
