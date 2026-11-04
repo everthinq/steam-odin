@@ -7,6 +7,7 @@ import { DateField } from '../../components/DateField';
 import SectionHead from '../../components/draupnir/SectionHead';
 import SortTh from '../../components/draupnir/SortTh';
 import OversoldMark from '../../components/draupnir/OversoldMark';
+import PricingNote from '../../components/draupnir/PricingNote';
 import { useColumnSort, sortRows } from '../../components/draupnir/columnSort';
 import { readJson } from '../../utils/readJson';
 
@@ -114,8 +115,6 @@ const DraupnirPortfolio = () => {
     const suggestTimer = useRef(null);
     const itemInputRef = useRef(null);
     const [fetchSeq, setFetchSeq] = useState(0);
-    const pollRef = useRef(0);
-    const MAX_POLLS = 8;
     // Each detail request takes a number; only the newest one may write state,
     // so a slow response for the previous market (or portfolio) cannot
     // overwrite the one the user just switched to.
@@ -145,14 +144,15 @@ const DraupnirPortfolio = () => {
         }
     }, [portfolioId]);
 
-    useEffect(() => { pollRef.current = 0; fetchDetail(market); }, [market, fetchDetail]);
+    useEffect(() => { fetchDetail(market); }, [market, fetchDetail]);
 
-    // Re-poll while live prices warm in the background so value/P/L fill in.
+    // While prices load in the background, ask again when the backend says to.
+    const pollAfterSeconds = data?.poll_after_seconds;
     useEffect(() => {
-        if (data?.pricing !== 'refreshing' || pollRef.current >= MAX_POLLS) return;
-        const t = setTimeout(() => { pollRef.current += 1; fetchDetail(market); }, 3000);
+        if (pollAfterSeconds == null) return;
+        const t = setTimeout(() => fetchDetail(market), pollAfterSeconds * 1000);
         return () => clearTimeout(t);
-    }, [fetchSeq, data, market, fetchDetail]);
+    }, [fetchSeq, pollAfterSeconds, market, fetchDetail]);
 
     // ---- collapse + search + pagination for the two tables ----
     const [holdingsOpen, setHoldingsOpen] = useState(false);   // transactions matter most; start holdings collapsed
@@ -403,18 +403,7 @@ const DraupnirPortfolio = () => {
                                 {data.arbitrage_count} arbitrage {data.arbitrage_count === 1 ? 'leg' : 'legs'} excluded from this account's P/L — counted in the Arbitrage tab.
                             </p>
                         )}
-                        {data.pricing === 'refreshing' && pollRef.current < MAX_POLLS && (
-                            <p className="flex items-center gap-1.5 text-xs text-slate-400 -mt-2"><RefreshCw size={12} className="animate-spin" /> Fetching live prices…</p>
-                        )}
-                        {data.pricing === 'inactive' && (
-                            <p className="text-xs text-amber-400/80 -mt-2">Live prices unavailable: no active Huginn profile keeps this valuation market (make one active on Huginn → Arbitrage, or pick another valuation market) — value/unrealized shown as cost basis only.</p>
-                        )}
-                        {data.pricing === 'no_token' && (
-                            <p className="text-xs text-amber-400/80 -mt-2">Live prices unavailable — set the Tradeon token (the same one Huginn uses) to value holdings; value/unrealized shown as cost basis only.</p>
-                        )}
-                        {((data.pricing === 'error' && !data.priced) || (data.pricing === 'refreshing' && pollRef.current >= MAX_POLLS)) && (
-                            <p className="text-xs text-amber-400/80 -mt-2">Couldn't load live prices right now — value/unrealized shown as cost basis only.</p>
-                        )}
+                        <PricingNote status={data} className="-mt-2" />
 
                         {/* Add / edit transaction (top of page for quick entry) */}
                         <section>

@@ -113,6 +113,50 @@ def _chronological_key(transaction):
     return (transaction.get('date') or '', transaction.get('created_at') or '')
 
 
+# How often a page asks again while live prices load, and the slower pace once
+# loading has taken longer than PRICE_SLOW_AFTER_SECONDS.
+PRICE_POLL_SECONDS = 3
+PRICE_SLOW_POLL_SECONDS = 15
+PRICE_SLOW_AFTER_SECONDS = 60
+
+
+def pricing_status(status, priced, refreshing_seconds=None, retry_seconds=None):
+    """What every Draupnir page shows about live prices, decided once here.
+
+    status is HuginnService.prices_for_valuation's ('no_token', 'fresh',
+    'refreshing', 'error', 'inactive'); priced says whether any prices were
+    served. Answers {priced, pricing, pricing_note, pricing_warning,
+    poll_after_seconds}: the note is None when there is nothing to say,
+    pricing_warning marks a note shown as a warning, and poll_after_seconds is
+    None when asking again would change nothing."""
+    note, warning, poll = None, False, None
+    if status == 'refreshing':
+        slow = refreshing_seconds is not None and refreshing_seconds >= PRICE_SLOW_AFTER_SECONDS
+        poll = PRICE_SLOW_POLL_SECONDS if slow else PRICE_POLL_SECONDS
+        if slow:
+            note = 'Live prices are taking longer than usual; still loading.'
+        elif priced:
+            note = 'Updating live prices…'
+        else:
+            note = 'Fetching live prices…'
+    elif status == 'no_token':
+        note = ('Live prices unavailable: set the Tradeon token (the same one Huginn uses) '
+                'to value holdings. Showing cost basis only.')
+        warning = True
+    elif status == 'inactive':
+        note = ('Live prices unavailable: no active Huginn profile keeps this valuation market. '
+                'Make one active on Huginn → Arbitrage, or pick another valuation market. '
+                'Showing cost basis only.')
+        warning = True
+    elif status == 'error':
+        again = f' Heimdall tries again in {round(retry_seconds / 60)} minutes.' if retry_seconds else ''
+        note = (('Live prices could not be refreshed; showing the last prices.' if priced
+                 else "Couldn't load live prices; showing cost basis only.") + again)
+        warning = True
+    return {'priced': bool(priced), 'pricing': status, 'pricing_note': note,
+            'pricing_warning': warning, 'poll_after_seconds': poll}
+
+
 class PortfolioSaveError(RuntimeError):
     """portfolios.json could not be written. The change is NOT on disk; the
     in-memory store is rolled back to what the file holds whenever that file can

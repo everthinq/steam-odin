@@ -536,6 +536,7 @@ class HuginnService:
         self._price_cache = {}   # market -> (fetched_at_epoch, {name: price}) for portfolio valuation
         self._price_state = {}   # market -> 'refreshing' | 'ok' | 'error'
         self._price_failed_at = {}   # market -> epoch of the last failed background refresh
+        self._price_started_at = {}  # market -> epoch the running background refresh started
         self._price_lock = threading.Lock()
         self._csfloat_links_lock = threading.Lock()   # guards csfloat_item_links.json writes
         # Returns the current settings; app.py points it at SettingsManager.get_settings,
@@ -2347,7 +2348,8 @@ class HuginnService:
         it kicks off a single background refresh (one per market at a time) and
         returns immediately with whatever we have (stale cache, or None on a cold
         start) so the page never waits on pulse. status is one of:
-        'no_token', 'fresh', 'refreshing', 'error'.
+        'no_token', 'fresh', 'refreshing', 'error', 'inactive' (no active Huginn
+        profile keeps this market).
 
         A refresh that failed is not retried for _WARM_RETRY_AFTER_FAILURE_SEC;
         within that window the status is 'error' (stale prices still served) so
@@ -2366,6 +2368,7 @@ class HuginnService:
                            < _WARM_RETRY_AFTER_FAILURE_SEC)
             if state != 'refreshing' and not backing_off:
                 self._price_state[market] = 'refreshing'
+                self._price_started_at[market] = time.time()
                 threading.Thread(target=self._refresh_prices_bg,
                                  args=(token, market), daemon=True).start()
                 state = 'refreshing'
@@ -2374,6 +2377,21 @@ class HuginnService:
         if cached:
             return cached[1], 'refreshing'          # serve stale while warming
         return None, 'refreshing'
+
+    def valuation_refresh_seconds(self, market='steam'):
+        """Seconds the running background refresh of this valuation market has
+        taken so far, or None when none is running."""
+        market = self._normalize_price_market(market)
+        with self._price_lock:
+            if self._price_state.get(market) != 'refreshing':
+                return None
+            started = self._price_started_at.get(market)
+        return None if started is None else time.time() - started
+
+    @staticmethod
+    def valuation_retry_seconds():
+        """How long a failed valuation refresh waits before the next try."""
+        return _WARM_RETRY_AFTER_FAILURE_SEC
 
     # ---- Container price tracker ("Case Arbitrage") ------------------------
 

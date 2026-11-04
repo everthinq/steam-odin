@@ -141,7 +141,13 @@ Accounts, Draupnir and Mímir, then Huginn and Andvari.
   holding carries `listed` (`_is_listed`: held, a realized profit or loss, or oversold; one rule for both
   views, an oversold row is never hidden); each transaction carries `total` (`_with_totals`); both tables
   show an "oversold N" mark (`components/draupnir/OversoldMark.jsx`); the pages compute none of these.
-- 9 live price status: page gives up after 8 polls; inactive/error unhandled in Portfolios, CombinedLedger, ArbitrageDeals.
+- 9 live price status **DONE 2026-11-05**: every Draupnir answer (list, one account, All accounts, Arbitrage)
+  carries `pricing_status` (`draupnir_service.py`): `pricing`, `priced`, `pricing_note` (the words, None when
+  fresh), `pricing_warning`, and `poll_after_seconds` (`PRICE_POLL_SECONDS`, then `PRICE_SLOW_POLL_SECONDS`
+  once loading took `PRICE_SLOW_AFTER_SECONDS`; None when asking again changes nothing). Inactive, error
+  (with or without the last prices, and when Heimdall tries again) and no token are all named. The pages
+  poll while the backend says so (no 8-poll limit) and show one `components/draupnir/PricingNote.jsx`;
+  CombinedLedger's own copy of the line is gone.
 - 11 Confirmation settings: interval 1-9 silently raised to 10; check-all synchronous, 409 shown as HTTP 409; wording.
 - 12 copied date normaliser and valuation market list.
 - Other bugs: no success checks (delete transaction, rename, delete portfolio navigates away on failure, create/delete portfolio); "Drip last" drops is_arbitrage; old search answers win; Dashboard transient error filter misses readJson/Safari messages (use failureMessage).

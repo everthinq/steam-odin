@@ -52,7 +52,7 @@ const LoadMore = ({ visible, total, onMore }) => visible < total && (
     </button>
 );
 
-const CombinedLedger = ({ data, loading, pricing }) => {
+const CombinedLedger = ({ data, loading }) => {
     const [holdingsOpen, setHoldingsOpen] = useState(false);
     const [txnsOpen, setTxnsOpen] = useState(true);
     const [holdingsSearch, setHoldingsSearch] = useState('');
@@ -136,12 +136,6 @@ const CombinedLedger = ({ data, loading, pricing }) => {
                         <span className={`text-right tabular-nums ${plClass(data.unrealized_pl)}`}>{plStr(data.unrealized_pl)}</span>
                     </div>
                 </div>
-                {pricing === 'refreshing' && (
-                    <p className="mt-3 flex items-center gap-1.5 text-xs text-slate-400"><RefreshCw size={12} className="animate-spin" /> Fetching live prices…</p>
-                )}
-                {pricing === 'no_token' && (
-                    <p className="mt-3 text-xs text-amber-400/80">Live prices unavailable — set the Tradeon token to value holdings; showing cost basis only.</p>
-                )}
             </div>
 
             {/* Holdings (aggregated across accounts) */}

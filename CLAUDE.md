@@ -309,6 +309,16 @@ in the agent's private memory, not in this file.
     backend that every user reads). Two copies of one rule are a bug. Ask
     Ivan when the right source is unclear (Ivan, 2026-11-04).
 
+### Big tasks
+
+28. **Split a big task into small items and finish each one fully** before
+    the next: implement it, review it (rule 25 decides whether a review is
+    needed), document it in the agent and the human documentation, commit +
+    push, then get ready for compact (memory updated, a short handover) and
+    stop so Ivan can run `/compact`. Starting such a task with this cycle
+    counts as the word for each item's commit + push (rule 8) (Ivan,
+    2026-11-05; for example Phase 2).
+
 ### Reviews
 
 25. **A review only when it is needed.** When Ivan asks for a pull request or

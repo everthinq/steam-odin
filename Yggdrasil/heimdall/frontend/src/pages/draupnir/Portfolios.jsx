@@ -15,6 +15,7 @@ import {
     reorderPortfolioList,
 } from '../../utils/portfolioLayout';
 import { failureMessage, readJsonOrThrow } from '../../utils/readJson';
+import PricingNote from '../../components/draupnir/PricingNote';
 
 const MARKETS = [
     { id: 'steam', label: 'Steam' },
@@ -26,8 +27,7 @@ const marketLabel = (id) => MARKETS.find(m => m.id === id)?.label || id;
 
 const DraupnirPortfolios = () => {
     const [portfolios, setPortfolios] = useState([]);
-    const [priced, setPriced] = useState(false);
-    const [pricing, setPricing] = useState('refreshing');   // no_token | fresh | refreshing | error
+    const [pricing, setPricing] = useState(null);   // the backend's live-price status (pricing_note, poll_after_seconds)
     const [market, setMarket] = useState('steam');
     const [viewMode, setViewMode] = useState('accounts');   // 'accounts' | 'combined' | 'arbitrage'
     const [combined, setCombined] = useState(null);
@@ -43,8 +43,6 @@ const DraupnirPortfolios = () => {
     const [layout, setLayout] = useState(() => loadPortfolioLayout());
     const [dragId, setDragId] = useState(null);
     const fileRef = useRef(null);
-    const pollRef = useRef(0);
-    const MAX_POLLS = 8;   // ~24s of background price warming, then give up quietly
 
     const persistLayout = (next) => { setLayout(next); savePortfolioLayout(next); };
 
@@ -68,8 +66,7 @@ const DraupnirPortfolios = () => {
             if (mode === 'combined') setCombined(data);
             else if (mode === 'arbitrage') setArbitrage(data);
             else setPortfolios(data.portfolios || []);
-            setPriced(!!data.priced);
-            setPricing(data.pricing || 'fresh');
+            setPricing(data);
             setError(null);
         } catch (e) {
             if (isCurrent()) setError(e.message);
@@ -82,14 +79,15 @@ const DraupnirPortfolios = () => {
     };
 
     // Load on mount / market / view-mode / spread-param change (renders instantly from cost basis).
-    useEffect(() => { pollRef.current = 0; setLoading(true); fetchList(market, viewMode); }, [market, viewMode]);
+    useEffect(() => { setLoading(true); fetchList(market, viewMode); }, [market, viewMode]);
 
-    // While prices warm in the background, re-poll a few times so they fill in.
+    // While prices load in the background, ask again when the backend says to.
+    const pollAfterSeconds = pricing?.poll_after_seconds;
     useEffect(() => {
-        if (pricing !== 'refreshing' || pollRef.current >= MAX_POLLS) return;
-        const t = setTimeout(() => { pollRef.current += 1; fetchList(market, viewMode); }, 3000);
+        if (pollAfterSeconds == null) return;
+        const t = setTimeout(() => fetchList(market, viewMode), pollAfterSeconds * 1000);
         return () => clearTimeout(t);
-    }, [fetchSeq, pricing, market, viewMode]);
+    }, [fetchSeq, pollAfterSeconds, market, viewMode]);
 
     // Keep the saved layout in sync as portfolios are created/deleted.
     const idsKey = useMemo(() => portfolios.map(p => String(p.id)).sort().join(','), [portfolios]);
@@ -340,21 +338,7 @@ const DraupnirPortfolios = () => {
                             {MARKETS.map(m => <option key={m.id} value={m.id}>{m.label}</option>)}
                         </select>
                     </div>
-                    {pricing === 'refreshing' && pollRef.current < MAX_POLLS && (
-                        <span className="flex items-center gap-1.5 text-xs text-slate-400">
-                            <RefreshCw size={12} className="animate-spin" /> Fetching live prices…
-                        </span>
-                    )}
-                    {pricing === 'no_token' && (
-                        <span className="text-xs text-amber-400/80">
-                            Live prices unavailable — set the Tradeon token (the same one Huginn uses) to value holdings; showing cost basis only
-                        </span>
-                    )}
-                    {((pricing === 'error' && !priced) || (pricing === 'refreshing' && pollRef.current >= MAX_POLLS)) && (
-                        <span className="text-xs text-amber-400/80">
-                            Couldn't load live prices right now — showing cost basis only
-                        </span>
-                    )}
+                    <PricingNote status={pricing} />
                 </div>
 
                 {viewMode === 'accounts' && portfolios.length > 0 && canReorder && (
@@ -362,9 +346,9 @@ const DraupnirPortfolios = () => {
                 )}
 
                 {viewMode === 'arbitrage' ? (
-                    <ArbitrageDeals data={arbitrage} loading={loading} pricing={pricing} marketLabel={marketLabel} />
+                    <ArbitrageDeals data={arbitrage} loading={loading} marketLabel={marketLabel} />
                 ) : viewMode === 'combined' ? (
-                    <CombinedLedger data={combined} loading={loading} pricing={pricing} />
+                    <CombinedLedger data={combined} loading={loading} />
                 ) : loading ? (
                     <div className="flex justify-center items-center h-64">
                         <RefreshCw className="animate-spin text-yellow-500" size={36} />

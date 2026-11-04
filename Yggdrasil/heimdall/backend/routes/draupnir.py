@@ -9,7 +9,7 @@ import re
 from flask import Blueprint, Response, jsonify, request
 
 from context import ctx
-from draupnir_service import PortfolioSaveError
+from draupnir_service import PortfolioSaveError, pricing_status
 from storage_deposit import CommandError
 from validation import validate_new_transaction, validate_portfolio_name, validate_transaction
 
@@ -32,14 +32,21 @@ def _portfolio_prices(market):
     return ctx.huginn_service.prices_for_valuation(token, market or 'steam')
 
 
+def _pricing_fields(prices, status, market):
+    """The live-price status every Draupnir page shows (draupnir_service.pricing_status)."""
+    huginn = ctx.huginn_service
+    return pricing_status(status, prices is not None,
+                          refreshing_seconds=huginn.valuation_refresh_seconds(market or 'steam'),
+                          retry_seconds=huginn.valuation_retry_seconds())
+
+
 @bp.route('/api/draupnir/portfolios', methods=['GET'])
 def portfolios_list():
     market = request.args.get('market', 'steam')
     prices, status = _portfolio_prices(market)
     return jsonify({
         'portfolios': ctx.draupnir_service.list_portfolios(prices),
-        'priced': prices is not None,
-        'pricing': status,
+        **_pricing_fields(prices, status, market),
         'market': market,
     })
 
@@ -81,8 +88,7 @@ def portfolios_combined():
     market = request.args.get('market', 'steam')
     prices, status = _portfolio_prices(market)
     data = ctx.draupnir_service.combined_ledger(prices)
-    data['priced'] = prices is not None
-    data['pricing'] = status
+    data.update(_pricing_fields(prices, status, market))
     data['market'] = market
     return jsonify(data)
 
@@ -96,7 +102,7 @@ def portfolios_arbitrage():
     prices, status = _portfolio_prices(market)
     data = ctx.draupnir_service.arbitrage_deals(prices)
     data['open_market'] = market
-    data['pricing'] = status
+    data.update(_pricing_fields(prices, status, market))
     return jsonify(data)
 
 
@@ -188,8 +194,7 @@ def portfolios_get(pid):
     data = ctx.draupnir_service.get_portfolio(pid, prices)
     if data is None:
         return jsonify({'error': 'portfolio not found'}), 404
-    data['priced'] = prices is not None
-    data['pricing'] = status
+    data.update(_pricing_fields(prices, status, market))
     data['market'] = market
     return jsonify(data)
 

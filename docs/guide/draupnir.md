@@ -5,7 +5,12 @@ account), and shows what your holdings are worth now and what you made.
 
 Open it from the Dashboard tile **Draupnir** (also /draupnir). Live values need
 the Tradeon token ([getting-started.md](getting-started.md#4-prices-huginn-and-draupnir));
-without it, holdings are shown at cost.
+without it, holdings are shown at cost. A line under the market picker says
+what the prices are doing: loading (the page asks again by itself, more slowly
+after a minute), not available (no token, or no active Huginn profile keeps the
+chosen market: make one active on Huginn → Arbitrage or pick another market),
+or a failed load (with the last prices when there are any, and when Heimdall
+tries again).
 
 ## Portfolios page
 
