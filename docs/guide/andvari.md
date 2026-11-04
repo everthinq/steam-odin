@@ -33,16 +33,30 @@ Open it from the Dashboard tile **Andvari** (also /huginn/card-deals).
 ## Buy games — spends wallet money
 
 1. Enter games (store links or app ids) and the **maximum price per game** in
-   dollars.
+   dollars. In a store link only the number after `/app/` counts (a "2077" in
+   the game's name or the numbers after `?snr=` are ignored).
 2. **Check accounts** builds a plan: every account × game, with its wallet,
-   country and whether it can buy. Tick the cells you want.
-3. **Dry run** goes through the whole checkout and cancels before paying.
-4. **Buy N on M accounts** asks once more, then buys.
+   country and whether it can buy. Every game it can buy starts ticked; untick
+   what you do not want.
+3. **Dry run** turns the ticked games into a purchase plan and goes through the
+   whole checkout on those accounts, cancelling before paying. The **Dry run**
+   column shows, per account, whether it passed or why not. With **Empty the
+   cart first** ticked, the dry run empties each account's cart too (listed in
+   the purchase log); unticked, an account with something in its cart fails it.
+   A dry run that stops with an error counts as failed: nothing of it can be
+   bought.
+4. **Buy N on M accounts** appears only after a dry run of that same purchase
+   plan passed. It asks once more, then buys only the accounts whose dry run
+   passed, once. Changing a tick (or **Empty the cart first**) needs a new dry
+   run.
 
-Protections: the plan expires after 30 minutes; every account's final checkout
-price must equal the plan **to the cent** or nothing is bought; **Empty the
-cart first** clears anything else from the Steam cart. After a purchase, ASF
-starts farming the new game.
+Protections: the plan expires after 30 minutes (the backend's clock decides);
+every account's final checkout price must equal the plan **to the cent** or
+nothing is bought; **Empty the cart first** clears anything else from the
+Steam cart before the dry run and the real purchase (it is listed in the
+purchase log). A game
+bought, or possibly paid for, since the plan is never bought twice. After a
+purchase, ASF starts farming the new game.
 
 ## Card farming (ArchiSteamFarm)
 

@@ -38,13 +38,13 @@ sequenceDiagram
     participant S as Steam (client connection)
     participant W as checkout.steampowered.com
 
-    UI->>H: POST /plan (accounts)
+    UI->>H: POST /plan (item, accounts + quantities) → plan id, then GET /plans/<id>
     H->>W: wallet (g_rgWalletInfo), store country
     H->>R: GET /store/user-data/:steamid
     R->>GC: StoreGetUserData (2500)
     GC-->>R: price sheet (LZMA binary KeyValues)
     H->>W: web inventory → Storage Unit count
-    UI->>H: POST /run (selection, dry_run)
+    UI->>H: POST /plans/<id>/execute (dry_run) → job, followed at /api/jobs/<id>
     H->>R: POST /store/purchase/init
     R->>GC: StorePurchaseInit (2510)
     GC-->>R: result 1, txn_id (= orderid)
@@ -66,12 +66,34 @@ sequenceDiagram
 
 | Layer | File | Job |
 |-------|------|-----|
-| Page | `frontend/src/pages/ratatoskr/StorageShop.jsx` | Account table, order panel, review dialog, live progress, results |
-| Routes | `backend/routes/ratatoskr.py` | `GET /api/ratatoskr/storage-shop`, `POST …/plan`, `…/run`, `…/deliver-again` |
-| Service | `backend/storage_shop_service.py` | Plan, every guard, approval on the web, history |
+| Page | `frontend/src/pages/ratatoskr/StorageShop.jsx` | Displays only: account table, order panel, review dialog, the job's live progress and results |
+| Routes | `backend/routes/ratatoskr.py` | See the command table below (section 2.1) |
+| Service | `backend/storage_shop_service.py` | Plan and its lines, every guard, approval on the web, jobs, history |
+| Jobs | `backend/jobs.py`, `GET /api/jobs/<id>` | The plan's check, the purchase and Deliver again are jobs of the shared registry |
 | Client | `backend/ratatoskr_service.py` | `store_user_data`, `store_purchase_init`, `store_purchase_finalize` (75 s timeout), `store_purchase_cancel` |
 | Courier | `ratatoskr/store.js` + endpoints in `server.js` | Game Coordinator messages, catching Steam's approval request |
 | Store Catalogue | `store_catalogue_service.py`, `pages/ratatoskr/StoreCatalogue.jsx`, `GET /api/ratatoskr/store-catalogue`, `POST …/refresh` | Read-only list of every store item from the same sheet (section 3.1) |
+
+### 2.1 The commands (the backend decides, the page displays)
+
+Like Ratatoskr's moves: plan → execute once → a job; every refusal is `{error, code}`.
+Only `"dry_run": false` buys (fails closed). Nothing here reads Steam except the plan's
+check and the purchase itself.
+
+| Request | Answers |
+|---------|---------|
+| `GET /api/ratatoskr/storage-shop?item=<entry>` | `accounts` (last known; each with `selectable`, `max_quantity`, `can_buy_code`, `can_buy`, `can_buy_count`), `item` (`is_storage_unit`, `for_sale`, price cap), `plan` (the current plan, described), `job` (the shop's one job, with its `id`), `history` (each with `outcome`, `summary`, `can_deliver_again`, `counts_storage_units`), `unclear_purchases`, `statistics` |
+| `POST …/storage-shop/quote` `{item, selection: [{steamid, quantity}]}` | The order panel before the review, from what is last known: `lines` (total or `usd_estimate`), `units`, `complete`, `totals_by_currency`, `usd_estimate` |
+| `POST …/storage-shop/plan` `{item, selection}` (no selection: read every wallet, no order) | The plan in state `checking` with `plan_id` and `check_job_id`; it replaces the current plan. `busy` (409) while another shop job runs; `bad_quantity` outside 1–20 |
+| `GET …/storage-shop/plans/<plan_id>` | `state` (checking / ready / failed / replaced / expired), `lines[]` (`steamid`, `account_name`, `asked`, `quantity`, `unit_price`, `total`, `currency`, `balance`, `balance_after`, `payable`, `problem_code`, `problem`, `test` passed / failed / null, `test_result`), `totals_by_currency`, `usd_total`, `units`, `units_text`, `accounts_payable`, `skipped`, `expires_at`, `dry_run` (`state` not_run / running / passed / failed, `job_id`, `error`, `passed_lines`, `failed_lines` with their `reason`), `to_pay` (the totals of the lines a real purchase buys: those whose dry run passed), `can_test`, `executable` (true only when a real purchase is allowed), `job_id` (its real purchase). `plan_unknown` (404). A plan whose check failed shows that reason on every line (`check_failed`) |
+| `POST …/storage-shop/plans/<plan_id>/execute` `{"dry_run": true}` (or anything but `false`) | 202 and a **dry run** of the plan as a job. It may be repeated; while one runs, the same job is answered. Its outcome is kept on the plan (`dry_run`) |
+| `POST …/storage-shop/plans/<plan_id>/execute` `{"dry_run": false, item?}` | 202 and the real purchase job — **only after a dry run of this same plan passed** (Ivan's rule, 2026-11-01), and only for the lines whose dry run passed, in the quantity tested; the lines that failed it are skipped (they are listed in the plan's `dry_run.failed_lines`). Once: a second call answers the same job, never a second purchase (`job_gone`, 410, once the job is forgotten after a restart). Refused: `dry_run_required` (409: no dry run, still running, or failed), `plan_expired` (a real purchase is allowed until 30 minutes after the plan's FIRST passed dry run; a later dry run does not extend it (Ivan, 2026-11-04); the real run re-checks every price guard), `plan_replaced`, `plan_checking`, `plan_failed`, `item_mismatch`, `not_for_sale`, `nothing_to_buy`, `busy`; a dry run after the real purchase: `plan_executed` |
+| `POST …/storage-shop/deliver-again` `{at}` | 202 and the delivery job (one order). `nothing_to_deliver` (404) unless `can_deliver_again` |
+| `GET /api/jobs/<id>` | The job: `orders` (`steamid`, `account_name`, `quantity`, `unit_price`, `currency`), `steps` (the dry run's are shorter), `account` + `step` (now), `accounts_done` / `accounts_total`, `dry_run`, `item`, and `result.accounts` (each finished account's outcome, filled in as it finishes) with `paid_units` and `paid_text` |
+
+The page follows a purchase by its job id and keeps the result on screen until it is
+closed; a purchase started in another tab, or before a reload, is opened from the
+status's `job.id`.
 
 ## 3. The protocol, step by step
 
@@ -208,9 +230,12 @@ Drops a transaction that was never approved. The dry run ends here.
 
 | Guard | Where |
 |-------|-------|
-| Plan expires after 30 minutes; Pay needs the plan's `created_at` | `start_purchase` |
+| Plan expires 30 minutes after its wallets were read, or after its first dry run passed (a later one does not extend it) (`state` expired, `expires_at`); Pay names the plan by its id, so a plan replaced by a newer check is refused; each plan is paid once (again: the same job) | `execute_plan` |
+| A real purchase only after a dry run of the same plan passed, and only for the accounts whose dry run passed, in the quantity tested | `execute_plan`, `_record_dry_run` |
 | At most 20 per account per purchase; a Storage Unit never above **$2.50** (list price $1.99), any other item never above its US dollar list price × 1.25, in any currency | `MAX_QUANTITY_PER_ACCOUNT`, `MAX_USD_PER_UNIT`, `PRICE_TOLERANCE` |
-| The plan fixes the item (entry, definition index from Ratatoskr's item list); Pay is refused when the page shows another item; the game license and the Armory Pass are never sold | `start_plan`, `start_purchase`, `NOT_FOR_SALE_ENTRIES` |
+| The plan fixes the item (entry, definition index from Ratatoskr's item list); Pay is refused when the page shows another item; the game license and the Armory Pass are never sold | `start_plan`, `execute_plan`, `NOT_FOR_SALE_ENTRIES` |
+| What each account buys is the plan's line: at most 20 and what the wallet covers, only accounts the check marked buyable; a line's problem keeps the account's own reason (HTTP 429, no web session …); a purchase marks only its own plan (bought, or to check), never a newer one | `plan_lines`, `execute_plan` |
+| One shop job at a time (check, purchase, delivery, price sheet read) | `_start` |
 | Wallet currency unchanged and balance covers the total — re-read just before buying | `_buy_account` |
 | Fresh price sheet must equal the planned unit price | `_buy_account` |
 | Steam's approval request must be exactly this order | `check_auth_request` |
@@ -221,7 +246,7 @@ Drops a transaction that was never approved. The dry run ends here.
 | Finalize tried 5 times, 3 s apart; a lost session is logged in again | `_finalize` |
 | A Ratatoskr store request that timed out closes that session's store until a fresh login (a late answer could be mistaken for the next request's) | `session.storeClosed` in `store.js` |
 | The shop logs a session out only if it opened it, and never while items are moving | `_session`, `_close`, `_finalize` |
-| **Deliver again** re-sends Finalize for an unclear purchase; Finalize only delivers an approved transaction, so it cannot pay twice | `start_deliver_again` |
+| **Deliver again** re-sends Finalize for an unclear purchase; Finalize only delivers an approved transaction, so it cannot pay twice | `start_deliver_again`, `can_deliver_again` |
 
 The Ratatoskr login for a purchase pauses that account's ASF farming (one
 "playing" session per account); the account is logged out afterwards unless a
@@ -242,7 +267,7 @@ without reading Steam.
 
 ### 5.1 New units are named at once (2026-11-03)
 
-A new Storage Unit has no name, and the Game Coordinator refuses items into it until it gets one. So after every delivered Storage Unit purchase (and after Deliver again), `_name_new_units` names each unnamed unit on the account "Storage N", N going on from the highest number already used (`next_storage_names`; "Storage3" and "Storage 3" both count). Ivan's rule: the name does not matter, it only activates the unit. One rename after another; a failed naming never fails the purchase: the purchase record keeps `named` or `naming_error`, and the log says which (then rename it in Transfer, From mode). The rename itself: [known-issues.md](known-issues.md).
+A new Storage Unit has no name, and the Game Coordinator refuses items into it until it gets one. So after every delivered Storage Unit purchase (and after Deliver again), `_name_new_units` names each unit this purchase delivered "Storage N" (older unnamed units are left alone; nothing is named while Transfer or Auto-Store moves items on the account, because naming changes a unit's id — Ivan, 2026-11-04), N going on from the highest number already used (`next_storage_names`; "Storage3" and "Storage 3" both count). Ivan's rule: the name does not matter, it only activates the unit. One rename after another; a failed naming never fails the purchase, the summary says "named …" or why not (then name it in the Rename Storage Unit tab). The rename itself: [known-issues.md](known-issues.md).
 
 ## 6. What failed live, and the fix
 
@@ -273,8 +298,8 @@ inventory.
 
 `StorageShopService` sells any price sheet entry; `casket` stays the default
 everywhere, so Buy Storage Units is unchanged. The item travels as `item` (the
-entry name) on `GET /api/ratatoskr/storage-shop?item=`, `POST …/plan` and
-`POST …/run`; the plan stores `entry`, `item_name`, `definition_index`,
+entry name) on `GET /api/ratatoskr/storage-shop?item=` and `POST …/plan` (the
+plan fixes it; `POST …/plans/<id>/execute` may repeat it as a check); the plan stores `entry`, `item_name`, `definition_index`,
 `usd_list_price` and `max_usd_per_unit`, and every history entry carries
 `entry`, `item_name` and `definition_index` (older entries without them are
 Storage Units). Ratatoskr's `/store/purchase/init` takes `itemDefinitionIndex`
@@ -464,7 +489,8 @@ Nothing in it buys anything.
 5. After editing `store.js`, `docker restart steam-odin-ratatoskr-1` — it does
    not hot-reload, and the restart drops every live session.
 6. The pure helpers (`decode_price_sheet`, `check_auth_request`,
-   `approval_form`, `amount_shown`, `plan_account`) are covered by
+   `approval_form`, `amount_shown`, `plan_account`, `plan_lines`, `can_buy`,
+   `can_deliver_again`) are covered by
    `backend/tests/test_storage_shop_service.py`, including bytes captured from a
    real approval request. Keep them pure and extend the tests with any new
    capture.

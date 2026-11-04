@@ -14,15 +14,27 @@ Two steps, both background jobs, one at a time:
    it costs at most the maximum US dollar price per game, and the balance still
    covers it — the game with the best Andvari profit for that account first, so
    a small balance goes to the better game.
-2. **Buy** (``start_purchase``) — for accounts picked from the plan, one at a
+2. **Purchase plan** (``create_purchase_plan``) — the games picked from that
+   plan, per account (only games it marks "buy", never one bought or possibly
+   paid since), with the totals; it lives as long as the plan (30 minutes).
+3. **Dry run, then buy** (``execute_purchase_plan``) — ``dry_run`` true (or
+   anything not exactly false) runs the purchase plan's dry run as a job, as often
+   as wanted; ``dry_run`` exactly false buys, once, only the accounts whose dry
+   run of this same purchase plan passed (Ivan's rule: a real purchase only after
+   its dry run passed). For each account, one at a
    time: anything already in the account's cart is removed first and listed in
    the purchase log (``empty_cart``, Ivan's choice; off = such an account is
    skipped instead); the packages go into the cart and the cart must hold
    exactly them at the planned total; a wallet checkout starts and Steam's final
    price must equal the plan to the cent, otherwise the transaction is
    cancelled. After paying, ownership is re-read and the account's ASF bot is
-   told to farm now. ``dry_run`` goes through everything but pays nothing (the
-   transaction is cancelled), to test the path on a real account.
+   told to farm now. A dry run goes through everything but pays nothing (the
+   transaction is cancelled). It empties the cart like a real purchase when
+   ``empty_cart`` is on (and logs what it removed); otherwise an account with
+   something in its cart could never pass it (Ivan, 2026-11-04).
+
+Commands answer ``{error, code}`` through ``CommandError``; jobs are followed at
+``GET /api/jobs/<id>``.
 
 Every purchase is kept in the history with the account, games, prices and
 outcome; ``status()`` sums what was bought per account and per game.
@@ -36,10 +48,13 @@ import logging
 import re
 import threading
 import time
+import uuid
 
 import requests
 
+from jobs import JobRegistry
 from jsonio import atomic_write_json, read_json
+from storage_deposit import CommandError
 
 log = logging.getLogger(__name__)
 
@@ -59,6 +74,7 @@ COMMUNITY_GAP_SECONDS = 4.0        # between steamcommunity.com calls
 ACCOUNT_GAP_SECONDS = 5.0          # between two accounts' purchases
 PRICE_TIME_TO_LIVE_SECONDS = 30 * 60
 PLAN_TIME_TO_LIVE_SECONDS = 30 * 60   # buying needs a plan at most this old
+PURCHASE_PLAN_KEEP_SECONDS = 2 * 60 * 60   # purchase plans are forgotten after this (memory only)
 TRANSACTION_POLL_SECONDS = 2.0
 TRANSACTION_POLL_TRIES = 20
 TRANSACTION_PENDING = 22
@@ -86,13 +102,22 @@ class PurchaseError(RuntimeError):
 
 # ---- pure helpers (unit-tested) ------------------------------------------------------------
 
+_APP_LINK = re.compile(r'/app/(\d{1,9})(?!\d)', re.ASCII)
+_BARE_APP_ID = re.compile(r'\d{2,9}', re.ASCII)
+
+
 def parse_app_ids(text):
-    """App ids from store links or bare numbers, in order, once each."""
+    """App ids, in order, once each: the number after ``/app/`` in a store link, or a
+    token that is itself a number (2 to 9 digits). Other numbers in a link (a game
+    named "2077", ``?snr=1_7_15__13``) are not app ids. Tokens are split on white
+    space, commas and semicolons."""
     found = []
-    for match in re.finditer(r'(?:/app/)?(\d{2,9})', str(text or '')):
-        app_id = int(match.group(1))
-        if app_id not in found:
-            found.append(app_id)
+    for token in re.split(r'[\s,;]+', str(text or '')):
+        token = token.strip('()[]{}<>"\'.')
+        link = _APP_LINK.search(token)
+        value = link.group(1) if link else (token if _BARE_APP_ID.fullmatch(token) else None)
+        if value and int(value) and int(value) not in found:
+            found.append(int(value))
     return found
 
 
@@ -158,6 +183,17 @@ def plan_account(account, games, max_usd, rates):
     return rows, total
 
 
+def default_selection(plan):
+    """What a new plan starts with selected: every game it marks "buy", as the
+    selection a purchase plan takes ([{steamid, app_ids}])."""
+    selection = []
+    for row in (plan or {}).get('accounts') or []:
+        app_ids = [game['app_id'] for game in row.get('games') or [] if game.get('status') == STATUS_BUY]
+        if app_ids:
+            selection.append({'steamid': row['steamid'], 'app_ids': app_ids})
+    return selection
+
+
 def checkout_form(country, session_id):
     """The wallet-checkout form Steam's store sends (no card, no address)."""
     blank = ['CardNumber', 'CardExpirationYear', 'CardExpirationMonth', 'FirstName', 'LastName', 'Address',
@@ -221,8 +257,10 @@ def purchase_statistics(history):
 
 class StorePurchaseService:
     def __init__(self, steam_service, card_deals_service, asf_service=None, settings_provider=None,
-                 state_path=STATE_PATH, http=None, sleep=time.sleep):
+                 state_path=STATE_PATH, http=None, sleep=time.sleep, jobs=None):
         self.steam = steam_service
+        self.jobs = jobs or JobRegistry()
+        self._purchase_plans = {}        # purchase plan id -> purchase plan (memory only, like Transfer's)
         self.card_deals = card_deals_service
         self.asf = asf_service
         self.settings_provider = settings_provider
@@ -258,7 +296,7 @@ class StorePurchaseService:
                                   + (' after paying started — it MAY BE PAID: check the account'
                                      if entry.get('payment_attempted') else ' before paying'))
         self._job = {'running': False, 'kind': None, 'done': 0, 'total': 0, 'phase': None,
-                     'error': None, 'started_at': None, 'finished_at': None, 'dry_run': False}
+                     'error': None, 'started_at': None, 'finished_at': None, 'dry_run': False, 'job_id': None}
 
     # ---- plumbing ------------------------------------------------------------------------------
 
@@ -325,24 +363,41 @@ class StorePurchaseService:
     def _set_job(self, **fields):
         with self._lock:
             self._job.update(fields)
+            job_id = self._job.get('job_id')
+        progress = {key: fields[key] for key in ('done', 'total', 'phase') if key in fields}
+        if job_id and progress:
+            self.jobs.update(job_id, **progress)
 
-    def _start(self, kind, target, args, dry_run=False):
+    def _start(self, kind, target, args, dry_run=False, job_fields=None, on_finish=None):
+        """One job at a time (an account check, a dry run or a purchase), followed in
+        ``status()['job']`` and at ``GET /api/jobs/<job_id>``. *on_finish(value, error)*
+        gets what *target* answered and gives the job's result; it runs before the job
+        reads as finished."""
         if not self._job_lock.acquire(blocking=False):
             return {'started': False, 'error': f'a {self._job.get("kind")} is already running'}
+        job = self.jobs.create(f'andvari-{kind}', {'dry_run': dry_run, **(job_fields or {})})
         self._set_job(running=True, kind=kind, done=0, total=0, phase='starting', error=None,
-                      started_at=time.time(), finished_at=None, dry_run=dry_run)
+                      started_at=time.time(), finished_at=None, dry_run=dry_run, job_id=job['id'])
 
         def run():
+            value, error, result = None, None, None
             try:
-                target(*args)
+                value = target(*args)
             except Exception as e:
                 log.exception('[ANDVARI-BUY] %s failed', kind)
-                self._set_job(error=str(e))
+                error = str(e)
+                self._set_job(error=error)
             finally:
+                if on_finish:
+                    try:
+                        result = on_finish(value, error)
+                    except Exception:
+                        log.exception('[ANDVARI-BUY] %s: could not record the outcome', kind)
                 self._set_job(running=False, phase=None, finished_at=time.time())
                 self._job_lock.release()
+                self.jobs.finish(job['id'], result=result, error=error, phase=None)
         threading.Thread(target=run, daemon=True, name=f'andvari-{kind}').start()
-        return {'started': True}
+        return {'started': True, 'job_id': job['id']}
 
     # ---- reading Steam ---------------------------------------------------------------------
 
@@ -450,59 +505,269 @@ class StorePurchaseService:
 
     # ---- buy ---------------------------------------------------------------------------------
 
-    def start_purchase(self, selection, dry_run=True, plan_created_at=None, empty_cart=True):
-        """*selection*: [{steamid, app_ids}]; each game must be planned as "buy" in the
-        plan the screen showed (*plan_created_at*), younger than PLAN_TIME_TO_LIVE_SECONDS,
-        and not bought (or paid for) since that plan was made."""
+    def _already_paid(self, plan, history):
+        """(steamid, app_id) paid (or possibly paid) since *plan* was made: never offered twice."""
+        return {(entry['steamid'], game['app_id']) for entry in history
+                if entry.get('at', 0) >= plan['created_at'] and entry.get('payment_attempted')
+                for game in entry.get('games') or []}
+
+    def create_purchase_plan(self, plan_created_at, selection, empty_cart=True):
+        """A purchase plan from the plan the page showed (*plan_created_at*) and its
+        *selection* ([{steamid, app_ids}]): only games that plan marks "buy", not bought
+        (or paid for) since it was made. An account that cannot be bought goes to
+        ``refused`` with the reason. It expires with the plan (30 minutes). Answers the
+        purchase plan (``describe_purchase_plan``); CommandError when refused."""
         if not isinstance(selection, list) or not all(isinstance(item, dict) for item in selection):
-            return {'started': False, 'error': 'selection must be a list of {steamid, app_ids}'}
+            raise CommandError('bad_selection', 'selection must be a list of {steamid, app_ids}')
         with self._lock:
             plan = json.loads(json.dumps(self._plan)) if self._plan else None
             history = list(self._history)
         if not plan:
-            return {'started': False, 'error': 'check the accounts first'}
+            raise CommandError('no_plan', 'check the accounts first')
         if plan_created_at is None:
-            return {'started': False, 'error': 'the plan time (plan_created_at) is missing: look at the plan again'}
-        if abs(float(plan_created_at) - plan['created_at']) > 1e-6:
-            return {'started': False, 'error': 'the plan changed since this page loaded: look at it again'}
-        if time.time() - plan['created_at'] > PLAN_TIME_TO_LIVE_SECONDS:
-            return {'started': False, 'error': 'the plan is older than 30 minutes: check the accounts again'}
-        # Paid (or possibly paid) since the plan was made: never offered twice.
-        already = {(entry['steamid'], game['app_id']) for entry in history
-                   if entry.get('at', 0) >= plan['created_at'] and entry.get('payment_attempted')
-                   for game in entry.get('games') or []}
+            raise CommandError('plan_time_missing', 'the plan time (plan_created_at) is missing: look at the plan again')
+        try:
+            plan_created_at = float(plan_created_at)
+        except (TypeError, ValueError):
+            raise CommandError('bad_request', 'plan_created_at must be a number')
+        if abs(plan_created_at - plan['created_at']) > 1e-6:
+            raise CommandError('plan_replaced', 'the plan changed since this page loaded: look at it again', 409)
+        now = time.time()
+        if now - plan['created_at'] > PLAN_TIME_TO_LIVE_SECONDS:
+            raise CommandError('plan_expired', 'the plan is older than 30 minutes: check the accounts again')
+        already = self._already_paid(plan, history)
         by_account = {row['steamid']: row for row in plan['accounts']}
-        orders, seen = [], set()
+        orders, refused, seen = [], [], set()
         for item in selection:
-            row = by_account.get(str(item.get('steamid')))
+            steamid = str(item.get('steamid'))
+            row = by_account.get(steamid)
             if not row:
-                return {'started': False, 'error': f'account {item.get("steamid")} is not in the plan'}
-            if row['steamid'] in seen:
-                return {'started': False, 'error': f'{row["account_name"]} is selected twice'}
-            seen.add(row['steamid'])
+                refused.append({'steamid': steamid, 'account_name': None,
+                                'reason': f'account {steamid} is not in the plan'})
+                continue
+            if steamid in seen:
+                raise CommandError('bad_selection', f'{row["account_name"]} is selected twice')
+            seen.add(steamid)
             try:
                 wanted = {int(app) for app in item.get('app_ids') or []}
             except (TypeError, ValueError):
-                return {'started': False, 'error': 'app ids must be numbers'}
+                raise CommandError('bad_selection', 'app ids must be numbers')
             games = [game for game in row['games'] if game['app_id'] in wanted]
+            reason = None
             if not wanted or len(games) != len(wanted) or any(game['status'] != STATUS_BUY for game in games):
-                return {'started': False, 'error': f'{row["account_name"]}: only games planned as "buy" can be bought'}
-            if any((row['steamid'], game['app_id']) in already for game in games):
-                return {'started': False, 'error': f'{row["account_name"]}: already bought (or paid for) since this plan'}
-            orders.append({'steamid': row['steamid'], 'account_name': row['account_name'],
-                           'country': row['country'], 'currency': row['currency'], 'games': games})
+                reason = 'only games planned as "buy" can be bought'
+            elif any((steamid, game['app_id']) in already for game in games):
+                reason = 'already bought (or paid for) since this plan'
+            if reason:
+                refused.append({'steamid': steamid, 'account_name': row['account_name'], 'reason': reason})
+                continue
+            orders.append({'steamid': steamid, 'account_name': row['account_name'], 'country': row['country'],
+                           'currency': row['currency'], 'balance': row['balance'], 'games': games})
         if not orders:
-            return {'started': False, 'error': 'nothing selected'}
-        return self._start('purchase', self._buy_all, (orders, dry_run, empty_cart), dry_run=dry_run)
+            raise CommandError('nothing_selected', 'nothing selected' if not refused else
+                               'nothing in the selection can be bought: '
+                               + '; '.join(f'{item["account_name"] or item["steamid"]}: {item["reason"]}'
+                                           for item in refused))
+        purchase_plan = {'id': uuid.uuid4().hex, 'created_at': now, 'plan_created_at': plan['created_at'],
+                         'expires_at': plan['created_at'] + PLAN_TIME_TO_LIVE_SECONDS,
+                         'orders': orders, 'refused': refused, 'empty_cart': bool(empty_cart),
+                         'dry_run_state': 'not run', 'dry_run_job_id': None, 'dry_run_results': None,
+                         'dry_run_error': None, 'job_id': None, 'purchase_results': None}
+        for order in orders:
+            order['purchase_plan_id'] = purchase_plan['id']
+        with self._lock:
+            for old_id in [key for key, old in self._purchase_plans.items()
+                           if old['created_at'] < now - PURCHASE_PLAN_KEEP_SECONDS
+                           and not self._running(old)]:
+                del self._purchase_plans[old_id]
+            self._purchase_plans[purchase_plan['id']] = purchase_plan
+            return self.describe_purchase_plan(purchase_plan)
 
-    def _buy_all(self, orders, dry_run, empty_cart=True):
+    def _running(self, purchase_plan):
+        return any((self.jobs.get(job_id) or {}).get('running')
+                   for job_id in (purchase_plan['dry_run_job_id'], purchase_plan['job_id']) if job_id)
+
+    def describe_purchase_plan(self, purchase_plan):
+        """What a client sees of a purchase plan: per account the games, price, wallet and
+        the outcome of its dry run (and purchase), the totals, what was refused, the dry
+        run's state and whether a real purchase is possible now (``executable``)."""
+        with self._lock:
+            now = time.time()
+            dry_runs = purchase_plan['dry_run_results'] or {}
+            purchases = purchase_plan['purchase_results'] or {}
+            lines = []
+            for order in purchase_plan['orders']:
+                lines.append({
+                    'steamid': order['steamid'], 'account_name': order['account_name'], 'country': order['country'],
+                    'currency': order['currency'], 'wallet': order['balance'],
+                    'games': [{'app_id': game['app_id'], 'name': game['name'], 'price': game['price'],
+                               'currency': game['currency'], 'usd': game.get('usd'), 'profit': game.get('profit')}
+                              for game in order['games']],
+                    'price': sum(game['price'] for game in order['games']),
+                    'usd': round(sum(game.get('usd') or 0 for game in order['games']), 2),
+                    'dry_run': dry_runs.get(order['steamid']),
+                    'purchase': purchases.get(order['steamid']),
+                })
+            passed = [line for line in lines if (line['dry_run'] or {}).get('passed')]
+            expired = now >= purchase_plan['expires_at']
+            replaced = not self._plan or abs(self._plan['created_at'] - purchase_plan['plan_created_at']) > 1e-6
+            state = purchase_plan['dry_run_state']
+            return {
+                'purchase_plan_id': purchase_plan['id'],
+                'plan_created_at': purchase_plan['plan_created_at'],
+                'created_at': purchase_plan['created_at'],
+                'expires_at': purchase_plan['expires_at'],
+                'expires_in_seconds': max(0, int(purchase_plan['expires_at'] - now)),
+                'fresh': not expired,
+                'replaced': replaced,
+                'empty_cart': purchase_plan['empty_cart'],
+                'lines': lines,
+                'copies': sum(len(line['games']) for line in lines),
+                'accounts': len(lines),
+                'total_usd': round(sum(line['usd'] for line in lines), 2),
+                'refused': [dict(item) for item in purchase_plan['refused']],
+                'dry_run': {'state': state, 'job_id': purchase_plan['dry_run_job_id'],
+                            'passed': len(passed),
+                            'failed': len([line for line in lines if line['dry_run'] and not line['dry_run']['passed']]),
+                            'error': purchase_plan['dry_run_error']},
+                # What a real purchase would buy: the accounts whose dry run passed.
+                'buy': {'copies': sum(len(line['games']) for line in passed), 'accounts': len(passed),
+                        'total_usd': round(sum(line['usd'] for line in passed), 2)},
+                'executable': (state == 'done' and bool(passed) and not expired and not replaced
+                               and not purchase_plan['job_id']),
+                'job_id': purchase_plan['job_id'],
+            }
+
+    def get_purchase_plan(self, purchase_plan_id):
+        with self._lock:
+            purchase_plan = self._purchase_plans.get(purchase_plan_id)
+            if purchase_plan is None:
+                raise CommandError('plan_unknown', 'unknown purchase plan: prepare the purchase again', 404)
+            return self.describe_purchase_plan(purchase_plan)
+
+    def _check_current(self, purchase_plan):
+        """Refuse a purchase plan whose plan expired or was replaced by a newer account check."""
+        if time.time() >= purchase_plan['expires_at']:
+            raise CommandError('plan_expired', 'the plan is older than 30 minutes: check the accounts again')
+        if not self._plan or abs(self._plan['created_at'] - purchase_plan['plan_created_at']) > 1e-6:
+            raise CommandError('plan_replaced', 'the accounts were checked again since: prepare the purchase again', 409)
+
+    def execute_purchase_plan(self, purchase_plan_id, dry_run=True):
+        """*dry_run* true (or anything not exactly False): run this purchase plan's dry run
+        as a job (repeatable; while one runs, that job is answered). *dry_run* exactly
+        False: buy, once, only the accounts whose dry run of this same purchase plan
+        passed (a second call answers the same job). Answers the job (GET /api/jobs/<id>);
+        CommandError when refused."""
+        with self._lock:
+            purchase_plan = self._purchase_plans.get(purchase_plan_id)
+            if purchase_plan is None:
+                raise CommandError('plan_unknown', 'unknown purchase plan: prepare the purchase again', 404)
+            if dry_run is not False:
+                return self._start_dry_run(purchase_plan)
+            if purchase_plan['job_id']:
+                job = self.jobs.get(purchase_plan['job_id'])
+                if job is None:
+                    raise CommandError('job_gone', 'this purchase plan already ran; its result is no longer kept', 410)
+                return job
+            self._check_current(purchase_plan)
+            if purchase_plan['dry_run_state'] == 'running':
+                raise CommandError('dry_run_required', 'the dry run of this purchase plan is still running: '
+                                                       'buy once it passed', 409)
+            if purchase_plan['dry_run_state'] != 'done':
+                raise CommandError('dry_run_required', 'run the dry run of this purchase plan first: '
+                                                       'only games whose dry run passed can be bought', 409)
+            results = purchase_plan['dry_run_results'] or {}
+            orders = [order for order in purchase_plan['orders'] if (results.get(order['steamid']) or {}).get('passed')]
+            if not orders:
+                raise CommandError('nothing_passed', 'no account passed the dry run of this purchase plan', 409)
+            # Bought (or possibly paid) since the dry run, by another purchase plan: never twice.
+            already = self._already_paid(self._plan, self._history)
+            current = {row['steamid']: row for row in self._plan.get('accounts') or []}
+            for order in orders:
+                statuses = {game['app_id']: game['status'] for game in current[order['steamid']]['games']}
+                if any(statuses.get(game['app_id']) != STATUS_BUY or (order['steamid'], game['app_id']) in already
+                       for game in order['games']):
+                    raise CommandError('already_bought', f'{order["account_name"]}: already bought (or paid for) '
+                                                         'since this plan', 409)
+            collected = []
+            started = self._start('purchase', self._buy_all, (orders, False, purchase_plan['empty_cart'], collected),
+                                  dry_run=False, job_fields={'purchase_plan_id': purchase_plan['id']},
+                                  on_finish=lambda value, error: self._finish_purchase(purchase_plan, orders,
+                                                                                       collected, error))
+            if not started['started']:
+                raise CommandError('busy', started['error'], 409)
+            purchase_plan['job_id'] = started['job_id']
+            return self.jobs.get(started['job_id'])
+
+    def _start_dry_run(self, purchase_plan):
+        """Lock held. The purchase plan's dry run as a job (see execute_purchase_plan)."""
+        if purchase_plan['job_id']:
+            raise CommandError('plan_executed', 'this purchase plan was already bought: prepare a new one', 409)
+        if purchase_plan['dry_run_state'] == 'running':
+            running = self.jobs.get(purchase_plan['dry_run_job_id'])
+            if running and running['running']:
+                return running
+        self._check_current(purchase_plan)
+        previous = {key: purchase_plan[key] for key in ('dry_run_state', 'dry_run_results', 'dry_run_error')}
+        purchase_plan.update(dry_run_state='running', dry_run_results=None, dry_run_error=None)
+        collected = []
+        started = self._start('dry run', self._buy_all,
+                              (purchase_plan['orders'], True, purchase_plan['empty_cart'], collected),
+                              dry_run=True, job_fields={'purchase_plan_id': purchase_plan['id']},
+                              on_finish=lambda value, error: self._finish_dry_run(purchase_plan, collected, error))
+        if not started['started']:
+            purchase_plan.update(previous)
+            raise CommandError('busy', started['error'], 409)
+        purchase_plan['dry_run_job_id'] = started['job_id']
+        return self.jobs.get(started['job_id'])
+
+    @staticmethod
+    def _outcomes(orders, results, error):
+        """{steamid: outcome} of a dry run or a purchase, every order included."""
+        by_account = {result['steamid']: result for result in results or []}
+        outcomes = {}
+        for order in orders:
+            result = by_account.get(order['steamid'])
+            if result is None:
+                outcomes[order['steamid']] = {'passed': False, 'paid': False, 'may_be_paid': False, 'charged': None,
+                                              'reason': f'not tried: the job stopped ({error})' if error else 'not tried'}
+                continue
+            may_be_paid = bool(result['payment_attempted'] and not result['paid'])
+            outcomes[order['steamid']] = {
+                'passed': bool(result['ok'] and result['dry_run']), 'paid': bool(result['paid']),
+                'may_be_paid': may_be_paid, 'charged': result['charged'],
+                'reason': None if result['ok'] and result['dry_run'] else result['error']}
+        return outcomes
+
+    def _finish_dry_run(self, purchase_plan, results, error):
+        with self._lock:
+            outcomes = self._outcomes(purchase_plan['orders'], results, error)
+            # A dry run that stopped with an error is failed: nothing of it can be bought (like Buy Storage Units).
+            purchase_plan.update(dry_run_state='failed' if error else 'done', dry_run_results=outcomes,
+                                 dry_run_error=error)
+            return {'purchase_plan_id': purchase_plan['id'], 'dry_run': True, 'accounts': outcomes,
+                    'passed': sum(1 for outcome in outcomes.values() if outcome['passed'])}
+
+    def _finish_purchase(self, purchase_plan, orders, results, error):
+        with self._lock:
+            outcomes = self._outcomes(orders, results, error)
+            purchase_plan['purchase_results'] = outcomes
+            return {'purchase_plan_id': purchase_plan['id'], 'dry_run': False, 'accounts': outcomes,
+                    'paid': sum(1 for outcome in outcomes.values() if outcome['paid']),
+                    'may_be_paid': sum(1 for outcome in outcomes.values() if outcome['may_be_paid'])}
+
+    def _buy_all(self, orders, dry_run, empty_cart=True, results=None):
+        """Each order in turn; answers the history entries (also appended to *results* as
+        they come, so a job that stops midway still reports the accounts it did)."""
+        results = [] if results is None else results
         self._set_job(total=len(orders), phase='dry run (nothing is paid)' if dry_run else 'buying')
         for index, order in enumerate(orders):
             if index:
                 self._sleep(ACCOUNT_GAP_SECONDS)
             self._set_job(phase=f'{"dry run" if dry_run else "buying"}: {order["account_name"]}')
-            self._buy_account(order, dry_run, empty_cart)
+            results.append(self._buy_account(order, dry_run, empty_cart))
             self._set_job(done=index + 1)
+        return results
 
     def _record(self, result):
         """Save the purchase's history entry now (it is updated in place step by step,
@@ -528,6 +793,7 @@ class StorePurchaseService:
         expected = sum(game['price'] for game in order['games'])
         packages = sorted(game['packageid'] for game in order['games'])
         result = {'at': time.time(), 'steamid': steamid, 'account_name': order['account_name'],
+                  'purchase_plan_id': order.get('purchase_plan_id'),
                   'games': [{'app_id': g['app_id'], 'name': g['name'], 'price': g['price']} for g in order['games']],
                   'currency': order['currency'], 'expected': expected, 'charged': None, 'dry_run': dry_run,
                   'state': 'in progress', 'payment_attempted': False, 'paid': False, 'removed_from_cart': [],
@@ -553,8 +819,7 @@ class StorePurchaseService:
                 # the checkout can only ever pay for the planned packages.
                 result['removed_from_cart'] = cart_lines(cart_answer)
                 self._record(result)
-                if dry_run:              # a dry run changes nothing, not even the cart
-                    raise PurchaseError('dry run: the cart is not empty; a real purchase would empty it first')
+                # A dry run empties it too (rule 17: small reversible housekeeping, logged).
                 self._empty_cart(token)
                 subtotal, in_cart = cart_contents(self._cart(token, country))
                 if in_cart or subtotal:
@@ -679,9 +944,27 @@ class StorePurchaseService:
     # ---- status --------------------------------------------------------------------------------
 
     def status(self):
+        """The last plan (with ``fresh``, ``expires_at``, ``expires_in_seconds`` on this
+        clock and its ``default_selection``), the newest purchase plan made from it, the
+        running job, the purchase history and its statistics."""
         with self._lock:
             state = json.loads(json.dumps({'job': self._job, 'plan': self._plan, 'history': self._history}))
-        return {'job': state['job'], 'plan': state['plan'], 'history': state['history'][-100:][::-1],
+            current = [purchase_plan for purchase_plan in self._purchase_plans.values()
+                       if self._plan and abs(purchase_plan['plan_created_at'] - self._plan['created_at']) <= 1e-6]
+            newest = max(current, key=lambda purchase_plan: purchase_plan['created_at']) if current else None
+            try:
+                purchase_plan = self.describe_purchase_plan(newest) if newest else None
+            except Exception as e:      # one bad purchase plan never takes the whole tab down
+                log.warning('[ANDVARI-BUY] could not describe purchase plan: %s', e)
+                purchase_plan = None
+        plan = state['plan']
+        if plan:
+            now = time.time()
+            expires_at = plan['created_at'] + PLAN_TIME_TO_LIVE_SECONDS
+            plan.update(expires_at=expires_at, expires_in_seconds=max(0, int(expires_at - now)),
+                        fresh=now < expires_at, default_selection=default_selection(plan))
+        return {'job': state['job'], 'plan': plan, 'purchase_plan': purchase_plan,
+                'history': state['history'][-100:][::-1],
                 'statistics': purchase_statistics(state['history']),
                 'plan_time_to_live_seconds': PLAN_TIME_TO_LIVE_SECONDS,
                 'default_max_usd_per_game': DEFAULT_MAX_USD_PER_GAME}

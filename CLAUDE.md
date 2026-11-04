@@ -264,7 +264,9 @@ in the agent's private memory, not in this file.
 15. **Money is spent only through the guarded routes** (Andvari "Buy games",
     Ratatoskr "Buy Storage Units" and its per-item pages, Mímir's "Market
     unlocker"): dry run first, a real purchase only on Ivan's explicit word for
-    the accounts and quantity he named. Never call Ratatoskr's raw
+    the accounts and quantity he named. The backend enforces it: a real
+    purchase runs only on a plan whose own dry run passed, and buys only what
+    passed (Ivan, 2026-11-01). Never call Ratatoskr's raw
     `/store/purchase/*` endpoints or Steam checkout yourself.
 16. **Never sell, list or move holdings on your own.** Automatic selling
     handles items that arrive after it is switched on; existing holdings only

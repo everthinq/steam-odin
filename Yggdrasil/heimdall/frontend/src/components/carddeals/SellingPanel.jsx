@@ -23,6 +23,21 @@ const ago = (epochSeconds) => {
     return hours < 48 ? `${hours} h ago` : `${Math.round(hours / 24)} days ago`;
 };
 
+// The rule of the backend's store_purchase_service.parse_app_ids: in a store link only the number
+// after "/app/" (never "2077" in a name or "13" in "?snr=1_7_15__13"); otherwise only a token that is
+// itself a number of 2 to 9 digits. Tokens are split on white space, commas and semicolons.
+const appIdsFrom = (text) => {
+    const found = [];
+    (text || '').split(/[\s,;]+/).forEach((raw) => {
+        const token = raw.replace(/^[()[\]{}<>"'.]+|[()[\]{}<>"'.]+$/g, '');
+        const link = token.match(/\/app\/(\d{1,9})(?!\d)/);
+        const value = link ? link[1] : (/^\d{2,9}$/.test(token) ? token : null);
+        const id = value ? Number(value) : 0;
+        if (id && !found.includes(id)) found.push(id);
+    });
+    return found;
+};
+
 const SellingPanel = ({ selling, onSaved }) => {
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState(null);
@@ -44,11 +59,12 @@ const SellingPanel = ({ selling, onSaved }) => {
             .catch((e) => setError(String(e)))
             .finally(() => { setBusy(false); onSaved(); });
     };
-    // App ids or store links ("store.steampowered.com/app/745740/Reflex/"). Text that
-    // gives no app id is refused: saving [] would mean every game.
+    // App ids or store links ("store.steampowered.com/app/745740/Reflex/"), the backend's rule
+    // (store_purchase_service.parse_app_ids). Text that gives no app id is refused: saving []
+    // would mean every game.
     const saveApps = () => {
         const text = (appsText || '').trim();
-        const apps = [...new Set([...text.matchAll(/(?:\/app\/)?(\d{2,9})/g)].map((m) => Number(m[1])))];
+        const apps = appIdsFrom(text);
         if (text && !apps.length) {
             setError('No app id found: type app ids (like 745740) or paste store links. Leave it empty for every game.');
             return;

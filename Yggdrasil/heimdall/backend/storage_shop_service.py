@@ -8,12 +8,18 @@ account the moment Valve limits a case. Storage Units are sold only in the game'
 own store, through the Game Coordinator — so the purchase runs on Ratatoskr's
 Counter-Strike 2 session, the same path the game takes:
 
-1. **Plan** (``start_plan``) — per account: the Steam wallet currency and balance
-   (``g_rgWalletInfo``, as Andvari's "Buy games"), the store country (Andvari's
-   account refresh) and the Storage Unit price in that currency, read from the
-   game store's own price sheet (``StoreGetUserData``: LZMA-compressed binary
-   KeyValues; the entry is called "casket"). How many the balance covers.
-2. **Buy** (``start_purchase``) — per account, one at a time: a Ratatoskr session
+1. **Plan** (``start_plan``: the item and how many each account wants) — per account:
+   the Steam wallet currency and balance (``g_rgWalletInfo``, as Andvari's "Buy games"),
+   the store country (Andvari's account refresh) and the Storage Unit price in that
+   currency, read from the game store's own price sheet (``StoreGetUserData``:
+   LZMA-compressed binary KeyValues; the entry is called "casket"). How many the
+   balance covers. The plan answers its lines (``plan_lines``: what each account
+   really buys, its total and why an account is skipped), the totals and its state
+   (checking, ready, failed, replaced, expired); the page only shows them.
+2. **Buy** (``execute_plan``) — first a dry run of the plan (it may be repeated), and a
+   real purchase only after a dry run of that same plan passed (Ivan's rule, 2026-11-01):
+   it buys only the lines whose dry run passed, once (a second call answers the same job).
+   Per account, one at a time: a Ratatoskr session
    (logged in for the purchase and logged out after it, unless one was open; the
    login pauses the account's ASF farming), a fresh price sheet whose price must
    equal the plan, the balance re-checked, then
@@ -34,7 +40,9 @@ Counter-Strike 2 session, the same path the game takes:
    ``cache/storage_shop_approval_page.html`` (local only) to check its layout.
 
 Every purchase is kept in the history; ``status()`` sums what was bought per account.
-Steam calls are serial and spaced.
+Steam calls are serial and spaced. Plans, purchases and deliveries are jobs of the shared
+``JobRegistry`` (``GET /api/jobs/<id>``): a purchase job carries its own orders and, as
+each account finishes, that account's outcome, so any page can follow it by its id.
 """
 import base64
 import html as html_module
@@ -45,13 +53,17 @@ import re
 import struct
 import threading
 import time
+import uuid
+from datetime import datetime, timezone
 from html.parser import HTMLParser
 
 import requests
 
 import community_pacer
+from jobs import JobRegistry
 from jsonio import atomic_write_json, read_json
 from ratatoskr_service import items_moving
+from storage_deposit import CommandError
 from store_purchase_service import CURRENCY_CODES, to_usd
 
 log = logging.getLogger(__name__)
@@ -108,6 +120,32 @@ WHOLE_UNIT_CURRENCIES = {'JPY', 'KRW', 'IDR', 'VND', 'CLP', 'COP', 'KZT', 'CRC',
 
 STATUS_BUY, STATUS_BALANCE, STATUS_CURRENCY = 'buy', 'balance', 'currency'
 STATUS_COUNTRY, STATUS_PRICE, STATUS_WALLET = 'country', 'price', 'wallet'
+STATUS_BOUGHT, STATUS_CHECK = 'bought', 'check'     # set on a plan's account by its purchase
+# Why a plan line buys nothing (or less than asked), by its problem code.
+PLAN_PROBLEMS = {
+    STATUS_BALANCE: 'Not enough in the wallet',
+    STATUS_CURRENCY: 'Wallet currency not sold in the game store',
+    STATUS_COUNTRY: 'Store country unknown (refresh the Andvari accounts)',
+    STATUS_PRICE: 'Price unknown or unusual',
+    STATUS_WALLET: 'Wallet could not be read',
+    STATUS_BOUGHT: 'Already bought in this check',
+    STATUS_CHECK: 'A purchase is unclear: check the account first',
+    'unknown_account': 'Not an account in the dashboard',
+    'check_failed': 'The wallets could not be checked',
+}
+# A purchase's steps per account, as the job reports them (`step` is the current one).
+PURCHASE_STEPS = [
+    {'key': 'wallet', 'label': 'Checking the wallet'},
+    {'key': 'login', 'label': 'Logging in'},
+    {'key': 'opening', 'label': 'Opening the purchase'},
+    {'key': 'approving', 'label': 'Approving'},
+    {'key': 'delivering', 'label': 'Delivering'},
+]
+# A dry run stops at the approval page: it never approves or delivers.
+DRY_RUN_STEPS = PURCHASE_STEPS[:3] + [{'key': 'approving', 'label': 'Checking the approval page'}]
+DELIVERY_STEPS = [{'key': 'delivering', 'label': 'Delivering'}]
+# Plans replaced by a newer one are remembered (with the job they ran, if any) this many.
+OLD_PLANS_KEPT = 50
 
 
 class ShopError(RuntimeError):
@@ -366,14 +404,150 @@ def shop_statistics(history, item=STORAGE_UNIT_ENTRY):
     return {'units': units, 'spent': spent, 'accounts': accounts}
 
 
+def units_text(count, entry, name):
+    """"3 Storage Units", or "3 × Name Tag" for any other item."""
+    if (entry or STORAGE_UNIT_ENTRY) == STORAGE_UNIT_ENTRY:
+        return f'{count} Storage Unit{"" if count == 1 else "s"}'
+    return f'{count} × {name}'
+
+
+def can_deliver_again(entry):
+    """Whether "Deliver again" is offered for a purchase: approved (it MAY BE PAID), not
+    delivered, finished, with the game store's transaction to deliver. The one rule for
+    the purchase log, the banner and ``start_deliver_again``."""
+    return bool(entry.get('payment_attempted') and not entry.get('paid') and entry.get('transaction_id')
+                and entry.get('state') == 'done')
+
+
+def purchase_outcome(entry):
+    """What a page shows of one account's purchase (a history entry): the order, how it
+    ended (`outcome`: bought, test_passed, in_progress or failed) and a one-line summary."""
+    item = entry.get('entry') or STORAGE_UNIT_ENTRY
+    counts = item == STORAGE_UNIT_ENTRY
+    error = entry.get('error')
+    if entry.get('paid'):
+        outcome = 'bought'
+        delivered = len(entry.get('item_ids') or [])
+        before, after = entry.get('storage_units_before'), entry.get('storage_units_after')
+        summary = 'Bought' + (f' · Storage Units {"?" if before is None else before} → {"?" if after is None else after}'
+                              if counts else f' · {delivered} item{"" if delivered == 1 else "s"} delivered')
+        if error:
+            summary += f' · {re.sub(r"^paid; ", "", error)}'
+        if entry.get('named'):
+            summary += f' · named {", ".join(entry["named"])}'
+        if entry.get('naming_error'):
+            summary += f' · {entry["naming_error"]}'
+    elif entry.get('dry_run') and entry.get('ok'):
+        outcome, summary = 'test_passed', 'Every check passed; cancelled before approving (nothing paid)'
+    elif entry.get('state') == 'in progress':
+        outcome, summary = 'in_progress', 'In progress'
+    else:
+        outcome, summary = 'failed', error or 'Not bought'
+    view = {key: entry.get(key) for key in (
+        'at', 'steamid', 'account_name', 'quantity', 'unit_price', 'currency', 'expected', 'dry_run', 'state',
+        'ok', 'paid', 'payment_attempted', 'error', 'item_ids', 'storage_units_before', 'storage_units_after',
+        'named', 'naming_error')}
+    view.update(entry=item, item_name=entry.get('item_name') or 'Storage Unit', counts_storage_units=counts,
+                outcome=outcome, summary=summary, can_deliver_again=can_deliver_again(entry))
+    return view
+
+
+def parse_selection(selection):
+    """{steamid: quantity} in the order given, from [{steamid, quantity}]; CommandError otherwise.
+    Each quantity is 1 to MAX_QUANTITY_PER_ACCOUNT."""
+    if not isinstance(selection, list) or not all(isinstance(line, dict) for line in selection):
+        raise CommandError('bad_request', 'selection must be a list of {steamid, quantity}')
+    wanted = {}
+    for line in selection:
+        steamid = str(line.get('steamid') or '')
+        if not steamid:
+            raise CommandError('bad_request', 'every line needs a steamid')
+        if steamid in wanted:
+            raise CommandError('bad_request', f'account {steamid} is selected twice')
+        quantity = line.get('quantity')
+        if isinstance(quantity, bool) or not isinstance(quantity, int) \
+                or not 1 <= quantity <= MAX_QUANTITY_PER_ACCOUNT:
+            raise CommandError('bad_quantity', f'quantity must be 1 to {MAX_QUANTITY_PER_ACCOUNT}')
+        wanted[steamid] = quantity
+    return wanted
+
+
+def plan_lines(rows, wanted):
+    """The order once the wallets were read: per wanted account what it really buys now
+    (at most what the wallet covers and MAX_QUANTITY_PER_ACCOUNT), its total, the wallet
+    after it and why it buys nothing or less (`problem_code`, `problem`)."""
+    by_account = {row['steamid']: row for row in rows}
+    lines = []
+    for steamid, asked in (wanted or {}).items():
+        row = by_account.get(steamid)
+        if row is None:
+            row = {'steamid': steamid, 'account_name': steamid, 'status': 'unknown_account'}
+        status = row.get('status')
+        limit = min(row.get('affordable') or 0, MAX_QUANTITY_PER_ACCOUNT) if status == STATUS_BUY else 0
+        quantity = min(asked, limit)
+        total = quantity * row['unit_price'] if quantity else None
+        if status != STATUS_BUY:
+            # The row's own reason (HTTP 429, no web session …) is kept after the general text.
+            general, reason = PLAN_PROBLEMS.get(status), row.get('error')
+            code, problem = status, (f'{general}: {reason}' if general and reason else general or reason or status)
+        elif quantity < asked:
+            code, problem = 'covers_less', f'The wallet covers {quantity}, not {asked}'
+        else:
+            code, problem = None, None
+        balance = row.get('balance')
+        lines.append({'steamid': steamid, 'account_name': row.get('account_name') or steamid, 'asked': asked,
+                      'quantity': quantity, 'unit_price': row.get('unit_price'), 'currency': row.get('currency'),
+                      'usd_per_unit': row.get('usd_per_unit'), 'balance': balance, 'total': total,
+                      'balance_after': balance - total if total is not None and balance is not None else None,
+                      'payable': bool(quantity) and total is not None, 'problem_code': code, 'problem': problem})
+    return lines
+
+
+def order_totals(lines):
+    """What the payable lines cost: units, per currency (minor units) and about how much in US dollars."""
+    payable = [line for line in lines if line['payable']]
+    by_currency = {}
+    for line in payable:
+        by_currency[line['currency']] = by_currency.get(line['currency'], 0) + line['total']
+    return {'units': sum(line['quantity'] for line in payable), 'accounts_payable': len(payable),
+            'skipped': len(lines) - len(payable), 'totals_by_currency': by_currency,
+            'usd_total': round(sum((line.get('usd_per_unit') or 0) * line['quantity'] for line in payable), 2)}
+
+
+def can_buy(sold_in_currency, affordable):
+    """An account row's "Can buy" (code, text), whether it can be ticked, and the most it can order.
+    *affordable* is None while the wallet was never read (it is checked at the review)."""
+    if not sold_in_currency:
+        code, text = 'currency_not_sold', 'currency not sold'
+    elif affordable is None:
+        code, text = 'unknown', '?'
+    elif affordable == 0:
+        code, text = 'balance_too_low', 'balance too low'
+    else:
+        code, text = 'up_to', f'up to {affordable}'
+    return {'can_buy_code': code, 'can_buy': text,
+            'can_buy_count': affordable if sold_in_currency else None,
+            'selectable': bool(sold_in_currency and affordable != 0),
+            'max_quantity': MAX_QUANTITY_PER_ACCOUNT if affordable is None else min(affordable, MAX_QUANTITY_PER_ACCOUNT)}
+
+
+def _iso(epoch_seconds):
+    return datetime.fromtimestamp(epoch_seconds, timezone.utc).isoformat() if epoch_seconds else None
+
+
 # ---- the service ---------------------------------------------------------------------------
 
 class StorageShopService:
     def __init__(self, steam_service, ratatoskr_service, card_deals_service=None,
-                 state_path=STATE_PATH, approval_page_path=APPROVAL_PAGE_PATH, http=None, sleep=time.sleep):
+                 state_path=STATE_PATH, approval_page_path=APPROVAL_PAGE_PATH, http=None, sleep=time.sleep,
+                 jobs=None, moves_in_progress=lambda steamid: False):
         self.steam = steam_service
+        # True while Transfer or Auto-Store moves items on the account: new units are not named then.
+        self.moves_in_progress = moves_in_progress
         self.ratatoskr = ratatoskr_service
         self.card_deals = card_deals_service
+        # Plans, purchases and deliveries are followed at GET /api/jobs/<id> (the shared registry).
+        self.jobs = jobs or JobRegistry()
         self.state_path = state_path
         self.approval_page_path = approval_page_path
         self._http = http or requests.Session()
@@ -384,7 +558,16 @@ class StorageShopService:
         # Called with (decoded sheet, version, read at) every time the price sheet is read.
         self.on_price_sheet = None
         saved = read_json(state_path, default={}) or {}
-        self._plan = saved.get('plan')
+        # The current plan: {id, state (checking / ready / failed), entry, wanted {steamid: quantity}
+        # or None, accounts (rows), created_at (when its wallets were read), check_job_id, job_id
+        # (its purchase), error, …}. A plan saved before plans had an id is dropped.
+        self._plan = saved.get('plan') if (saved.get('plan') or {}).get('id') else None
+        if self._plan and self._plan.get('state') == 'checking':       # a restart stopped the check
+            self._plan.update(state='failed', error='the check was interrupted by a backend restart')
+        if self._plan and (self._plan.get('dry_run') or {}).get('state') == 'running':   # … or its dry run
+            self._plan['dry_run'].update(state='failed', error='the dry run was interrupted by a backend restart')
+        # replaced plan id -> the purchase job it ran (or None); kept so a replaced plan never reads as unknown
+        self._old_plans = dict(saved.get('old_plans') or {})
         # {'prices': Storage Unit {ISO: minor}, 'entries': {entry: {ISO: minor}}, 'version', 'fetched_at'}
         self._prices = saved.get('prices') or {}
         self._item_names = {STORAGE_UNIT_ENTRY: (STORAGE_UNIT_DEFINITION_INDEX, 'Storage Unit')}
@@ -403,7 +586,7 @@ class StorageShopService:
                 entry['error'] = ('interrupted by a backend restart'
                                   + (' after the approval was sent — it MAY BE PAID: check the account'
                                      if entry.get('payment_attempted') else ' before approving'))
-        self._job = {'running': False, 'kind': None, 'done': 0, 'total': 0, 'phase': None,
+        self._job = {'id': None, 'running': False, 'kind': None, 'done': 0, 'total': 0, 'phase': None,
                      'error': None, 'started_at': None, 'finished_at': None, 'dry_run': False,
                      'account': None, 'step': None}
 
@@ -411,7 +594,8 @@ class StorageShopService:
 
     def _save(self):
         with self._lock:
-            snapshot = json.loads(json.dumps({'plan': self._plan, 'prices': self._prices, 'known': self._known,
+            snapshot = json.loads(json.dumps({'plan': self._plan, 'old_plans': self._old_plans,
+                                              'prices': self._prices, 'known': self._known,
                                               'history': self._history[-HISTORY_CAP:]}))
         try:
             atomic_write_json(self.state_path, snapshot)
@@ -505,14 +689,25 @@ class StorageShopService:
         self._set_job(account=str(steamid), step=step)
 
     def _set_job(self, **fields):
+        """The running job's progress: kept here (``status()``, the Store Catalogue) and in the
+        shared job registry (``GET /api/jobs/<id>``)."""
         with self._lock:
             self._job.update(fields)
+            job_id = self._job.get('id')
+        if job_id:
+            self.jobs.update(job_id, **fields)
 
-    def _start(self, kind, target, args, dry_run=False):
+    def _start(self, kind, target, args, dry_run=False, fields=None):
+        """Run *target* as this service's one job (a plan, purchase, delivery or price sheet read;
+        never two at once). *fields* are extra job fields (the orders, the steps …)."""
         if not self._job_lock.acquire(blocking=False):
-            return {'started': False, 'error': f'a {self._job.get("kind")} is already running'}
-        self._set_job(running=True, kind=kind, done=0, total=0, phase='starting', error=None,
-                      started_at=time.time(), finished_at=None, dry_run=dry_run, account=None, step=None)
+            return {'started': False, 'code': 'busy', 'error': f'a {self._job.get("kind")} is already running'}
+        extra = {'dry_run': dry_run, 'account': None, 'step': None, **(fields or {})}
+        job = self.jobs.create(f'storage_shop_{kind.replace(" ", "_")}', {**extra, 'phase': 'starting'})
+        with self._lock:
+            self._job = {'id': job['id'], 'running': True, 'kind': kind, 'done': 0, 'total': 0, 'phase': 'starting',
+                         'error': None, 'started_at': time.time(), 'finished_at': None, **extra}
+            started_at = self._job['started_at']
 
         def run():
             try:
@@ -521,11 +716,14 @@ class StorageShopService:
                 log.exception('[STORAGE-SHOP] %s failed', kind)
                 self._set_job(error=str(e))
             finally:
-                self._set_job(running=False, phase=None, finished_at=time.time(), account=None, step=None)
+                with self._lock:
+                    self._job.update(running=False, phase=None, finished_at=time.time(), account=None, step=None)
+                    final = dict(self._job)
+                self.jobs.finish(job['id'], result=final.get('result'), error=final.get('error'),
+                                 phase=None, account=None, step=None)
                 self._job_lock.release()
         threading.Thread(target=run, daemon=True, name=f'storage-shop-{kind}').start()
-        # The page follows this job by its server start time (never the browser's clock).
-        return {'started': True, 'started_at': self._job['started_at'], 'kind': kind}
+        return {'started': True, 'started_at': started_at, 'kind': kind, 'job_id': job['id']}
 
     # ---- Ratatoskr sessions ------------------------------------------------------------------
 
@@ -632,20 +830,67 @@ class StorageShopService:
 
     # ---- plan ----------------------------------------------------------------------------------
 
-    def start_plan(self, steamids=None, item=STORAGE_UNIT_ENTRY):
-        """Read the wallets of *steamids* (default every account) for buying *item* (a price
-        sheet entry; default the Storage Unit)."""
+    def start_plan(self, selection=None, item=STORAGE_UNIT_ENTRY):
+        """Plan buying *item* (a price sheet entry; default the Storage Unit): *selection* is
+        [{steamid, quantity}] (how many each account wants), or None to read every account's
+        wallet without an order ("Check wallets"). Answers the plan (``describe_plan``) in
+        state "checking"; its ``check_job_id`` is followed at GET /api/jobs/<id>, then the
+        plan is read again. It replaces the current plan. CommandError when refused."""
         if not isinstance(item, str) or not item:
-            return {'started': False, 'error': 'item must be a price sheet entry'}
+            raise CommandError('bad_request', 'item must be a price sheet entry')
         if item in NOT_FOR_SALE_ENTRIES:
-            return {'started': False, 'error': 'the game license and the Armory Pass are not sold here'}
-        wanted = {str(s) for s in steamids} if steamids else None
-        return self._start('plan', self._build_plan, (wanted, item))
+            raise CommandError('not_for_sale', 'the game license and the Armory Pass are not sold here')
+        wanted = parse_selection(selection) if selection is not None else None
+        if wanted is not None and not wanted:
+            raise CommandError('nothing_chosen', 'choose the accounts to buy for')
+        plan_id = uuid.uuid4().hex
+        with self._lock:       # the plan is recorded before its check can write to it
+            started = self._start('plan', self._build_plan, (wanted, item, plan_id),
+                                  fields={'plan_id': plan_id, 'accounts_done': 0, 'accounts_total': 0})
+            if not started['started']:
+                raise CommandError('busy', started['error'], 409)
+            self._replace_plan(self._plan_record(plan_id, item, wanted, started['job_id']))
+            answer = self.describe_plan(plan_id)       # always "checking": the check waits for this lock
+        self._save()
+        return answer
 
-    def _build_plan(self, wanted, item=STORAGE_UNIT_ENTRY):
+    @staticmethod
+    def _plan_record(plan_id, item, wanted, check_job_id):
+        return {'id': plan_id, 'state': 'checking', 'error': None, 'entry': item, 'wanted': wanted,
+                'accounts': [], 'created_at': None, 'check_job_id': check_job_id, 'job_id': None,
+                # The plan's last dry run: {state: running / passed / failed, job_id, error,
+                # passed: {steamid: quantity}, failed: {steamid: reason}}; None before the first one.
+                'dry_run': None}
+
+    def _replace_plan(self, plan):
+        """Make *plan* the current one; the one it replaces is remembered with its purchase job."""
+        with self._lock:
+            if self._plan and self._plan.get('id'):
+                self._old_plans[self._plan['id']] = self._plan.get('job_id')
+                while len(self._old_plans) > OLD_PLANS_KEPT:
+                    self._old_plans.pop(next(iter(self._old_plans)))
+            self._plan = plan
+
+    def _build_plan(self, wanted=None, item=STORAGE_UNIT_ENTRY, plan_id=None):
+        """Read the wallets of the wanted accounts (every account when *wanted* is None) and
+        fill the plan *plan_id* (a new current plan when None)."""
+        if plan_id is None:
+            plan_id = uuid.uuid4().hex
+            self._replace_plan(self._plan_record(plan_id, item, wanted, None))
+        try:
+            self._fill_plan(plan_id, wanted, item)
+        except Exception as e:
+            with self._lock:
+                if self._plan and self._plan['id'] == plan_id:
+                    self._plan.update(state='failed', error=str(e))
+            self._save()
+            raise
+
+    def _fill_plan(self, plan_id, wanted, item):
         accounts = [row for row in self._accounts() if wanted is None or row[0] in wanted]
         definition_index, item_name = self._item(item)
-        self._set_job(total=len(accounts) + 1, phase='reading the game store price sheet')
+        self._set_job(total=len(accounts) + 1, accounts_total=len(accounts), accounts_done=0,
+                      phase='reading the game store price sheet')
         prices, fetched_at = self._cached_prices(item)
         if not prices or time.time() - (fetched_at or 0) > PRICE_SHEET_TIME_TO_LIVE_SECONDS:
             fetched = self._fetch_price_sheet(accounts)[0]
@@ -674,74 +919,220 @@ class StorageShopService:
                 except Exception as e:
                     log.info('[STORAGE-SHOP] could not count the Storage Units of %s: %s', name, e)
             rows.append(plan_account(account, prices, rates, max_usd))
-            self._set_job(done=index + 2)
+            self._set_job(done=index + 2, accounts_done=index + 1)
         with self._lock:
-            self._plan = {'created_at': time.time(), 'accounts': rows,
-                          'price_sheet_fetched_at': (self._prices or {}).get('fetched_at'),
-                          'entry': item, 'item_name': item_name, 'definition_index': definition_index,
-                          'usd_list_price': (prices.get('USD') or 0) / 100 or None, 'max_usd_per_unit': max_usd}
+            if self._plan and self._plan['id'] == plan_id:
+                self._plan.update({'state': 'ready', 'created_at': time.time(), 'accounts': rows,
+                                   'price_sheet_fetched_at': (self._prices or {}).get('fetched_at'),
+                                   'entry': item, 'item_name': item_name, 'definition_index': definition_index,
+                                   'usd_list_price': (prices.get('USD') or 0) / 100 or None,
+                                   'max_usd_per_unit': max_usd})
         self._save()
+
+    @staticmethod
+    def _plan_deadline(plan):
+        """When the plan expires: PLAN_TIME_TO_LIVE_SECONDS after its wallets were read, or after
+        its FIRST dry run passed (a long dry run never leaves Pay expired; a later dry run does not
+        extend it, so the wallets and prices are never older than that — Ivan, 2026-11-04)."""
+        # Also while a later dry run runs or after it failed: the plan never flips to expired early.
+        start = plan.get('first_passed_at')
+        return (start or plan['created_at']) + PLAN_TIME_TO_LIVE_SECONDS
+
+    @classmethod
+    def _plan_state(cls, plan, now=None):
+        """checking, failed, expired (past ``_plan_deadline``) or ready."""
+        if plan['state'] != 'ready':
+            return plan['state']
+        if (now or time.time()) > cls._plan_deadline(plan):
+            return 'expired'
+        return 'ready'
+
+    @staticmethod
+    def _dry_run_view(plan, lines):
+        """The plan's dry run as a client sees it, and the lines a real purchase would buy: those
+        whose dry run passed, still payable and in the quantity tested."""
+        record = plan.get('dry_run') or {}
+        passed, failed = record.get('passed') or {}, record.get('failed') or {}
+        names = {line['steamid']: line['account_name'] for line in lines}
+        to_buy = [line for line in lines if line['payable'] and passed.get(line['steamid']) == line['quantity']]
+        view = {'state': record.get('state') or 'not_run', 'job_id': record.get('job_id'), 'error': record.get('error'),
+                'passed_lines': [{'steamid': steamid, 'account_name': names.get(steamid, steamid), 'quantity': quantity}
+                                 for steamid, quantity in passed.items()],
+                'failed_lines': [{'steamid': steamid, 'account_name': names.get(steamid, steamid), 'reason': reason}
+                                 for steamid, reason in failed.items()]}
+        return view, to_buy
+
+    def describe_plan(self, plan_id):
+        """What a client sees of a plan: its state, the lines (what each account buys, or why
+        not, and how its dry run went), the totals, the dry run and what a real purchase would
+        buy (`to_pay`). `can_test`: a dry run may start; `executable`: a real purchase may
+        (only after a passed dry run of this plan). A replaced plan answers only its state (and
+        the job it ran, if any). CommandError plan_unknown otherwise."""
+        with self._lock:
+            plan = json.loads(json.dumps(self._plan)) if self._plan and self._plan['id'] == plan_id else None
+            replaced = plan_id in self._old_plans
+            old_job_id = self._old_plans.get(plan_id)
+        if plan is None:
+            if not replaced:
+                raise CommandError('plan_unknown', 'unknown plan: check the accounts again', 404)
+            empty = {'units': 0, 'accounts_payable': 0, 'skipped': 0, 'totals_by_currency': {}, 'usd_total': 0}
+            return {'plan_id': plan_id, 'state': 'replaced', 'error': None, 'item': None, 'lines': [], **empty,
+                    'units_text': None, 'created_at': None, 'expires_at': None, 'check_job_id': None,
+                    'job_id': old_job_id, 'can_test': False, 'executable': False,
+                    'dry_run': {'state': 'not_run', 'job_id': None, 'error': None, 'passed_lines': [], 'failed_lines': []},
+                    'to_pay': {**empty, 'units_text': None}}
+        state = self._plan_state(plan)
+        if state == 'failed':       # the check itself failed: every wanted account says why
+            names = {steamid: name for steamid, name, _ in self._accounts()}
+            rows = [{'steamid': steamid, 'account_name': names.get(steamid, steamid), 'status': 'check_failed',
+                     'error': plan.get('error')} for steamid in (plan['wanted'] or {})]
+            lines = plan_lines(rows, plan['wanted'])
+        else:
+            lines = plan_lines(plan['accounts'], plan['wanted']) if state != 'checking' else []
+        dry_run, to_buy = self._dry_run_view(plan, lines)
+        record = plan.get('dry_run') or {}
+        for line in lines:
+            if line['steamid'] in (record.get('passed') or {}):
+                line.update(test='passed', test_result='Every check passed; cancelled before approving (nothing paid)')
+            elif line['steamid'] in (record.get('failed') or {}):
+                line.update(test='failed', test_result=record['failed'][line['steamid']])
+            else:
+                line.update(test=None, test_result=None)
+        totals, pay = order_totals(lines), order_totals(to_buy)
+        entry = plan.get('entry') or STORAGE_UNIT_ENTRY
+        name = plan.get('item_name') or ('Storage Unit' if entry == STORAGE_UNIT_ENTRY else entry)
+        open_plan = state == 'ready' and not plan.get('job_id')
+        return {'plan_id': plan_id, 'state': state, 'error': plan.get('error'),
+                'item': {'entry': entry, 'name': name}, 'lines': lines, **totals,
+                'units_text': units_text(totals['units'], entry, name),
+                'created_at': plan.get('created_at'),
+                'expires_at': _iso(self._plan_deadline(plan)) if plan.get('created_at') else None,
+                'check_job_id': plan.get('check_job_id'), 'job_id': plan.get('job_id'),
+                'dry_run': dry_run, 'to_pay': {**pay, 'units_text': units_text(pay['units'], entry, name)},
+                'can_test': open_plan and totals['units'] > 0 and dry_run['state'] != 'running',
+                'executable': open_plan and dry_run['state'] == 'passed' and pay['units'] > 0}
 
     # ---- purchase ------------------------------------------------------------------------------
 
-    def start_purchase(self, selection, dry_run=True, plan_created_at=None, item=None):
-        """*selection*: [{steamid, quantity}] from the plan the screen showed; *item*: the
-        price sheet entry the screen shows (it must be the plan's)."""
-        if not isinstance(selection, list) or not all(isinstance(item, dict) for item in selection):
-            return {'started': False, 'error': 'selection must be a list of {steamid, quantity}'}
+    def execute_plan(self, plan_id, dry_run=True, item=None):
+        """Run the plan: a dry run (repeatable; while one runs, the same job is answered), or the
+        real purchase — only after a dry run of this same plan passed, only the lines that passed,
+        once (a second call answers the same job, never a second purchase). Answers the job
+        (GET /api/jobs/<id>). *item*, when given, is the entry the page shows (it must be the
+        plan's). CommandError when refused."""
         with self._lock:
-            plan = json.loads(json.dumps(self._plan)) if self._plan else None
-            history = list(self._history)
-        if not plan:
-            return {'started': False, 'error': 'check the accounts first'}
-        if plan_created_at is None:
-            return {'started': False, 'error': 'the plan time (plan_created_at) is missing: look at the plan again'}
-        if abs(float(plan_created_at) - plan['created_at']) > 1e-6:
-            return {'started': False, 'error': 'the plan changed since this page loaded: look at it again'}
-        if time.time() - plan['created_at'] > PLAN_TIME_TO_LIVE_SECONDS:
-            return {'started': False, 'error': 'the plan is older than 30 minutes: check the accounts again'}
-        planned_item = plan.get('entry') or STORAGE_UNIT_ENTRY
-        if (item or STORAGE_UNIT_ENTRY) != planned_item:
-            return {'started': False, 'error': 'the plan is for another item: look at it again'}
-        if planned_item in NOT_FOR_SALE_ENTRIES:
-            return {'started': False, 'error': 'the game license and the Armory Pass are not sold here'}
-        item_fields = {'entry': planned_item, 'item_name': plan.get('item_name') or 'Storage Unit',
-                       'definition_index': plan.get('definition_index') or STORAGE_UNIT_DEFINITION_INDEX}
-        already = {entry['steamid'] for entry in history
-                   if entry.get('at', 0) >= plan['created_at'] and entry.get('payment_attempted')}
-        by_account = {row['steamid']: row for row in plan['accounts']}
-        orders, seen = [], set()
-        for item in selection:
-            row = by_account.get(str(item.get('steamid')))
-            if not row:
-                return {'started': False, 'error': f'account {item.get("steamid")} is not in the plan'}
-            if row['steamid'] in seen:
-                return {'started': False, 'error': f'{row["account_name"]} is selected twice'}
-            seen.add(row['steamid'])
-            try:
-                quantity = int(item.get('quantity'))
-            except (TypeError, ValueError):
-                return {'started': False, 'error': 'quantity must be a number'}
-            if row['status'] != STATUS_BUY:
-                return {'started': False, 'error': f'{row["account_name"]}: not buyable in this plan ({row["status"]})'}
-            if not 1 <= quantity <= min(MAX_QUANTITY_PER_ACCOUNT, row['affordable']):
-                return {'started': False, 'error': f'{row["account_name"]}: 1 to {min(MAX_QUANTITY_PER_ACCOUNT, row["affordable"])} '
-                                                   f'of {item_fields["item_name"]}'}
-            if row['steamid'] in already:
-                return {'started': False, 'error': f'{row["account_name"]}: already bought (or paid for) since this plan'}
-            orders.append({**row, **item_fields, 'quantity': quantity})
-        if not orders:
-            return {'started': False, 'error': 'nothing selected'}
-        return self._start('purchase', self._buy_all, (orders, dry_run), dry_run=dry_run)
+            plan = self._plan if self._plan and self._plan['id'] == plan_id else None
+            if plan is None and plan_id in self._old_plans:
+                if self._old_plans[plan_id] and not dry_run:
+                    return self._same_job(self._old_plans[plan_id])
+                raise CommandError('plan_replaced', 'the plan changed since this page loaded: look at it again', 409)
+            if plan is None:
+                raise CommandError('plan_unknown', 'unknown plan: check the accounts again', 404)
+            if plan.get('job_id'):
+                if dry_run:
+                    raise CommandError('plan_executed', 'this plan was already bought: check the accounts again', 409)
+                return self._same_job(plan['job_id'])
+            record = plan.get('dry_run') or {}
+            if dry_run and record.get('state') == 'running':
+                running = self.jobs.get(record.get('job_id'))
+                if running and running['running']:
+                    return running
+            state = self._plan_state(plan)
+            if state == 'checking':
+                raise CommandError('plan_checking', 'the wallets are still being read', 409)
+            if state == 'failed':
+                raise CommandError('plan_failed', f'the check failed: {plan.get("error")}')
+            if state == 'expired':
+                raise CommandError('plan_expired', 'the plan is older than 30 minutes: check the accounts again')
+            planned_item = plan.get('entry') or STORAGE_UNIT_ENTRY
+            if item is not None and item != planned_item:
+                raise CommandError('item_mismatch', 'the plan is for another item: look at it again')
+            if planned_item in NOT_FOR_SALE_ENTRIES:
+                raise CommandError('not_for_sale', 'the game license and the Armory Pass are not sold here')
+            lines = plan_lines(plan['accounts'], plan['wanted'])
+            if not dry_run:
+                if record.get('state') == 'running':
+                    raise CommandError('dry_run_required', 'the test of this plan is still running: pay once it passed', 409)
+                if record.get('state') != 'passed':
+                    raise CommandError('dry_run_required', 'test this plan without paying first: '
+                                                           'only a plan whose test passed can be paid', 409)
+                lines = self._dry_run_view(plan, lines)[1]
+            item_fields = {'plan_id': plan_id, 'entry': planned_item, 'item_name': plan.get('item_name') or 'Storage Unit',
+                           'definition_index': plan.get('definition_index') or STORAGE_UNIT_DEFINITION_INDEX}
+            rows = {row['steamid']: row for row in plan['accounts']}
+            orders = []
+            for line in lines:
+                if not line['payable']:
+                    continue
+                orders.append({**rows[line['steamid']], **item_fields, 'quantity': line['quantity']})
+            if not orders:
+                raise CommandError('nothing_to_buy', 'nothing in this plan can be bought')
+            started = self._start('purchase', self._buy_all, (orders, dry_run, plan_id), dry_run=dry_run, fields={
+                'plan_id': plan_id, 'item': {'entry': planned_item, 'name': item_fields['item_name']},
+                'orders': [{key: order[key] for key in ('steamid', 'account_name', 'quantity', 'unit_price', 'currency')}
+                           for order in orders],
+                'steps': DRY_RUN_STEPS if dry_run else PURCHASE_STEPS,
+                'accounts_done': 0, 'accounts_total': len(orders), 'total': len(orders),
+                'result': self._purchase_result([], planned_item, item_fields['item_name'])})
+            if not started['started']:
+                raise CommandError('busy', started['error'], 409)
+            if dry_run:
+                plan['dry_run'] = {'state': 'running', 'job_id': started['job_id'], 'error': None,
+                                   'passed': {}, 'failed': {}}
+            else:
+                plan['job_id'] = started['job_id']
+        self._save()
+        return self.jobs.get(started['job_id'])
 
-    def _buy_all(self, orders, dry_run):
+    def _same_job(self, job_id):
+        job = self.jobs.get(job_id)
+        if job is None:
+            raise CommandError('job_gone', 'this plan already ran; its result is no longer kept '
+                                           '(look at the purchase log)', 410)
+        return job
+
+    @staticmethod
+    def _purchase_result(outcomes, entry, name):
+        """A purchase job's result: each finished account's outcome and what was paid for."""
+        paid_units = sum(outcome['quantity'] for outcome in outcomes if outcome['paid'])
+        return {'accounts': outcomes, 'paid_units': paid_units, 'paid_text': units_text(paid_units, entry, name)}
+
+    def _buy_all(self, orders, dry_run, plan_id=None):
         self._set_job(total=len(orders), phase='dry run (nothing is paid)' if dry_run else 'buying')
-        for index, order in enumerate(orders):
-            if index:
-                self._sleep(ACCOUNT_GAP_SECONDS)
-            self._set_job(phase=f'{"dry run" if dry_run else "buying"}: {order["account_name"]}')
-            self._buy_account(order, dry_run)
-            self._set_job(done=index + 1)
+        outcomes, error = [], None
+        try:
+            for index, order in enumerate(orders):
+                if index:
+                    self._sleep(ACCOUNT_GAP_SECONDS)
+                self._set_job(phase=f'{"dry run" if dry_run else "buying"}: {order["account_name"]}')
+                outcomes.append(purchase_outcome(self._buy_account(order, dry_run)))
+                self._set_job(done=index + 1, accounts_done=index + 1,
+                              result=self._purchase_result(outcomes, order.get('entry'), order.get('item_name')))
+        except Exception as e:
+            error = str(e)
+            raise
+        finally:
+            if dry_run and plan_id:
+                self._record_dry_run(plan_id, orders, outcomes, error)
+
+    def _record_dry_run(self, plan_id, orders, outcomes, error):
+        """Keep on the plan how its dry run went: which accounts passed (in which quantity) and
+        why the others failed. Passed only when it finished without an error and one passed."""
+        passed = {o['steamid']: o['quantity'] for o in outcomes if o['outcome'] == 'test_passed'}
+        failed = {o['steamid']: o['summary'] for o in outcomes if o['outcome'] != 'test_passed'}
+        for order in orders:
+            if order['steamid'] not in passed and order['steamid'] not in failed:
+                failed[order['steamid']] = 'not tested (the dry run stopped before this account)'
+        with self._lock:
+            plan = self._plan if self._plan and self._plan['id'] == plan_id else None
+            if plan is not None:
+                good = bool(passed) and not error
+                if good and not plan.get('first_passed_at'):
+                    plan['first_passed_at'] = time.time()
+                plan['dry_run'] = {'state': 'passed' if good else 'failed',
+                                   'job_id': (plan.get('dry_run') or {}).get('job_id'), 'error': error,
+                                   'passed': passed, 'failed': failed, 'passed_at': time.time() if good else None}
+        self._save()
 
     def _record(self, result):
         with self._lock:
@@ -750,9 +1141,13 @@ class StorageShopService:
                 self._history = self._history[-HISTORY_CAP:]
         self._save()
 
-    def _mark_plan(self, steamid, status):
+    def _mark_plan(self, steamid, status, plan_id):
+        """Mark the account on the plan *plan_id* (bought, or a purchase to check) — only when
+        that plan is still the current one: an older plan's purchase never touches a newer plan."""
         with self._lock:
-            for row in (self._plan or {}).get('accounts') or []:
+            if not plan_id or not self._plan or self._plan['id'] != plan_id:
+                return
+            for row in self._plan.get('accounts') or []:
                 if row['steamid'] == steamid:
                     row['status'] = status
         self._save()
@@ -764,7 +1159,7 @@ class StorageShopService:
         item_name = order.get('item_name') or 'Storage Unit'
         storage_units = item == STORAGE_UNIT_ENTRY      # only then the Storage Unit count is checked
         expected = unit_price * quantity
-        result = {'at': time.time(), 'steamid': steamid, 'account_name': order['account_name'],
+        result = {'at': time.time(), 'plan_id': order.get('plan_id'), 'steamid': steamid, 'account_name': order['account_name'],
                   'entry': item, 'item_name': item_name, 'definition_index': definition_index,
                   'quantity': quantity, 'unit_price': unit_price, 'currency': order['currency'],
                   'expected': expected, 'transaction_id': None, 'dry_run': dry_run, 'state': 'in progress',
@@ -847,7 +1242,7 @@ class StorageShopService:
             # "may be paid" — the plan stops offering this account either way.
             result['payment_attempted'] = True
             self._record(result)
-            self._mark_plan(steamid, 'check')
+            self._mark_plan(steamid, STATUS_CHECK, order.get('plan_id'))
             approved_id, transaction_id = transaction_id, None
             action, fields = form
             self._pace('steam')
@@ -868,7 +1263,7 @@ class StorageShopService:
                                 f'the approval answered HTTP {response.status_code})')
             result['paid'] = True
             result['item_ids'] = [str(item) for item in finalized.get('itemIds') or []]
-            self._mark_plan(steamid, 'bought')
+            self._mark_plan(steamid, STATUS_BOUGHT, order.get('plan_id'))
             after = finalized.get('storageUnits') if storage_units else None
             for attempt in range(COUNT_TRIES):
                 if before is None or (after is not None and after >= before + quantity):
@@ -936,19 +1331,33 @@ class StorageShopService:
 
     def start_deliver_again(self, at):
         """For a purchase left "MAY BE PAID": ask the game store to deliver it again
-        (Finalize only delivers an approved, unpaid-out transaction, so this cannot pay twice)."""
+        (Finalize only delivers an approved, unpaid-out transaction, so this cannot pay twice).
+        Answers the delivery job, which carries that one order and its outcome."""
         with self._lock:
             entry = next((h for h in self._history if abs(float(h.get('at') or 0) - float(at)) < 1e-6), None)
-        if not entry or not entry.get('payment_attempted') or entry.get('paid') or not entry.get('transaction_id'):
-            return {'started': False, 'error': 'no unclear purchase with that time'}
-        return self._start('delivery', self._deliver_again, (entry,))
+        if not entry or not can_deliver_again(entry):
+            raise CommandError('nothing_to_deliver', 'no unclear purchase with that time', 404)
+        item = entry.get('entry') or STORAGE_UNIT_ENTRY
+        name = entry.get('item_name') or 'Storage Unit'
+        started = self._start('delivery', self._deliver_again, (entry,), fields={
+            'item': {'entry': item, 'name': name},
+            'orders': [{key: entry.get(key) for key in ('steamid', 'account_name', 'quantity', 'unit_price', 'currency')}],
+            'steps': DELIVERY_STEPS, 'accounts_done': 0, 'accounts_total': 1, 'total': 1,
+            'result': self._purchase_result([], item, name)})
+        if not started['started']:
+            raise CommandError('busy', started['error'], 409)
+        return self.jobs.get(started['job_id'])
 
     def _name_new_units(self, steamid, result):
-        """Give every Storage Unit without a name a "Storage N" name, so it takes items (a new unit
-        refuses them until it is named). Never fails the purchase: what happened is kept on the
-        result (`named`, `naming_error`). One rename after another (rule 21)."""
+        """Give each Storage Unit this purchase delivered a "Storage N" name, so it takes items (a new
+        unit refuses them until it is named). Older unnamed units are left alone, and nothing is
+        named while items move on the account (naming changes a unit's id). Never fails the
+        purchase: what happened is kept on the result (`named`, `naming_error`). One rename after
+        another (rule 21)."""
         named, problems = [], []
         try:
+            if self.moves_in_progress(steamid):
+                raise RuntimeError('items are moving on this account, so nothing was named')
             delivered = {str(item_id) for item_id in result.get('item_ids') or []}
             for attempt in range(COUNT_TRIES):      # the new units can reach the list a moment late
                 caskets = (self.ratatoskr.get_caskets(steamid) or {}).get('caskets') or []
@@ -958,7 +1367,8 @@ class StorageShopService:
             missing = delivered - {str(unit.get('item_id')) for unit in caskets}
             if missing:
                 problems.append(f'not in the Storage Unit list yet: {", ".join(sorted(missing))}')
-            unnamed = [unit for unit in caskets if not (unit.get('item_customname') or '').strip()]
+            unnamed = [unit for unit in caskets if str(unit.get('item_id')) in delivered
+                       and not (unit.get('item_customname') or '').strip()]
             names = next_storage_names([unit.get('item_customname') for unit in caskets], len(unnamed))
             for unit, name in zip(unnamed, names):
                 answer = self.ratatoskr.rename_casket(steamid, unit.get('item_id'), name) or {}
@@ -968,13 +1378,17 @@ class StorageShopService:
                     named.append(name)
         except Exception as e:      # the purchase itself succeeded; naming is a follow-up
             problems.append(str(e))
+        naming_error = ('could not name every new Storage Unit (name it in the Rename Storage Unit tab): '
+                        + '; '.join(problems)) if problems else None
+        with self._lock:        # the entry may already be in the purchase log, copied under this lock
+            if named:
+                result['named'] = named
+            if naming_error:
+                result['naming_error'] = naming_error
         if named:
-            result['named'] = named
             log.info('[STORAGE-SHOP] named new Storage Units on %s: %s', steamid, ', '.join(named))
-        if problems:
-            result['naming_error'] = ('could not name every new Storage Unit (name it in Transfer, From mode): '
-                                      + '; '.join(problems))
-            log.warning('[STORAGE-SHOP] %s: %s', steamid, result['naming_error'])
+        if naming_error:
+            log.warning('[STORAGE-SHOP] %s: %s', steamid, naming_error)
 
     def _deliver_again(self, entry):
         self._set_job(total=1, phase=f'delivering again: {entry["account_name"]}')
@@ -984,22 +1398,26 @@ class StorageShopService:
             finalized, opened = self._finalize(entry['steamid'], entry['transaction_id'], False)
             if finalized.get('result') == GAME_COORDINATOR_OK:
                 storage_units = (entry.get('entry') or STORAGE_UNIT_ENTRY) == STORAGE_UNIT_ENTRY
-                entry.update(paid=True, ok=True, item_ids=[str(i) for i in finalized.get('itemIds') or []],
-                             storage_units_after=finalized.get('storageUnits') if storage_units else None,
-                             error='delivered on the second request')
+                with self._lock:        # the entry is in the purchase log, copied under this lock
+                    entry.update(paid=True, ok=True, item_ids=[str(i) for i in finalized.get('itemIds') or []],
+                                 storage_units_after=finalized.get('storageUnits') if storage_units else None,
+                                 error='delivered on the second request')
                 if storage_units and finalized.get('storageUnits') is not None:
                     self._remember(entry['steamid'], storage_units=finalized['storageUnits'], storage_units_at=time.time())
-                self._mark_plan(entry['steamid'], 'bought')
+                self._mark_plan(entry['steamid'], STATUS_BOUGHT, entry.get('plan_id'))
                 if storage_units:
                     self._name_new_units(entry['steamid'], entry)
             else:
-                entry['error'] = (f'delivering again failed (result {finalized.get("error") or finalized.get("result")})'
-                                  ' — it MAY BE PAID: check the account (Steam → account → purchase history)')
+                with self._lock:
+                    entry['error'] = (f'delivering again failed (result {finalized.get("error") or finalized.get("result")})'
+                                      ' — it MAY BE PAID: check the account (Steam → account → purchase history)')
         finally:
             if opened:
                 self._close(entry['steamid'])
             self._record(entry)
-            self._set_job(done=1)
+            self._set_job(done=1, accounts_done=1,
+                          result=self._purchase_result([purchase_outcome(entry)], entry.get('entry') or STORAGE_UNIT_ENTRY,
+                                                       entry.get('item_name') or 'Storage Unit'))
 
     def _keep_page(self, page):
         try:
@@ -1012,22 +1430,52 @@ class StorageShopService:
 
     def accounts_view(self, known, prices, rates):
         """Every account in the dashboard with what is last known about it (nothing is read
-        from Steam here): wallet, Storage Units, price and how many the wallet covers."""
+        from Steam here): wallet, Storage Units, price, how many the wallet covers, and what
+        the page may do with the row (``can_buy``: selectable, max_quantity, can_buy_code)."""
         rows = []
         for steamid, name, country in self._accounts():
             entry = known.get(steamid) or {}
             currency = CURRENCY_CODES.get(entry.get('currency_id'))
             price = prices.get(currency) if currency else None
             balance = entry.get('balance')
+            affordable = min(balance // price, MAX_QUANTITY_PER_ACCOUNT) if price and balance is not None else None
+            # No price sheet read yet: unknown, not "not sold" (the check reads the sheet).
+            sold = bool(currency is None or (currency in GAME_STORE_CURRENCIES and (not prices or price)))
             rows.append({'steamid': steamid, 'account_name': name, 'country': country, 'currency': currency,
                          'balance': balance, 'checked_at': entry.get('checked_at'),
                          # The wallet in US dollars, so wallets in different currencies sort together.
                          'balance_usd': to_usd(balance, currency, rates),
                          'storage_units': entry.get('storage_units'), 'storage_units_at': entry.get('storage_units_at'),
                          'unit_price': price, 'usd_per_unit': to_usd(price, currency, rates) if price else None,
-                         'affordable': min(balance // price, MAX_QUANTITY_PER_ACCOUNT) if price and balance is not None else None,
-                         'sold_in_currency': bool(currency is None or (price and currency in GAME_STORE_CURRENCIES))})
+                         'affordable': affordable, 'sold_in_currency': sold, **can_buy(sold, affordable)})
         return rows
+
+    def quote(self, item, selection):
+        """The order panel before the review, from what is last known (no Steam call): per
+        account its total in the wallet currency, or about how much in US dollars while its
+        wallet was never read; the totals (`complete` false: only the dollar estimate)."""
+        wanted = parse_selection(selection)
+        prices, _ = self._cached_prices(item)
+        with self._lock:
+            known = json.loads(json.dumps(self._known))
+        rows = {row['steamid']: row for row in self.accounts_view(known, prices, self._rates())}
+        list_price = (prices.get('USD') or 0) / 100
+        lines = []
+        for steamid, quantity in wanted.items():
+            row = rows.get(steamid)
+            if row is None:
+                continue
+            lines.append({'steamid': steamid, 'account_name': row['account_name'], 'quantity': quantity,
+                          'currency': row['currency'],
+                          'total': row['unit_price'] * quantity if row['unit_price'] else None,
+                          'usd_estimate': round((row['usd_per_unit'] or list_price) * quantity, 2)})
+        complete = all(line['total'] is not None for line in lines)
+        by_currency = {}
+        for line in lines if complete else []:
+            by_currency[line['currency']] = by_currency.get(line['currency'], 0) + line['total']
+        return {'lines': lines, 'units': sum(line['quantity'] for line in lines), 'complete': complete,
+                'totals_by_currency': by_currency,
+                'usd_estimate': round(sum(line['usd_estimate'] for line in lines), 2)}
 
     def job_status(self):
         with self._lock:
@@ -1057,7 +1505,8 @@ class StorageShopService:
         prices, _ = self._cached_prices(item)
         view = {'entry': item, 'name': item, 'definition_index': None, 'usd_list_price': (prices.get('USD') or 0) / 100 or None,
                 'max_usd_per_unit': max_usd_per_unit(item, (prices.get('USD') or 0) / 100),
-                'for_sale': item not in NOT_FOR_SALE_ENTRIES, 'error': None}
+                'for_sale': item not in NOT_FOR_SALE_ENTRIES, 'is_storage_unit': item == STORAGE_UNIT_ENTRY,
+                'error': None}
         try:
             view['definition_index'], view['name'] = self._item(item)
         except Exception as e:
@@ -1071,7 +1520,16 @@ class StorageShopService:
                                            'known': self._known}))
         prices, fetched_at = self._cached_prices(item)
         accounts = self.accounts_view(state['known'], prices, self._rates())
-        return {'job': state['job'], 'plan': state['plan'], 'history': state['history'][-100:][::-1],
+        plan_id = (state['plan'] or {}).get('id')
+        try:
+            plan = self.describe_plan(plan_id) if plan_id else None
+        except CommandError:        # replaced (and forgotten) since the copy above
+            plan = None
+        history = [{**entry, **purchase_outcome(entry)} for entry in state['history'][-100:][::-1]]
+        return {'job': state['job'], 'plan': plan,
+                'history': history,
+                # Approved but not delivered: "Deliver again" is offered for each (can_deliver_again).
+                'unclear_purchases': [entry for entry in history if entry['can_deliver_again']],
                 'accounts': accounts, 'item': self.item_view(item),
                 'statistics': shop_statistics(state['history'], item),
                 'price_sheet': {'prices': prices, 'fetched_at': fetched_at},

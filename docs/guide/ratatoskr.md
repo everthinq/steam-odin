@@ -158,19 +158,27 @@ on as many accounts as you like, **without connecting anything first**.
 2. Tick accounts (row click toggles; **Can buy** filter shows only those whose
    wallet covers at least one) and set the quantity (1–20 each).
 3. **Review & buy** re-reads the chosen wallets and shows the order: per account
-   quantity, price, total, wallet now → after, and any problem.
+   quantity, price, total, wallet now → after, and any problem. A review is
+   valid for 30 minutes, counted from the first passed test; testing again
+   does not extend it (it says until when); after that it offers **Review
+   again** instead of Pay.
 4. **Test without paying** runs every step, opens the purchase and cancels it
-   before approving — nothing is paid. Do this first if anything changed.
-5. **Pay** buys. Each account goes through wallet → login → opening →
+   before approving — nothing is paid. It is required: then the review comes
+   back and says, per account, whether its test passed.
+5. **Pay** (offered on the same review once the test passed) buys — only on
+   the accounts whose test passed; the others are skipped. Each account goes through wallet → login → opening →
    approving → delivering; you can close the page, the purchase continues on
-   the server.
+   the server. Opening the page again (or another tab) shows the running
+   purchase with every account, and the result stays until you close it.
+   Pressing Pay twice never buys twice.
 
 **If a line says "MAY BE PAID"** the approval went through but delivery was
 not confirmed. Check the account's purchase history on Steam, and press
 **Deliver again** — it can only deliver a purchase already approved, so it can
 never charge twice.
 
-Everything the shop checks before paying: the plan is under 30 minutes old;
+Everything the shop checks before paying: the plan (or its passed test) is
+under 30 minutes old;
 the wallet currency and balance are unchanged; the game store's price equals
 the plan; Steam's own approval request is exactly this order (only Storage
 Units, this quantity, this total); the approval page names this account and

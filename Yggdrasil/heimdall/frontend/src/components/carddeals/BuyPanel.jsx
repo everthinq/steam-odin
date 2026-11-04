@@ -1,11 +1,14 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { RefreshCw, ShoppingCart, FlaskConical, AlertTriangle } from 'lucide-react';
 import { failureMessage, readJson, readJsonOrThrow } from '../../utils/readJson';
+import { followJob, postCommand } from '../../utils/moveCommands';
 
 // Andvari "Buy games": check every account (country, wallet, owned games, regional
-// price in US dollars), then buy the planned games with the Steam wallet. Backend:
-// /api/huginn/card-deals/buy*. Every purchase only goes through when Steam's final
-// price equals the plan to the cent, and only on an empty cart.
+// price in US dollars), then buy the planned games with the Steam wallet. The backend
+// decides (store_purchase_service.py): the ticked games become a purchase plan
+// (/api/huginn/card-deals/buy/purchase-plan), its dry run runs as a job, and only the
+// accounts whose dry run of that same purchase plan passed can be bought, once. Every
+// purchase only goes through when Steam's final price equals the plan to the cent.
 
 const STATUS = {
     buy: { label: 'buy', tone: 'text-emerald-300' },
@@ -18,6 +21,9 @@ const STATUS = {
     check: { label: 'payment unclear: check the account', tone: 'text-red-400' },
 };
 const APPS_STORAGE_KEY = 'andvari.buy.apps';
+const PURCHASES = '/api/huginn/card-deals/buy/purchase-plans';
+const JOB_LOST = 'The backend restarted during the purchase, so its result is unknown. Look at the purchase log (and the accounts\' purchase history) before trying again.';
+const lostTrack = (reason) => `Lost track of the purchase (${reason}). It keeps running in the backend: the purchase log shows the outcome.`;
 
 const minor = (value, currency) => (value === null || value === undefined ? '—'
     : currency === 'USD' ? `$${(value / 100).toFixed(2)}` : `${(value / 100).toFixed(2)} ${currency || ''}`);
@@ -33,6 +39,22 @@ const ago = (epochSeconds) => {
 const savedApps = () => {
     try { return window.localStorage.getItem(APPS_STORAGE_KEY) || ''; } catch { return ''; }
 };
+// [{steamid, app_ids}] (what the backend answers and takes) as {steamid: [app ids]} for the ticks.
+const bySteamid = (selection) => Object.fromEntries((selection || []).map((item) => [item.steamid, item.app_ids]));
+
+// One account's dry run outcome in the purchase plan (empty when the account is not in it).
+const DryRunCell = ({ line }) => {
+    if (!line) return null;
+    if (line.purchase) {
+        if (line.purchase.paid) return <span className="text-emerald-300">bought</span>;
+        if (line.purchase.may_be_paid) return <span className="text-red-400">MAY BE PAID: check the account</span>;
+        return <span className="text-red-400">not bought: {line.purchase.reason}</span>;
+    }
+    if (!line.dry_run) return <span className="text-slate-500">not run</span>;
+    return line.dry_run.passed
+        ? <span className="text-sky-300">passed ({minor(line.dry_run.charged, line.currency)})</span>
+        : <span className="text-red-400">{line.dry_run.reason}</span>;
+};
 
 const BuyPanel = () => {
     const [state, setState] = useState(null);
@@ -42,11 +64,14 @@ const BuyPanel = () => {
     const [error, setError] = useState(null);
     const [busy, setBusy] = useState(false);
     const [emptyCart, setEmptyCart] = useState(true);  // remove what is already in a cart first (logged)
-    const [loadedAt, setLoadedAt] = useState(0);      // when the status was read (plan age without Date.now in render)
+    const [discarded, setDiscarded] = useState(null);  // purchase plan id whose ticks were changed since
+    const sending = useRef(false);                     // one command at a time, even on a double click
+    const mounted = useRef(true);
+    useEffect(() => () => { mounted.current = false; }, []);
 
     const load = useCallback(() => fetch('/api/huginn/card-deals/buy')
         .then(readJsonOrThrow)
-        .then((d) => { setState(d); setLoadedAt(Date.now()); })
+        .then(setState)
         .catch((error) => setError(failureMessage(error))), []);
     const running = state?.job?.running;
     useEffect(() => {
@@ -56,19 +81,19 @@ const BuyPanel = () => {
     }, [load, running]);
 
     const plan = state?.plan;
-    const planAge = plan ? loadedAt / 1000 - plan.created_at : null;
-    const planFresh = plan && planAge < (state?.plan_time_to_live_seconds || 1800);
+    const planFresh = !!plan?.fresh;
+    // The purchase plan the backend made from this plan, unless the ticks changed since.
+    const purchasePlan = state?.purchase_plan && plan && state.purchase_plan.plan_created_at === plan.created_at
+        && state.purchase_plan.purchase_plan_id !== discarded ? state.purchase_plan : null;
+    const purchaseLines = useMemo(
+        () => Object.fromEntries((purchasePlan?.lines || []).map((line) => [line.steamid, line])), [purchasePlan]);
 
-    // A new plan starts with every game it marks "buy" selected; ticking edits that plan's copy.
-    const defaultSelection = useMemo(() => {
-        const next = {};
-        (plan?.accounts || []).forEach((row) => {
-            const buy = row.games.filter((g) => g.status === 'buy').map((g) => g.app_id);
-            if (buy.length) next[row.steamid] = buy;
-        });
-        return next;
-    }, [plan]);
-    const selection = plan && picks.planAt === plan.created_at ? picks.bySteamid : defaultSelection;
+    // The ticks: this page's edits of this plan, else the purchase plan's games, else the backend's default.
+    const selection = useMemo(() => {
+        if (plan && picks.planAt === plan.created_at) return picks.bySteamid;
+        if (purchasePlan) return bySteamid(purchasePlan.lines.map((line) => ({ steamid: line.steamid, app_ids: line.games.map((g) => g.app_id) })));
+        return bySteamid(plan?.default_selection);
+    }, [plan, picks, purchasePlan]);
 
     const gameColumns = useMemo(() => {
         const seen = new Map();
@@ -76,41 +101,70 @@ const BuyPanel = () => {
         return (plan?.app_ids || []).map((id) => ({ app_id: id, name: seen.get(id) || String(id) }));
     }, [plan]);
 
-    const chosen = useMemo(() => {
-        const rows = [];
-        (plan?.accounts || []).forEach((row) => {
-            const ids = selection[row.steamid] || [];
-            const games = row.games.filter((g) => ids.includes(g.app_id) && g.status === 'buy');
-            if (games.length) rows.push({ row, games });
-        });
-        return rows;
-    }, [plan, selection]);
-    const chosenCopies = chosen.reduce((n, c) => n + c.games.length, 0);
-    const chosenUsd = chosen.reduce((sum, c) => sum + c.games.reduce((s, g) => s + (g.usd || 0), 0), 0);
-
+    const anyTicked = Object.values(selection).some((ids) => ids?.length);
     const toggle = (steamid, appId) => {
         const ids = new Set(selection[steamid] || []);
         if (ids.has(appId)) ids.delete(appId); else ids.add(appId);
         setPicks({ planAt: plan.created_at, bySteamid: { ...selection, [steamid]: [...ids] } });
+        if (purchasePlan) setDiscarded(purchasePlan.purchase_plan_id);
+    };
+    const changeEmptyCart = (value) => {
+        setEmptyCart(value);
+        if (purchasePlan) setDiscarded(purchasePlan.purchase_plan_id);
     };
 
-    const post = (path, body) => {
+    // One command at a time: the ref stops a double click before React re-renders the disabled button.
+    const send = async (work) => {
+        if (sending.current) return;
+        sending.current = true;
         setBusy(true);
         setError(null);
-        return fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
-            .then(readJson)
-            .then((d) => { if (d.error) setError(d.error); })
-            .catch((error) => setError(failureMessage(error)))
-            .finally(() => { setBusy(false); load(); });
+        try {
+            await work();
+        } catch (error) {
+            if (!error.cancelled) setError(failureMessage(error));
+        } finally {
+            sending.current = false;
+            if (mounted.current) setBusy(false);
+            load();
+        }
     };
-    const check = () => {
+    const follow = (job) => followJob(job.id, {
+        onProgress: () => load(), isActive: () => mounted.current, lostMessage: JOB_LOST, lostTrackMessage: lostTrack,
+    });
+    const check = () => send(async () => {
         try { window.localStorage.setItem(APPS_STORAGE_KEY, apps); } catch { /* storage blocked */ }
-        post('/api/huginn/card-deals/buy/plan', { apps, max_usd_per_game: Number(maxUsd) });
-    };
-    const run = (dryRun) => {
-        const selectionBody = chosen.map((c) => ({ steamid: c.row.steamid, app_ids: c.games.map((g) => g.app_id) }));
-        if (!dryRun && !window.confirm(`Buy ${chosenCopies} games on ${chosen.length} accounts for about $${chosenUsd.toFixed(2)} from their Steam wallets?`)) return;
-        post('/api/huginn/card-deals/buy/run', { selection: selectionBody, dry_run: dryRun, plan_created_at: plan.created_at, empty_cart: emptyCart });
+        const answer = await fetch('/api/huginn/card-deals/buy/plan', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ apps, max_usd_per_game: Number(maxUsd) }),
+        }).then(readJson);
+        if (answer.error) throw new Error(answer.error);
+    });
+    // Dry run: the ticked games become a new purchase plan, then its dry run runs (nothing is paid).
+    const dryRun = () => send(async () => {
+        const selectionBody = Object.entries(selection)
+            .filter(([, ids]) => ids?.length)
+            .map(([steamid, ids]) => ({ steamid, app_ids: ids }));
+        const made = await postCommand('/api/huginn/card-deals/buy/purchase-plan', {
+            // what the box shows: the purchase plan's own choice until the box is changed
+            plan_created_at: plan.created_at, selection: selectionBody,
+            empty_cart: purchasePlan ? purchasePlan.empty_cart : emptyCart,
+        });
+        setDiscarded(null);
+        setPicks({ planAt: plan.created_at, bySteamid: selection });
+        const job = await postCommand(`${PURCHASES}/${made.purchase_plan_id}/execute`, { dry_run: true });
+        await follow(job);
+    });
+    // Buy: only what passed this purchase plan's dry run; the backend refuses anything else.
+    const buy = () => {
+        const totals = purchasePlan.buy;
+        const question = `Buy ${totals.copies} games on ${totals.accounts} accounts for about $${totals.total_usd.toFixed(2)} from their Steam wallets? Only the accounts whose dry run passed are bought.`;
+        if (sending.current || !window.confirm(question)) return;
+        send(async () => {
+            const job = await postCommand(`${PURCHASES}/${purchasePlan.purchase_plan_id}/execute`, { dry_run: false });
+            const finished = await follow(job);
+            if (finished.error) throw new Error(`The purchase stopped: ${finished.error}`);
+        });
     };
 
     const stats = state?.statistics;
@@ -146,23 +200,44 @@ const BuyPanel = () => {
                 <div className="rounded-xl border border-white/10 bg-black/20 p-3">
                     <div className="flex flex-wrap items-center gap-3 mb-2 text-xs text-slate-400">
                         <span>Checked {ago(plan.created_at)} · maximum ${plan.max_usd_per_game} per game · planned {plan.totals.copies} copies on {plan.totals.accounts} accounts ≈ ${plan.totals.usd.toFixed(2)}{plan.totals.profit ? ` · Andvari profit ≈ $${plan.totals.profit.toFixed(2)}` : ''}</span>
-                        {!planFresh && <span className="text-amber-300">Older than 30 minutes: check again before buying</span>}
+                        {planFresh
+                            ? <span>buying possible for {Math.ceil(plan.expires_in_seconds / 60)} more min</span>
+                            : <span className="text-amber-300">Older than 30 minutes: check again before buying</span>}
                         <div className="ml-auto flex items-center gap-2">
-                            <label className="flex items-center gap-1.5 text-slate-300 cursor-pointer" title="Anything already in an account's cart is removed before buying and listed in the purchase log; off = such an account is skipped">
-                                <input type="checkbox" className="accent-amber-500" checked={emptyCart} onChange={(e) => setEmptyCart(e.target.checked)} />
+                            <label className="flex items-center gap-1.5 text-slate-300 cursor-pointer" title="Anything already in an account's cart is removed before buying and listed in the purchase log; off = such an account is skipped. The dry run empties the cart too (nothing is paid); off = an account with a full cart fails it.">
+                                <input type="checkbox" className="accent-amber-500" checked={purchasePlan ? purchasePlan.empty_cart : emptyCart} onChange={(e) => changeEmptyCart(e.target.checked)} />
                                 Empty the cart first
                             </label>
-                            <button type="button" onClick={() => run(true)} disabled={busy || running || !planFresh || !chosenCopies}
-                                title="Goes through the whole checkout on the selected accounts and cancels before paying"
+                            <button type="button" onClick={dryRun} disabled={busy || running || !planFresh || !anyTicked}
+                                title="Makes a purchase plan of the ticked games and goes through the whole checkout on those accounts, cancelling before paying. Buying needs a passed dry run."
                                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-white/15 text-slate-200 hover:bg-white/5 disabled:opacity-50">
                                 <FlaskConical size={13} /> Dry run
                             </button>
-                            <button type="button" onClick={() => run(false)} disabled={busy || running || !planFresh || !chosenCopies}
+                            <button type="button" onClick={buy} disabled={busy || running || !purchasePlan?.executable}
+                                title={purchasePlan?.executable ? 'Buys only the accounts whose dry run passed' : 'Run a dry run of the ticked games first: only what passed it can be bought'}
                                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-medium disabled:opacity-50">
-                                <ShoppingCart size={13} /> Buy {chosenCopies} on {chosen.length} accounts (≈ ${chosenUsd.toFixed(2)})
+                                <ShoppingCart size={13} />
+                                {purchasePlan?.executable
+                                    ? `Buy ${purchasePlan.buy.copies} on ${purchasePlan.buy.accounts} accounts (≈ $${purchasePlan.buy.total_usd.toFixed(2)})`
+                                    : 'Buy (after a passed dry run)'}
                             </button>
                         </div>
                     </div>
+                    {purchasePlan && (
+                        <div className="mb-2 text-xs text-slate-400 space-y-0.5">
+                            <p>
+                                Purchase plan: {purchasePlan.copies} copies on {purchasePlan.accounts} accounts ≈ ${purchasePlan.total_usd.toFixed(2)}
+                                {' · '}dry run {purchasePlan.dry_run.state === 'done'
+                                    ? <span className={purchasePlan.dry_run.passed ? 'text-sky-300' : 'text-red-400'}>{purchasePlan.dry_run.passed} passed, {purchasePlan.dry_run.failed} failed</span>
+                                    : purchasePlan.dry_run.state}
+                                {purchasePlan.dry_run.error && <span className="text-red-400"> ({purchasePlan.dry_run.error})</span>}
+                                {purchasePlan.job_id && <span className="text-emerald-300"> · bought: see the purchase log</span>}
+                            </p>
+                            {purchasePlan.refused.length > 0 && (
+                                <p className="text-amber-300">Not in the purchase plan: {purchasePlan.refused.map((item) => `${item.account_name || item.steamid} (${item.reason})`).join('; ')}</p>
+                            )}
+                        </div>
+                    )}
                     <div className="overflow-auto custom-scrollbar max-h-[28rem]">
                         <table className="w-full text-xs">
                             <thead className="text-slate-500 text-left sticky top-0 bg-odin-dark">
@@ -170,6 +245,7 @@ const BuyPanel = () => {
                                     <th className="py-1">Account</th><th>Country</th><th className="text-right">Wallet</th>
                                     {gameColumns.map((g) => <th key={g.app_id} className="pl-4">{g.name}</th>)}
                                     <th className="text-right pl-4">Planned</th>
+                                    {purchasePlan && <th className="pl-4">Dry run</th>}
                                 </tr>
                             </thead>
                             <tbody>
@@ -179,7 +255,7 @@ const BuyPanel = () => {
                                         <td className="text-slate-400">{row.country || '??'}</td>
                                         <td className="text-right tabular-nums text-slate-300">{row.error ? '—' : minor(row.balance, row.currency)}</td>
                                         {row.error ? (
-                                            <td colSpan={gameColumns.length + 1} className="pl-4 text-red-400">{row.error}</td>
+                                            <td colSpan={gameColumns.length + (purchasePlan ? 2 : 1)} className="pl-4 text-red-400">{row.error}</td>
                                         ) : (
                                             <>
                                                 {gameColumns.map((column) => {
@@ -203,6 +279,7 @@ const BuyPanel = () => {
                                                     );
                                                 })}
                                                 <td className="text-right tabular-nums pl-4 text-emerald-300">{row.planned_total ? minor(row.planned_total, row.currency) : '—'}</td>
+                                                {purchasePlan && <td className="pl-4"><DryRunCell line={purchaseLines[row.steamid]} /></td>}
                                             </>
                                         )}
                                     </tr>

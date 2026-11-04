@@ -289,6 +289,7 @@ def trigger_auto_store_sweep():
 
 # ---- Buy Storage Units, or any in-game store item (storage_shop_service.py) ----
 # "item" is a price sheet entry ("casket" — the Storage Unit — when none is given).
+# Commands like the moves: plan → execute once → a job; errors are {error, code}.
 
 @bp.route('/api/ratatoskr/storage-shop', methods=['GET'])
 def storage_shop_status():
@@ -298,40 +299,47 @@ def storage_shop_status():
 
 @bp.route('/api/ratatoskr/storage-shop/plan', methods=['POST'])
 def storage_shop_plan():
-    """{"steamids": [...] (optional, default every account), "item": entry}: read wallets and the price."""
+    """{"item": entry, "selection": [{"steamid", "quantity"}] (none: read every wallet, no order)}:
+    answers the plan in state "checking"; follow its check_job_id, then read the plan again."""
     body = request.get_json(silent=True) or {}
-    steamids = body.get('steamids')
-    if steamids is not None and not isinstance(steamids, list):
-        return jsonify({'started': False, 'error': 'steamids must be a list'}), 400
-    result = ctx.storage_shop_service.start_plan(steamids, body.get('item') or 'casket')
-    return jsonify(result), (200 if result['started'] else 400)
+    return _command(lambda: ctx.storage_shop_service.start_plan(body.get('selection'), body.get('item') or 'casket'))
 
 
-@bp.route('/api/ratatoskr/storage-shop/run', methods=['POST'])
-def storage_shop_run():
-    """{"selection": [{"steamid": ..., "quantity": n}], "dry_run": bool (only false buys; missing means a dry run), "plan_created_at":
-    the plan the page showed, "item": its entry}: buys only on accounts that plan marks "buy"."""
+@bp.route('/api/ratatoskr/storage-shop/plans/<plan_id>', methods=['GET'])
+def storage_shop_plan_view(plan_id):
+    """The plan: state (checking / ready / failed / replaced / expired), lines, totals, expires_at."""
+    return _command(lambda: ctx.storage_shop_service.describe_plan(plan_id))
+
+
+@bp.route('/api/ratatoskr/storage-shop/plans/<plan_id>/execute', methods=['POST'])
+def storage_shop_execute(plan_id):
+    """{"dry_run": bool (only false buys; missing means a dry run), "item": the entry the page
+    shows (optional; must be the plan's)}: buys the plan's payable lines once and answers the
+    purchase job (GET /api/jobs/<id>). Again: the same job, never a second purchase."""
     body = request.get_json(silent=True) or {}
-    try:
-        plan_created_at = float(body['plan_created_at']) if body.get('plan_created_at') is not None else None
-    except (TypeError, ValueError):
-        return jsonify({'started': False, 'error': 'plan_created_at must be a number'}), 400
-    result = ctx.storage_shop_service.start_purchase(body.get('selection'), body.get('dry_run') is not False,
-                                                     plan_created_at, body.get('item') or 'casket')
-    return jsonify(result), (200 if result['started'] else 400)
+    return _command(lambda: ctx.storage_shop_service.execute_plan(
+        plan_id, body.get('dry_run') is not False, body.get('item')), 202)
+
+
+@bp.route('/api/ratatoskr/storage-shop/quote', methods=['POST'])
+def storage_shop_quote():
+    """{"item", "selection": [{"steamid", "quantity"}]}: the order panel's totals from what is
+    last known (no Steam call, nothing planned)."""
+    body = request.get_json(silent=True) or {}
+    return _command(lambda: ctx.storage_shop_service.quote(body.get('item') or 'casket', body.get('selection')))
 
 
 @bp.route('/api/ratatoskr/storage-shop/deliver-again', methods=['POST'])
 def storage_shop_deliver_again():
     """{"at": the history entry's time}: ask the game store again to deliver a purchase
-    left "MAY BE PAID" (it delivers only an approved transaction, so it cannot pay twice)."""
+    left "MAY BE PAID" (it delivers only an approved transaction, so it cannot pay twice).
+    Answers the delivery job."""
     body = request.get_json(silent=True) or {}
     try:
         at = float(body['at'])
     except (KeyError, TypeError, ValueError):
-        return jsonify({'started': False, 'error': 'at must be the purchase time'}), 400
-    result = ctx.storage_shop_service.start_deliver_again(at)
-    return jsonify(result), (200 if result['started'] else 400)
+        return jsonify({'error': 'at must be the purchase time', 'code': 'bad_request'}), 400
+    return _command(lambda: ctx.storage_shop_service.start_deliver_again(at), 202)
 
 
 # ---- Store Catalogue: every item the game store sells (store_catalogue_service.py) ----

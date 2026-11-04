@@ -9,8 +9,10 @@ import time
 import pytest
 
 import storage_shop_service as shop
-from storage_shop_service import (ShopError, StorageShopService, amount_shown, approval_form,
-                                  check_auth_request, decode_auth_request, decode_price_sheet, plan_account, shop_statistics, steam_error,
+from storage_deposit import CommandError
+from storage_shop_service import (ShopError, StorageShopService, amount_shown, approval_form, can_buy, can_deliver_again,
+                                  check_auth_request, decode_auth_request, decode_price_sheet, order_totals, parse_selection,
+                                  plan_account, plan_lines, purchase_outcome, shop_statistics, steam_error,
                                   storage_unit_prices)
 
 STEAMID = '76561198760595820'
@@ -314,14 +316,14 @@ def _service(tmp_path, http=None, ratatoskr=None):
     return service
 
 
-def _planned(service):
-    service._build_plan(None)
-    return service.status()['plan']
+def _planned(service, wanted=None):
+    service._build_plan(wanted)
+    return service._plan
 
 
 def _order(service, quantity=2):
-    row = _planned(service)['accounts'][0]
-    return {**row, 'quantity': quantity}
+    plan = _planned(service)
+    return {**plan['accounts'][0], 'quantity': quantity, 'plan_id': plan['id']}
 
 
 def test_plan_reads_the_price_sheet_once_and_logs_out(tmp_path):
@@ -357,7 +359,7 @@ def test_purchase_approves_finalizes_and_counts(tmp_path):
     assert not any(isinstance(call, tuple) and call[0] == 'cancel' for call in ratatoskr.calls)
     assert service.status()['statistics'] == {'units': 2, 'spent': {'USD': 398},
                                               'accounts': {'mer_tols': {'units': 2, 'spent': {'USD': 398}}}}
-    assert service.status()['plan']['accounts'][0]['status'] == 'bought'
+    assert service._plan['accounts'][0]['status'] == 'bought'
 
 
 def test_a_changed_price_buys_nothing(tmp_path):
@@ -405,7 +407,7 @@ def test_no_delivery_after_approval_is_may_be_paid_and_never_cancelled(tmp_path)
     assert 'MAY BE PAID' in result['error']
     assert sum(1 for call in ratatoskr.calls if isinstance(call, tuple) and call[0] == 'finalize') == shop.FINALIZE_TRIES
     assert not any(isinstance(call, tuple) and call[0] == 'cancel' for call in ratatoskr.calls)
-    assert service.status()['plan']['accounts'][0]['status'] == 'check'
+    assert service._plan['accounts'][0]['status'] == 'check'
 
 
 def test_an_open_session_is_kept(tmp_path):
@@ -418,22 +420,276 @@ def test_an_open_session_is_kept(tmp_path):
     assert 'login' not in ratatoskr.calls and 'disconnect' not in ratatoskr.calls
 
 
-def test_start_purchase_guards(tmp_path):
+def _code(call):
+    with pytest.raises(CommandError) as raised:
+        call()
+    return raised.value.code
+
+
+def _wait(service, job_id):
+    for _ in range(500):
+        job = service.jobs.get(job_id)
+        if not job['running']:
+            return job
+        time.sleep(0.01)
+    raise AssertionError('the job never finished')
+
+
+def test_execute_guards(tmp_path):
     service = _service(tmp_path)
-    plan = _planned(service)
-    created = plan['created_at']
-    assert 'check the accounts first' in StorageShopService(
-        FakeSteam(), FakeRatatoskr(), FakeCardDeals(), state_path=str(tmp_path / 'other.json'),
-        http=FakeHttp()).start_purchase([{'steamid': STEAMID, 'quantity': 1}])['error']
-    assert '1 to 3' in service.start_purchase([{'steamid': STEAMID, 'quantity': 4}], plan_created_at=created)['error']
-    assert 'selected twice' in service.start_purchase(
-        [{'steamid': STEAMID, 'quantity': 1}] * 2, plan_created_at=created)['error']
-    assert 'plan changed' in service.start_purchase([{'steamid': STEAMID, 'quantity': 1}],
-                                                    plan_created_at=created - 5)['error']
-    assert 'plan time (plan_created_at) is missing' in service.start_purchase([{'steamid': STEAMID, 'quantity': 1}])['error']
-    service._plan['created_at'] = created = time.time() - shop.PLAN_TIME_TO_LIVE_SECONDS - 1
-    assert 'older than 30 minutes' in service.start_purchase([{'steamid': STEAMID, 'quantity': 1}],
-                                                             plan_created_at=created)['error']
+    assert _code(lambda: service.execute_plan('no such plan', dry_run=True)) == 'plan_unknown'
+    first = _planned(service, {STEAMID: 1})['id']
+    second = _planned(service, {STEAMID: 4})['id']          # a newer plan replaces the first
+    assert _code(lambda: service.execute_plan(first, dry_run=True)) == 'plan_replaced'
+    assert _code(lambda: service.execute_plan(first, dry_run=False)) == 'plan_replaced'
+    assert service.describe_plan(first)['state'] == 'replaced'
+    assert _code(lambda: service.execute_plan(second, dry_run=True, item='Name Tag')) == 'item_mismatch'
+    service._plan['created_at'] = time.time() - shop.PLAN_TIME_TO_LIVE_SECONDS - 1
+    assert service.describe_plan(second)['state'] == 'expired'
+    assert _code(lambda: service.execute_plan(second, dry_run=True)) == 'plan_expired'
+    service._plan['created_at'] = time.time()
+    service._plan['accounts'][0]['status'] = 'balance'
+    assert _code(lambda: service.execute_plan(second, dry_run=True)) == 'nothing_to_buy'
+    service._plan['state'] = 'checking'
+    assert _code(lambda: service.execute_plan(second, dry_run=True)) == 'plan_checking'
+
+
+def test_selection_is_checked_before_anything_is_read(tmp_path):
+    service = _service(tmp_path)
+    assert _code(lambda: service.start_plan([{'steamid': STEAMID, 'quantity': 1}] * 2)) == 'bad_request'
+    for quantity in (0, shop.MAX_QUANTITY_PER_ACCOUNT + 1, '2', True, None):
+        assert _code(lambda: service.start_plan([{'steamid': STEAMID, 'quantity': quantity}])) == 'bad_quantity'
+    assert _code(lambda: service.start_plan([])) == 'nothing_chosen'
+    assert service._plan is None and service.job_status()['id'] is None
+
+
+def test_the_plan_lines_buy_what_the_wallet_covers(tmp_path):
+    service = _service(tmp_path)
+    plan_id = _planned(service, {STEAMID: 5, 'gone': 1})['id']
+    plan = service.describe_plan(plan_id)
+    line, gone = plan['lines']
+    assert (line['asked'], line['quantity'], line['total'], line['balance_after']) == (5, 3, 597, 162)
+    assert line['payable'] and line['problem_code'] == 'covers_less' and line['problem'] == 'The wallet covers 3, not 5'
+    assert not gone['payable'] and gone['problem_code'] == 'unknown_account'
+    assert (plan['state'], plan['units'], plan['totals_by_currency'], plan['skipped']) == ('ready', 3, {'USD': 597}, 1)
+    assert plan['units_text'] == '3 Storage Units' and plan['can_test'] and plan['expires_at']
+    assert not plan['executable']                                   # not before a passed dry run
+
+
+def _tested(service, plan_id):
+    """Run the plan's dry run to its end (a real purchase needs one that passed)."""
+    return _wait(service, service.execute_plan(plan_id, dry_run=True)['id'])
+
+
+def test_executing_a_plan_twice_answers_the_same_job_and_buys_once(tmp_path):
+    http, ratatoskr = FakeHttp(), FakeRatatoskr()
+    service = _service(tmp_path, http, ratatoskr)
+    plan_id = _planned(service, {STEAMID: 2})['id']
+    _tested(service, plan_id)
+    assert service.describe_plan(plan_id)['executable']
+    job = service.execute_plan(plan_id, dry_run=False)
+    assert service.execute_plan(plan_id, dry_run=False)['id'] == job['id']
+    assert job['orders'] == [{'steamid': STEAMID, 'account_name': 'mer_tols', 'quantity': 2, 'unit_price': 199,
+                              'currency': 'USD'}]
+    assert [step['key'] for step in job['steps']] == ['wallet', 'login', 'opening', 'approving', 'delivering']
+    finished = _wait(service, job['id'])
+    assert service.execute_plan(plan_id, dry_run=False)['id'] == job['id']
+    assert len(http.posts) == 1                                    # approved once
+    outcome = finished['result']['accounts'][0]
+    assert outcome['paid'] and outcome['outcome'] == 'bought' and outcome['summary'] == 'Bought · Storage Units 2 → 4 · named Storage 4, Storage 5'
+    assert (finished['result']['paid_units'], finished['result']['paid_text']) == (2, '2 Storage Units')
+    assert (finished['accounts_done'], finished['accounts_total']) == (1, 1)
+    assert not service.describe_plan(plan_id)['executable']
+    assert _code(lambda: service.execute_plan(plan_id, dry_run=True)) == 'plan_executed'
+    service._plan['job_id'] = 'forgotten after a restart'
+    assert _code(lambda: service.execute_plan(plan_id, dry_run=False)) == 'job_gone'
+
+
+def test_a_real_purchase_needs_a_passed_dry_run_of_the_same_plan(tmp_path):
+    http = FakeHttp()
+    service = _service(tmp_path, http)
+    plan_id = _planned(service, {STEAMID: 2})['id']
+    plan = service.describe_plan(plan_id)
+    assert plan['dry_run']['state'] == 'not_run' and plan['can_test'] and not plan['executable']
+    assert _code(lambda: service.execute_plan(plan_id, dry_run=False)) == 'dry_run_required'
+    _tested(service, _planned(service, {STEAMID: 2})['id'])           # a dry run of another plan
+    assert _code(lambda: service.execute_plan(plan_id, dry_run=False)) == 'plan_replaced'
+    assert http.posts == []
+
+
+def test_a_failed_dry_run_refuses_the_real_purchase(tmp_path):
+    http = FakeHttp(page=PAGE.replace('$3.98', '$9.99'))              # the page does not show the total
+    service = _service(tmp_path, http)
+    plan_id = _planned(service, {STEAMID: 2})['id']
+    _tested(service, plan_id)
+    plan = service.describe_plan(plan_id)
+    assert plan['dry_run']['state'] == 'failed' and not plan['executable'] and plan['can_test']
+    assert 'planned total' in plan['dry_run']['failed_lines'][0]['reason']
+    assert plan['lines'][0]['test'] == 'failed'
+    assert _code(lambda: service.execute_plan(plan_id, dry_run=False)) == 'dry_run_required'
+    assert http.posts == []
+
+
+def test_a_dry_run_may_be_repeated_and_answers_the_running_one(tmp_path):
+    service = _service(tmp_path)
+    plan_id = _planned(service, {STEAMID: 2})['id']
+    first = _tested(service, plan_id)
+    service._plan['dry_run']['state'] = 'running'                     # as while one runs
+    service._plan['dry_run']['job_id'] = first['id']
+    with service.jobs._lock:
+        service.jobs._jobs[first['id']]['running'] = True
+    assert service.execute_plan(plan_id, dry_run=True)['id'] == first['id']
+    with service.jobs._lock:
+        service.jobs._jobs[first['id']]['running'] = False
+    assert _tested(service, plan_id)['id'] != first['id']             # finished: a new dry run
+    assert service.describe_plan(plan_id)['dry_run']['state'] == 'passed'
+
+
+def test_pay_is_allowed_for_30_minutes_after_the_dry_run_passed(tmp_path):
+    service = _service(tmp_path)
+    plan_id = _planned(service, {STEAMID: 2})['id']
+    _tested(service, plan_id)
+    # The wallets were read 40 minutes ago, the test passed 10 minutes ago: still payable.
+    service._plan['created_at'] = time.time() - 40 * 60
+    service._plan['first_passed_at'] = time.time() - 10 * 60
+    plan = service.describe_plan(plan_id)
+    assert plan['state'] == 'ready' and plan['executable']
+    assert plan['expires_at'] == shop._iso(service._plan['first_passed_at'] + shop.PLAN_TIME_TO_LIVE_SECONDS)
+    # 31 minutes after the pass: expired.
+    service._plan['first_passed_at'] = time.time() - shop.PLAN_TIME_TO_LIVE_SECONDS - 60
+    assert not service.describe_plan(plan_id)['executable']
+    assert _code(lambda: service.execute_plan(plan_id, dry_run=False)) == 'plan_expired'
+
+
+def test_a_later_dry_run_does_not_extend_the_plan(tmp_path):
+    service = _service(tmp_path)
+    plan_id = _planned(service, {STEAMID: 2})['id']
+    _tested(service, plan_id)
+    service._plan['first_passed_at'] -= 20 * 60      # the first pass was 20 minutes ago
+    first = service._plan['first_passed_at']
+    _tested(service, plan_id)                         # passes again: the deadline stays
+    assert service._plan['dry_run']['state'] == 'passed' and service._plan['first_passed_at'] == first
+    assert service.describe_plan(plan_id)['expires_at'] == shop._iso(first + shop.PLAN_TIME_TO_LIVE_SECONDS)
+    service._plan['first_passed_at'] -= 11 * 60       # 31 minutes after the first pass
+    assert _code(lambda: service.execute_plan(plan_id, dry_run=False)) == 'plan_expired'
+    assert _code(lambda: service.execute_plan(plan_id, dry_run=True)) == 'plan_expired'
+
+
+def test_without_a_passed_dry_run_the_lifetime_counts_from_the_wallet_read(tmp_path):
+    service = _service(tmp_path)
+    plan_id = _planned(service, {STEAMID: 2})['id']
+    service._plan['created_at'] = time.time() - shop.PLAN_TIME_TO_LIVE_SECONDS - 1
+    assert service.describe_plan(plan_id)['state'] == 'expired'
+    assert _code(lambda: service.execute_plan(plan_id, dry_run=True)) == 'plan_expired'
+
+
+OTHER = '76561198000000002'
+
+
+class TwoAccountStorage:
+    def list_accounts(self):
+        return [STEAMID, OTHER]
+
+    def load_account(self, steamid):
+        return {'account_name': 'mer_tols' if steamid == STEAMID else 'other_account'}
+
+
+class TwoAccountSteam(FakeSteam):
+    storage = TwoAccountStorage()
+
+
+class TwoAccountCardDeals(FakeCardDeals):
+    def account_countries(self):
+        return {STEAMID: 'US', OTHER: 'US'}
+
+
+def test_only_the_lines_whose_dry_run_passed_are_bought(tmp_path):
+    http, ratatoskr = FakeHttp(), FakeRatatoskr()
+    service = StorageShopService(TwoAccountSteam(), ratatoskr, TwoAccountCardDeals(),
+                                 state_path=str(tmp_path / 'shop.json'), approval_page_path=str(tmp_path / 'page.html'),
+                                 http=http, sleep=lambda seconds: None)
+    plan_id = _planned(service, {STEAMID: 2, OTHER: 2})['id']
+    _tested(service, plan_id)          # the approval page names mer_tols: other_account fails its test
+    plan = service.describe_plan(plan_id)
+    assert plan['dry_run']['state'] == 'passed'
+    assert [line['steamid'] for line in plan['dry_run']['passed_lines']] == [STEAMID]
+    assert [line['steamid'] for line in plan['dry_run']['failed_lines']] == [OTHER]
+    assert (plan['units'], plan['to_pay']['units'], plan['to_pay']['totals_by_currency']) == (4, 2, {'USD': 398})
+    job = _wait(service, service.execute_plan(plan_id, dry_run=False)['id'])
+    assert [order['steamid'] for order in job['orders']] == [STEAMID]
+    assert job['result']['paid_units'] == 2 and len(http.posts) == 1
+
+
+def test_a_dry_run_job_reports_the_shortened_steps(tmp_path):
+    service = _service(tmp_path)
+    plan_id = _planned(service, {STEAMID: 2})['id']         # the approval page fixture shows 2 × $1.99
+    job = _wait(service, service.execute_plan(plan_id, dry_run=True)['id'])
+    assert job['steps'][-1] == {'key': 'approving', 'label': 'Checking the approval page'} and len(job['steps']) == 4
+    assert job['result']['accounts'][0]['outcome'] == 'test_passed' and job['result']['paid_units'] == 0
+
+
+def test_an_older_plans_delivery_never_marks_the_current_plan(tmp_path):
+    ratatoskr = FakeRatatoskr(finalize_result=2)
+    service = _service(tmp_path, ratatoskr=ratatoskr)
+    entry = service._buy_account(_order(service), dry_run=False)          # left MAY BE PAID on the first plan
+    assert entry['plan_id'] and service._plan['accounts'][0]['status'] == 'check'
+    _planned(service, {STEAMID: 2})                                        # a newer plan
+    ratatoskr.finalize_result = 1
+    service._deliver_again(entry)
+    assert entry['paid'] and service._plan['accounts'][0]['status'] == 'buy'
+
+
+def test_a_failed_check_shows_its_own_reason_on_every_line(tmp_path):
+    service = _service(tmp_path)
+    service._replace_plan(service._plan_record('abc', 'casket', {STEAMID: 1}, None))
+    service._plan.update(state='failed', error='Ratatoskr could not name the item')
+    line = service.describe_plan('abc')['lines'][0]
+    assert line['account_name'] == 'mer_tols' and line['problem_code'] == 'check_failed'
+    assert line['problem'] == 'The wallets could not be checked: Ratatoskr could not name the item'
+
+
+def test_a_lines_problem_keeps_the_rows_real_reason():
+    row = {'steamid': '1', 'account_name': 'a', 'status': 'wallet', 'error': 'Steam rate-limited the request (HTTP 429)'}
+    assert plan_lines([row], {'1': 1})[0]['problem'] == 'Wallet could not be read: Steam rate-limited the request (HTTP 429)'
+    assert plan_lines([{**row, 'error': None}], {'1': 1})[0]['problem'] == 'Wallet could not be read'
+
+
+def test_a_check_interrupted_by_a_restart_is_a_failed_plan(tmp_path):
+    service = _service(tmp_path)
+    service._replace_plan(service._plan_record('abc', 'casket', {STEAMID: 1}, None))
+    service._save()
+    reloaded = _service(tmp_path)
+    assert reloaded.describe_plan('abc')['state'] == 'failed'
+    assert _code(lambda: reloaded.execute_plan('abc', dry_run=True)) == 'plan_failed'
+
+
+def test_account_rows_say_what_the_page_may_do():
+    assert can_buy(False, 3)['can_buy_code'] == 'currency_not_sold' and not can_buy(False, 3)['selectable']
+    assert can_buy(True, None) == {'can_buy_code': 'unknown', 'can_buy': '?', 'can_buy_count': None,
+                                   'selectable': True, 'max_quantity': shop.MAX_QUANTITY_PER_ACCOUNT}
+    assert (can_buy(True, 0)['can_buy_code'], can_buy(True, 0)['selectable']) == ('balance_too_low', False)
+    assert (can_buy(True, 3)['can_buy'], can_buy(True, 3)['max_quantity']) == ('up to 3', 3)
+
+
+def test_pure_order_helpers():
+    assert parse_selection([{'steamid': 1, 'quantity': 2}]) == {'1': 2}
+    rows = [{'steamid': '1', 'account_name': 'a', 'status': 'buy', 'affordable': 30, 'unit_price': 100,
+             'currency': 'EUR', 'usd_per_unit': 1.1, 'balance': 3000}]
+    lines = plan_lines(rows, {'1': 25})
+    assert lines[0]['quantity'] == shop.MAX_QUANTITY_PER_ACCOUNT          # never more than 20 a purchase
+    assert order_totals(lines)['usd_total'] == 22.0
+
+
+def test_the_quote_totals_the_order_panel_without_steam(tmp_path):
+    http = FakeHttp()
+    service = _service(tmp_path, http)
+    quote = service.quote('casket', [{'steamid': STEAMID, 'quantity': 2}])
+    assert (quote['complete'], quote['totals_by_currency'], quote['units']) == (False, {}, 2)   # never read
+    _planned(service)
+    gets = len(http.gets)
+    quote = service.quote('casket', [{'steamid': STEAMID, 'quantity': 2}])
+    assert (quote['complete'], quote['totals_by_currency'], quote['usd_estimate']) == (True, {'USD': 398}, 3.98)
+    assert len(http.gets) == gets
 
 
 def test_an_interrupted_purchase_is_flagged_on_load(tmp_path):
@@ -485,8 +741,29 @@ def test_deliver_again_finishes_an_unclear_purchase(tmp_path):
     ratatoskr.finalize_result = 1
     service._deliver_again(entry)
     assert entry['paid'] and entry['item_ids'] == ['11', '12']
-    assert service.status()['plan']['accounts'][0]['status'] == 'bought'
-    assert service.start_deliver_again(entry['at'])['error'] == 'no unclear purchase with that time'
+    assert service._plan['accounts'][0]['status'] == 'bought'
+    assert _code(lambda: service.start_deliver_again(entry['at'])) == 'nothing_to_deliver'
+
+
+def test_deliver_again_is_a_job_with_its_order_and_outcome(tmp_path):
+    ratatoskr = FakeRatatoskr(finalize_result=2)
+    service = _service(tmp_path, ratatoskr=ratatoskr)
+    entry = service._buy_account(_order(service), dry_run=False)
+    status = service.status()
+    assert status['history'][0]['can_deliver_again'] and len(status['unclear_purchases']) == 1
+    ratatoskr.finalize_result = 1
+    job = service.start_deliver_again(entry['at'])
+    assert job['orders'][0]['quantity'] == 2 and job['steps'] == [{'key': 'delivering', 'label': 'Delivering'}]
+    finished = _wait(service, job['id'])
+    assert finished['result']['accounts'][0]['paid'] and finished['result']['paid_units'] == 2
+    assert service.status()['unclear_purchases'] == []
+
+
+def test_can_deliver_again_needs_an_approved_finished_undelivered_purchase():
+    unclear = {'payment_attempted': True, 'paid': False, 'transaction_id': '1', 'state': 'done'}
+    assert can_deliver_again(unclear) and purchase_outcome(unclear)['can_deliver_again']
+    for change in ({'paid': True}, {'payment_attempted': False}, {'transaction_id': None}, {'state': 'in progress'}):
+        assert not can_deliver_again({**unclear, **change})
 
 
 def test_a_broken_session_of_someone_else_is_repaired_but_not_logged_out(tmp_path):
@@ -729,15 +1006,19 @@ def test_a_failed_count_keeps_the_wallet_row_buyable(tmp_path):
     original = service._count_storage_units
     service._count_storage_units = lambda steamid, cookies: (_ for _ in ()).throw(shop.ShopError('HTTP 429'))
     service._build_plan(None)
-    row = service.status()['plan']['accounts'][0]
+    row = service._plan['accounts'][0]
     assert row['status'] == 'buy' and row['error'] is None
     service._count_storage_units = original
 
 
-def test_jobs_report_their_server_start_time(tmp_path):
+def test_a_plan_is_a_job_followed_by_its_id(tmp_path):
     service = _service(tmp_path)
-    answer = service.start_plan()
-    assert answer['started'] and answer['kind'] == 'plan' and answer['started_at'] > 0
+    plan = service.start_plan([{'steamid': STEAMID, 'quantity': 1}])
+    assert plan['state'] == 'checking' and plan['check_job_id']
+    job = _wait(service, plan['check_job_id'])
+    assert (job['plan_id'], job['accounts_done'], job['accounts_total']) == (plan['plan_id'], 1, 1)
+    assert service.describe_plan(plan['plan_id'])['state'] == 'ready'
+    assert service.status()['job']['id'] == plan['check_job_id']
 
 
 def test_wallets_in_other_currencies_are_valued_in_dollars():
@@ -799,9 +1080,9 @@ class FakeStoreRatatoskr(FakeRatatoskr):
         return {'success': True, 'definitions': {name: known[name] for name in names if name in known}}
 
 
-def _name_tag_plan(service):
-    service._build_plan(None, NAME_TAG)
-    return service.status(NAME_TAG)['plan']
+def _name_tag_plan(service, wanted=None):
+    service._build_plan(wanted, NAME_TAG)
+    return service._plan
 
 
 def test_a_plan_for_another_item_carries_it_and_counts_no_storage_units(tmp_path):
@@ -819,10 +1100,11 @@ def test_a_plan_for_another_item_carries_it_and_counts_no_storage_units(tmp_path
 def test_buying_another_item_opens_it_and_checks_it_in_the_approval_request(tmp_path):
     http, ratatoskr = FakeHttp(), FakeStoreRatatoskr()
     service = _service(tmp_path, http, ratatoskr)
-    created = _name_tag_plan(service)['created_at']
-    order = service.start_purchase([{'steamid': STEAMID, 'quantity': 2}], plan_created_at=created, item='casket')
-    assert 'another item' in order['error']            # the screen shows another item than the plan
-    row = service.status(NAME_TAG)['plan']['accounts'][0]
+    plan_id = _name_tag_plan(service, {STEAMID: 2})['id']
+    # the screen shows another item than the plan
+    assert _code(lambda: service.execute_plan(plan_id, dry_run=False, item='casket')) == 'item_mismatch'
+    assert service.describe_plan(plan_id)['units_text'] == '2 × Name Tag'
+    row = service._plan['accounts'][0]
     result = service._buy_account({**row, 'quantity': 2, 'entry': NAME_TAG, 'item_name': 'Name Tag',
                                    'definition_index': 1200}, dry_run=False)
     assert result['ok'] and result['paid'] and result['item_ids'] == ['11', '12']
@@ -845,8 +1127,8 @@ def test_an_approval_request_for_another_item_is_refused(tmp_path):
 
 def test_passes_and_unknown_items_are_not_sold(tmp_path):
     service = _service(tmp_path, ratatoskr=FakeStoreRatatoskr())
-    assert 'not sold here' in service.start_plan(None, 'XpShopTicket1')['error']
-    assert 'not sold here' in service.start_plan(None, 'Game License')['error']
+    assert _code(lambda: service.start_plan(None, 'XpShopTicket1')) == 'not_for_sale'
+    assert _code(lambda: service.start_plan(None, 'Game License')) == 'not_for_sale'
     assert not service.status('XpShopTicket1')['item']['for_sale']
     with pytest.raises(ShopError, match='not in Ratatoskr'):
         service._build_plan(None, 'coupon - unknown')
@@ -898,10 +1180,23 @@ def test_new_storage_units_are_named_after_delivery(tmp_path):
     result = {}
     service._name_new_units(STEAMID, result)
     assert result == {} and not [c for c in ratatoskr.calls if c[0] == 'rename']
-    ratatoskr.caskets += [{'item_id': '11', 'item_customname': None}, {'item_id': '12', 'item_customname': ' '}]
+    # '10' is an older unnamed unit: only the units this purchase delivered are named (Ivan, 2026-11-04).
+    ratatoskr.caskets += [{'item_id': '10', 'item_customname': None}, {'item_id': '11', 'item_customname': None},
+                          {'item_id': '12', 'item_customname': ' '}]
+    result = {'item_ids': ['11', '12']}
     service._name_new_units(STEAMID, result)
     assert [c for c in ratatoskr.calls if c[0] == 'rename'] == [('rename', '11', 'Storage 4'), ('rename', '12', 'Storage 5')]
-    assert result == {'named': ['Storage 4', 'Storage 5']}
+    assert result == {'item_ids': ['11', '12'], 'named': ['Storage 4', 'Storage 5']}
+
+
+def test_new_storage_units_are_not_named_while_items_move(tmp_path):
+    service = _service(tmp_path)
+    service.moves_in_progress = lambda steamid: True
+    service.ratatoskr.caskets.append({'item_id': '11', 'item_customname': None})
+    result = {'item_ids': ['11']}
+    service._name_new_units(STEAMID, result)
+    assert not [c for c in service.ratatoskr.calls if c[0] == 'rename']
+    assert 'items are moving' in result['naming_error'] and 'Rename Storage Unit tab' in result['naming_error']
 
 
 def test_a_failed_naming_never_fails_the_purchase(tmp_path):
@@ -909,7 +1204,7 @@ def test_a_failed_naming_never_fails_the_purchase(tmp_path):
     ratatoskr = service.ratatoskr
     ratatoskr.caskets.append({'item_id': '11', 'item_customname': None})
     ratatoskr.rename_error = 'Rename timed out waiting for GC'
-    result = {'ok': True}
+    result = {'ok': True, 'item_ids': ['11']}
     service._name_new_units(STEAMID, result)
     assert result['ok'] is True and 'named' not in result
     assert 'Rename timed out' in result['naming_error']

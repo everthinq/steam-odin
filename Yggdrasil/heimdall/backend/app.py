@@ -117,14 +117,15 @@ team_fortress_service = TeamFortressService(settings_manager, steam_service, asf
 card_seller_service = CardSellerService(settings_manager, steam_service, asf_service)
 # Andvari "Buy games": plan + buy a card-deal game on many accounts (wallet checkout, price-guarded).
 store_purchase_service = StorePurchaseService(steam_service, card_deals_service, asf_service,
-                                              settings_provider=settings_manager.get_settings)
+                                              settings_provider=settings_manager.get_settings, jobs=jobs)
 # Market access (Mímir's button; the Dashboard shows the result): when each account loses the Steam Community Market
 # (a purchase older than 7 days and under a year keeps it open; read-only), and the Market unlocker
 # (plan = a dry run -> execute once -> a job, followed at GET /api/jobs/<id>).
 market_access_service = MarketAccessService(steam_service, card_deals_service, jobs=jobs)
 # Ratatoskr "Storage shop": buy Counter-Strike 2 Storage Units on many accounts through the
 # game store (Game Coordinator transaction, approved with the account's web session).
-storage_shop_service = StorageShopService(steam_service, ratatoskr_service, card_deals_service)
+storage_shop_service = StorageShopService(steam_service, ratatoskr_service, card_deals_service, jobs=jobs,
+                                          moves_in_progress=deposit_service.busy)
 # Store Catalogue: every item the game store sells, with its price (read-only). It takes
 # every price sheet the storage shop reads.
 store_catalogue_service = StoreCatalogueService(ratatoskr_service, storage_shop_service)

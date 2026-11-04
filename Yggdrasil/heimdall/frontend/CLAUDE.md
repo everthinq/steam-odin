@@ -45,11 +45,11 @@ while testing; use the dry-run paths.
 | `/huginn` | `pages/huginn/Arbitrage.jsx` | Views: Arbitrage (per-row "check live" ↻; "Active" per profile, `components/arbitrage/ActiveSwitch.jsx`, and the Active profiles panel, `ActiveProfilesPanel.jsx`: interval, active hours, the Buff163 reference, the price history; an active profile opens by itself from memory, `?kept=1`; "prices downloaded N minutes ago" from the `X-Pulse-Tables` header, `PricesAge.jsx`), Harvest, Case Arbitrage, Cross-Profile, Price dips (`components/PriceDips.jsx`), LF Auctions, LF Arbitrage (the other tabs say which markets the active profiles cover); header link to Pulse feed |
 | `/huginn/pulse` | `pages/huginn/PulseFeed.jsx` | Read-only monitor of the master pulse feed: active profiles, the keeper's state (paused, behind, the Mac slept), downloads and reads since start, every table with why it is downloaded (active profile, reference, seed, Fetch live data), its age and who reads it, and the slaves with their tables in memory (`GET /api/huginn/pulse`) |
 | `/huginn/gjallarhorn` | `pages/huginn/Gjallarhorn.jsx` | |
-| `/huginn/card-deals` | `pages/huginn/CardDeals.jsx` | Andvari; `#buy` opens Buy games |
+| `/huginn/card-deals` | `pages/huginn/CardDeals.jsx` | Andvari; `#buy` opens Buy games (`components/carddeals/BuyPanel.jsx`: Dry run makes a purchase plan and runs its dry run, Buy executes that plan; the backend decides what is buyable) |
 | `/huginn/team-fortress` | `pages/huginn/TeamFortress.jsx` | |
 | `/draupnir`, `/draupnir/:portfolioId` | `pages/draupnir/` | |
 | `/mimir` | `pages/mimir/Vault.jsx` | Credential vault; **Market unlocker** dialog (`components/MarketUnlocker.jsx`: accounts the backend marks `purchase_would_help` start ticked; Dry run = `POST …/unlock/plan`, a plan followed as a job; Buy for real executes that plan, only the accounts that passed, after typing `BUY <n passed>`); **Market access** button, banner and column (`components/MarketAccess.jsx`: `MarketAccessButton`, `MarketAccessBanner`, `MarketAccessLine`; `utils/useMarketAccess.js`: `GET /api/mimir/market-access`, polled every 3 s while the check runs, `POST …/check`, `planUnlock` / `executePlan` with `followJob`; the page prints the backend's `headline`, `advice`, `flagged` order and `last_unlocks`) |
-| `/buy-storage-units` | `pages/ratatoskr/StorageShop.jsx` | Buy Storage Units, every account; outside the Ratatoskr layout; `/storage-shop` redirects here |
+| `/buy-storage-units` | `pages/ratatoskr/StorageShop.jsx` | Buy Storage Units, every account; outside the Ratatoskr layout; `/storage-shop` redirects here; displays the backend's plan and purchase job (see "Buy Storage Units is a backend command") |
 | `/store-catalogue` | `pages/ratatoskr/StoreCatalogue.jsx` | Every in-game store item with its US dollar price; a Buy button per item |
 | `/store-catalogue/arbitrage` | `pages/ratatoskr/StoreCatalogue.jsx` (`tab="arbitrage"`) → `components/ratatoskr/StoreArbitrage.jsx` | Store Catalogue Arbitrage, laid out like Huginn's Arbitrage: profile In-game store → market (`ProfilePicker`, default CSMoney (Trade) autobuy, plus "Best market"), CSMoney (Trade) indicator column with BUY signal, Refresh, filters, Telegram switch / Send now; Buy links to the guarded buy page (read-only) |
 | `/store-catalogue/boosts` | `pages/ratatoskr/StoreCatalogue.jsx` (`tab="boosts"`) → `components/ratatoskr/StoreBoosts.jsx` | Store Boosts: cards (alarm counts, Steam reader with its read spacing, hourly pulse check + Check now, alert switches + Test message / Test ring), a Tracked panel (pinned items on top, `TrackButton`, read on the normal schedule), views Moving now / Capsules / All, rows with level, Steam now vs usual, sales vs usual, a 7-day SVG chart and Confirmed; a row opens the 14-day hourly chart (`BoostChart`, hover) and a capsule's stickers with odds and opening value (read-only; Buy links to the guarded buy page) |
@@ -206,6 +206,26 @@ again, never every unit's contents. Never bring back a planner, an "expected cou
 storability rule in the page: read `storage_block` and the plan. `STORAGE_CAPACITY` in
 `utils/transferView.js` is for display only (unit lists).
 Auto-Store (backend `scheduler.py`) uses the same deposit command — change them together.
+
+**Buy Storage Units is a backend command too** (`backend/storage_shop_service.py`,
+[storage-shop.md](../../../docs/internals/storage-shop.md)); `StorageShop.jsx` only displays. Each
+account row carries `selectable`, `max_quantity`, `can_buy_code` + `can_buy`; the order panel's totals
+come from `POST …/storage-shop/quote`. **Review & buy** posts `…/storage-shop/plan {item, selection}`,
+follows its `check_job_id`, then reads `GET …/storage-shop/plans/<id>`: lines (quantity, total, wallet
+after, `problem`), totals and `state` (checking / ready / failed / replaced / expired; expired offers
+Review again). "Test without paying" is `POST …/plans/<id>/execute {dry_run: true}` (repeatable); when it
+ends the dialog goes back to the same review, whose lines now say how each test went, and Pay
+(`{dry_run: false}`, refused with `dry_run_required` before a passed test; buys only the lines that passed,
+once — again: the same job) is enabled by the plan's `executable` and labelled with `to_pay`. The dialog
+follows each job by id (`followJob` with purchase wording) — its `orders`, `steps`, `account`/`step` and
+`result.accounts` outcomes — and stays until closed. A purchase running elsewhere (another tab, a
+reload) is opened from the status's `job.id`. Only a 4xx answer with a code (`refusedBeforeStart`) means
+nothing started; a 5xx or no answer may come after a purchase started, so the dialog closes, says "it may
+be buying" and the next status read opens the running purchase. The full status is asked every 1.5 s only
+while a shop job runs with no dialog open; an open dialog follows its job and plan by id (status every
+30 s and at each new stage). **Deliver again** comes from `can_deliver_again` /
+`unclear_purchases` and answers a delivery job the dialog follows. Never bring back quantity limits,
+line totals, problem texts or a "casket" branch in the page.
 
 **Where Transfer's pieces live** (the page itself is layout and wiring): `utils/moveCommands.js`
 (commands and jobs), `utils/useTransferSelection.js` (which lines can be picked, quantities, the

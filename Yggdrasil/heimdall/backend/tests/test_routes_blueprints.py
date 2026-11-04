@@ -52,7 +52,8 @@ def test_ratatoskr_blueprint_registers_all_routes():
                  '/api/ratatoskr/storage-units/<steamid>/name-unnamed/plan',
                  '/api/ratatoskr/storage-units/name-plans/<plan_id>/execute',
                  '/api/ratatoskr/auto-store/sweep', '/api/ratatoskr/storage-shop',
-                 '/api/ratatoskr/storage-shop/plan', '/api/ratatoskr/storage-shop/run',
+                 '/api/ratatoskr/storage-shop/plan', '/api/ratatoskr/storage-shop/plans/<plan_id>',
+                 '/api/ratatoskr/storage-shop/plans/<plan_id>/execute', '/api/ratatoskr/storage-shop/quote',
                  '/api/ratatoskr/storage-shop/deliver-again', '/api/ratatoskr/store-catalogue',
                  '/api/ratatoskr/store-catalogue/refresh', '/api/ratatoskr/store-arbitrage',
                  '/api/ratatoskr/store-arbitrage/options', '/api/ratatoskr/store-arbitrage/refresh',
@@ -61,7 +62,7 @@ def test_ratatoskr_blueprint_registers_all_routes():
                  '/api/ratatoskr/store-boosts/check', '/api/ratatoskr/store-boosts/test-alert',
                  '/api/ratatoskr/store-boosts/track']:
         assert want in rules, f'missing ratatoskr route: {want}'
-    assert _rule_count(bp, '/api/ratatoskr') == 39
+    assert _rule_count(bp, '/api/ratatoskr') == 41
 
 
 def test_accounts_blueprint_registers_all_routes():
@@ -109,17 +110,22 @@ def test_huginn_blueprint_registers_all_routes():
                  '/api/huginn/team-fortress', '/api/huginn/team-fortress/play',
                  '/api/huginn/team-fortress/check-news', '/api/huginn/team-fortress/detect',
                  '/api/huginn/team-fortress/sell-now', '/api/huginn/card-deals/selling',
-                 '/api/huginn/card-deals/buy', '/api/huginn/card-deals/buy/plan', '/api/huginn/card-deals/buy/run']:
+                 '/api/huginn/card-deals/buy', '/api/huginn/card-deals/buy/plan',
+                 '/api/huginn/card-deals/buy/purchase-plan',
+                 '/api/huginn/card-deals/buy/purchase-plans/<purchase_plan_id>',
+                 '/api/huginn/card-deals/buy/purchase-plans/<purchase_plan_id>/execute']:
         assert want in rules, f'missing huginn route: {want}'
+    # A real purchase only through a purchase plan's dry run: the old bare route is gone.
+    assert '/api/huginn/card-deals/buy/run' not in rules
     # +9 gjallarhorn rules: rotation, accounts, readiness, holds (GET+POST),
     # targets (GET+POST), ring, ring/status; +3 news rules: news/status,
     # news/check, news/test; +1 cross-profile arbitrage; +2 cross-profile config
     # (GET+POST); +1 csfloat/connectivity.
     # +7 Andvari card-deals rules: deals, scan, buy-orders, status, config (GET+POST), alerts/test.
     # +5 Team Fortress 2 rules: status, play, check-news, detect, sell-now; +1 card auto-sell status;
-    # +3 Buy games: status, plan, run; +5 pulse feed: kept, download, price dips (+ markets), check live;
+    # +5 Buy games: status, plan, purchase plan, purchase plan (GET), execute (run removed); +5 pulse feed: kept, download, price dips (+ markets), check live;
     # Active profiles (GET+POST) replaced the Pulse feed switchboard (kept, download) on 2026-10-31.
-    assert _rule_count(bp, "/api/huginn") == 84
+    assert _rule_count(bp, "/api/huginn") == 86
 
 
 def test_register_blueprints_wires_onto_app():

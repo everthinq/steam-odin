@@ -6,9 +6,10 @@ import json
 import pytest
 
 import store_purchase_service
+from storage_deposit import CommandError
 from store_purchase_service import (StorePurchaseService, STATUS_BALANCE, STATUS_BUY, STATUS_CURRENCY,
-                                    STATUS_OWNED, STATUS_TOO_EXPENSIVE, choose_package, parse_app_ids,
-                                    plan_account, purchase_statistics, to_usd)
+                                    STATUS_OWNED, STATUS_TOO_EXPENSIVE, choose_package, default_selection,
+                                    parse_app_ids, plan_account, purchase_statistics, to_usd)
 
 REFLEX, VERGE = 745740, 400740
 RATES = {'HKD': 7.8, 'NOK': 10.2}
@@ -21,6 +22,17 @@ def test_parse_app_ids_from_links_and_numbers():
             'https://store.steampowered.com/app/400740/VERGELost_chapter/, 745740')
     assert parse_app_ids(text) == [REFLEX, VERGE]
     assert parse_app_ids('nothing here') == []
+
+
+def test_parse_app_ids_takes_only_the_id_after_app_in_a_link():
+    # The audit's example: "2077" in the name and "13" in ?snr= are not app ids.
+    link = 'https://store.steampowered.com/app/1091500/Cyberpunk_2077/?snr=1_7_15__13'
+    assert parse_app_ids(link) == [1091500]
+    assert parse_app_ids(f'{link}\n745740, 400740;1091500') == [1091500, REFLEX, VERGE]
+    assert parse_app_ids('(745740) "400740".') == [REFLEX, VERGE]
+    assert parse_app_ids('Cyberpunk2077 abc123 7 0000000000') == []     # not a number token, too short, too long
+    assert parse_app_ids('store.steampowered.com/app/12345678901/') == []
+    assert parse_app_ids(None) == []
 
 
 def test_choose_package_takes_the_cheapest_default_package_not_the_commercial_license():
@@ -238,12 +250,32 @@ def plan(service):
     return {row['account_name']: row for row in service.status()['plan']['accounts']}
 
 
-def buy(service, selection, **options):
-    """What the page sends: the plan on screen and an explicit dry_run (False = really buy)."""
+def make_purchase_plan(service, selection, empty_cart=True, plan_created_at=None):
+    """What the page sends first: the plan on screen and the selection."""
     current = service.status()['plan']
-    options.setdefault('plan_created_at', current['created_at'] if current else None)
-    options.setdefault('dry_run', False)
-    return service.start_purchase(selection, **options)
+    if plan_created_at is None and current:
+        plan_created_at = current['created_at']
+    return service.create_purchase_plan(plan_created_at, selection, empty_cart)
+
+
+def dry_run(service, selection, **options):
+    """A purchase plan and its dry run; answers the purchase plan afterwards."""
+    made = make_purchase_plan(service, selection, **options)
+    service.execute_purchase_plan(made['purchase_plan_id'], dry_run=True)
+    return service.get_purchase_plan(made['purchase_plan_id'])
+
+
+def buy(service, selection, **options):
+    """The whole path: a purchase plan, its dry run, then the real purchase (the job)."""
+    made = dry_run(service, selection, **options)
+    return service.execute_purchase_plan(made['purchase_plan_id'], dry_run=False)
+
+
+def refused(code, run, *args, **kwargs):
+    with pytest.raises(CommandError) as caught:
+        run(*args, **kwargs)
+    assert caught.value.code == code, caught.value.message
+    return caught.value.message
 
 
 def test_plan_reads_wallets_ownership_and_prices(world):
@@ -257,12 +289,45 @@ def test_plan_reads_wallets_ownership_and_prices(world):
     assert totals == {'copies': 3, 'accounts': 2, 'usd': 1.35, 'profit': 0.09}
 
 
+def test_the_plan_answers_freshness_and_the_default_selection(world, monkeypatch):
+    service, *_ = world
+    plan(service)
+    current = service.status()['plan']
+    assert current['fresh'] and current['expires_at'] == current['created_at'] + 30 * 60
+    assert 29 * 60 < current['expires_in_seconds'] <= 30 * 60
+    assert current['default_selection'] == [{'steamid': '1', 'app_ids': [REFLEX, VERGE]},
+                                            {'steamid': '2', 'app_ids': [REFLEX]}]
+    assert default_selection(None) == []
+    real_time = store_purchase_service.time.time
+    monkeypatch.setattr(store_purchase_service.time, 'time', lambda: real_time() + 31 * 60)
+    old = service.status()['plan']
+    assert not old['fresh'] and old['expires_in_seconds'] == 0
+
+
+def test_the_purchase_plan_answers_lines_totals_and_refusals(world):
+    service, *_ = world
+    plan(service)
+    made = make_purchase_plan(service, [{'steamid': '1', 'app_ids': [REFLEX, VERGE]},
+                                        {'steamid': '2', 'app_ids': [VERGE]},      # balance too low
+                                        {'steamid': '9', 'app_ids': [REFLEX]}])
+    assert made['copies'] == 2 and made['accounts'] == 1 and made['total_usd'] == 0.9
+    line = made['lines'][0]
+    assert (line['account_name'], line['price'], line['currency'], line['wallet']) == ('alpha', 90, 'USD', 567)
+    assert [game['app_id'] for game in line['games']] == [REFLEX, VERGE] and line['dry_run'] is None
+    assert [(item['steamid'], item['reason']) for item in made['refused']] == [
+        ('2', 'only games planned as "buy" can be bought'), ('9', 'account 9 is not in the plan')]
+    assert made['dry_run'] == {'state': 'not run', 'job_id': None, 'passed': 0, 'failed': 0, 'error': None}
+    assert not made['executable'] and made['fresh'] and made['buy'] == {'copies': 0, 'accounts': 0, 'total_usd': 0}
+    assert service.status()['purchase_plan']['purchase_plan_id'] == made['purchase_plan_id']
+
+
 def test_buy_pays_exactly_the_plan_and_farms_now(world):
     service, web, asf = world
     plan(service)
-    assert buy(service, [{'steamid': '1', 'app_ids': [REFLEX, VERGE]}])['started']
+    job = buy(service, [{'steamid': '1', 'app_ids': [REFLEX, VERGE]}])
+    assert job['kind'] == 'andvari-purchase' and not job['running'] and job['result']['paid'] == 1
     entry = service.status()['history'][0]
-    assert entry['ok'] and entry['charged'] == 90
+    assert entry['ok'] and entry['paid'] and not entry['dry_run'] and entry['charged'] == 90
     assert sorted(entry['owned_after']) == sorted([REFLEX, VERGE])
     assert web.balance['1'] == 477 and web.cart['1'] == []
     assert asf.farm_now_calls == ['1']
@@ -272,30 +337,118 @@ def test_buy_pays_exactly_the_plan_and_farms_now(world):
 def test_dry_run_pays_nothing_and_cleans_up(world):
     service, web, asf = world
     plan(service)
-    buy(service, [{'steamid': '1', 'app_ids': [REFLEX]}], dry_run=True)
+    made = dry_run(service, [{'steamid': '1', 'app_ids': [REFLEX]}])
     entry = service.status()['history'][0]
     assert entry['ok'] and entry['dry_run'] and entry['charged'] == 45
+    assert entry['purchase_plan_id'] == made['purchase_plan_id']
     assert web.balance['1'] == 567 and web.cart['1'] == [] and asf.farm_now_calls == []
     assert [t['state'] for t in web.transactions.values()] == ['cancelled']
     assert service.status()['statistics']['purchases'] == 0
+    assert made['dry_run']['state'] == 'done' and made['dry_run']['passed'] == 1 and made['executable']
+    assert made['lines'][0]['dry_run'] == {'passed': True, 'paid': False, 'may_be_paid': False, 'charged': 45,
+                                           'reason': None}
+    assert made['buy'] == {'copies': 1, 'accounts': 1, 'total_usd': 0.45}
+    job = service.jobs.get(made['dry_run']['job_id'])
+    assert job['kind'] == 'andvari-dry run' and job['dry_run'] and job['result']['passed'] == 1
+
+
+def test_a_real_purchase_needs_a_passed_dry_run_of_the_same_purchase_plan(world):
+    service, web, _ = world
+    plan(service)
+    first = make_purchase_plan(service, [{'steamid': '1', 'app_ids': [REFLEX]}])
+    refused('dry_run_required', service.execute_purchase_plan, first['purchase_plan_id'], dry_run=False)
+    # A dry run of another purchase plan does not count for this one.
+    dry_run(service, [{'steamid': '1', 'app_ids': [REFLEX]}])
+    refused('dry_run_required', service.execute_purchase_plan, first['purchase_plan_id'], dry_run=False)
+    refused('plan_unknown', service.execute_purchase_plan, 'nope', dry_run=False)
+    assert web.posts('finalizetransaction') == []
+
+
+def test_a_failed_dry_run_buys_nothing_and_only_passed_accounts_are_bought(world):
+    service, web, _ = world
+    plan(service)
+    web.cart['2'] = [555]               # bravo's dry run fails (cart not empty, emptying switched off)
+    made = dry_run(service, [{'steamid': '1', 'app_ids': [REFLEX]}, {'steamid': '2', 'app_ids': [REFLEX]}],
+                   empty_cart=False)
+    assert made['dry_run']['passed'] == 1 and made['dry_run']['failed'] == 1
+    assert made['buy'] == {'copies': 1, 'accounts': 1, 'total_usd': 0.45}
+    bravo = made['lines'][1]['dry_run']
+    assert not bravo['passed'] and 'cart is not empty' in bravo['reason']
+    job = service.execute_purchase_plan(made['purchase_plan_id'], dry_run=False)
+    assert [order for order in job['result']['accounts']] == ['1']
+    assert web.balance == {'1': 522, '2': 79} and web.cart['2'] == [555]
+    only_failed = dry_run(service, [{'steamid': '2', 'app_ids': [REFLEX]}], empty_cart=False)
+    refused('nothing_passed', service.execute_purchase_plan, only_failed['purchase_plan_id'], dry_run=False)
+
+
+def test_a_purchase_plan_is_bought_once_and_its_dry_run_can_repeat(world):
+    service, web, _ = world
+    plan(service)
+    made = make_purchase_plan(service, [{'steamid': '1', 'app_ids': [REFLEX]}])
+    service.execute_purchase_plan(made['purchase_plan_id'], dry_run=True)
+    service.execute_purchase_plan(made['purchase_plan_id'], dry_run=True)        # again: allowed
+    assert len([t for t in web.transactions.values() if t['state'] == 'cancelled']) == 2
+    first = service.execute_purchase_plan(made['purchase_plan_id'], dry_run=False)
+    second = service.execute_purchase_plan(made['purchase_plan_id'], dry_run=False)
+    assert first['id'] == second['id'] and len(web.posts('finalizetransaction')) == 1
+    refused('plan_executed', service.execute_purchase_plan, made['purchase_plan_id'], dry_run=True)
+    assert not service.get_purchase_plan(made['purchase_plan_id'])['executable']
+
+
+def test_a_dry_run_while_one_runs_answers_it_and_another_job_is_busy(world):
+    service, web, _ = world
+    plan(service)
+    made = make_purchase_plan(service, [{'steamid': '1', 'app_ids': [REFLEX]}])
+    service._job_lock.acquire()                              # an account check (or a purchase) is running
+    try:
+        refused('busy', service.execute_purchase_plan, made['purchase_plan_id'], dry_run=True)
+        assert service.get_purchase_plan(made['purchase_plan_id'])['dry_run']['state'] == 'not run'
+        running = service.jobs.create('andvari-dry run', {})
+        service._purchase_plans[made['purchase_plan_id']].update(dry_run_state='running', dry_run_job_id=running['id'])
+        assert service.execute_purchase_plan(made['purchase_plan_id'], dry_run=True)['id'] == running['id']
+        refused('dry_run_required', service.execute_purchase_plan, made['purchase_plan_id'], dry_run=False)
+    finally:
+        service._job_lock.release()
+    assert web.transactions == {}
+
+
+def test_a_purchase_plan_expires_with_its_plan_and_a_new_check_replaces_it(world, monkeypatch):
+    service, web, _ = world
+    plan(service)
+    made = dry_run(service, [{'steamid': '1', 'app_ids': [REFLEX]}])
+    real_time = store_purchase_service.time.time
+    monkeypatch.setattr(store_purchase_service.time, 'time', lambda: real_time() + 31 * 60)
+    refused('plan_expired', service.execute_purchase_plan, made['purchase_plan_id'], dry_run=False)
+    refused('plan_expired', service.execute_purchase_plan, made['purchase_plan_id'], dry_run=True)
+    assert not service.get_purchase_plan(made['purchase_plan_id'])['fresh']
+    monkeypatch.setattr(store_purchase_service.time, 'time', real_time)
+    plan(service)                                             # the accounts checked again
+    refused('plan_replaced', service.execute_purchase_plan, made['purchase_plan_id'], dry_run=False)
+    assert service.get_purchase_plan(made['purchase_plan_id'])['replaced']
+    assert web.posts('finalizetransaction') == []
 
 
 def test_a_different_final_price_cancels(world):
     service, web, _ = world
     plan(service)
-    web.final_total_bonus = 5
-    buy(service, [{'steamid': '1', 'app_ids': [REFLEX]}])
+    made = dry_run(service, [{'steamid': '1', 'app_ids': [REFLEX]}])
+    assert made['dry_run']['passed'] == 1
+    web.final_total_bonus = 5                                 # the price changed after the dry run passed
+    service.execute_purchase_plan(made['purchase_plan_id'], dry_run=False)
     entry = service.status()['history'][0]
     assert not entry['ok'] and 'would charge 50, planned 45' in entry['error']
     assert web.balance['1'] == 567 and web.cart['1'] == []
-    assert [t['state'] for t in web.transactions.values()] == ['cancelled']
+    assert [t['state'] for t in web.transactions.values()] == ['cancelled', 'cancelled']
+    again = dry_run(service, [{'steamid': '1', 'app_ids': [REFLEX]}])
+    assert again['dry_run']['passed'] == 0 and 'would charge 50' in again['lines'][0]['dry_run']['reason']
 
 
 def test_a_cart_with_other_items_is_emptied_first_and_logged(world):
     service, web, _ = world
     plan(service)
-    web.cart['1'] = [555]
-    buy(service, [{'steamid': '1', 'app_ids': [REFLEX]}])
+    made = dry_run(service, [{'steamid': '1', 'app_ids': [REFLEX]}])
+    web.cart['1'] = [555]                                     # put in the cart after the dry run passed
+    service.execute_purchase_plan(made['purchase_plan_id'], dry_run=False)
     entry = service.status()['history'][0]
     assert entry['paid'] and entry['removed_from_cart'] == ['package 555'] and entry['charged'] == 45
     assert web.balance['1'] == 522 and web.cart['1'] == []
@@ -304,23 +457,29 @@ def test_a_cart_with_other_items_is_emptied_first_and_logged(world):
 def test_emptying_can_be_switched_off(world):
     service, web, _ = world
     plan(service)
+    made = dry_run(service, [{'steamid': '1', 'app_ids': [REFLEX]}], empty_cart=False)
+    assert not made['empty_cart']
     web.cart['1'] = [555]
-    buy(service, [{'steamid': '1', 'app_ids': [REFLEX]}], empty_cart=False)
+    service.execute_purchase_plan(made['purchase_plan_id'], dry_run=False)
     entry = service.status()['history'][0]
     assert not entry['ok'] and 'cart is not empty' in entry['error']
-    assert web.cart['1'] == [555] and web.posts('AddItemsToCart') == []
+    assert web.cart['1'] == [555] and len(web.posts('AddItemsToCart')) == 1     # the dry run's only
 
 
 def test_only_planned_games_can_be_bought_and_the_plan_expires(world, monkeypatch):
     service, web, _ = world
-    assert buy(service, [{'steamid': '1', 'app_ids': [REFLEX]}])['error'] == 'check the accounts first'
+    assert refused('no_plan', make_purchase_plan, service, [{'steamid': '1', 'app_ids': [REFLEX]}],
+                   plan_created_at=1.0) == 'check the accounts first'
     plan(service)
-    assert 'only games planned' in buy(service, [{'steamid': '2', 'app_ids': [VERGE]}])['error']
-    assert 'selected twice' in buy(service, [{'steamid': '1', 'app_ids': [REFLEX]},
-                                                       {'steamid': '1', 'app_ids': [VERGE]}])['error']
+    assert 'only games planned' in refused('nothing_selected', make_purchase_plan, service,
+                                           [{'steamid': '2', 'app_ids': [VERGE]}])
+    assert 'selected twice' in refused('bad_selection', make_purchase_plan, service,
+                                       [{'steamid': '1', 'app_ids': [REFLEX]}, {'steamid': '1', 'app_ids': [VERGE]}])
+    refused('nothing_selected', make_purchase_plan, service, [])
     real_time = store_purchase_service.time.time
     monkeypatch.setattr(store_purchase_service.time, 'time', lambda: real_time() + 31 * 60)
-    assert 'older than 30 minutes' in buy(service, [{'steamid': '1', 'app_ids': [REFLEX]}])['error']
+    assert 'older than 30 minutes' in refused('plan_expired', make_purchase_plan, service,
+                                              [{'steamid': '1', 'app_ids': [REFLEX]}])
     assert web.posts('inittransaction') == []
 
 
@@ -331,7 +490,7 @@ def test_a_failed_payment_is_not_cancelled_and_says_check_the_account(world):
     buy(service, [{'steamid': '1', 'app_ids': [REFLEX]}])
     entry = service.status()['history'][0]
     assert not entry['ok'] and 'check the account' in entry['error']
-    assert web.posts('canceltransaction') == []          # paying started: never cancelled from here
+    assert len(web.posts('canceltransaction')) == 1           # the dry run's; paying started: never cancelled
 
 
 def test_history_survives_a_reload(world):
@@ -348,47 +507,58 @@ def test_history_survives_a_reload(world):
 def test_bought_games_cannot_be_bought_again_from_the_same_plan(world):
     service, web, _ = world
     plan(service)
+    other = dry_run(service, [{'steamid': '1', 'app_ids': [REFLEX]}])
     buy(service, [{'steamid': '1', 'app_ids': [REFLEX]}])
     row = {r['account_name']: r for r in service.status()['plan']['accounts']}['alpha']
     assert {g['app_id']: g['status'] for g in row['games']}[REFLEX] == 'bought'
-    assert 'only games planned' in buy(service, [{'steamid': '1', 'app_ids': [REFLEX]}])['error']
+    assert 'only games planned' in refused('nothing_selected', make_purchase_plan, service,
+                                           [{'steamid': '1', 'app_ids': [REFLEX]}])
+    # A second purchase plan whose dry run passed before the first one bought: refused too.
+    refused('already_bought', service.execute_purchase_plan, other['purchase_plan_id'], dry_run=False)
     assert len(web.posts('finalizetransaction')) == 1
 
 
 def test_owned_meanwhile_or_balance_gone_stops_before_the_cart(world):
     service, web, _ = world
     plan(service)
-    web.owned['1'].add(REFLEX)                                # bought by hand since the plan
-    buy(service, [{'steamid': '1', 'app_ids': [REFLEX]}])
+    made = dry_run(service, [{'steamid': '1', 'app_ids': [REFLEX]}])
+    web.owned['1'].add(REFLEX)                                # bought by hand since the dry run
+    service.execute_purchase_plan(made['purchase_plan_id'], dry_run=False)
     assert 'owns one of these games now' in service.status()['history'][0]['error']
     plan(service)
+    made = dry_run(service, [{'steamid': '2', 'app_ids': [REFLEX]}])
     web.balance['2'] = 10
-    buy(service, [{'steamid': '2', 'app_ids': [REFLEX]}])
+    adds = len(web.posts('AddItemsToCart'))
+    service.execute_purchase_plan(made['purchase_plan_id'], dry_run=False)
     assert 'the wallet holds 10' in service.status()['history'][0]['error']
-    assert web.posts('AddItemsToCart') == []
+    assert len(web.posts('AddItemsToCart')) == adds
 
 
 def test_an_unclear_payment_is_never_cancelled_and_says_may_be_paid(world):
     service, web, _ = world
     plan(service)
+    made = dry_run(service, [{'steamid': '1', 'app_ids': [REFLEX]}])
 
     def broken_finalize(url, params=None, data=None, cookies=None, timeout=None, headers=None):
         if 'finalizetransaction' in url:
             raise OSError('read timed out')
         return FakeSteamWeb.post(web, url, params, data, cookies, timeout, headers)
     web.post = broken_finalize
-    buy(service, [{'steamid': '1', 'app_ids': [REFLEX]}])
+    job = service.execute_purchase_plan(made['purchase_plan_id'], dry_run=False)
+    assert job['result']['may_be_paid'] == 1 and job['result']['accounts']['1']['may_be_paid']
     entry = service.status()['history'][0]
     assert entry['payment_attempted'] and not entry['paid'] and 'MAY BE PAID' in entry['error']
-    assert web.posts('canceltransaction') == []
+    assert len(web.posts('canceltransaction')) == 1           # only the dry run's
     row = {r['account_name']: r for r in service.status()['plan']['accounts']}['alpha']
     assert {g['app_id']: g['status'] for g in row['games']}[REFLEX] == 'check'
-    assert 'only games planned' in buy(service, [{'steamid': '1', 'app_ids': [REFLEX]}])['error']
+    assert 'only games planned' in refused('nothing_selected', make_purchase_plan, service,
+                                           [{'steamid': '1', 'app_ids': [REFLEX]}])
 
 
 def test_paid_with_lagging_ownership_counts_as_bought(world):
     service, web, _ = world
     plan(service)
+    made = dry_run(service, [{'steamid': '1', 'app_ids': [REFLEX]}])
     real_get = web.get
     calls = {'userdata': 0}
 
@@ -399,7 +569,7 @@ def test_paid_with_lagging_ownership_counts_as_bought(world):
                 return FakeResponse({'rgOwnedApps': [10], 'rgOwnedPackages': [1]})
         return real_get(url, params, cookies, timeout, headers)
     web.get = lagging
-    buy(service, [{'steamid': '1', 'app_ids': [REFLEX]}])
+    service.execute_purchase_plan(made['purchase_plan_id'], dry_run=False)
     entry = service.status()['history'][0]
     assert entry['paid'] and entry['ok'] and 'does not list every game yet' in entry['error']
     assert service.status()['statistics']['copies'] == 1
@@ -439,41 +609,99 @@ def test_older_saved_purchases_are_recognised_as_paid(world, tmp_path):
     assert status['statistics']['accounts'] == {'alpha': {'games': ['Reflex'], 'spent': {'USD': 45}}}
     row = {r['account_name']: r for r in status['plan']['accounts']}['alpha']
     assert {g['app_id']: g['status'] for g in row['games']}[REFLEX] == 'bought'
-    assert 'only games planned' in buy(reloaded, [{'steamid': '1', 'app_ids': [REFLEX]}])['error']
+    assert 'only games planned' in refused('nothing_selected', make_purchase_plan, reloaded,
+                                           [{'steamid': '1', 'app_ids': [REFLEX]}])
 
 
 def test_the_selection_must_match_the_plan_on_screen_and_be_well_formed(world):
     service, *_ = world
     plan(service)
     created = service.status()['plan']['created_at']
-    assert 'plan changed' in buy(service, [{'steamid': '1', 'app_ids': [REFLEX]}],
-                                                    plan_created_at=created - 5)['error']
+    assert 'plan changed' in refused('plan_replaced', make_purchase_plan, service,
+                                     [{'steamid': '1', 'app_ids': [REFLEX]}], plan_created_at=created - 5)
     # The plan time is required (the review found it could be left out to skip this check).
-    assert 'plan time (plan_created_at) is missing' in service.start_purchase([{'steamid': '1', 'app_ids': [REFLEX]}],
-                                                                              dry_run=False)['error']
-    assert 'must be a list' in buy(service, {'steamid': '1'})['error']
-    assert 'numbers' in buy(service, [{'steamid': '1', 'app_ids': ['x']}])['error']
+    assert 'plan time (plan_created_at) is missing' in refused(
+        'plan_time_missing', service.create_purchase_plan, None, [{'steamid': '1', 'app_ids': [REFLEX]}])
+    refused('bad_request', service.create_purchase_plan, 'soon', [{'steamid': '1', 'app_ids': [REFLEX]}])
+    assert 'must be a list' in refused('bad_selection', make_purchase_plan, service, {'steamid': '1'})
+    assert 'numbers' in refused('bad_selection', make_purchase_plan, service, [{'steamid': '1', 'app_ids': ['x']}])
 
 
-def test_a_dry_run_never_empties_the_cart(world):
+def test_a_dry_run_empties_the_cart_when_ticked(world):
+    # Ivan, 2026-11-04: otherwise an account with something in its cart could never pass the dry run.
     service, web, _ = world
     plan(service)
     web.cart['1'] = [555]
-    buy(service, [{'steamid': '1', 'app_ids': [REFLEX]}], dry_run=True)
+    made = dry_run(service, [{'steamid': '1', 'app_ids': [REFLEX]}])
+    assert made['dry_run']['passed'] == 1
     entry = service.status()['history'][0]
-    assert 'a real purchase would empty it first' in entry['error'] and entry['removed_from_cart'] == ['package 555']
+    assert entry['removed_from_cart'] == ['package 555'] and web.posts('DeleteCart')
+    assert web.cart['1'] == [] and web.balance['1'] == 567       # nothing paid, the cart left empty
+
+
+def test_a_dry_run_keeps_the_cart_when_emptying_is_off(world):
+    service, web, _ = world
+    plan(service)
+    web.cart['1'] = [555]
+    made = dry_run(service, [{'steamid': '1', 'app_ids': [REFLEX]}], empty_cart=False)
+    assert made['dry_run']['failed'] == 1
     assert web.cart['1'] == [555] and web.posts('DeleteCart') == []
 
 
-def test_a_purchase_without_dry_run_is_a_dry_run(world):
+@pytest.mark.parametrize('flag', [None, True, 'false', 0, 1, 'no'])
+def test_anything_but_exactly_false_is_a_dry_run(world, flag):
     service, web, _ = world
     plan(service)
-    created = service.status()['plan']['created_at']
-    assert service.start_purchase([{'steamid': '1', 'app_ids': [REFLEX]}], plan_created_at=created)['started']
-    assert service.status()['history'][0]['dry_run'] and web.balance['1'] == 567
+    made = make_purchase_plan(service, [{'steamid': '1', 'app_ids': [REFLEX]}])
+    job = service.execute_purchase_plan(made['purchase_plan_id'], dry_run=flag)
+    assert job['dry_run'] and service.status()['history'][0]['dry_run'] and web.balance['1'] == 567
     assert web.posts('finalizetransaction') == []
+    assert service.execute_purchase_plan(made['purchase_plan_id'])['dry_run']     # missing = a dry run too
+
+
+def test_the_routes_follow_the_commands(world, monkeypatch):
+    """Through Flask: plan, dry run, buy; errors are {error, code}."""
+    from flask import Flask
+
+    from context import ctx
+    from routes.huginn import bp
+    service, web, _ = world
+    monkeypatch.setattr(ctx, 'store_purchase_service', service)
+    app = Flask(__name__)
+    app.register_blueprint(bp)
+    client = app.test_client()
+    plan(service)
+    status = client.get('/api/huginn/card-deals/buy').get_json()
+    assert status['plan']['fresh'] and status['purchase_plan'] is None
+    made = client.post('/api/huginn/card-deals/buy/purchase-plan', json={
+        'plan_created_at': status['plan']['created_at'], 'selection': status['plan']['default_selection']}).get_json()
+    base = f'/api/huginn/card-deals/buy/purchase-plans/{made["purchase_plan_id"]}'
+    answer = client.post(f'{base}/execute', json={'dry_run': False})
+    assert answer.status_code == 409 and answer.get_json()['code'] == 'dry_run_required'
+    assert client.post(f'{base}/execute', json={}).status_code == 202
+    assert client.get(base).get_json()['executable']
+    bought = client.post(f'{base}/execute', json={'dry_run': False})
+    assert bought.status_code == 202 and bought.get_json()['result']['paid'] == 2
+    assert client.get('/api/huginn/card-deals/buy/purchase-plans/nope').get_json()['code'] == 'plan_unknown'
+    assert client.post('/api/huginn/card-deals/buy/purchase-plan', json={'selection': []}).get_json()['code'] == \
+        'plan_time_missing'
+    assert web.balance == {'1': 477, '2': 34}
 
 
 def test_cart_lines_name_bundles_and_other_lines():
     answer = {'response': {'cart': {'line_items': [{'packageid': 1}, {'bundleid': 2}, {'gift': True}]}}}
     assert store_purchase_service.cart_lines(answer) == ['package 1', 'bundle 2', '{"gift": true}']
+
+
+def test_a_dry_run_that_stopped_with_an_error_buys_nothing(world):
+    # The first account passed, then the job stopped: nothing of that dry run may be bought.
+    service, web, _ = world
+    plan(service)
+
+    def stop(seconds):
+        raise RuntimeError('stopped between accounts')
+    service._sleep = stop
+    made = dry_run(service, [{'steamid': '1', 'app_ids': [REFLEX]}, {'steamid': '2', 'app_ids': [REFLEX]}])
+    assert made['dry_run']['state'] == 'failed' and not made['executable']
+    refused('dry_run_required', service.execute_purchase_plan, made['purchase_plan_id'], dry_run=False)
+    assert web.posts('finalizetransaction') == []

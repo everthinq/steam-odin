@@ -19,6 +19,7 @@ import threading
 import urllib.parse
 
 from jsonio import atomic_write_json, read_json
+from storage_shop_service import NOT_FOR_SALE_ENTRIES
 
 log = logging.getLogger(__name__)
 
@@ -172,6 +173,8 @@ class StoreCatalogueService:
             state = json.loads(json.dumps(self._state))
         job = self.storage_shop.job_status()
         items = state.get('items') or []
+        for item in items:      # the Buy button: anything Buy Storage Units sells and Ratatoskr can name
+            item['buyable'] = item['entry'] not in NOT_FOR_SALE_ENTRIES and item.get('definition_index') is not None
         return {'items': items, 'categories': catalogue_summary(items),
                 'read_at': state.get('read_at'), 'version': state.get('version'),
                 # The shared job: a price sheet read, or a Storage Unit check or purchase.

@@ -19,6 +19,7 @@ from huginn_service import load_csfloat_keys, load_csfloat_proxy, classify_proxy
 from notifications import notification_channel, send_notification
 import pulse_views
 from pulse_feed import ACTIVE_MINUTES, NotActive
+from storage_deposit import CommandError
 
 bp = Blueprint('huginn', __name__)
 logger = logging.getLogger(__name__)
@@ -1238,16 +1239,36 @@ def card_deals_buy_plan():
     return jsonify(result), (200 if result['started'] else 400)
 
 
-@bp.route('/api/huginn/card-deals/buy/run', methods=['POST'])
-def card_deals_buy_run():
-    """{"selection": [{"steamid": ..., "app_ids": [...]}], "dry_run": bool (only false buys; missing means a dry run), "plan_created_at":
-    the plan the page showed}: buys only games that plan marks "buy"; every purchase is
-    price-guarded."""
-    body = request.get_json(silent=True) or {}
+# Buy games: a purchase plan from the plan the page showed, its dry run, then the real
+# purchase of only what passed that dry run, once (store_purchase_service.py). Errors are
+# {error, code}; the dry run and the purchase are jobs followed at GET /api/jobs/<id>.
+
+def _purchase_command(run, status=200):
     try:
-        plan_created_at = float(body['plan_created_at']) if body.get('plan_created_at') is not None else None
-    except (TypeError, ValueError):
-        return jsonify({'started': False, 'error': 'plan_created_at must be a number'}), 400
-    result = ctx.store_purchase_service.start_purchase(body.get('selection'), body.get('dry_run') is not False,
-                                                       plan_created_at, body.get('empty_cart', True) is not False)
-    return jsonify(result), (200 if result['started'] else 400)
+        return jsonify(run()), status
+    except CommandError as error:
+        return jsonify(error.body()), error.status
+
+
+@bp.route('/api/huginn/card-deals/buy/purchase-plan', methods=['POST'])
+def card_deals_buy_purchase_plan():
+    """{"plan_created_at": the plan the page showed, "selection": [{"steamid": ..., "app_ids": [...]}],
+    "empty_cart": bool}: the purchase plan (lines per account, totals, refused accounts, its dry run's
+    state, expires_at, executable). Nothing is bought or tried yet."""
+    body = request.get_json(silent=True) or {}
+    return _purchase_command(lambda: ctx.store_purchase_service.create_purchase_plan(
+        body.get('plan_created_at'), body.get('selection'), body.get('empty_cart', True) is not False))
+
+
+@bp.route('/api/huginn/card-deals/buy/purchase-plans/<purchase_plan_id>', methods=['GET'])
+def card_deals_buy_purchase_plan_get(purchase_plan_id):
+    return _purchase_command(lambda: ctx.store_purchase_service.get_purchase_plan(purchase_plan_id))
+
+
+@bp.route('/api/huginn/card-deals/buy/purchase-plans/<purchase_plan_id>/execute', methods=['POST'])
+def card_deals_buy_purchase_plan_execute(purchase_plan_id):
+    """{"dry_run": bool}: anything but exactly false runs the dry run (repeatable); exactly false
+    buys, once, only the accounts whose dry run of this purchase plan passed. Answers the job."""
+    body = request.get_json(silent=True) or {}
+    return _purchase_command(lambda: ctx.store_purchase_service.execute_purchase_plan(
+        purchase_plan_id, dry_run=body.get('dry_run') is not False), 202)

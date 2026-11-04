@@ -26,7 +26,7 @@ then commit + push with a plain message.
   and the Mímir Market unlocker.
 - Bullet 4 goes tool by tool; plain sorting and view filters stay in the page.
 
-## Bullet 4 — work in the tree, NOT committed yet
+## Bullet 4 — the three money flows (on master since 2026-11-04)
 
 Three money flows were rebuilt as plan → dry run → execute once → a job. All
 backend tests passed with fakes (no purchase and no Steam call was made), lint
@@ -47,37 +47,30 @@ and build pass. None of it has been tried in the real app yet.
    /api/ratatoskr/storage-shop/plan {item, selection}`, `GET …/plans/<id>`,
    `POST …/plans/<id>/execute {dry_run}` (dry run repeatable, real only after
    it passed, once), `POST …/quote`; `/run` removed; catalogue items carry
-   `buyable`. A review-fix round was **stopped part-way** (files may be
-   half-edited — run the tests first). Findings to check or finish:
-   - Pay/Review treat any error with a code as "nothing started" (a 500 can
-     come after the purchase started);
-   - `postCommand` throws on a finished same-job answer that carries `error`;
-   - the 30-minute lifetime should count from the passed dry run;
-   - `_deliver_again` marks the current plan even for an older plan's entry;
-   - a failed plan lists every account as `unknown_account`;
-   - `plan_lines` hides the real wallet error behind a generic text;
-   - status polled every 1.5 s while a dialog is open (poll every 30 s);
-   - unreachable `already` check in `execute_plan`.
+   `buyable`. **The 8 earlier findings are fixed; reviewed again 2026-11-04**,
+   and fixed: an unread price sheet no longer marks accounts "currency not
+   sold"; purchase-log entries change under the lock; replaced plans survive a
+   restart; the status never answers 500 for a plan replaced meanwhile.
+   Decided (Ivan, 2026-11-04): the plan lives 30 minutes from its FIRST passed
+   dry run (a later one does not extend it); after a purchase only the units it
+   delivered are named, never while Transfer or Auto-Store moves items on the
+   account. Left for bullet 5: `quote` repeats the totals of `order_totals`;
+   the status sends whole purchase-log entries.
 3. **Andvari Buy games** — `POST /api/huginn/card-deals/buy/purchase-plan`,
    `GET …/purchase-plans/<id>`, `POST …/purchase-plans/<id>/execute`;
    `/buy/run` removed; the app-id parser bug is fixed (a Steam link added extra
-   wrong numbers such as 2077). Not reviewed yet. **Decided (Ivan,
-   2026-11-04):** when "Empty the cart first" is ticked, the dry run empties
-   the cart too and logs what it removed (rule 17); otherwise an account with
-   something in its cart could never pass the dry run.
+   wrong numbers such as 2077). **Reviewed and fixed 2026-11-04:** when
+   "Empty the cart first" is ticked, the dry run empties the cart too and logs
+   what it removed (Ivan's decision, rule 17); a dry run that stopped with an
+   error is failed (nothing of it buyable); the page sends the purchase plan's
+   own cart choice; one bad purchase plan never breaks the tab's status. Left
+   for bullet 5: the page copies `parse_app_ids` (SellingPanel); a real buy
+   refuses the whole purchase plan when one account was bought meanwhile (safe,
+   by choice); the shop's automatic naming does not wait for a Rename Storage
+   Unit run on the same account.
 
-Uncommitted documentation that goes with this work: rule 15 in the root
-`CLAUDE.md`, the Mímir rows in `backend/CLAUDE.md` and `frontend/CLAUDE.md`,
-`docs/internals/storage-shop.md`, `docs/internals/steam-market-access.md`,
-`docs/guide/mimir.md`, `docs/guide/ratatoskr.md`, `docs/guide/andvari.md`.
-Andvari's lines for `backend/CLAUDE.md` / `frontend/CLAUDE.md` are not written
-yet.
-
-**To finish:** run the full tests, fix the review findings above, review
-Andvari, then commit + push one tool at a time (`app.py`,
-`tests/test_routes_blueprints.py`, `tests/test_purchase_routes_dry_run.py` and
-`utils/moveCommands.js` are shared between the three — split by hunk). Then try
-one real "Test without paying" per tool before any real purchase.
+**Next:** `make reload`, then one real "Test without paying" per tool before any
+real purchase (Ivan's hands-on test list is in the session reminders).
 
 ## Bullet 4 — the rest of the backlog (from three page audits)
 

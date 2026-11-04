@@ -19,9 +19,6 @@ import { failureMessage, readJson, readJsonOrThrow } from '../../utils/readJson'
 // and Boosts (/store-catalogue/boosts), which catches a Steam price boost of a store item or of a
 // sticker inside a store capsule on its first day (components/ratatoskr/StoreBoosts).
 
-// Sold here: everything but the game license and the Armory Pass (storage_shop_service.py).
-const NOT_FOR_SALE = new Set(['Game License', 'XpShopTicket1']);
-
 const SORT_VALUES = {
     item: (i) => i.name,
     category: (i) => i.category,
@@ -214,7 +211,7 @@ const StoreCatalogue = ({ tab = 'catalogue' }) => {
                                     <td className="text-right tabular-nums text-slate-100">{dollars(i.usd)}</td>
                                     <td className="text-right pr-3 whitespace-nowrap">
                                         {i.market_url && <SteamMarketLink itemName={i.name} className="mr-2 align-middle" />}
-                                        {!NOT_FOR_SALE.has(i.entry) && i.definition_index != null && (
+                                        {i.buyable && (
                                             <Link to={`/store-catalogue/buy/${encodeURIComponent(i.entry)}`} title={`Buy ${i.name} on any of your accounts`}
                                                 className="inline-flex items-center gap-1 px-2 py-0.5 rounded border border-amber-500/30 text-amber-200 text-xs hover:bg-amber-500/10">
                                                 <ShoppingCart size={11} /> Buy
