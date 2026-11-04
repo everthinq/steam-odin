@@ -4,7 +4,7 @@
       "id": "fbf692611b3c",
       "name": "everthinklol",
       "created_at": "2026-07-21T13:40:18.177768+00:00",
-      "updated_at": "2026-11-03T22:18:33.982448+00:00",
+      "updated_at": "2026-11-04T01:40:55.374523+00:00",
       "transactions": [
         {
           "id": "3ea474874554",
@@ -12196,6 +12196,71 @@
           "fee_percent": 0.0,
           "is_arbitrage": false,
           "created_at": "2026-11-03T21:23:40.901634+00:00"
+        },
+        {
+          "id": "b56b1ec58613",
+          "item_name": "Recoil Case",
+          "type": "buy",
+          "qty": 23,
+          "price": 0.17,
+          "platform": "csfloat",
+          "date": "2026-11-04T03:20:00",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": false,
+          "created_at": "2026-11-04T01:19:25.905490+00:00"
+        },
+        {
+          "id": "475896777c64",
+          "item_name": "Sticker | SAW (Gold) | Copenhagen 2024",
+          "type": "buy",
+          "qty": 1,
+          "price": 7.17,
+          "platform": "buff.market",
+          "date": "2026-11-04T03:25:00",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": true,
+          "created_at": "2026-11-04T01:23:20.117938+00:00"
+        },
+        {
+          "id": "3f6ec4dc5ae2",
+          "item_name": "Sticker | SAW (Gold) | Copenhagen 2024",
+          "type": "sell",
+          "qty": 1,
+          "price": 7.62,
+          "platform": "cs.money.trade",
+          "date": "2026-11-04T03:25:00",
+          "note": "+8%",
+          "fee_percent": 0.0,
+          "is_arbitrage": true,
+          "created_at": "2026-11-04T01:23:39.723672+00:00"
+        },
+        {
+          "id": "496bd6c5312d",
+          "item_name": "Glock-18 | Green Line (Minimal Wear)",
+          "type": "buy",
+          "qty": 2,
+          "price": 0.77,
+          "platform": "lisskins",
+          "date": "2026-11-04T03:40:00",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": true,
+          "created_at": "2026-11-04T01:40:36.510205+00:00"
+        },
+        {
+          "id": "e693120360fa",
+          "item_name": "Glock-18 | Green Line (Minimal Wear)",
+          "type": "sell",
+          "qty": 2,
+          "price": 0.86,
+          "platform": "cs.money.trade",
+          "date": "2026-11-04T03:40:00",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": true,
+          "created_at": "2026-11-04T01:40:55.374489+00:00"
         }
       ]
     },
