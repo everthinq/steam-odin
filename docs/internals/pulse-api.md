@@ -157,7 +157,8 @@ Errors are `{message, responseType}` with types such as `MarketSubscriptionRequi
   memory; others leave after `KEEP_SECONDS`. `profile_tables` mirrors each profile's fetch and
   `tests/test_active_profiles.py` calls every profile route to prove they match. `?kept=1` (an
   active profile opening by itself) accepts the keeper's copy up to its interval plus two ticks;
-  the profile routes answer `X-Pulse-Tables` ([[market, price type, seconds since download]]).
+  the profile routes answer `X-Pulse-Tables` ([[market, price type, seconds since download, download
+  time on the feed's clock]]); the profile list itself is `GET /api/huginn/profiles`.
 - **Price history** (`price_history.py`, a listener): every listing or buy-orders table adds one
   sample per item to the day's row (average, lowest, highest, last, samples), one gzipped file a day
   per table in `cache/price_history/<market>/<price type>/`, kept for good. `statistic()` gives the

@@ -35,8 +35,8 @@ logger = logging.getLogger(__name__)
 # Every Arbitrage profile route: Huginn Arbitrage is the only page whose requests may download from
 # pulse (Fetch live data; ?kept=1 is an active profile opening by itself, which accepts the keeper's
 # copy up to its interval). The answer's X-Pulse-Tables header lists every pulse table read,
-# [[market, price type, seconds since its download started], ...], so the page says how old the
-# prices are. One hook for the whole prefix, so a new profile route can never miss it.
+# [[market, price type, seconds since its download started, when it started (the feed's clock,
+# epoch seconds, as /api/huginn/active's downloaded_at)], ...], so the page says how old the prices are. One hook for the whole prefix, so a new profile route can never miss it.
 PROFILE_ROUTES = '/api/huginn/tradeon/'
 
 
@@ -55,7 +55,8 @@ def _profile_reads_header(response):
     if reads is not None:
         now = ctx.huginn_service.pulse.now()
         response.headers['X-Pulse-Tables'] = json.dumps(
-            [[market_id, price_type, round(now - started_at, 1)] for (market_id, price_type), started_at in reads.items()])
+            [[market_id, price_type, round(now - started_at, 1), round(started_at, 1)]
+             for (market_id, price_type), started_at in reads.items()])
     return response
 
 
@@ -224,6 +225,13 @@ def huginn_price_dips():
         return jsonify({'error': str(e)}), 502
 
 
+@bp.route('/api/huginn/profiles', methods=['GET'])
+def huginn_profiles():
+    """Every Arbitrage profile in picker order (curated, then generated): how it is fetched, its
+    key for the active profiles, and whether its rows can be checked live."""
+    return jsonify(pulse_views.arbitrage_profiles(ctx.huginn_service, ctx.settings_manager.get_settings()))
+
+
 @bp.route('/api/huginn/check-live', methods=['GET'])
 def huginn_check_live():
     """One Arbitrage row checked on pulse right now (two ~0.5 s lookups):
@@ -234,6 +242,10 @@ def huginn_check_live():
     name = (request.args.get('name') or '').strip()
     if not name:
         return jsonify({'error': 'name is required'}), 400
+    refusal = pulse_views.check_live_refusal(request.args.get('buy', ''), request.args.get('sell', ''),
+                                             request.args.get('mode', 'autobuy'))
+    if refusal:
+        return jsonify({'error': f'This profile cannot be checked live: {refusal}', 'code': 'not_checkable'}), 400
     try:
         return jsonify(pulse_views.check_live(ctx.huginn_service, token, name, request.args.get('buy', ''),
                                               request.args.get('sell', ''), request.args.get('mode', 'autobuy')))

@@ -18,47 +18,10 @@ from routes import huginn as huginn_routes
 ROW = {'itemName': {'marketHashName': 'Item A'}, 'firstMarket': {'price': 1.0},
        'secondMarket': {'price': 2.0, 'totalOffersCount': 3}}
 
-# The curated profiles of the Arbitrage page (frontend pages/huginn/Arbitrage.jsx PROFILES):
-# (route, buy market, sell market, mode). The page sends buy:sell:mode as the profile's key.
-CURATED = [
-    ('/api/huginn/tradeon/steam', 'TradeOnMarket', 'Steam', 'autobuy'),
-    ('/api/huginn/tradeon/buff', 'TradeOnMarket', 'Buff', 'autobuy'),
-    ('/api/huginn/tradeon/csfloat', 'TradeOnMarket', 'CsFloat', 'min'),
-    ('/api/huginn/tradeon/csfloat-autobuy', 'TradeOnMarket', 'CsFloat', 'autobuy'),
-    ('/api/huginn/tradeon/dmarket', 'TradeOnMarket', 'Dmarket', 'autobuy'),
-    ('/api/huginn/tradeon/lootfarm', 'TradeOnMarket', 'LootFarm', 'autobuy'),
-    ('/api/huginn/tradeon/lisskins-steam', 'LisSkins', 'Steam', 'autobuy'),
-    ('/api/huginn/tradeon/lisskins-buff', 'LisSkins', 'Buff', 'autobuy'),
-    ('/api/huginn/tradeon/lisskins-csfloat', 'LisSkins', 'CsFloat', 'min'),
-    ('/api/huginn/tradeon/lisskins-csfloat-autobuy', 'LisSkins', 'CsFloat', 'autobuy'),
-    ('/api/huginn/tradeon/lisskins-dmarket', 'LisSkins', 'Dmarket', 'autobuy'),
-    ('/api/huginn/tradeon/lisskins-lootfarm', 'LisSkins', 'LootFarm', 'autobuy'),
-    ('/api/huginn/tradeon/buff-steam', 'Buff', 'Steam', 'autobuy'),
-    ('/api/huginn/tradeon/buff-csfloat', 'Buff', 'CsFloat', 'min'),
-    ('/api/huginn/tradeon/buff-csfloat-autobuy', 'Buff', 'CsFloat', 'autobuy'),
-    ('/api/huginn/tradeon/buff-dmarket', 'Buff', 'Dmarket', 'autobuy'),
-    ('/api/huginn/tradeon/csfloat-steam', 'CsFloat', 'Steam', 'autobuy'),
-    ('/api/huginn/tradeon/csfloat-buff', 'CsFloat', 'Buff', 'autobuy'),
-    ('/api/huginn/tradeon/csfloat-dmarket', 'CsFloat', 'Dmarket', 'autobuy'),
-    ('/api/huginn/tradeon/dmarket-steam', 'Dmarket', 'Steam', 'autobuy'),
-    ('/api/huginn/tradeon/dmarket-buff', 'Dmarket', 'Buff', 'autobuy'),
-    ('/api/huginn/tradeon/dmarket-csfloat', 'Dmarket', 'CsFloat', 'min'),
-    ('/api/huginn/tradeon/dmarket-csfloat-autobuy', 'Dmarket', 'CsFloat', 'autobuy'),
-]
-
-
-def _generated(service):
-    """The generated pairs, built the way the Arbitrage page builds them from /api/huginn/markets."""
-    markets = service.market_registry({})
-    for buy in markets:
-        if buy['hasListings'] is False:
-            continue
-        for sell in markets:
-            if sell['id'] in (buy['id'], 'TradeOnMarket', 'LootFarm'):
-                continue
-            modes = (['autobuy'] if sell['hasAutobuy'] else []) + (['min'] if sell['hasListings'] is not False else [])
-            for mode in modes:
-                yield f"/api/huginn/tradeon/pair?buy={buy['id']}&sell={sell['id']}&mode={mode}", buy['id'], sell['id'], mode
+def _profiles(service):
+    """(route, buy market, sell market, mode) of every Arbitrage profile, from the backend's own list."""
+    return [(profile['fetchEndpoint'], profile['buyMarket'], profile['sellMarket'], profile['mode'])
+            for profile in pulse_views.arbitrage_profiles(service, {})]
 
 
 class Settings:
@@ -103,11 +66,11 @@ def client(monkeypatch, service):
 
 
 def _tables_read(response):
-    return {(market, price_type) for market, price_type, _ in json.loads(response.headers['X-Pulse-Tables'])}
+    return {(market, price_type) for market, price_type, *_ in json.loads(response.headers['X-Pulse-Tables'])}
 
 
 def test_profile_tables_name_exactly_what_every_profile_route_reads(client, service):
-    profiles = CURATED + list(_generated(service))
+    profiles = _profiles(service)
     assert len(profiles) > 300
     for route, buy, sell, mode in profiles:
         expected = set(pulse_views.profile_tables(buy, sell, mode))
@@ -117,7 +80,7 @@ def test_profile_tables_name_exactly_what_every_profile_route_reads(client, serv
 
 
 def test_active_tables_are_real_pulse_tables(service):
-    for _, buy, sell, mode in CURATED + list(_generated(service)):
+    for _, buy, sell, mode in _profiles(service):
         assert all(price_type != 'EstimatedSell' for _, price_type in pulse_views.profile_tables(buy, sell, mode))
 
 
@@ -138,10 +101,10 @@ def test_an_active_profile_opens_from_memory_and_fetch_live_data_still_downloads
         table.started_at -= 180
     opened = client.get(route + '&kept=1')
     assert opened.status_code == 200 and len(service.asked) == downloads
-    assert sorted(age for _, _, age in json.loads(opened.headers['X-Pulse-Tables'])) == [pytest.approx(180, abs=5)] * 2
+    assert sorted(age for _, _, age, *_ in json.loads(opened.headers['X-Pulse-Tables'])) == [pytest.approx(180, abs=5)] * 2
     fetched = client.get(route)                                       # Fetch live data: under a minute old
     assert len(service.asked) == downloads + 2
-    assert all(age < 5 for _, _, age in json.loads(fetched.headers['X-Pulse-Tables']))
+    assert all(age < 5 for _, _, age, *_ in json.loads(fetched.headers['X-Pulse-Tables']))
 
 
 def test_active_tables_are_accepted_only_up_to_their_interval_and_two_ticks(client, service):
@@ -226,3 +189,41 @@ def test_the_status_shows_the_reference_and_the_statistics(client):
         'Buff163 · lowest listing', 'LisSkins · lowest listing (no trade hold)', 'Steam · buy orders'}
     monitor = client.get('/api/huginn/pulse').get_json()
     assert monitor['active']['profiles'] and monitor['labels']
+
+
+def test_profiles_list_the_curated_first_then_every_generated_pair(client):
+    profiles = client.get('/api/huginn/profiles').get_json()
+    curated = [profile['id'] for profile in profiles[:len(pulse_views.CURATED_PROFILES)]]
+    assert curated == [entry[0] for entry in pulse_views.CURATED_PROFILES]
+    assert len({profile['key'] for profile in profiles}) == len(profiles)          # no pair twice
+    by_id = {profile['id']: profile for profile in profiles}
+    assert by_id['tradeon-steam']['fetchEndpoint'] == '/api/huginn/tradeon/steam'
+    assert by_id['tradeon-buffmarket']['fetchEndpoint'].startswith('/api/huginn/tradeon/pair?')
+    assert by_id['lisskins-csfloat-autobuy']['autobuy'] is True
+    assert not any(profile['sellMarket'] in ('TradeOnMarket',) for profile in profiles)
+
+
+@pytest.mark.parametrize('profile_id, checkable', [('lisskins-steam', True), ('tradeon-lootfarm', False),
+                                                   ('buff-csfloat-autobuy', False),
+                                                   ('gen:SkinSwapTrade:Steam:autobuy', False)])
+def test_profiles_say_which_can_be_checked_live(client, profile_id, checkable):
+    profile = {p['id']: p for p in client.get('/api/huginn/profiles').get_json()}[profile_id]
+    assert profile['checkLive'] is checkable
+    assert (profile['checkLiveRefusal'] is None) is checkable
+
+
+def test_check_live_refuses_a_lootfarm_row_with_a_code(client, service):
+    response = client.get('/api/huginn/check-live?name=Item%20A&buy=TradeOnMarket&sell=LootFarm&mode=autobuy')
+    assert response.status_code == 400
+    assert response.get_json()['code'] == 'not_checkable'
+    assert service.asked == []
+
+
+def test_active_profiles_say_warming_then_ready(client):
+    client.post('/api/huginn/active', json={'add': 'LisSkins:Steam:autobuy'})
+    profile = client.get('/api/huginn/active').get_json()['profiles']['LisSkins:Steam:autobuy']
+    assert profile['warming'] is True and profile['ready'] is False
+    client.get('/api/huginn/tradeon/lisskins-steam')                 # Fetch live data
+    profile = client.get('/api/huginn/active').get_json()['profiles']['LisSkins:Steam:autobuy']
+    assert profile['warming'] is False and profile['ready'] is True
+    assert all(table['downloaded_at'] is not None for table in profile['tables'])

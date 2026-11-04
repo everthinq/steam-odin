@@ -38,47 +38,6 @@ const SKINSWAP_MARKETS = new Set(['SkinSwapMarket', 'SkinSwapTrade']);
 // Price / account / collection filters, remembered per browser (useStoredFilters).
 const FILTERS_KEY = 'huginn.arbitrageFilters';
 
-const PROFILES = [
-    // buyMarket / sellMarket are pulse short-link slugs; when set, the Buy/Sell prices
-    // link to that market's page for the item. Data is fetched live on demand only.
-    { id: 'tradeon-steam',           from: 'Tradeon',  fromSub: 'min', to: 'Steam',   toSub: 'autobuy', buyMarket: 'TradeOnMarket', sellMarket: 'Steam',   fetchEndpoint: '/api/huginn/tradeon/steam' },
-    { id: 'tradeon-buff',            from: 'Tradeon',  fromSub: 'min', to: 'Buff163', toSub: 'autobuy', buyMarket: 'TradeOnMarket', sellMarket: 'Buff',    fetchEndpoint: '/api/huginn/tradeon/buff' },
-    { id: 'tradeon-buffmarket',      from: 'Tradeon',  fromSub: 'min', to: 'Buff.market', toSub: 'autobuy', buyMarket: 'TradeOnMarket', sellMarket: 'BuffMarket', fetchEndpoint: '/api/huginn/tradeon/pair?buy=TradeOnMarket&sell=BuffMarket&mode=autobuy' },
-    { id: 'tradeon-buffmarket-min',  from: 'Tradeon',  fromSub: 'min', to: 'Buff.market', toSub: 'min',     buyMarket: 'TradeOnMarket', sellMarket: 'BuffMarket', fetchEndpoint: '/api/huginn/tradeon/pair?buy=TradeOnMarket&sell=BuffMarket&mode=min' },
-    { id: 'tradeon-csfloat',         from: 'Tradeon',  fromSub: 'min', to: 'CSFloat', toSub: 'min',     buyMarket: 'TradeOnMarket', sellMarket: 'CsFloat', fetchEndpoint: '/api/huginn/tradeon/csfloat' },
-    // "autobuy" profiles sell into CSFloat buy orders, which only exist for owned
-    // items we've swept (see the CSFloat buy-orders panel). Data covers owned items.
-    { id: 'tradeon-csfloat-autobuy', from: 'Tradeon',  fromSub: 'min', to: 'CSFloat', toSub: 'autobuy', buyMarket: 'TradeOnMarket', sellMarket: 'CsFloat', fetchEndpoint: '/api/huginn/tradeon/csfloat-autobuy', autobuy: true },
-    { id: 'tradeon-dmarket',         from: 'Tradeon',  fromSub: 'min', to: 'DMarket', toSub: 'autobuy', buyMarket: 'TradeOnMarket', sellMarket: 'Dmarket', fetchEndpoint: '/api/huginn/tradeon/dmarket' },
-    { id: 'tradeon-lootfarm',        from: 'Tradeon',  fromSub: 'min', to: 'LOOT.Farm', toSub: 'autobuy', buyMarket: 'TradeOnMarket', sellMarket: 'LootFarm', fetchEndpoint: '/api/huginn/tradeon/lootfarm' },
-    { id: 'lisskins-steam',          from: 'LisSkins', fromSub: 'min', to: 'Steam',   toSub: 'autobuy', buyMarket: 'LisSkins',      sellMarket: 'Steam',   fetchEndpoint: '/api/huginn/tradeon/lisskins-steam' },
-    { id: 'lisskins-buff',           from: 'LisSkins', fromSub: 'min', to: 'Buff163', toSub: 'autobuy', buyMarket: 'LisSkins',      sellMarket: 'Buff',    fetchEndpoint: '/api/huginn/tradeon/lisskins-buff' },
-    { id: 'lisskins-csfloat',        from: 'LisSkins', fromSub: 'min', to: 'CSFloat', toSub: 'min',     buyMarket: 'LisSkins',      sellMarket: 'CsFloat', fetchEndpoint: '/api/huginn/tradeon/lisskins-csfloat' },
-    { id: 'lisskins-csfloat-autobuy',from: 'LisSkins', fromSub: 'min', to: 'CSFloat', toSub: 'autobuy', buyMarket: 'LisSkins',      sellMarket: 'CsFloat', fetchEndpoint: '/api/huginn/tradeon/lisskins-csfloat-autobuy', autobuy: true },
-    { id: 'lisskins-dmarket',        from: 'LisSkins', fromSub: 'min', to: 'DMarket', toSub: 'autobuy', buyMarket: 'LisSkins',      sellMarket: 'Dmarket', fetchEndpoint: '/api/huginn/tradeon/lisskins-dmarket' },
-    { id: 'lisskins-lootfarm',       from: 'LisSkins', fromSub: 'min', to: 'LOOT.Farm', toSub: 'autobuy', buyMarket: 'LisSkins',    sellMarket: 'LootFarm', fetchEndpoint: '/api/huginn/tradeon/lisskins-lootfarm' },
-    { id: 'buff-steam',              from: 'Buff163',  fromSub: 'min', to: 'Steam',   toSub: 'autobuy', buyMarket: 'Buff',          sellMarket: 'Steam',   fetchEndpoint: '/api/huginn/tradeon/buff-steam' },
-    { id: 'buff-csfloat',            from: 'Buff163',  fromSub: 'min', to: 'CSFloat', toSub: 'min',     buyMarket: 'Buff',          sellMarket: 'CsFloat', fetchEndpoint: '/api/huginn/tradeon/buff-csfloat' },
-    { id: 'buff-csfloat-autobuy',    from: 'Buff163',  fromSub: 'min', to: 'CSFloat', toSub: 'autobuy', buyMarket: 'Buff',          sellMarket: 'CsFloat', fetchEndpoint: '/api/huginn/tradeon/buff-csfloat-autobuy', autobuy: true },
-    { id: 'buff-dmarket',            from: 'Buff163',  fromSub: 'min', to: 'DMarket', toSub: 'autobuy', buyMarket: 'Buff',          sellMarket: 'Dmarket', fetchEndpoint: '/api/huginn/tradeon/buff-dmarket' },
-    { id: 'csfloat-steam',           from: 'CSFloat',  fromSub: 'min', to: 'Steam',   toSub: 'autobuy', buyMarket: 'CsFloat',       sellMarket: 'Steam',   fetchEndpoint: '/api/huginn/tradeon/csfloat-steam' },
-    { id: 'csfloat-buff',            from: 'CSFloat',  fromSub: 'min', to: 'Buff163', toSub: 'autobuy', buyMarket: 'CsFloat',       sellMarket: 'Buff',    fetchEndpoint: '/api/huginn/tradeon/csfloat-buff' },
-    { id: 'csfloat-dmarket',         from: 'CSFloat',  fromSub: 'min', to: 'DMarket', toSub: 'autobuy', buyMarket: 'CsFloat',       sellMarket: 'Dmarket', fetchEndpoint: '/api/huginn/tradeon/csfloat-dmarket' },
-    { id: 'dmarket-steam',           from: 'DMarket',  fromSub: 'min', to: 'Steam',   toSub: 'autobuy', buyMarket: 'Dmarket',       sellMarket: 'Steam',   fetchEndpoint: '/api/huginn/tradeon/dmarket-steam' },
-    { id: 'dmarket-buff',            from: 'DMarket',  fromSub: 'min', to: 'Buff163', toSub: 'autobuy', buyMarket: 'Dmarket',       sellMarket: 'Buff',    fetchEndpoint: '/api/huginn/tradeon/dmarket-buff' },
-    { id: 'dmarket-csfloat',         from: 'DMarket',  fromSub: 'min', to: 'CSFloat', toSub: 'min',     buyMarket: 'Dmarket',       sellMarket: 'CsFloat', fetchEndpoint: '/api/huginn/tradeon/dmarket-csfloat' },
-    { id: 'dmarket-csfloat-autobuy', from: 'DMarket',  fromSub: 'min', to: 'CSFloat', toSub: 'autobuy', buyMarket: 'Dmarket',       sellMarket: 'CsFloat', fetchEndpoint: '/api/huginn/tradeon/dmarket-csfloat-autobuy', autobuy: true },
-];
-
-// "Check live" re-reads one row on pulse now (two ~0.5 s name lookups): only pairs whose both
-// sides are pulse prices. Not LOOT.Farm as the target (its own feed), not CSFloat buy orders
-// (the CSFloat sweep), not an estimated side (SkinSwap Trade).
-const canCheckLive = (profile) => !!profile.buyMarket && !!profile.sellMarket
-    && profile.sellMarket !== 'LootFarm' && !profile.autobuy
-    && !profile.fromEstimated && !profile.toEstimated;
-
-// A profile's key on the backend (settings huginn_active_profiles): buy market, sell market, autobuy or min.
-const profileKey = (profile) => `${profile.buyMarket}:${profile.sellMarket}:${profile.toSub === 'autobuy' ? 'autobuy' : 'min'}`;
 // ?kept=1: an active profile opening by itself takes the keeper's copy from memory (up to its interval old).
 const withKept = (endpoint) => `${endpoint}${endpoint.includes('?') ? '&' : '?'}kept=1`;
 // The pulse tables behind an answer, from its X-Pulse-Tables header: [[market, price type, seconds since download]].
@@ -90,8 +49,9 @@ const pulseTablesOf = (response) => {
         return [];
     }
 };
-// When the oldest table behind shown prices was downloaded (browser milliseconds).
-const downloadedAt = ({ tables, receivedAt }) => receivedAt - Math.max(0, ...tables.map(table => table[2])) * 1000;
+// When the oldest table behind shown prices was downloaded (the feed's clock, epoch seconds: the
+// header's fourth value, the same clock as /api/huginn/active's downloaded_at).
+const downloadedAt = ({ tables }) => (tables.length ? Math.min(...tables.map(table => table[3] ?? 0)) : 0);
 const ACTIVE_POLL_MILLISECONDS = 15000; // the active profiles' table ages (memory only on the backend, cheap)
 
 const formatTs = (ts) => {
@@ -140,11 +100,14 @@ const HuginnArbitrage = () => {
     const [fetchSeconds, setFetchSeconds] = useState(0);   // how long the running fetch has waited
     const [uploadOpen, setUploadOpen] = useState(true);
 
-    const [profileId, setProfileId] = useState(PROFILES[0].id);
+    const [profileId, setProfileId] = useState(null);
     const tradeonData = dataByProfile[profileId] ?? null;
 
-    // Market registry (from the backend) drives the generated buy→sell pairs below.
+    // Market registry (from the backend): names, fees and the Fees editor.
     const [markets, setMarkets] = useState([]);
+    // Every Arbitrage profile, curated then generated, from the backend (GET /api/huginn/profiles).
+    const [allProfiles, setAllProfiles] = useState([]);
+    const [profilesError, setProfilesError] = useState(null);
 
     const [itemSearch, setItemSearch] = useState('');
     const [inventoryOnly, setInventoryOnly] = useState(false);
@@ -175,6 +138,15 @@ const HuginnArbitrage = () => {
         .then(data => { if (Array.isArray(data)) setMarkets(data); })
         .catch(() => {});
     useEffect(() => { refreshMarkets(); }, []);
+    useEffect(() => {
+        fetch('/api/huginn/profiles')
+            .then(readJsonOrThrow)
+            .then(data => {
+                setAllProfiles(data);
+                setProfileId(current => current ?? data[0]?.id ?? null);
+            })
+            .catch(error => setProfilesError(`Profiles not loaded: ${failureMessage(error)}`));
+    }, []);
 
     // One-time move of the old per-browser "LF fee" box (percent, localStorage) into
     // the one Fees editor, so a subscription fee (e.g. 3%) is not silently lost. Only
@@ -254,56 +226,7 @@ const HuginnArbitrage = () => {
         e.target.value = '';
     };
 
-    // Generated pairs: every registry market with listings as a buy source × every
-    // sell target (autobuy where it has buy orders, min where it has listings — a
-    // sell-only market like SkinSwap (Trade) is autobuy only), minus pairs already
-    // covered by the curated PROFILES above. Each is synthesised server-side via
-    // /api/huginn/tradeon/pair. Tradeon is skipped as a sell target (it's the pull's
-    // own market) and LootFarm too (its selling is handled by the feed-based profiles).
-    const allProfiles = useMemo(() => {
-        if (!markets.length) return PROFILES;
-        const covered = new Set(PROFILES.map(p => `${p.buyMarket}:${p.sellMarket}:${p.toSub}`));
-        const generated = [];
-        for (const buy of markets) {
-            if (buy.hasListings === false) continue;
-            for (const sell of markets) {
-                if (sell.id === buy.id || sell.id === 'TradeOnMarket' || sell.id === 'LootFarm') continue;
-                const modes = [...(sell.hasAutobuy ? ['autobuy'] : []), ...(sell.hasListings !== false ? ['min'] : [])];
-                for (const mode of modes) {
-                    if (covered.has(`${buy.id}:${sell.id}:${mode}`)) continue;
-                    // CSFloat autobuy sells into swept buy orders → show the sweep panel.
-                    const csfloatAutobuy = sell.id === 'CsFloat' && mode === 'autobuy';
-                    // SkinSwap (Trade)'s min is estimated, not pulse data: say so in the name.
-                    const toEstimated = mode === 'min' && !!sell.listingsEstimated;
-                    generated.push({
-                        id: `gen:${buy.id}:${sell.id}:${mode}`,
-                        from: buy.display, fromSub: buy.listingsEstimated ? 'min, estimated' : 'min',
-                        to: sell.display, toSub: toEstimated ? 'min, estimated' : mode,
-                        fromEstimated: !!buy.listingsEstimated, toEstimated,
-                        buyMarket: buy.id, sellMarket: sell.id,
-                        fromNotInPulseUi: !!buy.notInPulseUi, toNotInPulseUi: !!sell.notInPulseUi,
-                        fromPriceNote: buy.priceNote, toPriceNote: sell.priceNote,
-                        // Rows carry `pagePrice` as this market's own page shows it (SkinSwap Trade page).
-                        fromPageLabel: buy.pagePriceLabel, toPageLabel: sell.pagePriceLabel,
-                        fetchEndpoint: `/api/huginn/tradeon/pair?buy=${buy.id}&sell=${sell.id}&mode=${mode}`,
-                        ...(csfloatAutobuy ? { autobuy: true } : {}),
-                    });
-                }
-            }
-        }
-        // Our check of each side's prices (registry `reliability`): the buy side is the
-        // market's lowest listing; the sell side its buy orders (autobuy) or listing (min).
-        const byId = Object.fromEntries(markets.map(m => [m.id, m]));
-        const mark = (id, side) => byId[id]?.reliability?.[side] || null;
-        return [...PROFILES, ...generated].map(p => ({
-            ...p,
-            fromReliability: mark(p.buyMarket, 'listings'),
-            toReliability: mark(p.sellMarket, p.toSub === 'autobuy' ? 'buyOrders' : 'listings'),
-            toReliabilitySide: p.toSub === 'autobuy' ? 'buyOrders' : 'listings',
-        }));
-    }, [markets]);
-
-    const activeProfile = allProfiles.find(p => p.id === profileId) ?? PROFILES[0];
+    const activeProfile = allProfiles.find(p => p.id === profileId) ?? allProfiles[0] ?? null;
 
     // Load a profile's deals: fresh (Fetch live data: every table under a minute old) or, for a
     // active profile, from the backend's memory (*fromMemory*: the keeper's copy, up to its interval).
@@ -329,7 +252,7 @@ const HuginnArbitrage = () => {
             // A copy from memory never replaces newer prices (a Fetch live data that answered first)
             // or a JSON file you loaded.
             if (fromMemory && (uploadedRef.current.has(profile.id)
-                || (shown && downloadedAt(shown) > downloadedAt(prices) + 1000))) return;
+                || (shown && downloadedAt(shown) > downloadedAt(prices) + 1))) return;
             uploadedRef.current.delete(profile.id);
             setProfileData(profile.id, data);
             setProfilePrices(profile.id, prices);
@@ -349,11 +272,11 @@ const HuginnArbitrage = () => {
     };
 
     const handleApiFetch = () => {
-        if (!tradeonFetching) loadProfile(activeProfile);    // capture: the profile may change during the await
+        if (!tradeonFetching && activeProfile) loadProfile(activeProfile);    // capture: the profile may change during the await
     };
 
     // ---- Keep fresh ----------------------------------------------------------------------------
-    const activeKey = profileKey(activeProfile);
+    const activeKey = activeProfile?.key ?? null;
     const loadActive = useCallback(async (preview) => {
         const request = ++activeRequest.current;
         const response = await fetch(`/api/huginn/active${preview ? `?preview=${encodeURIComponent(preview)}` : ''}`);
@@ -378,18 +301,17 @@ const HuginnArbitrage = () => {
 
     const selectedActive = activeStatus?.profiles?.[activeKey] || null;
     const selectedIsActive = !!selectedActive;
-    const selectedWarming = selectedIsActive && selectedActive.tables.some(table => table.age_seconds == null);
-    // Every active table in memory and within its interval: opening it downloads nothing. Otherwise
-    // (just switched on, or the background download failed) the page waits for the keeper, and
-    // "Fetch live data" is the way to download now.
-    const selectedReady = selectedIsActive && selectedActive.tables.every(table => table.age_seconds != null && table.age_seconds < activeStatus.minutes * 60);
-    const activeIds = useMemo(() => new Set(allProfiles.filter(p => activeStatus?.profiles?.[profileKey(p)]).map(p => p.id)), [allProfiles, activeStatus]);
+    // The backend says: warming (a table not downloaded yet) and ready (opening it downloads
+    // nothing). Not ready: the page waits for the keeper; "Fetch live data" downloads now.
+    const selectedWarming = !!selectedActive?.warming;
+    const selectedReady = !!selectedActive?.ready;
+    const activeIds = useMemo(() => new Set(allProfiles.filter(p => activeStatus?.profiles?.[p.key]).map(p => p.id)), [allProfiles, activeStatus]);
 
     // An active profile with nothing shown yet opens by itself from memory, once its tables are ready
     // (switched on, first download done). Prices already shown are never swapped without asking:
     // "Newer prices ready · show" offers the background download's newer copy.
     useEffect(() => {
-        if (view === 'arbitrage' && selectedReady && activeProfile.fetchEndpoint && !tradeonFetching
+        if (view === 'arbitrage' && selectedReady && activeProfile?.fetchEndpoint && !tradeonFetching
             && !dataByProfile[profileId]) loadProfile(activeProfile, { fromMemory: true });
     }, [view, profileId, selectedReady]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -397,9 +319,9 @@ const HuginnArbitrage = () => {
     const shownPrices = pricesByProfile[profileId] || null;
     const newerReady = useMemo(() => {
         if (!shownPrices || !selectedActive || !activeStatus) return false;
-        const shownAt = Object.fromEntries(shownPrices.tables.map(([market, priceType, age]) => [`${market}:${priceType}`, shownPrices.receivedAt - age * 1000]));
-        return selectedActive.tables.some(table => table.age_seconds != null && shownAt[`${table.market}:${table.price_type}`] != null
-            && activeStatus.receivedAt - table.age_seconds * 1000 > shownAt[`${table.market}:${table.price_type}`] + 10000);
+        const shownAt = Object.fromEntries(shownPrices.tables.map(([market, priceType, , startedAt]) => [`${market}:${priceType}`, startedAt]));
+        return selectedActive.tables.some(table => table.downloaded_at != null && shownAt[`${table.market}:${table.price_type}`] != null
+            && table.downloaded_at > shownAt[`${table.market}:${table.price_type}`] + 10);
     }, [shownPrices, selectedActive, activeStatus]);
 
     // One change at a time ({add}, {remove}, {minutes}, {hours}), merged on the server: another tab's
@@ -423,7 +345,7 @@ const HuginnArbitrage = () => {
         }
     };
     const toggleActive = () => changeActive(selectedIsActive ? { remove: activeKey } : { add: activeKey });
-    const profileIdOf = (key) => allProfiles.find(p => profileKey(p) === key)?.id || null;
+    const profileIdOf = (key) => allProfiles.find(p => p.key === key)?.id || null;
 
     const marketName = useCallback((id) => markets.find(m => m.id === id)?.display || id, [markets]);
 
@@ -431,8 +353,7 @@ const HuginnArbitrage = () => {
         const key = `${profile.id}|${name}`;
         setLiveChecks(prev => ({ ...prev, [key]: { loading: true } }));
         try {
-            const params = new URLSearchParams({ name, buy: profile.buyMarket, sell: profile.sellMarket,
-                mode: profile.toSub === 'autobuy' ? 'autobuy' : 'min' });
+            const params = new URLSearchParams({ name, buy: profile.buyMarket, sell: profile.sellMarket, mode: profile.mode });
             const res = await fetch(`/api/huginn/check-live?${params}`);
             const data = await readJson(res);
             if (!res.ok) throw new Error(data.error || 'Check failed');
@@ -672,7 +593,9 @@ const HuginnArbitrage = () => {
                     <section className="rounded-xl border border-white/10 bg-slate-950/85 backdrop-blur-md shadow-xl min-w-0" aria-label="Store arbitrage"><StoreArbitrage /></section>
                 ) : view === 'store-boosts' ? (
                     <section className="rounded-xl border border-white/10 bg-slate-950/85 backdrop-blur-md shadow-xl min-w-0" aria-label="Store boosts"><StoreBoosts /></section>
-                ) : view === 'crossprofile' ? <CrossProfileArbitrage byHash={byHash} /> : view === 'harvest' ? <Harvest byHash={byHash} /> : view === 'cases' ? <CaseArbitrage byHash={byHash} /> : view === 'dips' ? <PriceDips byHash={byHash} /> : (<>
+                ) : view === 'crossprofile' ? <CrossProfileArbitrage byHash={byHash} /> : view === 'harvest' ? <Harvest byHash={byHash} /> : view === 'cases' ? <CaseArbitrage byHash={byHash} /> : view === 'dips' ? <PriceDips byHash={byHash} /> : !activeProfile ? (
+                    <p className={`text-sm ${profilesError ? 'text-red-300' : 'text-slate-500'}`}>{profilesError || 'Loading profiles…'}</p>
+                ) : (<>
                 {scanError && (
                     <div className="shrink-0 bg-red-500/20 border border-red-500/30 text-red-300 px-4 py-3 rounded-lg text-sm">
                         {scanError}
@@ -950,7 +873,7 @@ const HuginnArbitrage = () => {
                                         <span className={`text-base text-right tabular-nums ${(profit ?? 0) <= 0 ? 'text-red-400' : 'text-emerald-400'}`}>${profit?.toFixed(2)}</span>
                                         <span className={`text-base text-right font-semibold tabular-nums ${(profitPercent ?? 0) <= 0 ? 'text-red-400' : 'text-emerald-400'}`}>{profitPercent?.toFixed(0)}%</span>
                                         <span className="flex justify-center">
-                                            {canCheckLive(activeProfile) ? (
+                                            {activeProfile.checkLive ? (
                                                 <button
                                                     type="button"
                                                     onClick={() => checkLive(activeProfile, mhn)}
@@ -963,7 +886,7 @@ const HuginnArbitrage = () => {
                                                 >
                                                     <RotateCw size={13} className={live?.loading ? 'animate-spin' : ''} />
                                                 </button>
-                                            ) : <span className="text-slate-700" title="This pair cannot be checked live (LOOT.Farm feed, CSFloat buy orders or an estimate)">—</span>}
+                                            ) : <span className="text-slate-700" title={`Cannot be checked live: ${activeProfile.checkLiveRefusal}`}>—</span>}
                                         </span>
 
                                         <div className="flex flex-wrap gap-1">

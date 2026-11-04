@@ -136,7 +136,7 @@ def test_huginn_blueprint_registers_all_routes():
     # Active profiles (GET+POST) replaced the Pulse feed switchboard (kept, download) on 2026-10-31.
     # +10 CS2 Store Arbitrage (4) and CS2 Store Boosts (6), moved from Ratatoskr on 2026-11-04;
     # +1 CS2 Store Arbitrage settings (checked), Phase 2 step 2.
-    assert _rule_count(bp, "/api/huginn") == 99
+    assert _rule_count(bp, "/api/huginn") == 100
 
 
 def test_register_blueprints_wires_onto_app():

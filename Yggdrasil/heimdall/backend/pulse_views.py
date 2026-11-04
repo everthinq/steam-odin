@@ -16,7 +16,6 @@ active profiles: the one list that decides what pulse is asked for.
 Every price comes through ``HuginnService._table`` / ``HuginnService.pulse``; nothing here builds a
 pulse request.
 """
-import time
 from concurrent.futures import ThreadPoolExecutor
 
 from huginn_service import _AUTOBUY_VIA_CSFLOAT_SWEEP, _ESTIMATED_SELL, _MARKET_BY_ID
@@ -101,6 +100,8 @@ def _side_types(buy_id, sell_id, mode):
         raise ValueError('unknown market')
     if sell_id in _AUTOBUY_VIA_CSFLOAT_SWEEP and mode == 'autobuy':
         raise ValueError("CSFloat's buy orders come from the CSFloat sweep, not pulse")
+    if sell_id == 'LootFarm':
+        raise ValueError("LOOT.Farm's prices come from its own feed, not pulse")
     # Exactly as fetch_generated_pair prices it: buy orders for autobuy, else 'Sell' (the lowest
     # listing; LisSkins as a target is its 'Sell' table, not 'SellWithoutHold').
     if mode == 'autobuy' and sell['autobuy']:
@@ -238,6 +239,94 @@ def profile_label(key):
     return f'{display(buy_id)} → {display(sell_id)} ({mode})'
 
 
+# The curated Arbitrage profiles, first in the picker: (picker id, buy market, sell market, mode,
+# own route; None = the generated pair route). Every other pair is generated (arbitrage_profiles).
+CURATED_PROFILES = (
+    ('tradeon-steam', 'TradeOnMarket', 'Steam', 'autobuy', '/api/huginn/tradeon/steam'),
+    ('tradeon-buff', 'TradeOnMarket', 'Buff', 'autobuy', '/api/huginn/tradeon/buff'),
+    ('tradeon-buffmarket', 'TradeOnMarket', 'BuffMarket', 'autobuy', None),
+    ('tradeon-buffmarket-min', 'TradeOnMarket', 'BuffMarket', 'min', None),
+    ('tradeon-csfloat', 'TradeOnMarket', 'CsFloat', 'min', '/api/huginn/tradeon/csfloat'),
+    ('tradeon-csfloat-autobuy', 'TradeOnMarket', 'CsFloat', 'autobuy', '/api/huginn/tradeon/csfloat-autobuy'),
+    ('tradeon-dmarket', 'TradeOnMarket', 'Dmarket', 'autobuy', '/api/huginn/tradeon/dmarket'),
+    ('tradeon-lootfarm', 'TradeOnMarket', 'LootFarm', 'autobuy', '/api/huginn/tradeon/lootfarm'),
+    ('lisskins-steam', 'LisSkins', 'Steam', 'autobuy', '/api/huginn/tradeon/lisskins-steam'),
+    ('lisskins-buff', 'LisSkins', 'Buff', 'autobuy', '/api/huginn/tradeon/lisskins-buff'),
+    ('lisskins-csfloat', 'LisSkins', 'CsFloat', 'min', '/api/huginn/tradeon/lisskins-csfloat'),
+    ('lisskins-csfloat-autobuy', 'LisSkins', 'CsFloat', 'autobuy', '/api/huginn/tradeon/lisskins-csfloat-autobuy'),
+    ('lisskins-dmarket', 'LisSkins', 'Dmarket', 'autobuy', '/api/huginn/tradeon/lisskins-dmarket'),
+    ('lisskins-lootfarm', 'LisSkins', 'LootFarm', 'autobuy', '/api/huginn/tradeon/lisskins-lootfarm'),
+    ('buff-steam', 'Buff', 'Steam', 'autobuy', '/api/huginn/tradeon/buff-steam'),
+    ('buff-csfloat', 'Buff', 'CsFloat', 'min', '/api/huginn/tradeon/buff-csfloat'),
+    ('buff-csfloat-autobuy', 'Buff', 'CsFloat', 'autobuy', '/api/huginn/tradeon/buff-csfloat-autobuy'),
+    ('buff-dmarket', 'Buff', 'Dmarket', 'autobuy', '/api/huginn/tradeon/buff-dmarket'),
+    ('csfloat-steam', 'CsFloat', 'Steam', 'autobuy', '/api/huginn/tradeon/csfloat-steam'),
+    ('csfloat-buff', 'CsFloat', 'Buff', 'autobuy', '/api/huginn/tradeon/csfloat-buff'),
+    ('csfloat-dmarket', 'CsFloat', 'Dmarket', 'autobuy', '/api/huginn/tradeon/csfloat-dmarket'),
+    ('dmarket-steam', 'Dmarket', 'Steam', 'autobuy', '/api/huginn/tradeon/dmarket-steam'),
+    ('dmarket-buff', 'Dmarket', 'Buff', 'autobuy', '/api/huginn/tradeon/dmarket-buff'),
+    ('dmarket-csfloat', 'Dmarket', 'CsFloat', 'min', '/api/huginn/tradeon/dmarket-csfloat'),
+    ('dmarket-csfloat-autobuy', 'Dmarket', 'CsFloat', 'autobuy', '/api/huginn/tradeon/dmarket-csfloat-autobuy'),
+)
+# Sell targets never generated: Tradeon is the pull's own market, LOOT.Farm sells through its feed
+# profiles (the curated ones above).
+_NOT_GENERATED_TARGETS = ('TradeOnMarket', 'LootFarm')
+
+
+def check_live_refusal(buy_id, sell_id, mode):
+    """Why a row of this profile cannot be checked live, or None when it can."""
+    try:
+        _side_types(buy_id, sell_id, mode)
+    except ValueError as error:
+        return str(error)
+    return None
+
+
+def arbitrage_profiles(huginn, settings=None):
+    """Every Arbitrage profile in picker order: the curated ones, then every generated pair (each
+    market with listings as the buy side × every sell target, autobuy where it has buy orders, min
+    where it has listings). Each says how it is fetched, its key (settings huginn_active_profiles)
+    and whether its rows can be checked live."""
+    registry = huginn.market_registry(settings)
+    by_id = {market['id']: market for market in registry}
+    curated = {(buy, sell, mode): (profile_id, route) for profile_id, buy, sell, mode, route in CURATED_PROFILES}
+    pairs = [(buy, sell, mode) for _, buy, sell, mode, _ in CURATED_PROFILES]
+    for buy in registry:
+        if not buy['hasListings']:
+            continue
+        for sell in registry:
+            if sell['id'] == buy['id'] or sell['id'] in _NOT_GENERATED_TARGETS:
+                continue
+            for mode in (['autobuy'] if sell['hasAutobuy'] else []) + (['min'] if sell['hasListings'] else []):
+                if (buy['id'], sell['id'], mode) not in curated:
+                    pairs.append((buy['id'], sell['id'], mode))
+    out = []
+    for buy_id, sell_id, mode in pairs:
+        buy, sell = by_id[buy_id], by_id[sell_id]
+        profile_id, route = curated.get((buy_id, sell_id, mode), (f'gen:{buy_id}:{sell_id}:{mode}', None))
+        to_estimated = mode == 'min' and sell['listingsEstimated']
+        sell_side = 'buyOrders' if mode == 'autobuy' else 'listings'
+        refusal = check_live_refusal(buy_id, sell_id, mode)
+        out.append({
+            'id': profile_id, 'key': f'{buy_id}:{sell_id}:{mode}', 'mode': mode,
+            'buyMarket': buy_id, 'sellMarket': sell_id,
+            'from': buy['display'], 'fromSub': 'min, estimated' if buy['listingsEstimated'] else 'min',
+            'to': sell['display'], 'toSub': 'min, estimated' if to_estimated else mode,
+            'fromEstimated': buy['listingsEstimated'], 'toEstimated': to_estimated,
+            'fromNotInPulseUi': buy['notInPulseUi'], 'toNotInPulseUi': sell['notInPulseUi'],
+            'fromPriceNote': buy['priceNote'], 'toPriceNote': sell['priceNote'],
+            # Rows carry `pagePrice` as this market's own page shows it (SkinSwap Trade page).
+            'fromPageLabel': buy['pagePriceLabel'], 'toPageLabel': sell['pagePriceLabel'],
+            'fromReliability': buy['reliability'].get('listings'),
+            'toReliability': sell['reliability'].get(sell_side), 'toReliabilitySide': sell_side,
+            # Sells into CSFloat's buy orders, which come from the CSFloat sweep (its panel shows).
+            'autobuy': sell_id in _AUTOBUY_VIA_CSFLOAT_SWEEP and mode == 'autobuy',
+            'fetchEndpoint': route or f'/api/huginn/tradeon/pair?buy={buy_id}&sell={sell_id}&mode={mode}',
+            'checkLive': refusal is None, 'checkLiveRefusal': refusal,
+        })
+    return out
+
+
 def parse_active_profiles(values):
     """["LisSkins:CsMoneyTrade:autobuy", ...] → ({profile key: [tables]}, [every table, once]);
     ValueError naming the first value that is not a profile with pulse tables, or when the
@@ -323,10 +412,21 @@ def apply_active_settings(huginn, settings):
     return tables
 
 
-def _table_view(key, ages):
+def _table_view(key, ages, now):
     age, downloading = ages.get(key, (None, False))
     return {'market': key[0], 'price_type': key[1], 'label': table_label(*key),
-            'age_seconds': age, 'downloading': downloading}
+            'age_seconds': age, 'downloading': downloading,
+            # The feed's clock (epoch seconds), the same as X-Pulse-Tables: compare the two directly.
+            'downloaded_at': None if age is None else round(now - age, 1)}
+
+
+def _profile_view(key, keys_of, ages, now, minutes):
+    """One active profile: its tables, warming (a table not downloaded yet: just switched on) and
+    ready (every table in memory and within the interval: opening it downloads nothing)."""
+    tables = [_table_view(table, ages, now) for table in keys_of]
+    return {'label': profile_label(key), 'tables': tables,
+            'warming': any(table['age_seconds'] is None for table in tables),
+            'ready': all(table['age_seconds'] is not None and table['age_seconds'] < minutes * 60 for table in tables)}
 
 
 def active_status(huginn, settings, preview=None):
@@ -336,17 +436,17 @@ def active_status(huginn, settings, preview=None):
     profiles, tables = parse_active_profiles_leniently(saved_profiles(settings))
     keys = set(tables) | set(REFERENCE_TABLES)
     ages = huginn.pulse.ages(keys)
+    now, minutes = huginn.pulse.now(), saved_minutes(settings)
     out = {
-        'minutes': saved_minutes(settings), 'choices': list(ACTIVE_MINUTES), 'max_tables': MAX_ACTIVE_TABLES,
+        'minutes': minutes, 'choices': list(ACTIVE_MINUTES), 'max_tables': MAX_ACTIVE_TABLES,
         'tables_used': len(tables), 'hours': saved_hours(settings), 'keeper': huginn.pulse.keeper_status(),
-        'profiles': {key: {'label': profile_label(key), 'tables': [_table_view(table, ages) for table in keys_of]}
-                     for key, keys_of in profiles.items()},
-        'reference': [{**_table_view(key, ages), 'every_seconds': every,
+        'profiles': {key: _profile_view(key, keys_of, ages, now, minutes) for key, keys_of in profiles.items()},
+        'reference': [{**_table_view(key, ages, now), 'every_seconds': every,
                        'note': 'off-Steam price reference, read once a day'}
                       for key, every in REFERENCE_TABLES.items()],
-        'statistics': [{**_table_view(key, ages), **huginn.history.coverage(*key)}
+        'statistics': [{**_table_view(key, ages, now), **huginn.history.coverage(*key)}
                        for key in sorted(keys) if key[1] in ('Sell', 'SellWithoutHold', 'Buy')],
-        'now': time.time(),
+        'now': now,
     }
     if preview:
         try:

@@ -165,8 +165,16 @@ Accounts, Draupnir and Mímir, then Huginn and Andvari.
 - 1 MONEY Andvari Buy games: freshness by browser clock (BuyPanel 59-60, hardcoded 30 min), default selection, totals summed in page, single /buy/run with selection (no plan id), only window.confirm, no ref double-click guard -> purchase-plan + plans/<id>/execute job. OPEN QUESTION to Ivan: require a passed dry run of the same plan before a real buy?
 - 2 Auto-sell settings (SellingPanel 38-83, TeamFortress 93-116) via raw /api/settings, app ids parsed in page, "also cards held before" saves on tick w/o confirm (rule 16) -> selling/config + team-fortress/config with clean_config; include-held as separate confirmed command.
 - 3 card selling return computed in page from two endpoints, own currency map, "buy order" text search -> return_on_purchases + listed code.
-- 4 Arbitrage fixed+generated profiles in page; canCheckLive is the only gate (backend check_live accepts ineligible pairs) -> GET /api/huginn/profiles; check-live refuses with code.
-- 5 active-profile ready/warming/newer computed in page -> /active returns them.
+Split into Huginn first (H1 to H6), then Andvari (Ivan, 2026-11-05). H1 = items 4 and 5, H2 = 7 and
+the CaseArbitrage bug, H3 = 8, H4 = 9 and the CrossProfile bugs, H5 = 12 and 13, H6 = 14 (Gjallarhorn,
+News watcher, Case alerts, Readiness); Andvari = 1, 2, 3, 10, 11, DealsTable and the app-id bug.
+- 4 + 5 (H1) **DONE 2026-11-05**: `GET /api/huginn/profiles` (`pulse_views.arbitrage_profiles`: the
+  curated `CURATED_PROFILES`, then every generated pair; each with `key`, `mode`, `fetchEndpoint`,
+  `checkLive` and `checkLiveRefusal`); the page and `tests/test_active_profiles.py` read it (both
+  copies gone). `check-live` refuses an uncheckable pair (LOOT.Farm's feed, CSFloat's swept buy
+  orders, an estimate) with `{error, code: 'not_checkable'}`. `/api/huginn/active` answers each
+  profile's `ready` and `warming` and each table's `downloaded_at`; `X-Pulse-Tables` adds each
+  table's download time on the same clock, so "Newer prices ready" compares server times only.
 - 6 FIXED 2026-11-04: Gjallarhorn Target basket sends one `targets/add` or `targets/remove` per item (the whole-list POST is gone); GET always answers the names, with `pricing_error` when prices fail; only the newest answer is applied.
 - 7 CaseArbitrage hardcoded MARKETS -> markets list from /api/huginn/cases.
 - 8 Harvest: profitable-only differs from backend count; stale via frontend constant; hardcoded 8 days; offers count -> counted, short_of_offers, best.stale, stale_after_seconds.
