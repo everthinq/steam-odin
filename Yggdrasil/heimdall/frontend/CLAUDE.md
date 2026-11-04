@@ -88,7 +88,7 @@ path prefix — add your page there. No catch-all route, no Settings page.
   every access wrapped in `try`/`catch`. Keys in use: `heimdall-dashboard-layout`,
   `draupnir-portfolio-layout`, `huginn.harvest`, `andvari.valuation`,
   `andvari.buy.apps`, `huginn.arbitrageFilters`, `huginn.harvestFilters`, `huginn.caseArbitrageFilters`, `huginn.crossProfileFilters`, `ratatoskr.storeArbitrage`, `ratatoskr.storeArbitrageFilters`, `ratatoskr.storeBoosts` (CS2 Store Arbitrage and CS2 Store Boosts, Huginn tabs now; the keys stayed so saved choices survive the move), `ratatoskr.showUnstorableItems`, `huginn.priceDips`, `huginn.skinswapNoteOpen`, `lf_balance_pct`, `lf_unlocked`.
-- **Shared pieces:** `components/gjallarhorn/InfoTip.jsx` (prop `tip`) for
+- **Shared pieces:** `utils/useValuationMarkets.js` (the backend's valuation market list for Draupnir and Gjallarhorn: `markets`, `chosen(market)`, `label(market)`; never write a market list in a page); `components/gjallarhorn/InfoTip.jsx` (prop `tip`) for
   tooltips; `components/draupnir/columnSort.js` (`useColumnSort`, `sortRows`) with the header `components/ratatoskr/SortHeader.jsx`;
   `components/arbitrage/ArbitrageFilters.jsx` (price / account / collection filters + chips on Arbitrage, Harvest, Case Arbitrage, Cross-Profile and CS2 Store Arbitrage; each tab names its price sides via `priceSides`; helpers, `useStoredFilters` and `buildOptions` in `utils/arbitrageFilters.js`; the page passes its inventory scan down as `byHash`, the only source of collections);
   `utils/transferItems.js` (`matchesSearchQuery`, wear shorthand fn/mw/ft/ww/bs);

@@ -9,7 +9,8 @@ import SortTh from '../../components/draupnir/SortTh';
 import OversoldMark from '../../components/draupnir/OversoldMark';
 import PricingNote from '../../components/draupnir/PricingNote';
 import { useColumnSort, sortRows } from '../../components/draupnir/columnSort';
-import { readJson } from '../../utils/readJson';
+import { readJson, readJsonOrThrow } from '../../utils/readJson';
+import { useValuationMarkets } from '../../utils/useValuationMarkets';
 
 // How each sortable column reads its value from a row (see columnSort.js).
 const HOLDINGS_ACCESSORS = {
@@ -32,12 +33,6 @@ const TXN_ACCESSORS = {
 };
 const COLLECTION_HINT = 'Scan your inventory in Huginn (Get all items) to filter by collection';
 
-const MARKETS = [
-    { id: 'steam', label: 'Steam' },
-    { id: 'csfloat', label: 'CSFloat' },
-    { id: 'buff', label: 'Buff163' },
-    { id: 'lowest', label: 'Lowest' },
-];
 
 // Tables can get very long (thousands of rows after an import), so each is
 // collapsible and paginated — only PAGE_SIZE rows paint until "Load more".
@@ -61,26 +56,10 @@ const plClass = (v) => v == null ? 'text-slate-400' : v > 0 ? 'text-emerald-400'
 const plStr = (v) => v == null ? '—' : `${v > 0 ? '+' : ''}${money(v)}`;
 
 const todayStr = () => new Date().toISOString().slice(0, 10);   // YYYY-MM-DD
-// One field holds the whole buying date/time. The user may type a plain date or
-// a date-time in several human shapes (e.g. "2026-08-11 15:23:24",
-// "08/31/2026, 12:12 AM"); the backend is the authority that normalizes it to a
-// canonical stored form (YYYY-MM-DD, or YYYY-MM-DDThh:mm:ss with a time).
-// Accept anything that at least *starts* with a plausible date token here, and
-// let the backend reject a truly malformed value with a clear 400.
-// Table display of a canonical stored value: "2026-08-11T15:23:24" → "2026-08-11 15:23".
-// Anything not in canonical shape is shown verbatim (never truncated).
-const prettyDate = (s) => {
-    if (!s) return '—';
-    const m = /^(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2})/.exec(s.trim());
-    return m ? `${m[1]} ${m[2]}` : s;
-};
-// Fill the edit field from a canonical stored value in a friendly, re-parseable
-// shape: "2026-08-11T15:23:24" → "2026-08-11 15:23:24"; a plain date stays as-is.
-const toEditable = (s) => {
-    const str = (s || '').trim();
-    const m = /^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2}(?::\d{2})?)/.exec(str);
-    return m ? `${m[1]} ${m[2]}` : str;
-};
+// One field holds the whole buying date/time, typed in any common shape
+// ("2026-08-11 15:23:24", "08/31/2026, 12:12 AM"). The backend reads it
+// (POST /api/draupnir/dates/normalize when the field loses focus, and again on
+// save) and sends each stored date as date_display and date_editable.
 const blankForm = () => ({ item_name: '', type: 'buy', qty: 1, price: '', platform: '', date: todayStr(), note: '', is_arbitrage: false });
 
 const Tile = ({ label, value, cls = 'text-slate-100' }) => (
@@ -100,7 +79,8 @@ const DraupnirPortfolio = () => {
     const { portfolioId } = useParams();
     const navigate = useNavigate();
     const [data, setData] = useState(null);
-    const [market, setMarket] = useState('steam');
+    const [market, setMarket] = useState('');   // '' = the backend's default market
+    const { markets, chosen: chosenMarket } = useValuationMarkets();
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
     const [form, setForm] = useState(blankForm());
@@ -249,9 +229,25 @@ const DraupnirPortfolio = () => {
         setEditingId(null); setFormError(null); setShowSuggest(false);
         setForm({
             item_name: last.item_name, type: last.type, qty: last.qty,
-            price: String(last.price), platform: last.platform, date: toEditable(last.date), note: last.note,
+            price: String(last.price), platform: last.platform, date: last.date_editable, note: last.note,
         });
         setTimeout(() => itemInputRef.current?.focus(), 0);
+    };
+
+    // When the date field loses focus, the backend rewrites what was typed into
+    // its year-first form (the calendar reads only that form), or says why not.
+    const normalizeDate = async () => {
+        const text = form.date.trim();
+        if (!text) return;
+        try {
+            const d = await readJsonOrThrow(await fetch('/api/draupnir/dates/normalize', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text }),
+            }));
+            setForm(f => (f.date.trim() === text ? { ...f, date: d.editable } : f));
+            setFormError(null);
+        } catch (error) {
+            setFormError(error.message);
+        }
     };
 
     // The backend checks the fields and the item name; an unknown name answers
@@ -319,7 +315,7 @@ const DraupnirPortfolio = () => {
 
     const startEdit = (t) => {
         setEditingId(t.id);
-        setForm({ item_name: t.item_name, type: t.type, qty: t.qty, price: t.price, platform: t.platform, date: toEditable(t.date), note: t.note, is_arbitrage: !!t.is_arbitrage });
+        setForm({ item_name: t.item_name, type: t.type, qty: t.qty, price: t.price, platform: t.platform, date: t.date_editable, note: t.note, is_arbitrage: !!t.is_arbitrage });
     };
 
     const deleteTxn = (t) => setDialog({
@@ -377,8 +373,8 @@ const DraupnirPortfolio = () => {
                 )}
                 <div className="ml-auto flex items-center gap-2">
                     <span className="text-[10px] font-bold tracking-widest text-slate-600 uppercase">Value on</span>
-                    <select value={market} onChange={e => setMarket(e.target.value)} className={inputCls}>
-                        {MARKETS.map(m => <option key={m.id} value={m.id}>{m.label}</option>)}
+                    <select value={chosenMarket(market)} onChange={e => setMarket(e.target.value)} className={inputCls}>
+                        {markets.map(m => <option key={m.id} value={m.id}>{m.label}</option>)}
                     </select>
                 </div>
             </div>
@@ -472,6 +468,7 @@ const DraupnirPortfolio = () => {
                                     className={`${inputCls} w-52 pr-8`} placeholder="Date or date-time *"
                                     title='Date, optionally with a time — e.g. "2026-08-31", "2026-08-11 15:23:24", or "08/31/2026, 12:12 AM"'
                                     value={form.date} onChange={v => setForm(f => ({ ...f, date: v }))}
+                                    onBlur={normalizeDate}
                                 />
                                 <input className={`${inputCls} flex-1 min-w-[120px]`} placeholder="Note" value={form.note} onChange={e => setForm({ ...form, note: e.target.value })} />
                                 <button
@@ -618,7 +615,7 @@ const DraupnirPortfolio = () => {
                                                         <td className="px-3 py-2 text-right tabular-nums text-slate-300">{money(t.price)}</td>
                                                         <td className="px-3 py-2 text-right tabular-nums text-slate-400">{money(t.total)}</td>
                                                         <td className="px-3 py-2 text-slate-400"><div className="max-w-[160px] truncate" title={t.platform}>{t.platform || '—'}</div></td>
-                                                        <td className="px-3 py-2 text-slate-500 tabular-nums whitespace-nowrap">{prettyDate(t.date)}</td>
+                                                        <td className="px-3 py-2 text-slate-500 tabular-nums whitespace-nowrap">{t.date_display || '—'}</td>
                                                         <td className="px-3 py-2">
                                                             <div className="flex items-center justify-end gap-1">
                                                                 <button onClick={() => startEdit(t)} className="p-1 rounded text-slate-500 hover:text-white hover:bg-white/10 transition-colors"><Pencil size={13} /></button>

@@ -29,7 +29,7 @@ def test_draupnir_blueprint_registers_all_routes():
         '/api/draupnir/portfolios/arbitrage',
         '/api/draupnir/portfolios/<pid>/export',
         '/api/draupnir/portfolios/validate-item',
-        '/api/draupnir/portfolios/item-search',
+        '/api/draupnir/portfolios/item-search', '/api/draupnir/dates/normalize',
         '/api/draupnir/portfolios/<pid>',
         '/api/draupnir/portfolios/<pid>/transactions',
         '/api/draupnir/portfolios/<pid>/transactions/<tid>',
@@ -89,7 +89,7 @@ def test_huginn_blueprint_registers_all_routes():
     rules = _rules_for(bp)
     for want in ['/api/huginn/scan', '/api/huginn/cases',
                  '/api/huginn/csfloat/buy-orders', '/api/huginn/tradeon/steam',
-                 '/api/huginn/lootfarm/arbitrage', '/api/huginn/markets',
+                 '/api/huginn/lootfarm/arbitrage', '/api/huginn/markets', '/api/huginn/valuation-markets',
                  '/api/huginn/markets/fees', '/api/huginn/tradeon/pair',
                  '/api/huginn/gjallarhorn/rotation', '/api/huginn/gjallarhorn/accounts',
                  '/api/huginn/gjallarhorn/readiness', '/api/huginn/gjallarhorn/holds',
@@ -136,7 +136,7 @@ def test_huginn_blueprint_registers_all_routes():
     # Active profiles (GET+POST) replaced the Pulse feed switchboard (kept, download) on 2026-10-31.
     # +10 CS2 Store Arbitrage (4) and CS2 Store Boosts (6), moved from Ratatoskr on 2026-11-04;
     # +1 CS2 Store Arbitrage settings (checked), Phase 2 step 2.
-    assert _rule_count(bp, "/api/huginn") == 98
+    assert _rule_count(bp, "/api/huginn") == 99
 
 
 def test_register_blueprints_wires_onto_app():

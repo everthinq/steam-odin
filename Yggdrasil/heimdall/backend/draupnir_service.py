@@ -17,7 +17,7 @@ from datetime import datetime, timezone
 
 from jsonio import atomic_write_json
 from storage_deposit import CommandError
-from validation import normalize_datetime, validate_transaction
+from validation import date_display, date_editable, normalize_datetime, validate_transaction
 
 log = logging.getLogger(__name__)
 
@@ -919,10 +919,13 @@ class DraupnirService:
 
     @staticmethod
     def _with_totals(txns):
-        """Each transaction with its ``total`` (quantity × price), so no page
-        multiplies it itself."""
+        """Each transaction with its ``total`` (quantity × price) and its date as the
+        table shows it (``date_display``) and as the edit field takes it
+        (``date_editable``), so no page multiplies or reformats anything itself."""
         for t in txns:
             t['total'] = round((t.get('qty') or 0) * (t.get('price') or 0), 2)
+            t['date_display'] = date_display(t.get('date'))
+            t['date_editable'] = date_editable(t.get('date'))
         return txns
 
     @staticmethod

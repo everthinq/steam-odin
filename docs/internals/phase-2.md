@@ -153,7 +153,12 @@ Accounts, Draupnir and Mímir, then Huginn and Andvari.
   note on what the loop does; `GET/POST /api/confirmations/settings`. Check All Now is a job
   (`ConfirmationScheduler.start_check_all`, the lock taken before the thread; 409 `already_running`; result
   `Checked N of M accounts`). The window reads limits and note from the backend.
-- 12 copied date normaliser and valuation market list.
+- 12 DONE copied date normaliser and valuation market list: `HuginnService.valuation_markets()` (labels in
+  `_PRICE_MARKET_LABELS`, Lowest's members in `_LOWEST_OF`, `DEFAULT_PRICE_MARKET`) served at
+  `GET /api/huginn/valuation-markets`; Draupnir and Gjallarhorn pickers read it (`utils/useValuationMarkets.js`; a page
+  sends no market until one is picked, the routes fall back to the default). Dates: only `validation.normalize_datetime`
+  reads typed dates; `POST /api/draupnir/dates/normalize` (code `bad_date`) rewrites the field on blur; each
+  transaction carries `date_display` and `date_editable`; `DateField` reads only the year-first form.
 - Other bugs: no success checks (delete transaction, rename, delete portfolio navigates away on failure, create/delete portfolio); "Drip last" drops is_arbitrage; old search answers win; Dashboard transient error filter misses readJson/Safari messages (use failureMessage).
 
 ### Huginn and Andvari

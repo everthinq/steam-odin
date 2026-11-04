@@ -15,6 +15,7 @@ from datetime import datetime
 from flask import Blueprint, g, jsonify, request
 
 from context import ctx
+from huginn_service import DEFAULT_PRICE_MARKET
 from huginn_service import load_csfloat_keys, load_csfloat_proxy, classify_proxy_error, detect_public_ip
 from notifications import notification_channel, send_notification
 import pulse_views
@@ -23,6 +24,11 @@ from storage_deposit import CommandError
 from store_arbitrage_service import settings_changes
 
 bp = Blueprint('huginn', __name__)
+
+
+def _valuation_market():
+    """The market a request values holdings on; none given means the backend's default."""
+    return request.args.get('market') or DEFAULT_PRICE_MARKET
 logger = logging.getLogger(__name__)
 
 
@@ -458,6 +464,12 @@ def huginn_tradeon_dmarket():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+@bp.route('/api/huginn/valuation-markets', methods=['GET'])
+def huginn_valuation_markets():
+    """The markets a holding can be valued on (Draupnir and Gjallarhorn pickers), and the default."""
+    return jsonify(ctx.huginn_service.valuation_markets())
+
+
 @bp.route('/api/huginn/markets', methods=['GET'])
 def huginn_markets():
     """Market registry for the arbitrage UI: ids, display names, autobuy support, and
@@ -589,7 +601,7 @@ def gjallarhorn_rotation():
     settings = ctx.settings_manager.get_settings()
     token = settings.get('tradeon_token', '')
     portfolio = request.args.get('portfolio', 'combined')
-    market = request.args.get('market', 'steam')
+    market = _valuation_market()
     steamid = request.args.get('steamid') or None
     # Mark the page as actively in use so the liquidity warmer defers the heavy
     # authenticated history fetches to idle (keeps Steam from 429-ing the session).
@@ -665,7 +677,7 @@ def gjallarhorn_targets_get():
     token = settings.get('tradeon_token', '')
     targets = _saved_targets()
     capital = request.args.get('capital', type=float)
-    market = request.args.get('market', 'steam')
+    market = _valuation_market()
     try:
         return jsonify(ctx.gjallarhorn_service.basket(token, targets, capital, market))
     except Exception as e:

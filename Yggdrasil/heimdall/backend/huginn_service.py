@@ -527,6 +527,10 @@ def pulse_short_link(market_slug, name):
 
 
 
+# The market a holding is valued on when a request names none (Draupnir, Gjallarhorn).
+DEFAULT_PRICE_MARKET = 'steam'
+
+
 class HuginnService:
     def __init__(self, steam_service, ratatoskr_service):
         self.steam = steam_service
@@ -2240,6 +2244,18 @@ class HuginnService:
         'dmarket':  ('Dmarket',  'Sell'),
         'lisskins': ('LisSkins', 'SellWithoutHold'),
     }
+    # The names the pages show for each valuation market, in picker order; 'lowest' is the
+    # cheapest of _LOWEST_OF. The one list Draupnir and Gjallarhorn offer (valuation_markets).
+    _PRICE_MARKET_LABELS = {
+        'steam': 'Steam', 'csfloat': 'CSFloat', 'buff': 'Buff163',
+        'dmarket': 'DMarket', 'lisskins': 'LisSkins', 'lowest': 'Lowest',
+    }
+    _LOWEST_OF = ('steam', 'buff', 'csfloat')
+
+    def valuation_markets(self):
+        """The markets a holding can be valued on, for every page's market picker."""
+        return {'markets': [{'id': key, 'label': label} for key, label in self._PRICE_MARKET_LABELS.items()],
+                'default': DEFAULT_PRICE_MARKET}
 
     def _single_price_map(self, token, market):
         """{name: lowest listing} on one valuation market. The map is cached an hour and stamped
@@ -2257,7 +2273,7 @@ class HuginnService:
     def _compute_price_map(self, token, market):
         if market == 'lowest':
             merged = {}
-            for m in ('steam', 'buff', 'csfloat'):
+            for m in self._LOWEST_OF:
                 try:
                     prices = self._single_price_map(token, m)
                 except NotActive:
@@ -2266,7 +2282,8 @@ class HuginnService:
                     if name not in merged or price < merged[name]:
                         merged[name] = price
             if not merged:
-                raise NotActive('none of Steam, Buff163 and CSFloat is kept by an active Huginn profile')
+                names = ', '.join(self._PRICE_MARKET_LABELS[m] for m in self._LOWEST_OF)
+                raise NotActive(f'none of {names} is kept by an active Huginn profile')
             return merged
         if market not in self._PRICE_MARKETS:
             market = 'steam'

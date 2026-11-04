@@ -21,8 +21,9 @@ tries again).
 - Views: **Per account** (cards; drag to reorder, pin), **Combined** (one
   ledger across all accounts), **Arbitrage** (the deals you tagged as
   arbitrage, split into real-cash Market arbitrage and Steam-wallet arbitrage).
-- **Value on**: the market used for current value (Steam, CSFloat, Buff163, or
-  the lowest of them). Prices fill in after a few seconds; pages never wait for
+- **Value on**: the market used for current value (Steam, CSFloat, Buff163,
+  DMarket, LisSkins, or Lowest: the lowest of Steam, CSFloat and Buff163). The
+  same list as Gjallarhorn's market picker. Prices fill in after a few seconds; pages never wait for
   them.
 
 ## One portfolio
@@ -31,7 +32,9 @@ Tiles: current value, cost basis, unrealized, realized and total profit/loss.
 
 **Add a transaction:** item name (suggestions as you type; picking one fills
 the current price), Buy or Sell, quantity, unit price in dollars, platform,
-date, note, and the **Arbitrage** tag. An unknown item name asks before saving.
+date, note, and the **Arbitrage** tag. The date can be typed in any common
+shape ("08/31/2026, 12:12 AM", "16.12.2025"); when you leave the field it is
+rewritten as year-month-day, or a message says it is not a date. An unknown item name asks before saving.
 **Drip last** copies the newest transaction into the form; after adding,
 platform and date are kept for the next one.
 

@@ -3,28 +3,16 @@ import { CalendarDays, ChevronLeft, ChevronRight } from 'lucide-react';
 
 const pad = (n) => String(n).padStart(2, '0');
 const fmt = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-// The field value may carry a time (e.g. "2026-08-11 15:23:24",
-// "08/31/2026, 12:12 AM" or "16/12/2025, 01:32:16"). Split off the leading date
-// token and keep whatever trailing time text the user typed, so the calendar
-// only changes the day and never discards the time. Mirrors the backend
-// normalizer: ISO year-first (dash or slash), then day/month slash-dot-dash. An
-// ambiguous slash date (both fields <= 12) is read month-first (US); a first
-// field > 12 can only be a day, so it forces the day-first reading.
+// The field value may carry a time ("2026-08-11 15:23:24"). The page asks the
+// backend to rewrite whatever was typed into this year-first shape when the
+// field loses focus (onBlur), so here only that shape is read: the calendar
+// marks its day and, when a day is picked, keeps the time typed after it.
 const split = (s) => {
     const str = (s || '').trim();
-    let date = null, len = 0;
-    let m = /^(\d{4})[-/](\d{1,2})[-/](\d{1,2})/.exec(str);   // ISO year-first
-    if (m) { date = new Date(+m[1], +m[2] - 1, +m[3]); len = m[0].length; }
-    else {
-        m = /^(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})/.exec(str);  // day/month-first
-        if (m) {
-            const first = +m[1], second = +m[2];
-            const [month, day] = first > 12 ? [second, first] : [first, second];
-            date = new Date(+m[3], month - 1, day); len = m[0].length;
-        }
-    }
+    const m = /^(\d{4})-(\d{1,2})-(\d{1,2})/.exec(str);
+    let date = m ? new Date(+m[1], +m[2] - 1, +m[3]) : null;
     if (date && isNaN(date.getTime())) date = null;
-    const time = date ? str.slice(len).replace(/^[\s,T]+/, '').trim() : '';
+    const time = date ? str.slice(m[0].length).replace(/^[\s,T]+/, '').trim() : '';
     return { date, time };
 };
 const parse = (s) => split(s).date;
@@ -35,7 +23,7 @@ const sameDay = (a, b) => a && b && a.getFullYear() === b.getFullYear() && a.get
 // Date / date-time text field with a compact, opaque, theme-matched calendar
 // popover. You can type a plain date or a date with a time (the calendar only
 // changes the day, keeping the time); month + year dropdowns jump to any year.
-export const DateField = ({ value, onChange, className = '', placeholder = 'YYYY-MM-DD', title }) => {
+export const DateField = ({ value, onChange, onBlur, className = '', placeholder = 'YYYY-MM-DD', title }) => {
     const [open, setOpen] = useState(false);
     const [view, setView] = useState(() => parse(value) || new Date());
     const wrapRef = useRef(null);
@@ -76,7 +64,7 @@ export const DateField = ({ value, onChange, className = '', placeholder = 'YYYY
     return (
         <div ref={wrapRef} className="relative">
             <input className={className} placeholder={placeholder} title={title}
-                value={value} onChange={(e) => onChange(e.target.value)} />
+                value={value} onChange={(e) => onChange(e.target.value)} onBlur={onBlur} />
             <button type="button" onClick={toggle} title="Pick a date"
                 className="absolute right-1.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-yellow-300 transition-colors">
                 <CalendarDays size={15} />

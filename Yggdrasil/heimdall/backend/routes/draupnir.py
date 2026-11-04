@@ -9,11 +9,17 @@ import re
 from flask import Blueprint, Response, jsonify, request
 
 from context import ctx
+from huginn_service import DEFAULT_PRICE_MARKET
 from draupnir_service import PortfolioSaveError, pricing_status
 from storage_deposit import CommandError
-from validation import validate_new_transaction, validate_portfolio_name, validate_transaction
+from validation import date_editable, normalize_datetime, validate_new_transaction, validate_portfolio_name, validate_transaction
 
 bp = Blueprint('draupnir', __name__)
+
+
+def _valuation_market():
+    """The market a request values holdings on; none given means the backend's default."""
+    return request.args.get('market') or DEFAULT_PRICE_MARKET
 
 
 @bp.errorhandler(PortfolioSaveError)
@@ -29,20 +35,20 @@ def _portfolio_prices(market):
     Draupnir pages render instantly (cost basis) and prices fill in on a later
     poll. Returns (prices_or_None, status)."""
     token = ctx.settings_manager.get_settings().get('tradeon_token', '')
-    return ctx.huginn_service.prices_for_valuation(token, market or 'steam')
+    return ctx.huginn_service.prices_for_valuation(token, market or DEFAULT_PRICE_MARKET)
 
 
 def _pricing_fields(prices, status, market):
     """The live-price status every Draupnir page shows (draupnir_service.pricing_status)."""
     huginn = ctx.huginn_service
     return pricing_status(status, prices is not None,
-                          refreshing_seconds=huginn.valuation_refresh_seconds(market or 'steam'),
+                          refreshing_seconds=huginn.valuation_refresh_seconds(market or DEFAULT_PRICE_MARKET),
                           retry_seconds=huginn.valuation_retry_seconds())
 
 
 @bp.route('/api/draupnir/portfolios', methods=['GET'])
 def portfolios_list():
-    market = request.args.get('market', 'steam')
+    market = _valuation_market()
     prices, status = _portfolio_prices(market)
     return jsonify({
         'portfolios': ctx.draupnir_service.list_portfolios(prices),
@@ -85,7 +91,7 @@ def _command(run, status=200):
 @bp.route('/api/draupnir/portfolios/combined', methods=['GET'])
 def portfolios_combined():
     """Single ledger across all accounts (arbitrage flips included) — overall view."""
-    market = request.args.get('market', 'steam')
+    market = _valuation_market()
     prices, status = _portfolio_prices(market)
     data = ctx.draupnir_service.combined_ledger(prices)
     data.update(_pricing_fields(prices, status, market))
@@ -98,7 +104,7 @@ def portfolios_arbitrage():
     """Count and value your tagged arbitrage deals, pooled across all accounts,
     split into steam (locked wallet) vs market (real cash) categories.
     ?market= prices any still-open tagged inventory (default steam)."""
-    market = request.args.get('market', 'steam')
+    market = _valuation_market()
     prices, status = _portfolio_prices(market)
     data = ctx.draupnir_service.arbitrage_deals(prices)
     data['open_market'] = market
@@ -168,6 +174,18 @@ def _transaction_refusal(body, errors):
     return None
 
 
+@bp.route('/api/draupnir/dates/normalize', methods=['POST'])
+def draupnir_dates_normalize():
+    """Read a typed date or date-time the way a save reads it, so the date field can show
+    the canonical form before saving: {date, editable}, or 400 {error, code: bad_date}."""
+    text = (request.get_json(silent=True) or {}).get('text')
+    canonical = normalize_datetime(text) if isinstance(text, str) else None
+    if canonical is None:
+        return jsonify({'error': 'Not a date. Type for example 2026-08-31 or 08/31/2026, 12:12 AM.',
+                        'code': 'bad_date'}), 400
+    return jsonify({'date': canonical, 'editable': date_editable(canonical)})
+
+
 @bp.route('/api/draupnir/portfolios/item-search', methods=['GET'])
 def portfolios_item_search():
     """Typeahead for the Add-transaction form: real CS item names (pulse universe
@@ -176,7 +194,7 @@ def portfolios_item_search():
     q = (request.args.get('q') or '').strip().lower()
     if len(q) < 2:
         return jsonify({'items': []})
-    market = request.args.get('market', 'steam')
+    market = _valuation_market()
     token = ctx.settings_manager.get_settings().get('tradeon_token', '')
     universe = ctx.huginn_service.known_item_names(token, block=False) | ctx.draupnir_service.all_item_names()
     prices, _ = ctx.huginn_service.prices_for_valuation(token, market)
@@ -189,7 +207,7 @@ def portfolios_item_search():
 
 @bp.route('/api/draupnir/portfolios/<pid>', methods=['GET'])
 def portfolios_get(pid):
-    market = request.args.get('market', 'steam')
+    market = _valuation_market()
     prices, status = _portfolio_prices(market)
     data = ctx.draupnir_service.get_portfolio(pid, prices)
     if data is None:

@@ -10,17 +10,8 @@ import ReadinessPanel from '../../components/gjallarhorn/ReadinessPanel';
 import NewsWatcher from '../../components/gjallarhorn/NewsWatcher';
 import ResellReminders from '../../components/gjallarhorn/ResellReminders';
 import { failureMessage, readJson } from '../../utils/readJson';
+import { useValuationMarkets } from '../../utils/useValuationMarkets';
 
-// Reference markets the "current price" can be read on (mirrors the backend
-// _PRICE_MARKETS plus the virtual 'lowest').
-const MARKETS = [
-    { id: 'steam', label: 'Steam' },
-    { id: 'buff', label: 'Buff163' },
-    { id: 'csfloat', label: 'CSFloat' },
-    { id: 'dmarket', label: 'DMarket' },
-    { id: 'lisskins', label: 'LisSkins' },
-    { id: 'lowest', label: 'Lowest' },
-];
 
 const money = (v) => `$${Number(v || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
@@ -36,7 +27,8 @@ const Gjallarhorn = () => {
     const [accounts, setAccounts] = useState([]);
     const [portfolioId, setPortfolioId] = useState('combined');
     const [steamid, setSteamid] = useState('');
-    const [market, setMarket] = useState('steam');
+    const [market, setMarket] = useState('');   // '' = the backend's default market
+    const { markets, chosen: chosenMarket } = useValuationMarkets();
     const [deflatedOnly, setDeflatedOnly] = useState(false);
     const [data, setData] = useState(null);
     const [loading, setLoading] = useState(false);
@@ -166,11 +158,11 @@ const Gjallarhorn = () => {
                         ))}
                     </select>
                     <select
-                        value={market} onChange={(e) => setMarket(e.target.value)}
+                        value={chosenMarket(market)} onChange={(e) => setMarket(e.target.value)}
                         className="bg-black/30 border border-white/10 rounded-lg px-2.5 py-2 text-sm text-slate-200 outline-none focus:border-amber-500/40"
                         title="Reference market for current price"
                     >
-                        {MARKETS.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
+                        {markets.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
                     </select>
                     <MarketHoldEditor />
                     <TargetBasket market={market} defaultCapital={summary?.liquidatableNow} />

@@ -214,3 +214,19 @@ def normalize_datetime(v):
         return datetime.fromisoformat(s.replace('Z', '+00:00')).strftime('%Y-%m-%dT%H:%M:%S')
     except ValueError:
         return None
+
+
+def date_editable(stored):
+    """A stored date in the shape the edit field shows and normalize_datetime reads back:
+    ``2026-08-11T15:23:24`` -> ``2026-08-11 15:23:24``; a plain date or a value that is
+    not canonical is returned as it is."""
+    text = (stored or '').strip()
+    canonical = normalize_datetime(text)
+    return canonical.replace('T', ' ') if canonical == text else text
+
+
+def date_display(stored):
+    """A stored date as a table shows it: ``2026-08-11T15:23:24`` -> ``2026-08-11 15:23``.
+    A value that is not canonical is shown as it is, never cut."""
+    text = date_editable(stored)
+    return text[:16] if text != (stored or '').strip() else text

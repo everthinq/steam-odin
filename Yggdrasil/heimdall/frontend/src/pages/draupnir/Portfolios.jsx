@@ -16,19 +16,14 @@ import {
 } from '../../utils/portfolioLayout';
 import { failureMessage, readJsonOrThrow } from '../../utils/readJson';
 import PricingNote from '../../components/draupnir/PricingNote';
+import { useValuationMarkets } from '../../utils/useValuationMarkets';
 
-const MARKETS = [
-    { id: 'steam', label: 'Steam' },
-    { id: 'csfloat', label: 'CSFloat' },
-    { id: 'buff', label: 'Buff163' },
-    { id: 'lowest', label: 'Lowest' },
-];
-const marketLabel = (id) => MARKETS.find(m => m.id === id)?.label || id;
 
 const DraupnirPortfolios = () => {
     const [portfolios, setPortfolios] = useState([]);
     const [pricing, setPricing] = useState(null);   // the backend's live-price status (pricing_note, poll_after_seconds)
-    const [market, setMarket] = useState('steam');
+    const [market, setMarket] = useState('');   // '' = the backend's default market
+    const { markets, chosen: chosenMarket, label: marketLabel } = useValuationMarkets();
     const [viewMode, setViewMode] = useState('accounts');   // 'accounts' | 'combined' | 'arbitrage'
     const [combined, setCombined] = useState(null);
     // Arbitrage view: count + value your tagged deals across all accounts.
@@ -331,11 +326,11 @@ const DraupnirPortfolios = () => {
                             {viewMode === 'arbitrage' ? 'Open at' : 'Value on'}
                         </span>
                         <select
-                            value={market} onChange={e => setMarket(e.target.value)}
+                            value={chosenMarket(market)} onChange={e => setMarket(e.target.value)}
                             title={viewMode === 'arbitrage' ? 'Market used to value any still-open tagged inventory' : 'Market used to value holdings'}
                             className="bg-odin-blue/60 border border-white/10 rounded-lg px-2 py-1.5 text-slate-200 focus:outline-none focus:ring-1 focus:ring-yellow-500/50"
                         >
-                            {MARKETS.map(m => <option key={m.id} value={m.id}>{m.label}</option>)}
+                            {markets.map(m => <option key={m.id} value={m.id}>{m.label}</option>)}
                         </select>
                     </div>
                     <PricingNote status={pricing} />
