@@ -65,7 +65,6 @@ const todayStr = () => new Date().toISOString().slice(0, 10);   // YYYY-MM-DD
 // canonical stored form (YYYY-MM-DD, or YYYY-MM-DDThh:mm:ss with a time).
 // Accept anything that at least *starts* with a plausible date token here, and
 // let the backend reject a truly malformed value with a clear 400.
-const looksLikeDate = (s) => /^\s*(\d{4}-\d{2}-\d{2}|\d{1,2}\/\d{1,2}\/\d{4})/.test(s || '');
 // Table display of a canonical stored value: "2026-08-11T15:23:24" → "2026-08-11 15:23".
 // Anything not in canonical shape is shown verbatim (never truncated).
 const prettyDate = (s) => {
@@ -106,7 +105,6 @@ const DraupnirPortfolio = () => {
     const [editingId, setEditingId] = useState(null);
     const [dialog, setDialog] = useState(null);   // styled confirm/prompt replacing native alerts
     const [formError, setFormError] = useState(null);
-    const [checking, setChecking] = useState(false);
     const [itemSuggests, setItemSuggests] = useState([]);
     const [showSuggest, setShowSuggest] = useState(false);
     const [highlightIdx, setHighlightIdx] = useState(-1);   // keyboard-nav position in the suggestion list
@@ -255,34 +253,17 @@ const DraupnirPortfolio = () => {
         setTimeout(() => itemInputRef.current?.focus(), 0);
     };
 
-    const requiredError = () => {
-        if (!form.item_name.trim()) return 'Item name is required.';
-        if (!String(form.qty).trim() || parseInt(form.qty, 10) < 1) return 'Quantity is required (min 1).';
-        if (form.price === '' || isNaN(parseFloat(form.price)) || parseFloat(form.price) < 0) return 'Unit price is required.';
-        if (!form.platform.trim()) return 'Platform is required.';
-        if (!looksLikeDate(form.date)) return 'Date is required (e.g. 2026-08-31, 2026-08-11 15:23:24, or 08/31/2026, 12:12 AM).';
-        return null;
-    };
-
-    const checkItemKnown = async (name) => {
-        try {
-            const res = await fetch('/api/draupnir/portfolios/validate-item', {
-                method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ name }),
-            });
-            return await readJson(res);   // { valid: true|false|null, suggestions? }
-        } catch {
-            return { valid: null };
-        }
-    };
-
-    const doSave = async () => {
+    // The backend checks the fields and the item name; an unknown name answers
+    // code "unknown_item" and is sent again only after the user confirms it.
+    const doSave = async (confirmUnknownItem = false) => {
         if (savingRef.current) return;
         savingRef.current = true;
         setSaving(true);
+        setFormError(null);
         const payload = {
             ...form, item_name: form.item_name.trim(), platform: form.platform.trim(),
-            date: form.date.trim(), price: parseFloat(form.price), qty: parseInt(form.qty, 10),
+            date: form.date.trim(), price: String(form.price).trim(), qty: String(form.qty).trim(),
+            confirm_unknown_item: confirmUnknownItem,
         };
         const wasAdd = !editingId;
         const url = editingId
@@ -296,6 +277,17 @@ const DraupnirPortfolio = () => {
             });
             if (!res.ok) {
                 const d = await readJson(res).catch(() => ({}));
+                if (d.code === 'unknown_item') {
+                    const sugg = d.suggestions?.length ? ` Closest matches: ${d.suggestions.slice(0, 3).join('  ·  ')}.` : '';
+                    setDialog({
+                        kind: 'confirm', confirmLabel: 'Add anyway',
+                        title: 'Not a recognized item',
+                        message: `"${payload.item_name}" isn't in the current CS item list.${sugg} It may be a brand-new Armory item that isn't indexed yet — or a typo. Add it anyway?`,
+                        onConfirm: () => doSave(true),
+                    });
+                    return;
+                }
+                if (d.code === 'invalid_transaction') { setFormError(d.error); return; }
                 throw new Error(d.error || `Couldn't save transaction (${res.status})`);
             }
             const saved = await readJson(res).catch(() => null);
@@ -322,28 +314,7 @@ const DraupnirPortfolio = () => {
         }
     };
 
-    const submitForm = async () => {
-        if (savingRef.current || checking) return;
-        const reqErr = requiredError();
-        if (reqErr) { setFormError(reqErr); return; }
-        setFormError(null);
-        setChecking(true);
-        const check = await checkItemKnown(form.item_name.trim());
-        setChecking(false);
-        if (check.valid === false) {
-            // Unknown name — could be a brand-new Armory item not indexed yet, or a
-            // typo. Warn but allow an override so legit new items are never blocked.
-            const sugg = check.suggestions?.length ? ` Closest matches: ${check.suggestions.slice(0, 3).join('  ·  ')}.` : '';
-            setDialog({
-                kind: 'confirm', confirmLabel: 'Add anyway',
-                title: 'Not a recognized item',
-                message: `"${form.item_name.trim()}" isn't in the current CS item list.${sugg} It may be a brand-new Armory item that isn't indexed yet — or a typo. Add it anyway?`,
-                onConfirm: doSave,
-            });
-            return;
-        }
-        doSave();
-    };
+    const submitForm = () => doSave(false);
 
     const startEdit = (t) => {
         setEditingId(t.id);
@@ -521,8 +492,8 @@ const DraupnirPortfolio = () => {
                                 >
                                     <ArrowLeftRight size={14} /> Arbitrage
                                 </button>
-                                <button type="submit" disabled={checking || saving} className="flex items-center gap-1.5 px-3 py-1.5 rounded bg-yellow-600 hover:bg-yellow-500 text-white text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
-                                    {checking ? <><RefreshCw size={14} className="animate-spin" /> Checking…</> : saving ? <><RefreshCw size={14} className="animate-spin" /> Saving…</> : editingId ? <><Check size={14} /> Save</> : <><Plus size={14} /> Add</>}
+                                <button type="submit" disabled={saving} className="flex items-center gap-1.5 px-3 py-1.5 rounded bg-yellow-600 hover:bg-yellow-500 text-white text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+                                    {saving ? <><RefreshCw size={14} className="animate-spin" /> Saving…</> : editingId ? <><Check size={14} /> Save</> : <><Plus size={14} /> Add</>}
                                 </button>
                                 {editingId && (
                                     <button type="button" onClick={resetForm} className="flex items-center gap-1 px-2 py-1.5 rounded text-slate-400 hover:text-white hover:bg-white/10 text-sm transition-colors"><X size={14} /></button>

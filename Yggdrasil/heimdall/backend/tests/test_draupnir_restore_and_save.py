@@ -128,7 +128,8 @@ def test_failed_write_answers_500_from_the_route(tmp_path, monkeypatch):
     app = Flask(__name__)
     app.register_blueprint(bp)
     response = app.test_client().post(f"/api/draupnir/portfolios/{p['id']}/transactions",
-                                      json=_txn('Fracture Case', 'buy', 1, 0.41))
+                                      json={**_txn('Fracture Case', 'buy', 1, 0.41), 'platform': 'steam',
+                                            'date': '2026-11-04', 'confirm_unknown_item': True})
     assert response.status_code == 500
     body = response.get_json()
     assert body['saved'] is False and 'read-only' in body['error']

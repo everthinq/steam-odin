@@ -10,7 +10,7 @@ from flask import Blueprint, Response, jsonify, request
 
 from context import ctx
 from draupnir_service import CsvImportError, PortfolioSaveError
-from validation import validate_transaction, validate_portfolio_name
+from validation import validate_new_transaction, validate_portfolio_name, validate_transaction
 
 bp = Blueprint('draupnir', __name__)
 
@@ -116,26 +116,51 @@ def portfolios_export(pid):
     )
 
 
-@bp.route('/api/draupnir/portfolios/validate-item', methods=['POST'])
-def portfolios_validate_item():
-    """Check whether a typed name looks like a real CS item. valid=True if it's in
-    the pulse universe or already used in a portfolio; False (with fuzzy suggestions)
-    if we have a universe to check against but it's not in it; None if we can't verify
-    (no price data / no token) so the caller can allow it through."""
-    name = ((request.get_json(silent=True) or {}).get('name') or '').strip()
+def _item_check(name):
+    """The one rule for "is this a known item name": known when pulse lists it or
+    a portfolio already uses it (any letter case). Answers {valid: True}, or
+    {valid: False, suggestions} when pulse's list was read and the name is not
+    in it, or {valid: None} when there is no list to check against (the name is
+    then accepted)."""
+    name = (name or '').strip()
     if not name:
-        return jsonify({'valid': False, 'suggestions': []})
+        return {'valid': False, 'suggestions': []}
     token = ctx.settings_manager.get_settings().get('tradeon_token', '')
     pulse_names = ctx.huginn_service.known_item_names(token)
     universe = pulse_names | ctx.draupnir_service.all_item_names()
     if name in universe:
-        return jsonify({'valid': True})
+        return {'valid': True}
     lower = {n.lower(): n for n in universe}
     if name.lower() in lower:
-        return jsonify({'valid': True, 'canonical': lower[name.lower()]})
+        return {'valid': True, 'canonical': lower[name.lower()]}
     if not pulse_names:
-        return jsonify({'valid': None})   # can't verify — let the caller decide
-    return jsonify({'valid': False, 'suggestions': difflib.get_close_matches(name, list(universe), n=5, cutoff=0.6)})
+        return {'valid': None}
+    return {'valid': False, 'suggestions': difflib.get_close_matches(name, list(universe), n=5, cutoff=0.6)}
+
+
+@bp.route('/api/draupnir/portfolios/validate-item', methods=['POST'])
+def portfolios_validate_item():
+    """Check whether a typed name is a known item (see _item_check)."""
+    return jsonify(_item_check((request.get_json(silent=True) or {}).get('name')))
+
+
+def _transaction_refusal(body, errors):
+    """The {error, code} answer that stops an add or edit, or None.
+
+    ``invalid_transaction`` (400) for bad or missing fields; ``unknown_item``
+    (409, with suggestions) for a name that is not in the item list, unless the
+    request says ``confirm_unknown_item: true`` (a brand-new item, not indexed
+    yet)."""
+    if errors:
+        return jsonify({'error': '; '.join(errors), 'code': 'invalid_transaction'}), 400
+    name = body.get('item_name')
+    if name is None or body.get('confirm_unknown_item') is True:
+        return None
+    check = _item_check(name)
+    if check['valid'] is False:
+        return jsonify({'error': f'"{name.strip()}" is not in the current item list',
+                        'code': 'unknown_item', 'suggestions': check['suggestions']}), 409
+    return None
 
 
 @bp.route('/api/draupnir/portfolios/item-search', methods=['GET'])
@@ -192,24 +217,24 @@ def portfolios_delete(pid):
 @bp.route('/api/draupnir/portfolios/<pid>/transactions', methods=['POST'])
 def portfolios_add_txn(pid):
     body = request.get_json(silent=True) or {}
-    errors = validate_transaction(body)
-    if errors:
-        return jsonify({'error': '; '.join(errors)}), 400
+    refusal = _transaction_refusal(body, validate_new_transaction(body))
+    if refusal:
+        return refusal
     txn = ctx.draupnir_service.add_transaction(pid, body)
     if txn is None:
-        return jsonify({'error': 'portfolio not found'}), 404
+        return jsonify({'error': 'portfolio not found', 'code': 'portfolio_not_found'}), 404
     return jsonify(txn), 201
 
 
 @bp.route('/api/draupnir/portfolios/<pid>/transactions/<tid>', methods=['PATCH'])
 def portfolios_update_txn(pid, tid):
     body = request.get_json(silent=True) or {}
-    errors = validate_transaction(body, partial=True)
-    if errors:
-        return jsonify({'error': '; '.join(errors)}), 400
+    refusal = _transaction_refusal(body, validate_transaction(body, partial=True))
+    if refusal:
+        return refusal
     txn = ctx.draupnir_service.update_transaction(pid, tid, body)
     if txn is None:
-        return jsonify({'error': 'not found'}), 404
+        return jsonify({'error': 'transaction not found', 'code': 'transaction_not_found'}), 404
     return jsonify(txn)
 
 

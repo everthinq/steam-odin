@@ -17,6 +17,10 @@ MAX_ITEM_LEN = 200
 MAX_QTY = 10_000_000
 MAX_PRICE = 1_000_000.0
 
+# Fields a transaction added by hand (POST .../transactions) must carry. The
+# CSV import keeps its defaults (a blank date there means today).
+REQUIRED_TRANSACTION_FIELDS = ('item_name', 'qty', 'price', 'platform', 'date')
+
 
 def validate_portfolio_name(name, *, required=True):
     errors = []
@@ -57,7 +61,7 @@ def validate_transaction(body, *, partial=False):
     # "leave it as it is": the normalizer would silently turn '' into qty 1,
     # price 0.0 or today's date. On a full add a blank still means the default.
     if partial:
-        for field in ('qty', 'quantity', 'price', 'date'):
+        for field in ('qty', 'quantity', 'price', 'platform', 'date'):
             if isinstance(body.get(field), str) and not body[field].strip():
                 errors.append(f'{field} must not be empty')
 
@@ -101,6 +105,22 @@ def validate_transaction(body, *, partial=False):
                       '"16/12/2025, 01:32:16")')
 
     return errors
+
+
+def validate_new_transaction(body):
+    """Validate a transaction added by hand: every field of
+    ``REQUIRED_TRANSACTION_FIELDS`` must be given, then the usual checks."""
+    if not isinstance(body, dict):
+        return ['request body must be a JSON object']
+    errors = []
+    rest = dict(body)   # the fields left for the usual checks
+    for field in REQUIRED_TRANSACTION_FIELDS:
+        key = 'quantity' if field == 'qty' and body.get('qty') is None else field
+        value = body.get(key)
+        if field != 'item_name' and (value is None or (isinstance(value, str) and not value.strip())):
+            errors.append(f'{field} is required')
+            rest.pop(key, None)
+    return errors + validate_transaction(rest)
 
 
 def _as_int(v):

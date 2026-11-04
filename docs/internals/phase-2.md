@@ -115,7 +115,12 @@ Accounts, Draupnir and Mímir, then Huginn and Andvari.
   never trimmed; refusals are `{error, code}` (`invalid_file`, `invalid_steamid`, `no_account_name`,
   `no_shared_secret`, `password_required`, `authentication_failed`, `steam_unreachable` 502,
   `steamid_mismatch`, `save_failed` 500). A maFile without an account name is now refused.
-- 4 Draupnir transaction: NOT a bug (Ivan, 2026-11-04): a case-different name staying its own holding is fine, he picks names from the hints and can price any item; never raise it again. Still open: required fields only in page; unknown_item confirm should be a code from POST /transactions.
+- 4 Draupnir transaction **DONE 2026-11-04**: `POST …/transactions` requires item name, quantity, price,
+  platform and date (`REQUIRED_TRANSACTION_FIELDS`, `validate_new_transaction`; the CSV import keeps its
+  defaults) and answers `invalid_transaction` (400); a name not in the item list answers `unknown_item`
+  (409, with suggestions) unless the request says `confirm_unknown_item: true`; `PATCH` checks the same
+  (a blank platform is refused too); one rule `_item_check` serves this and `validate-item`; the page
+  has no checks of its own any more. A case-different name staying its own holding is NOT a bug (Ivan).
 - 5 Draupnir CSV import: answers ignored, 400 and skipped rows silently lost -> import plan/execute.
 - 6 Confirmations: page picks nonce/key; type 12 unknown -> backend looks up the key, sends type_name.
 - 7 Remove All accounts: phrase only in page, DELETE removes accounts added later -> plan/execute.
