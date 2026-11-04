@@ -14,7 +14,7 @@ import {
     toggleAccountPin,
     reorderAccountList,
 } from '../utils/accountDashboardLayout';
-import { readJsonOrThrow } from '../utils/readJson';
+import { isTransientFailure, readJsonOrThrow } from '../utils/readJson';
 
 const Dashboard = () => {
     const [accounts, setAccounts] = useState([]);
@@ -49,11 +49,9 @@ const Dashboard = () => {
             setAccounts(data.accounts || []);
             setError(null);
         } catch (err) {
-            // Ignore JSON errors during restart or network glitches
-            if (err.message.includes('JSON') || err.message.includes('Failed to fetch')) {
-                // Optionally just log to console or show "Reconnecting..."
-                console.log("Connection lost, retrying...", err);
-                // Don't set global error for transient network/JSON issues to avoid flashing red box
+            // A restart or a connection blip passes by itself: keep the last accounts, no red box.
+            if (isTransientFailure(err)) {
+                console.log('Connection lost, retrying...', err);
                 return;
             }
             setError(err.message);

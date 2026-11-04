@@ -109,11 +109,13 @@ const DraupnirPortfolios = () => {
         kind: 'prompt', title: 'New portfolio', label: 'Portfolio name',
         confirmLabel: 'Create', placeholder: 'e.g. Main hoard',
         onConfirm: async (name) => {
-            await fetch('/api/draupnir/portfolios', {
-                method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ name }),
-            });
-            fetchList();
+            try {
+                await readJsonOrThrow(await fetch('/api/draupnir/portfolios', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name }),
+                }));
+                fetchList();
+            } catch (e) { setError(`Not created: ${failureMessage(e)}`); }
         },
     });
 
@@ -212,8 +214,10 @@ const DraupnirPortfolios = () => {
             title: `Delete "${p.name}"?`,
             message: 'This permanently deletes the portfolio and all of its transactions.',
             onConfirm: async () => {
-                await fetch(`/api/draupnir/portfolios/${p.id}`, { method: 'DELETE' });
-                fetchList();
+                try {
+                    await readJsonOrThrow(await fetch(`/api/draupnir/portfolios/${p.id}`, { method: 'DELETE' }));
+                    fetchList();
+                } catch (e) { setError(`Not deleted: ${failureMessage(e)}`); }
             },
         });
     };

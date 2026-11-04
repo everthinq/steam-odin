@@ -1,19 +1,23 @@
 // "/api/… (HTTP 502)": which request answered, for the error a page shows.
 const label = (response) => `${new URL(response.url, window.location.origin).pathname} (HTTP ${response.status})`;
 
+// An error for an answer that could not be read at all (empty or not JSON): the backend was
+// restarting or a proxy answered. `unreadable` lets a status poll treat it as passing.
+const unreadable = (message) => Object.assign(new Error(message), { unreadable: true });
+
 // Read a backend answer as JSON. An empty or non-JSON body (the backend restarted or crashed in
 // the middle of the request, a proxy error page) becomes an error that names the request and
 // says what happened, instead of the browser's bare "Unexpected end of JSON input".
 export const readJson = async (response) => {
     const text = await response.text();
     if (!text.trim()) {
-        throw new Error(`${label(response)} answered with an empty body: the backend most likely restarted or stopped in the middle of the request. If it started something (a purchase, a transfer), check its log before repeating it; otherwise try again in a few seconds.`);
+        throw unreadable(`${label(response)} answered with an empty body: the backend most likely restarted or stopped in the middle of the request. If it started something (a purchase, a transfer), check its log before repeating it; otherwise try again in a few seconds.`);
     }
     try {
         return JSON.parse(text);
     } catch {
         const start = text.replace(/\s+/g, ' ').trim().slice(0, 120);
-        throw new Error(`${label(response)} answered with something that is not JSON: "${start}${text.length > 120 ? '…' : ''}"`);
+        throw unreadable(`${label(response)} answered with something that is not JSON: "${start}${text.length > 120 ? '…' : ''}"`);
     }
 };
 
@@ -28,8 +32,15 @@ export const readJsonOrThrow = async (response) => {
 // The browser's own messages when a request never reached the server (Chrome, Safari, Firefox).
 const NETWORK_FAILURE = /Failed to fetch|Load failed|NetworkError/;
 
+// The request never reached the server.
+const isNetworkFailure = (error) => error instanceof TypeError && NETWORK_FAILURE.test(error.message);
+
+// A failure that passes by itself (backend restarting, connection blip), not a refusal: a status
+// poll can keep its last good state and try again instead of showing an error.
+export const isTransientFailure = (error) => isNetworkFailure(error) || !!error?.unreadable;
+
 // The message for a request that failed. Only the browser's own fetch failure means the backend
 // was not reached; readJson's errors, an answer's {error} and anything else say what happened.
-export const failureMessage = (error) => (error instanceof TypeError && NETWORK_FAILURE.test(error.message)
+export const failureMessage = (error) => (isNetworkFailure(error)
     ? `Could not reach the backend (${error.message}).`
     : error.message);

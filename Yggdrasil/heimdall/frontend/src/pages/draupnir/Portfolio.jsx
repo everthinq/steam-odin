@@ -9,7 +9,7 @@ import SortTh from '../../components/draupnir/SortTh';
 import OversoldMark from '../../components/draupnir/OversoldMark';
 import PricingNote from '../../components/draupnir/PricingNote';
 import { useColumnSort, sortRows } from '../../components/draupnir/columnSort';
-import { readJson, readJsonOrThrow } from '../../utils/readJson';
+import { failureMessage, readJson, readJsonOrThrow } from '../../utils/readJson';
 import { useValuationMarkets } from '../../utils/useValuationMarkets';
 
 // How each sortable column reads its value from a row (see columnSort.js).
@@ -93,6 +93,7 @@ const DraupnirPortfolio = () => {
     const [flashId, setFlashId] = useState(null);           // transaction row to flash green after an add
     const [copiedName, setCopiedName] = useState('');       // item just click-copied → inline "Copied!" flag
     const suggestTimer = useRef(null);
+    const suggestSeq = useRef(0);   // only the newest search answer is shown
     const itemInputRef = useRef(null);
     const [fetchSeq, setFetchSeq] = useState(0);
     // Each detail request takes a number; only the newest one may write state,
@@ -194,14 +195,16 @@ const DraupnirPortfolio = () => {
     // Debounced typeahead against the real CS item universe (+ names already used).
     const fetchSuggests = (q) => {
         if (suggestTimer.current) clearTimeout(suggestTimer.current);
+        const seq = ++suggestSeq.current;
         if (q.trim().length < 2) { setItemSuggests([]); return; }
         suggestTimer.current = setTimeout(async () => {
             try {
                 const res = await fetch(`/api/draupnir/portfolios/item-search?market=${market}&q=${encodeURIComponent(q.trim())}`);
                 const d = await readJson(res);
+                if (seq !== suggestSeq.current) return;
                 setItemSuggests(d.items || []);
                 setHighlightIdx(-1);
-            } catch { setItemSuggests([]); }
+            } catch { if (seq === suggestSeq.current) setItemSuggests([]); }
         }, 200);
     };
 
@@ -230,6 +233,7 @@ const DraupnirPortfolio = () => {
         setForm({
             item_name: last.item_name, type: last.type, qty: last.qty,
             price: String(last.price), platform: last.platform, date: last.date_editable, note: last.note,
+            is_arbitrage: !!last.is_arbitrage,
         });
         setTimeout(() => itemInputRef.current?.focus(), 0);
     };
@@ -323,8 +327,10 @@ const DraupnirPortfolio = () => {
         title: 'Delete this transaction?',
         message: `${t.type === 'sell' ? 'Sell' : 'Buy'} ${t.qty} × ${t.item_name} — this can't be undone.`,
         onConfirm: async () => {
-            await fetch(`/api/draupnir/portfolios/${portfolioId}/transactions/${t.id}`, { method: 'DELETE' });
-            fetchDetail(market);
+            try {
+                await readJsonOrThrow(await fetch(`/api/draupnir/portfolios/${portfolioId}/transactions/${t.id}`, { method: 'DELETE' }));
+                fetchDetail(market);
+            } catch (e) { setError(`Not deleted: ${failureMessage(e)}`); }
         },
     });
 
@@ -332,11 +338,13 @@ const DraupnirPortfolio = () => {
         kind: 'prompt', title: 'Rename portfolio', label: 'Portfolio name',
         initial: data?.name || '', confirmLabel: 'Save',
         onConfirm: async (name) => {
-            await fetch(`/api/draupnir/portfolios/${portfolioId}`, {
-                method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ name }),
-            });
-            fetchDetail(market);
+            try {
+                await readJsonOrThrow(await fetch(`/api/draupnir/portfolios/${portfolioId}`, {
+                    method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name }),
+                }));
+                fetchDetail(market);
+            } catch (e) { setError(`Not renamed: ${failureMessage(e)}`); }
         },
     });
 
@@ -345,8 +353,10 @@ const DraupnirPortfolio = () => {
         title: `Delete "${data?.name}"?`,
         message: 'This permanently deletes the portfolio and all of its transactions.',
         onConfirm: async () => {
-            await fetch(`/api/draupnir/portfolios/${portfolioId}`, { method: 'DELETE' });
-            navigate('/draupnir');
+            try {
+                await readJsonOrThrow(await fetch(`/api/draupnir/portfolios/${portfolioId}`, { method: 'DELETE' }));
+                navigate('/draupnir');
+            } catch (e) { setError(`Not deleted: ${failureMessage(e)}`); }
         },
     });
 

@@ -71,6 +71,10 @@ path prefix — add your page there. No catch-all route, no Settings page.
   then becomes an error naming the request and status instead of the browser's
   "Unexpected end of JSON input". The dev proxy (`vite.config.js`) also answers a
   lost backend with a JSON 502 saying why.
+  An action (delete, rename, create) reads its answer with `readJsonOrThrow`,
+  shows `failureMessage(error)` and reloads only on success. A status poll that
+  should stay quiet through a backend restart checks `isTransientFailure(error)`,
+  never the message text.
 - **Stale answers:** a numbered-request ref
   (`const n = ++ref.current; … if (n !== ref.current) return`) so only the
   newest answer is applied. Use it for anything polled or re-requested.

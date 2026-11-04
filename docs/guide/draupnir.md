@@ -35,11 +35,12 @@ the current price), Buy or Sell, quantity, unit price in dollars, platform,
 date, note, and the **Arbitrage** tag. The date can be typed in any common
 shape ("08/31/2026, 12:12 AM", "16.12.2025"); when you leave the field it is
 rewritten as year-month-day, or a message says it is not a date. An unknown item name asks before saving.
-**Drip last** copies the newest transaction into the form; after adding,
+**Drip last** copies the newest transaction into the form (its Arbitrage tag too); after adding,
 platform and date are kept for the next one.
 
 Holdings and transactions can be searched, filtered by collection and sorted;
-every transaction can be edited or deleted.
+every transaction can be edited or deleted. When a delete, rename or new
+portfolio does not go through, a red message says why and nothing changes.
 
 **Which holdings are listed:** items you still hold, items sold at a profit or
 loss, and oversold items. The same rule applies to one portfolio and to All

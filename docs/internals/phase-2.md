@@ -159,7 +159,7 @@ Accounts, Draupnir and Mímir, then Huginn and Andvari.
   sends no market until one is picked, the routes fall back to the default). Dates: only `validation.normalize_datetime`
   reads typed dates; `POST /api/draupnir/dates/normalize` (code `bad_date`) rewrites the field on blur; each
   transaction carries `date_display` and `date_editable`; `DateField` reads only the year-first form.
-- Other bugs: no success checks (delete transaction, rename, delete portfolio navigates away on failure, create/delete portfolio); "Drip last" drops is_arbitrage; old search answers win; Dashboard transient error filter misses readJson/Safari messages (use failureMessage).
+- 13 DONE other bugs: delete transaction, rename, create and delete portfolio read the answer (`readJsonOrThrow`), show "Not deleted: …" and reload only on success; deleting a portfolio leaves the page only when it worked. "Drip last" keeps `is_arbitrage`. Item search shows only the newest answer (`suggestSeq`). Dashboard ignores only `isTransientFailure` (`utils/readJson.js`: the browser could not reach the backend, Safari's "Load failed" included, or the answer was empty or not JSON).
 
 ### Huginn and Andvari
 - 1 MONEY Andvari Buy games: freshness by browser clock (BuyPanel 59-60, hardcoded 30 min), default selection, totals summed in page, single /buy/run with selection (no plan id), only window.confirm, no ref double-click guard -> purchase-plan + plans/<id>/execute job. OPEN QUESTION to Ivan: require a passed dry run of the same plan before a real buy?
