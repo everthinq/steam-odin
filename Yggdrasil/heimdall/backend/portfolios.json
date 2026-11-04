@@ -4,7 +4,7 @@
       "id": "fbf692611b3c",
       "name": "everthinklol",
       "created_at": "2026-07-21T13:40:18.177768+00:00",
-      "updated_at": "2026-11-04T10:51:43.673929+00:00",
+      "updated_at": "2026-11-04T11:00:36.508533+00:00",
       "transactions": [
         {
           "id": "3ea474874554",
@@ -12283,7 +12283,7 @@
           "price": 0.86,
           "platform": "cs.money.trade",
           "date": "2026-11-04T12:00:00",
-          "note": "",
+          "note": "+13%",
           "fee_percent": 0.0,
           "is_arbitrage": true,
           "created_at": "2026-11-04T10:48:11.549265+00:00"
