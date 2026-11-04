@@ -24,55 +24,24 @@ def get_accounts():
     })
 
 
+# HTTP status for each import refusal; anything else is a bad request.
+_IMPORT_STATUS = {'steam_unreachable': 502, 'save_failed': 500}
+
+
 @bp.route('/api/accounts/import', methods=['POST'])
 def import_account():
-    if not request.json:
-        return jsonify({"error": "Missing JSON body"}), 400
+    """Add Account: {file_name, file_text, password} -> logged in to Steam, then saved.
 
-    # Capture 'fileName' which is already sent by your AddAccount.jsx; the service
-    # strips it (and account_password) before the maFile is written.
-    filename = request.json.get('fileName')
-    result = ctx.steam_service.import_account(request.json, filename=filename)
-
+    Nothing is saved when the login fails (the tokens never reach the browser).
+    """
+    body = request.get_json(silent=True)
+    if not isinstance(body, dict):
+        return jsonify({"error": "Missing JSON body", "code": "invalid_request"}), 400
+    result = ctx.steam_service.import_account(
+        body.get('file_text'), body.get('file_name'), body.get('password'))
     if 'error' in result:
-        return jsonify(result), 400
+        return jsonify(result), _IMPORT_STATUS.get(result.get('code'), 400)
     return jsonify(result)
-
-
-@bp.route('/api/accounts/authenticate', methods=['POST'])
-def authenticate_account():
-    """Begin a Steam authentication session for an account."""
-    if not request.json:
-        return jsonify({"error": "Missing JSON body"}), 400
-
-    data = request.json
-    username = data.get('account_name') or data.get('username')
-    password = data.get('password')
-
-    if not username:
-        return jsonify({"error": "Missing account_name"}), 400
-    if not password:
-        return jsonify({"error": "Missing password"}), 400
-
-    result = ctx.steam_service.begin_auth_session(username, password)
-
-    if not result:
-        return jsonify({"error": "Authentication failed"}), 400
-
-    # Normalize common failure shapes from Steam API into a clear error
-    if isinstance(result, dict):
-        if result.get('error'):
-            return jsonify(result), 400
-
-        # Many Steam auth endpoints return a 'success' flag and message
-        if result.get('success') is False:
-            message = result.get('message') or 'Authentication failed'
-            return jsonify({"error": message, "details": result.get('details')}), 400
-
-    # The tokens never go to the browser: they are stored in the account's own
-    # maFile (when it exists and its login matches) and only the outcome is returned.
-    stored = ctx.steam_service.store_login_tokens(username, result)
-    return jsonify({"status": "success", "steamid": result.get('steamid'), "session_stored": stored})
 
 
 @bp.route('/api/accounts/<steamid>/confirmations', methods=['GET'])

@@ -108,7 +108,13 @@ Accounts, Draupnir and Mímir, then Huginn and Andvari.
   `tradable_if_bought_now` on the board.
 
 ### Accounts, Draupnir and Mímir
-- 3 Add Account: 4-step flow + rollback in page -> one import command (authenticate before writing). Bugs: re-import overwrites a working maFile before authentication; rollback DELETE unchecked; password trimmed.
+- 3 Add Account **DONE 2026-11-04**: one command `POST /api/accounts/import {file_name, file_text, password}`
+  (`steam_service.import_account`): reads the maFile (SteamID64 from the file name, else from the raw
+  text), logs in to Steam with the file's own Steam Guard secret, checks Steam's SteamID is the file's,
+  and only then writes; `/api/accounts/authenticate` and the page's rollback are gone; the password is
+  never trimmed; refusals are `{error, code}` (`invalid_file`, `invalid_steamid`, `no_account_name`,
+  `no_shared_secret`, `password_required`, `authentication_failed`, `steam_unreachable` 502,
+  `steamid_mismatch`, `save_failed` 500). A maFile without an account name is now refused.
 - 4 Draupnir transaction: NOT a bug (Ivan, 2026-11-04): a case-different name staying its own holding is fine, he picks names from the hints and can price any item; never raise it again. Still open: required fields only in page; unknown_item confirm should be a code from POST /transactions.
 - 5 Draupnir CSV import: answers ignored, 400 and skipped rows silently lost -> import plan/execute.
 - 6 Confirmations: page picks nonce/key; type 12 unknown -> backend looks up the key, sends type_name.

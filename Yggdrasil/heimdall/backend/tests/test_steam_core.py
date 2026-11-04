@@ -240,24 +240,60 @@ def test_merge_save_drops_a_discarded_token_only_if_unchanged(service):
 
 # ---- 10. import validation --------------------------------------------------
 
-def test_import_requires_a_17_digit_steamid_file_name(service):
-    data = {'shared_secret': 's', 'Session': {'SteamID': 76561198000000001}}
-    assert 'error' in service.import_account(data, filename=None)
-    assert 'error' in service.import_account(data, filename='12345.maFile')
-    assert 'error' in service.import_account(data, filename='alpha.maFile')
-    assert 'error' in service.import_account(data, filename='7656119800000000X.maFile')
-    assert service.storage.list_accounts() == []
+def _mafile_text(steamid_value=STEAMID, login='alpha', secret='c2VjcmV0'):
+    return ('{"shared_secret": "%s", "account_name": "%s", "Session": {"SteamID": %s}}'
+            % (secret, login, steamid_value))
 
 
-def test_import_strips_transport_keys_and_uses_the_file_name_id(service):
-    payload = {'shared_secret': 's', 'account_name': 'alpha',
-               'Session': {'SteamID': 76561198000000000},  # precision already lost in JS
-               'fileName': f'{STEAMID}.maFile', 'account_password': 'hunter2'}
-    result = service.import_account(payload, filename=f'{STEAMID}.maFile')
-    assert result == {'status': 'success', 'steamid': STEAMID}
+def _fake_login(service, monkeypatch, answer):
+    calls = []
+
+    def login(username, password, shared_secret=None):
+        calls.append((username, password, shared_secret))
+        return answer
+    monkeypatch.setattr(service, 'begin_auth_session', login)
+    return calls
+
+
+def test_import_refuses_a_bad_file_before_any_login(service, monkeypatch):
+    calls = _fake_login(service, monkeypatch, {'success': True, 'steamid': STEAMID})
+    assert service.import_account('not json', 'x.maFile', 'pw')['code'] == 'invalid_file'
+    assert service.import_account(None, 'x.maFile', 'pw')['code'] == 'invalid_file'
+    assert service.import_account(123, 'x.maFile', 'pw')['code'] == 'invalid_file'
+    assert service.import_account('{"shared_secret": "s", "account_name": "a"}', 'alpha.maFile', 'pw')['code'] == 'invalid_steamid'
+    assert service.import_account('{"shared_secret": "s", "Session": {}}', f'{STEAMID}.maFile', 'pw')['code'] == 'no_account_name'
+    assert service.import_account('{"account_name": "a"}', f'{STEAMID}.maFile', 'pw')['code'] == 'no_shared_secret'
+    assert service.import_account(_mafile_text(), f'{STEAMID}.maFile', '')['code'] == 'password_required'
+    assert calls == [] and service.storage.list_accounts() == []
+
+
+def test_import_logs_in_with_the_files_own_secret_then_saves(service, monkeypatch):
+    calls = _fake_login(service, monkeypatch, {'success': True, 'steamid': STEAMID, 'access_token': ''})
+    # A renamed file: the SteamID64 is read from the raw text, at full precision.
+    result = service.import_account(_mafile_text(), 'renamed (1).maFile', ' pass word ')
+    assert result['status'] == 'success' and result['steamid'] == STEAMID and result['replaced'] is False
+    assert calls == [('alpha', ' pass word ', 'c2VjcmV0')]  # the password is never trimmed
     saved = service.storage.load_account(STEAMID)
-    assert 'account_password' not in saved and 'fileName' not in saved
-    assert saved['Session']['SteamID'] == STEAMID
+    assert saved['Session']['SteamID'] == STEAMID and 'pass word' not in json.dumps(saved)
+
+
+def test_a_failed_login_never_touches_a_working_mafile(service, monkeypatch):
+    service.storage.save_account(STEAMID, {'shared_secret': 'old', 'account_name': 'alpha'})
+    _fake_login(service, monkeypatch, {'success': False, 'message': 'Steam rejected the login'})
+    result = service.import_account(_mafile_text(secret='new'), f'{STEAMID}.maFile', 'wrong')
+    assert result == {'error': 'Steam rejected the login', 'code': 'authentication_failed'}
+    assert service.storage.load_account(STEAMID)['shared_secret'] == 'old'
+
+
+def test_import_refuses_when_steam_logs_in_to_another_account(service, monkeypatch):
+    _fake_login(service, monkeypatch, {'success': True, 'steamid': '76561198000000099'})
+    result = service.import_account(_mafile_text(), f'{STEAMID}.maFile', 'pw')
+    assert result['code'] == 'steamid_mismatch' and service.storage.list_accounts() == []
+
+
+def test_steam_unreachable_has_its_own_code(service, monkeypatch):
+    _fake_login(service, monkeypatch, {'success': False, 'transient': True, 'message': 'HTTP 429'})
+    assert service.import_account(_mafile_text(), f'{STEAMID}.maFile', 'pw')['code'] == 'steam_unreachable'
 
 
 # ---- 11 / 12. login guards --------------------------------------------------

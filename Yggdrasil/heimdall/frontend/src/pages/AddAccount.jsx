@@ -49,7 +49,7 @@ const AddAccount = () => {
 
                 accounts.push({
                     fileName: file.name,
-                    data: json,
+                    text,
                     accountName,
                     steamid
                 });
@@ -85,26 +85,17 @@ const AddAccount = () => {
         });
     };
 
-    const importAccount = async (data) => {
+    // One backend command: it logs in to Steam with the file first and saves it
+    // only when the login worked (an account already here keeps its maFile otherwise).
+    const importAccount = async (account, password) => {
         const res = await fetch('/api/accounts/import', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(data)
+            body: JSON.stringify({ file_name: account.fileName, file_text: account.text, password })
         });
-
-        const result = await readJson(res);
-        if (!res.ok) throw new Error(result.error || 'Import failed');
+        const result = await readJson(res).catch(() => ({}));
+        if (!res.ok || result.error) throw new Error(result.error || 'Import failed');
         return result;
-    };
-
-    // SteamIDs already on the dashboard before this import started. A failed
-    // authentication only cleans up an account this import created — it must
-    // never delete a working maFile that was simply imported a second time.
-    const fetchExistingSteamids = async () => {
-        const res = await fetch('/api/accounts');
-        if (!res.ok) throw new Error('Could not read the current account list');
-        const json = await readJson(res);
-        return new Set((json.accounts || []).map((account) => String(account.steamid)));
     };
 
     const handlePasswordSubmit = async (e) => {
@@ -116,16 +107,6 @@ const AddAccount = () => {
         setAuthNotice(null);
 
         try {
-            let existingSteamids;
-            try {
-                existingSteamids = await fetchExistingSteamids();
-            } catch (err) {
-                // Without the list we cannot tell a new account from an existing
-                // one, so do not import at all rather than risk deleting one.
-                setAuthNotice(`Import not started: ${err.message}. Please try again.`);
-                return;
-            }
-
             let successCount = 0;
             let failCount = 0;
             const errors = [...fileErrors];
@@ -136,61 +117,8 @@ const AddAccount = () => {
 
             for (let i = 0; i < pendingAccounts.length; i++) {
                 const account = pendingAccounts[i];
-                const password = (passwords[i] || '').trim();
-
-                if (!password) {
-                    failCount++;
-                    errors.push(`${account.fileName}: Password is required`);
-                    fieldErrors[i] = 'Password is required';
-                    continue;
-                }
-
-                let savedSteamid = null;
                 try {
-                    const payload = {
-                        ...account.data,
-                        fileName: account.fileName,
-                        account_password: password,
-                        // Exact SteamID64 read from the raw text (JSON.parse rounds it);
-                        // used when the file is not named <SteamID64>.maFile.
-                        steamid_from_text: account.steamid !== 'Unknown' ? account.steamid : undefined
-                    };
-
-                    // 1. Import account (Saves and encrypts on backend)
-                    const importRes = await importAccount(payload);
-
-                    // Always use the SteamID returned by the server
-                    savedSteamid = importRes.steamid;
-                    const createdByThisImport =
-                        savedSteamid != null && !existingSteamids.has(String(savedSteamid));
-
-                    const username =
-                        account.data?.account_name ||
-                        account.data?.Session?.AccountName ||
-                        null;
-
-                    if (username) {
-                        // 2. Authenticate using the specific SteamID confirmed by backend
-                        const authRes = await fetch('/api/accounts/authenticate', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({
-                                account_name: username,
-                                password
-                            })
-                        });
-
-                        const authJson = await readJson(authRes).catch(() => ({}));
-                        if (!authRes.ok || authJson.error) {
-                            // Remove the account only when this import created it;
-                            // an account that was already here keeps its maFile.
-                            if (createdByThisImport) {
-                                await fetch(`/api/accounts/${savedSteamid}`, { method: 'DELETE' });
-                            }
-                            throw new Error(authJson.error || 'Authentication failed');
-                        }
-                    }
-
+                    await importAccount(account, passwords[i] || '');
                     successCount++;
                 } catch (err) {
                     failCount++;
@@ -260,7 +188,7 @@ const AddAccount = () => {
 
     const canSubmitPasswords =
         pendingAccounts.length > 0 &&
-        pendingAccounts.every((_, index) => (passwords[index] || '').trim().length > 0);
+        pendingAccounts.every((_, index) => (passwords[index] || '').length > 0);
 
     return (
         <div className="min-h-screen text-white p-4 md:p-8 flex flex-col items-center justify-center backdrop-blur-md bg-odin-dark/60 transition-all duration-500">

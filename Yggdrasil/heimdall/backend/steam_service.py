@@ -293,54 +293,78 @@ class SteamService:
         except Exception as e:
             logger.error(f"[STEAM DEBUG] Failed to write log file: {e}")
 
-    # Keys the Add Account page sends alongside the maFile JSON that must never be
-    # written into the maFile (the password belongs in the Mimir vault only).
-    _IMPORT_TRANSPORT_KEYS = ('fileName', 'account_password', 'steamid_from_text')
-
     @staticmethod
     def _is_steamid64(value):
         """A SteamID64 as text: exactly 17 decimal digits."""
         return isinstance(value, str) and len(value) == 17 and value.isdigit()
 
-    def import_account(self, mafile_data, filename=None):
-        """Import a maFile, taking the SteamID64 from its file name.
+    # The SteamID64 written in a maFile's raw text. Read from the text, never from
+    # parsed JSON: 17-digit numbers lose precision in a browser.
+    _MAFILE_STEAMID = re.compile(r'"SteamID"\s*:\s*"?(\d{17})\b')
+
+    def _read_mafile(self, file_text, file_name):
+        """Parse an uploaded maFile. Returns ``(steamid, data, login)`` or an ``{error, code}`` dict.
 
         The SteamID64 comes from the file name (``<steamid>.maFile``), or else from
-        ``steamid_from_text`` (read by the browser from the raw file text): the
-        ``Session.SteamID`` inside the JSON was parsed by the browser as a number,
-        and 17-digit ids lose precision there, so it is never trusted.
+        the ``SteamID`` written in the file's text (a renamed file).
         """
-        if isinstance(mafile_data, str):
-            mafile_data = json.loads(mafile_data)
-        if not isinstance(mafile_data, dict):
-            return {'error': 'maFile content must be a JSON object'}
-
-        steamid = str(filename).split('.')[0] if filename else ''
-        if not self._is_steamid64(steamid):
-            # A renamed file ("<login>.maFile", "x (1).maFile"): use the SteamID64 the
-            # browser read from the raw file text as a string, never the parsed number.
-            steamid = str(mafile_data.get('steamid_from_text') or '')
-        if not self._is_steamid64(steamid):
-            return {'error': 'Invalid SteamID. The file must be named <SteamID64>.maFile '
-                             '(17 digits, e.g. 76561198000000000.maFile)'}
-        logger.info(f"[IMPORT] Using SteamID from filename: {steamid}")
-
-        mafile_data = {
-            key: value for key, value in mafile_data.items()
-            if key not in self._IMPORT_TRANSPORT_KEYS
-        }
-        # Synchronize internal session data with the chosen string ID
-        session_data = dict(mafile_data.get('Session') or {})
-        session_data['SteamID'] = steamid
-        mafile_data['Session'] = session_data
-
+        if not isinstance(file_text, str):
+            return {'error': 'No maFile text was sent', 'code': 'invalid_file'}
         try:
-            # Save as <steamid>.maFile
+            data = json.loads(file_text)
+        except ValueError:
+            return {'error': 'The file is not a valid maFile (not JSON)', 'code': 'invalid_file'}
+        if not isinstance(data, dict):
+            return {'error': 'The file is not a valid maFile (not a JSON object)', 'code': 'invalid_file'}
+        steamid = str(file_name or '').split('.')[0]
+        if not self._is_steamid64(steamid):
+            found = self._MAFILE_STEAMID.search(file_text)
+            steamid = found.group(1) if found else ''
+        if not self._is_steamid64(steamid):
+            return {'error': 'No SteamID64 found: name the file <SteamID64>.maFile '
+                             '(17 digits, for example 76561198000000000.maFile)', 'code': 'invalid_steamid'}
+        session_data = dict(data.get('Session') or {})
+        login = data.get('account_name') or session_data.get('AccountName')
+        if not login:
+            return {'error': 'The maFile has no account name', 'code': 'no_account_name'}
+        if not data.get('shared_secret'):
+            return {'error': 'The maFile has no shared_secret (Steam Guard secret)', 'code': 'no_shared_secret'}
+        session_data['SteamID'] = steamid
+        data['Session'] = session_data
+        data['account_name'] = login
+        return steamid, data, login
+
+    def import_account(self, file_text, file_name, password):
+        """Add Account: one command. Log in to Steam with the file first, write it only after.
+
+        Nothing is written when the file is invalid, the login fails, or Steam's
+        SteamID differs from the file's. A working maFile that is imported again is
+        replaced only after the new one logged in. The password is used as typed
+        (never trimmed) and is never written into the maFile.
+        """
+        parsed = self._read_mafile(file_text, file_name)
+        if isinstance(parsed, dict):
+            return parsed
+        steamid, data, login = parsed
+        if not password:
+            return {'error': 'Password is required', 'code': 'password_required'}
+        auth = self.begin_auth_session(login, password, shared_secret=data['shared_secret'])
+        if not auth.get('success'):
+            code = 'steam_unreachable' if auth.get('transient') else 'authentication_failed'
+            return {'error': auth.get('message') or 'Authentication failed', 'code': code}
+        if str(auth.get('steamid') or '') != steamid:
+            return {'error': f'Steam logged in to a different account ({auth.get("steamid")}) '
+                             f'than the file ({steamid}); nothing was saved', 'code': 'steamid_mismatch'}
+        replaced = steamid in self.storage.list_accounts()
+        try:
             with self._account_lock(steamid):
-                self.storage.save_account(steamid, mafile_data)
-            return {'status': 'success', 'steamid': steamid}
+                self.storage.save_account(steamid, data)
         except Exception as e:
-            return {'error': f'Failed to save: {str(e)}'}
+            return {'error': f'Failed to save: {e}', 'code': 'save_failed'}
+        stored = self.store_login_tokens(login, auth)
+        logger.info(f"[IMPORT] {steamid} imported and authenticated (replaced={replaced})")
+        return {'status': 'success', 'steamid': steamid, 'account_name': login,
+                'replaced': replaced, 'session_stored': stored}
 
     def remove_account(self, steamid):
         """Soft-delete one account (its maFile is archived, never unlinked)."""
@@ -869,8 +893,12 @@ class SteamService:
         logger.info(f"[AUTH] Stored login session for {steamid} from Add Account")
         return True
 
-    def begin_auth_session(self, username, password):
+    def begin_auth_session(self, username, password, shared_secret=None):
         """Full credential login (the only reliable way to mint a web token).
+
+        ``shared_secret`` is the Steam Guard secret to answer with; by default it is
+        read from the saved maFile (Add Account passes the new file's own secret,
+        because it logs in before anything is written).
 
         Failures caused by Steam throttling or being unreachable (HTTP 429 / 5xx,
         connection errors, timeouts) are flagged ``transient`` so callers back off.
@@ -944,7 +972,7 @@ class SteamService:
 
         try:
             if any((c or {}).get('confirmation_type') == 3 for c in (res_data.get('allowed_confirmations', []))):
-                shared_secret = self._find_shared_secret(username, steamid)
+                shared_secret = shared_secret or self._find_shared_secret(username, steamid)
                 if not shared_secret:
                     return {'success': False, 'message': 'Guard required but no secret found.'}
 
