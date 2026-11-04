@@ -514,7 +514,9 @@ const MimirVault = () => {
                             accounts={creds.filter(c => c.linked_steamid)
                                 .map(c => ({ steamid: String(c.linked_steamid), account_name: c.login }))
                                 .sort((a, b) => a.account_name.localeCompare(b.account_name))}
-                            onUnlock={marketAccess.unlock}
+                            plan={marketAccess.plan}
+                            onDryRun={marketAccess.planUnlock}
+                            onExecute={marketAccess.executePlan}
                             starting={marketAccess.starting}
                             startError={marketAccess.startError}
                             onClose={() => setUnlockerOpen(false)}

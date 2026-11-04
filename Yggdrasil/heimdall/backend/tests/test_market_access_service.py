@@ -352,50 +352,240 @@ def _unlocker(tmp_path, http):
                                http=http, sleep=lambda seconds: None, today=lambda: datetime.date(2026, 10, 29))
 
 
+import threading  # noqa: E402
+
+from market_access_service import (MarketAccessError, advice, describe_unlock, headline,  # noqa: E402
+                                   purchase_help)
+from storage_deposit import CommandError  # noqa: E402
+
+
+def _finish(service, job_id):
+    """Wait until a job of the service has finished; answers it."""
+    for _ in range(500):
+        job = service.jobs.get(job_id)
+        if job and not job['running']:
+            return job
+        time.sleep(0.01)
+    raise AssertionError('the job did not finish')
+
+
+def _dry_run(service, steamids=('1',)):
+    """A plan: its dry run, finished."""
+    plan = service.plan_unlock(list(steamids))
+    assert plan['state'] == 'dry run' and plan['executable'] is False
+    job = _finish(service, plan['dry_run_job_id'])
+    assert job['result']['plan_id'] == plan['plan_id']
+    return service.get_plan(plan['plan_id'])
+
+
+def _refusal(call):
+    try:
+        call()
+    except CommandError as error:
+        return error.code
+    raise AssertionError('not refused')
+
+
 def test_unlock_dry_run_claims_the_game_and_cancels(tmp_path):
     http = _UnlockHttp()
     service = _unlocker(tmp_path, http)
-    assert service.start_unlock(['1'])['started']
-    _wait(service)
+    plan = _dry_run(service)
     entry = service.status()['unlocks'][0]
     assert entry['ok'] and entry['dry_run'] and not entry['approved'] and not entry['paid'], entry
     assert entry['claimed_game'] and entry['usd'] == 0.01
     assert http.posts('addfreelicense/617273')
     assert [data['approved'] for data in http.posts('approvetxnsubmit')] == ['0']
     assert not [call for call in http.calls if call[1].startswith('https://store.steampowered.com/buyitem/1723420/finalize/')]
+    assert plan['state'] == 'ready' and plan['executable'] and plan['passed'] == 1 and plan['expires_at']
+    assert plan['accounts'] == [{'steamid': '1', 'account_name': 'alpha', 'passed': True, 'reason': None,
+                                 'usd': 0.01, 'total': 1, 'currency': 'USD', 'claimed_game': True,
+                                 'max_usd': UNLOCK_MAX_USD}]
 
 
-def test_unlock_for_real_approves_finalizes_and_checks_the_history(tmp_path):
+def test_executing_a_plan_buys_only_what_passed_and_checks_the_history(tmp_path):
     http = _UnlockHttp(owned=True)
     service = _unlocker(tmp_path, http)
-    service.start_unlock(['1'], dry_run=False)
-    _wait(service)
+    plan = _dry_run(service, ['1', '2'])          # beta has no web session: it fails the dry run
+    assert [account['passed'] for account in plan['accounts']] == [True, False]
+    assert plan['accounts'][1]['reason'] == 'no Steam web session for this account'
+    job = service.execute_plan(plan['plan_id'], dry_run=False)
+    assert job['kind'] == 'market-access-unlock' and job['total'] == 1 and job['plan_id'] == plan['plan_id']
+    job = _finish(service, job['id'])
+    assert job['done'] == 1 and job['failed'] == 0
+    assert [(account['account_name'], account['kind'], account['paid']) for account in job['result']['accounts']] \
+        == [('alpha', 'bought', True)]
     status = service.status()
     entry = status['unlocks'][0]
-    assert entry['ok'] and entry['paid'] and entry['step'] == 'bought', entry
+    assert entry['ok'] and entry['paid'] and entry['step'] == 'bought' and entry['plan_id'] == plan['plan_id'], entry
     assert not http.posts('addfreelicense')
-    assert [data['approved'] for data in http.posts('approvetxnsubmit')] == ['1']
+    assert [data['approved'] for data in http.posts('approvetxnsubmit')] == ['0', '1']
     assert [call for call in http.calls if call[1] == FINALIZE]
     assert status['accounts']['1']['summary']['last_purchase']['items'] == ['Zombie Hunter', 'Editor Pack']
+    assert status['last_unlocks']['1']['kind'] == 'bought'
+    assert service.get_plan(plan['plan_id'])['executable'] is False
 
 
-def test_unlock_refuses_a_billing_address_page_and_cancels(tmp_path):
+def test_executing_twice_answers_the_same_job_and_buys_once(tmp_path):
+    http = _UnlockHttp(owned=True)
+    service = _unlocker(tmp_path, http)
+    plan = _dry_run(service)
+    first = service.execute_plan(plan['plan_id'], dry_run=False)
+    second = service.execute_plan(plan['plan_id'], dry_run=False)
+    assert first['id'] == second['id']
+    _finish(service, first['id'])
+    assert service.execute_plan(plan['plan_id'], dry_run=False)['id'] == first['id']
+    assert [data['approved'] for data in http.posts('approvetxnsubmit')] == ['0', '1']
+
+
+def test_execute_fails_closed_unless_dry_run_is_exactly_false(tmp_path):
+    http = _UnlockHttp(owned=True)
+    service = _unlocker(tmp_path, http)
+    plan = _dry_run(service)
+    calls = len(http.calls)
+    for flag in (None, True, 'false', 0, '', [], {}):
+        assert _refusal(lambda: service.execute_plan(plan['plan_id'], dry_run=flag)) == 'real_purchase_only'
+    assert len(http.calls) == calls                    # nothing was sent to Steam
+    assert service.get_plan(plan['plan_id'])['executable'] is True   # and the plan is still there
+
+
+def test_an_expired_or_unknown_plan_is_refused(tmp_path):
+    http = _UnlockHttp(owned=True)
+    service = _unlocker(tmp_path, http)
+    plan = _dry_run(service)
+    service._plans[plan['plan_id']]['expires_at'] = time.time() - 1
+    assert service.get_plan(plan['plan_id'])['executable'] is False
+    assert _refusal(lambda: service.execute_plan(plan['plan_id'], dry_run=False)) == 'plan_expired'
+    assert _refusal(lambda: service.execute_plan('no-such-plan', dry_run=False)) == 'plan_unknown'
+    assert _refusal(lambda: service.get_plan('no-such-plan')) == 'plan_unknown'
+    assert [data['approved'] for data in http.posts('approvetxnsubmit')] == ['0']
+
+
+def test_a_billing_address_page_fails_the_dry_run_and_nothing_can_be_bought(tmp_path):
     http = _UnlockHttp(owned=True, page=_approval_page(billing=True))
     service = _unlocker(tmp_path, http)
-    service.start_unlock(['1'], dry_run=False)
-    _wait(service)
+    plan = _dry_run(service)
     entry = service.status()['unlocks'][0]
     assert not entry['ok'] and 'billing address' in entry['error'] and not entry['approved']
+    assert plan['accounts'][0]['passed'] is False and 'billing address' in plan['accounts'][0]['reason']
+    assert plan['executable'] is False
+    assert _refusal(lambda: service.execute_plan(plan['plan_id'], dry_run=False)) == 'nothing_passed'
     assert [data['approved'] for data in http.posts('approvetxnsubmit')] == ['0']
+
+
+def test_the_real_run_keeps_every_guard(tmp_path):
+    """The approval page changed between the dry run and the real run: refused and cancelled."""
+    http = _UnlockHttp(owned=True)
+    service = _unlocker(tmp_path, http)
+    plan = _dry_run(service)
+    http.page = _approval_page(total='$0.99 USD')
+    _finish(service, service.execute_plan(plan['plan_id'], dry_run=False)['id'])
+    entry = service.status()['unlocks'][0]
+    assert not entry['ok'] and 'above the $0.05 limit' in entry['error'] and not entry['approved']
+    assert [data['approved'] for data in http.posts('approvetxnsubmit')] == ['0', '0']
+    assert service.status()['last_unlocks']['1']['kind'] == 'failed'
 
 
 def test_unlock_not_in_the_history_reads_may_be_paid(tmp_path):
     http = _UnlockHttp(owned=True, listed=False)
     service = _unlocker(tmp_path, http)
-    service.start_unlock(['1'], dry_run=False)
-    _wait(service)
+    plan = _dry_run(service)
+    job = _finish(service, service.execute_plan(plan['plan_id'], dry_run=False)['id'])
     entry = service.status()['unlocks'][0]
     assert entry['approved'] and not entry['paid'] and 'MAY BE PAID' in entry['error']
+    assert job['failed'] == 1 and job['result']['accounts'][0]['kind'] == 'may_be_paid'
+    assert service.status()['last_unlocks']['1']['kind'] == 'may_be_paid'
+
+
+def test_a_plan_is_not_executable_while_its_dry_run_runs(tmp_path):
+    http = _UnlockHttp(owned=True)
+    service = _unlocker(tmp_path, http)
+    gate = threading.Event()
+    original = service._wallet_currency
+
+    def slow(cookies):
+        gate.wait(5)
+        return original(cookies)
+    service._wallet_currency = slow
+    plan = service.plan_unlock(['1'])
+    assert _refusal(lambda: service.execute_plan(plan['plan_id'], dry_run=False)) == 'plan_not_ready'
+    assert _refusal(lambda: service.plan_unlock(['1'])) == 'busy'
+    gate.set()
+    _finish(service, plan['dry_run_job_id'])
+    assert service.get_plan(plan['plan_id'])['executable'] is True
+
+
+def test_a_newer_dry_run_replaces_an_older_plan_for_the_same_account(tmp_path):
+    http = _UnlockHttp(owned=True)
+    service = _unlocker(tmp_path, http)
+    first = _dry_run(service, ['1'])
+    second = _dry_run(service, ['1'])
+    assert service.get_plan(first['plan_id'])['state'] == 'replaced'
+    assert service.get_plan(first['plan_id'])['executable'] is False
+    assert _refusal(lambda: service.execute_plan(first['plan_id'], dry_run=False)) == 'plan_replaced'
+    assert second['executable'] is True
+
+
+def test_an_expired_plan_reads_expired_and_its_dry_run_is_no_longer_ready(tmp_path):
+    http = _UnlockHttp(owned=True)
+    service = _unlocker(tmp_path, http)
+    plan = _dry_run(service)
+    assert service.status()['last_unlocks']['1']['text'].startswith('ready: dry run passed')
+    service._plans[plan['plan_id']]['expires_at'] = time.time() - 1
+    described = service.get_plan(plan['plan_id'])
+    assert described['state'] == 'expired' and described['executable'] is False
+    assert _refusal(lambda: service.execute_plan(plan['plan_id'], dry_run=False)) == 'plan_expired'
+    assert 'its plan can no longer be bought' in service.status()['last_unlocks']['1']['text']
+
+
+def test_a_failure_while_finishing_the_dry_run_marks_the_plan_failed(tmp_path):
+    http = _UnlockHttp(owned=True)
+    service = _unlocker(tmp_path, http)
+
+    def broken(plan, error):
+        raise ValueError('boom')
+    service._finish_dry_run = broken
+    plan = service.plan_unlock(['1'])
+    _finish(service, plan['dry_run_job_id'])
+    described = service.get_plan(plan['plan_id'])
+    assert described['state'] == 'failed' and described['executable'] is False
+    assert _refusal(lambda: service.execute_plan(plan['plan_id'], dry_run=False)) == 'plan_failed'
+
+
+def test_cleanup_keeps_a_plan_whose_job_still_runs(tmp_path):
+    http = _UnlockHttp(owned=True)
+    service = _unlocker(tmp_path, http)
+    plan = _dry_run(service, ['1'])
+    running = service.jobs.create('market-access-unlock', {'total': 1})   # a purchase still running
+    stored = service._plans[plan['plan_id']]
+    stored.update(job_id=running['id'], created_at=stored['created_at'] - 2 * 60 * 60)
+    other = _dry_run(service, ['2'])
+    assert plan['plan_id'] in service._plans
+    service.jobs.finish(running['id'])
+    _dry_run(service, ['2'])
+    assert plan['plan_id'] not in service._plans and other['plan_id'] in service._plans
+
+
+def test_a_job_that_cannot_start_leaves_the_service_unlocked(tmp_path):
+    http = _UnlockHttp(owned=True)
+    service = _unlocker(tmp_path, http)
+    original = service.jobs.create
+
+    def broken(*arguments, **keywords):
+        raise RuntimeError('registry broken')
+    service.jobs.create = broken
+    try:
+        service.plan_unlock(['1'])
+    except RuntimeError:
+        pass
+    service.jobs.create = original
+    assert service._plans == {}
+    assert service._job_lock.acquire(blocking=False)
+    service._job_lock.release()
+
+
+def test_a_malformed_saved_allowed_at_does_not_break_the_headline():
+    result = {'summary': None, 'steam': {'allowed': False, 'allowed_at': 'not a number'}}
+    assert headline(result) == 'No Market access (Steam says so)'
 
 
 def test_an_unexpected_error_is_recorded_and_the_next_account_still_runs(tmp_path):
@@ -407,17 +597,29 @@ def test_an_unexpected_error_is_recorded_and_the_next_account_still_runs(tmp_pat
         calls.append(1)
         raise ValueError('bad wallet JSON')
     service._wallet_currency = broken
-    service.start_unlock(['1', '2'], dry_run=True)
-    _wait(service)
+    plan = _dry_run(service, ['1', '2'])
     by_account = {entry['steamid']: entry for entry in service.status()['unlocks']}
     assert calls == [1]
     assert by_account['1']['error'] == 'unexpected error (ValueError)' and by_account['1']['state'] == 'done'
     assert by_account['2']['state'] == 'done'           # the job went on to the next account
+    assert plan['passed'] == 0
+
+
+def test_a_rate_limit_stops_the_dry_run_and_the_rest_reads_not_tried(tmp_path):
+    http = _UnlockHttp(owned=True)
+    service = _unlocker(tmp_path, http)
+
+    def limited(*arguments):
+        raise MarketAccessError('Steam rate-limited the request (HTTP 429): try again later')
+    service._wallet_currency = limited
+    plan = _dry_run(service, ['1', '2'])
+    assert 'HTTP 429' in plan['error']
+    assert 'HTTP 429' in plan['accounts'][0]['reason']
+    assert plan['accounts'][1]['reason'].startswith('not tried: the dry run stopped')
 
 
 def test_unlock_needs_a_known_account(tmp_path):
-    assert _unlocker(tmp_path, _UnlockHttp()).start_unlock(['999']) == {'started': False,
-                                                                        'error': 'no known account chosen'}
+    assert _refusal(lambda: _unlocker(tmp_path, _UnlockHttp()).plan_unlock(['999'])) == 'no_accounts'
 
 
 def test_an_interrupted_unlock_after_approving_reads_may_be_paid(tmp_path):
@@ -428,27 +630,120 @@ def test_an_interrupted_unlock_after_approving_reads_may_be_paid(tmp_path):
     assert 'MAY BE PAID' in service.status()['unlocks'][0]['error']
 
 
-def test_the_unlock_route_is_a_dry_run_unless_told_otherwise():
+# ---- what the pages print -------------------------------------------------------------------
+
+def test_headline_advice_and_whether_a_purchase_would_help():
+    def result(state, days_left=None, until=None, steam=None, opens_on=None, error=None, summary=True):
+        return {'state': state, 'error': error, 'steam': steam,
+                'summary': {'days_left': days_left, 'access_until': until, 'opens_on': opens_on} if summary else None}
+
+    ok = result(STATE_OK, 200, '2027-05-01', {'allowed': True})
+    assert headline(ok) == 'Market until 1 May 2027 · 200 days' and advice(ok) is None
+    assert purchase_help(ok) == (False, 'the Market stays open 200 more days')
+
+    warn = result(STATE_WARN, 12, '2026-11-13', {'allowed': True})
+    assert headline(warn) == 'Market until 13 Nov 2026 · 12 days'
+    assert advice(warn).startswith('buy something')
+    assert purchase_help(warn) == (True, 'Market access lapses in 12 days')
+
+    lapsed = result(STATE_LAPSED, -3, '2026-10-29')
+    assert headline(lapsed) == 'Market access lapsed 29 Oct 2026'
+    assert purchase_help(lapsed) == (True, 'Market access lapsed 29 Oct 2026')
+
+    nothing = result(STATE_WARN, steam={'allowed': True})
+    assert headline(nothing) == 'No counted purchase on the first page of Purchase History'
+    assert purchase_help(nothing) == (True, 'no counted purchase keeps the Market open')
+
+    blocked = result(STATE_LAPSED, 200, '2027-05-01', {'allowed': False, 'allowed_at': 1798761600})
+    assert headline(blocked) == 'No Market access (Steam) until 1 Jan 2027'
+    assert purchase_help(blocked)[0] is False and 'another reason' in purchase_help(blocked)[1]
+    assert headline(result(STATE_LAPSED, steam={'allowed': False})) == 'No Market access (Steam says so)'
+
+    opening = result(STATE_LAPSED, 362, '2027-10-27', {'allowed': False}, opens_on='2026-11-04')
+    assert purchase_help(opening) == (False, 'a purchase under 7 days old opens the Market on 4 Nov 2026')
+    assert headline(result(STATE_OK, 362, '2027-10-27', opens_on='2026-11-04')) == 'Market opens 4 Nov 2026'
+
+    broken = result(STATE_UNKNOWN, error='no Steam web session for this account', summary=False)
+    assert headline(broken) == 'Not checked: no Steam web session for this account'
+    assert purchase_help(broken) == (False, 'not checked yet')
+
+
+def test_describe_unlock():
+    assert describe_unlock({'state': 'in progress', 'step': 'wallet'})['text'] == 'wallet…'
+    assert describe_unlock({'state': 'done', 'ok': True, 'paid': True})['kind'] == 'bought'
+    assert describe_unlock({'state': 'done', 'ok': True, 'usd': 0.01})['text'] == 'ready: dry run passed ($0.0100)'
+    assert describe_unlock({'state': 'done', 'ok': False, 'error': 'no wallet'}) \
+        == {'kind': 'failed', 'text': 'no wallet', 'at': None, 'dry_run': None, 'plan_id': None}
+    assert describe_unlock({'state': 'done', 'approved': True, 'error': 'x MAY BE PAID'})['kind'] == 'may_be_paid'
+
+
+def test_status_orders_the_banner_and_says_what_to_tick(tmp_path):
+    import json as json_module
+    path = tmp_path / 'market_access.json'
+
+    def account(name, access_until, allowed=True, error=None, state='unknown'):
+        summary = {'access_until': access_until, 'days_left': None, 'opens_on': None,
+                   'last_purchase': None} if access_until else None
+        return {'account_name': name, 'summary': summary, 'steam': {'allowed': allowed} if allowed is not None else None,
+                'error': error, 'state': state}
+    path.write_text(json_module.dumps({
+        'accounts': {'1': account('alpha', '2026-11-20'), '2': account('beta', '2027-06-01'),
+                     '3': account('gamma', None, state='warn'), '4': account('delta', '2026-11-05'),
+                     '5': account('eve', None, allowed=None, error='no Steam web session')},
+        'unlocks': [{'steamid': '1', 'state': 'done', 'ok': True, 'usd': 0.01, 'at': 1},
+                    {'steamid': '1', 'state': 'done', 'ok': False, 'error': 'newer', 'at': 2}]}))
+    service = MarketAccessService(_Steam(), state_path=str(path), today=lambda: datetime.date(2026, 11, 1))
+    status = service.status()
+    assert status['flagged'] == ['3', '4', '1']           # nothing keeps it open, then soonest first
+    assert status['not_checked'] == ['5']
+    assert {steamid: result['purchase_would_help'] for steamid, result in status['accounts'].items()} \
+        == {'1': True, '2': False, '3': True, '4': True, '5': False}
+    assert status['accounts']['4']['headline'] == 'Market until 5 Nov 2026 · 4 days'
+    assert status['accounts']['4']['advice'].startswith('buy something')
+    assert status['last_unlocks'] == {'1': {'kind': 'failed', 'text': 'newer', 'at': 2, 'dry_run': None,
+                                            'plan_id': None}}
+
+
+# ---- routes ---------------------------------------------------------------------------------
+
+def _client(service):
     from flask import Flask
 
-    from context import ctx
     from routes.mimir import bp
-
-    calls = []
-
-    class _Service:
-        def start_unlock(self, steamids, dry_run=True):
-            calls.append((steamids, dry_run))
-            return {'started': True}
     app = Flask(__name__)
     app.register_blueprint(bp)
-    previous, ctx.market_access_service = ctx.market_access_service, _Service()
+    return app.test_client()
+
+
+def test_the_unlocker_routes_are_plan_then_execute(tmp_path):
+    from context import ctx
+    http = _UnlockHttp(owned=True)
+    service = _unlocker(tmp_path, http)
+    previous, ctx.market_access_service = ctx.market_access_service, service
     try:
-        client = app.test_client()
-        assert client.post('/api/mimir/market-access/unlock', json={'steamids': ['1']}).status_code == 200
-        client.post('/api/mimir/market-access/unlock', json={'steamids': ['1'], 'dry_run': 'false'})
-        client.post('/api/mimir/market-access/unlock', json={'steamids': ['1'], 'dry_run': False})
-        assert client.post('/api/mimir/market-access/unlock', json={}).status_code == 400
+        client = _client(service)
+        assert client.post('/api/mimir/market-access/unlock', json={'steamids': ['1'], 'dry_run': False}).status_code \
+            in (404, 405)                                  # no bare purchase without a plan any more
+        assert client.post('/api/mimir/market-access/unlock/plan', json={}).get_json()['code'] == 'bad_request'
+        answer = client.post('/api/mimir/market-access/unlock/plan', json={'steamids': ['1']})
+        assert answer.status_code == 202
+        plan = answer.get_json()
+        _finish(service, plan['dry_run_job_id'])
+        assert client.get(f'/api/mimir/market-access/plans/{plan["plan_id"]}').get_json()['executable'] is True
+        execute = f'/api/mimir/market-access/plans/{plan["plan_id"]}/execute'
+        for body in ({}, {'dry_run': True}, {'dry_run': 'false'}, {'dry_run': None}):
+            refused = client.post(execute, json=body)
+            assert refused.status_code == 400 and refused.get_json()['code'] == 'real_purchase_only'
+        refused = client.post(execute, data='not json', content_type='text/plain')
+        assert refused.get_json()['code'] == 'real_purchase_only'
+        first = client.post(execute, json={'dry_run': False})
+        second = client.post(execute, json={'dry_run': False})
+        assert first.status_code == 202 and first.get_json()['id'] == second.get_json()['id']
+        _finish(service, first.get_json()['id'])
+        unknown = client.post('/api/mimir/market-access/plans/nope/execute', json={'dry_run': False})
+        assert unknown.status_code == 404 and unknown.get_json() == {'error': 'Unknown plan (make a new dry run)',
+                                                                     'code': 'plan_unknown'}
+        assert client.get('/api/mimir/market-access/plans/nope').status_code == 404
     finally:
         ctx.market_access_service = previous
-    assert [dry_run for _, dry_run in calls] == [True, True, False]
+    assert [data['approved'] for data in http.posts('approvetxnsubmit')] == ['0', '1']

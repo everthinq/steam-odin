@@ -5,6 +5,7 @@ import { Store, RefreshCw, AlertTriangle } from 'lucide-react';
 // runs from Mímir (button, banner, a column); the Dashboard shows the result on each card.
 // Steam keeps the Market open while the account has a purchase between 7 days and one
 // year old (store or in-game); Market transactions and free promotional licenses do not count.
+// The backend decides what each account's line says (headline, advice) and the banner's order.
 
 const formatDate = (iso) => {
     if (!iso) return null;
@@ -17,21 +18,6 @@ const STATE_STYLES = {
     warn: 'text-amber-400',
     lapsed: 'text-red-400',
     unknown: 'text-slate-500',
-};
-
-const describe = (result) => {
-    const summary = result.summary || {};
-    const steam = result.steam || {};
-    if (result.error && !result.summary) return `Not checked: ${result.error}`;
-    if (steam.allowed === false) {
-        return steam.allowed_at
-            ? `No Market access (Steam) until ${new Date(steam.allowed_at * 1000).toLocaleDateString('en-GB')}`
-            : 'No Market access (Steam says so)';
-    }
-    if (summary.opens_on) return `Market opens ${formatDate(summary.opens_on)}`;
-    if (!summary.access_until) return 'No counted purchase on the first page of Purchase History';
-    if (summary.days_left < 0) return `Market access lapsed ${formatDate(summary.access_until)}`;
-    return `Market until ${formatDate(summary.access_until)} · ${summary.days_left} days`;
 };
 
 const tooltip = (result) => {
@@ -58,7 +44,7 @@ export const MarketAccessLine = ({ result, wrap = false }) => {
             title={tooltip(result)}
         >
             <Store size={12} className={`shrink-0 ${wrap ? 'mt-0.5' : ''}`} />
-            <span className={wrap ? '' : 'truncate'}>{describe(result)}</span>
+            <span className={wrap ? '' : 'truncate'}>{result.headline}</span>
         </div>
     );
 };
@@ -87,11 +73,12 @@ export const MarketAccessBanner = ({ status, accounts, startError = null }) => {
     if (!status) return null;
     const job = status.job || {};
     const names = Object.fromEntries((accounts || []).map((account) => [String(account.steamid), account.account_name]));
-    const results = Object.entries(status.accounts || {}).filter(([steamid]) => names[steamid]);
-    const flagged = results
-        .filter(([, result]) => result.state === 'warn' || result.state === 'lapsed')
-        .sort(([, a], [, b]) => (a.summary?.days_left ?? -9999) - (b.summary?.days_left ?? -9999));
-    const unknown = results.filter(([, result]) => result.state === 'unknown');
+    // Amber and red accounts, soonest first, and the ones not checked: the backend's lists, in its order.
+    const pick = (steamids) => (steamids || [])
+        .filter((steamid) => names[steamid] && status.accounts?.[steamid])
+        .map((steamid) => [steamid, status.accounts[steamid]]);
+    const flagged = pick(status.flagged);
+    const unknown = pick(status.not_checked);
     if (!flagged.length && !unknown.length && !job.error && !startError) return null;
     return (
         <div className="mb-6 rounded-lg border border-amber-500/30 bg-amber-950/20 p-4 text-sm space-y-1">
@@ -103,8 +90,8 @@ export const MarketAccessBanner = ({ status, accounts, startError = null }) => {
             {job.error && <p className="text-red-300">{job.kind === 'unlock' ? 'Unlocker' : 'Check'} stopped: {job.error}</p>}
             {flagged.map(([steamid, result]) => (
                 <p key={steamid} className={STATE_STYLES[result.state]}>
-                    {names[steamid]}: {describe(result)}
-                    {result.state === 'warn' ? ' — buy something (a game, a wallet top-up or an in-game item) to keep it open' : ''}
+                    {names[steamid]}: {result.headline}
+                    {result.advice ? ` — ${result.advice}` : ''}
                 </p>
             ))}
             {unknown.length > 0 && (

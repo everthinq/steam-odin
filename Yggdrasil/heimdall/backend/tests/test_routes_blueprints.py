@@ -137,8 +137,11 @@ def test_mimir_blueprint_holds_the_market_access_routes():
     from routes.mimir import bp
     rules = _rules_for(bp)
     for want in ['/api/mimir/market-access', '/api/mimir/market-access/check',
-                 '/api/mimir/market-access/unlock']:
+                 '/api/mimir/market-access/unlock/plan', '/api/mimir/market-access/plans/<plan_id>',
+                 '/api/mimir/market-access/plans/<plan_id>/execute']:
         assert want in rules, f'missing mimir route: {want}'
+    # A real purchase only through a plan's dry run: the old bare route is gone.
+    assert '/api/mimir/market-access/unlock' not in rules
 
 
 def test_jobs_blueprint_follows_long_work():

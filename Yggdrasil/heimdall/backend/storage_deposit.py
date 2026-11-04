@@ -15,7 +15,7 @@ drift apart; the page only displays what the backend decides.
   skipped, one batch per unit.
 * **The commands** — `plan` → `execute` once → a job. Executing a plan a second
   time returns the same job, so a double click or a retried request never moves
-  twice. Plans expire after `PLAN_TTL_SECONDS`. One move run per account at a
+  twice. Plans expire after `PLAN_LIFETIME_SECONDS`. One move run per account at a
   time; batches go one after another (Steam rate limits), never in parallel.
   Ratatoskr confirms every move from the Game Coordinator's inventory update
   (a deposit: the item left the inventory; a withdrawal: it came back) and
@@ -32,7 +32,7 @@ logger = logging.getLogger(__name__)
 
 STORAGE_CAPACITY = 1000
 STORAGE_UNIT_DEFINITION = 1201
-PLAN_TTL_SECONDS = 10 * 60
+PLAN_LIFETIME_SECONDS = 10 * 60
 # An executed plan is kept this long (its execute keeps answering the same job), then forgotten.
 PLAN_KEEP_SECONDS = 60 * 60
 # The Game Coordinator's unit count lags a few seconds behind a move; what a run
@@ -270,7 +270,7 @@ class DepositService:
     def _store_plan(self, plan):
         now = time.time()
         plan.update({'id': uuid.uuid4().hex, 'created_at': now,
-                     'expires_at': now + PLAN_TTL_SECONDS, 'job_id': None})
+                     'expires_at': now + PLAN_LIFETIME_SECONDS, 'job_id': None})
         with self._lock:
             for plan_id in [p for p, old in self._plans.items()
                             if (old['expires_at'] < now and not old['job_id'])

@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Unlock, X, Loader2, FlaskConical, ShoppingCart, AlertTriangle } from 'lucide-react';
 import TypedConfirmDialog from './TypedConfirmDialog';
@@ -6,67 +6,86 @@ import { MarketAccessLine } from './MarketAccess';
 
 // Market unlocker (Mímir): buys Zombie Hunter's one-cent "Editor Pack" on the chosen
 // accounts, an in-game purchase that keeps the Steam Community Market open for a year
-// (backend: market_access_service.py, start_unlock). A dry run goes as far as Steam's
-// approval page and cancels; a real purchase needs the typed phrase.
+// (backend: market_access_service.py). Two backend commands: Dry run makes a plan (it goes
+// as far as Steam's approval page and cancels); Buy for real executes that plan once, only
+// on the accounts that passed it, after the typed phrase. The backend decides which accounts
+// start ticked (purchase_would_help) and words the last run per account (last_unlocks).
 
 const formatWhen = (seconds) => (seconds ? new Date(seconds * 1000).toLocaleString('en-GB') : '');
+const formatTime = (iso) => (iso ? new Date(iso).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : '');
 
-const lastUnlockByAccount = (unlocks) => {
-    const latest = {};
-    for (const entry of unlocks || []) {          // newest first
-        if (!latest[entry.steamid]) latest[entry.steamid] = entry;
-    }
-    return latest;
+const UNLOCK_STYLES = {
+    running: 'text-sky-300',
+    bought: 'text-emerald-400',
+    passed: 'text-emerald-300/80',
+    failed: 'text-amber-300',
+    may_be_paid: 'text-red-400',
 };
 
-// Ticked at first: accounts a purchase would help, amber or red with no counted purchase
-// that keeps the Market open (red with one: Steam blocks it for another reason).
-const needsPurchase = (result) => {
-    if (!result || !['warn', 'lapsed'].includes(result.state)) return false;
-    const daysLeft = result.summary?.days_left;
-    return daysLeft == null || daysLeft <= 30;
+const UnlockResult = ({ last }) => {
+    if (!last) return <span className="text-slate-600">not tried</span>;
+    const when = formatWhen(last.at);
+    return (
+        <span className={UNLOCK_STYLES[last.kind] || 'text-slate-400'} title={when}>
+            {last.text}{last.kind === 'bought' ? ` ${when}` : ''}
+        </span>
+    );
 };
 
-const UnlockResult = ({ entry }) => {
-    if (!entry) return <span className="text-slate-600">not tried</span>;
-    const when = formatWhen(entry.at);
-    if (entry.state === 'in progress') return <span className="text-sky-300">{entry.step}…</span>;
-    if (entry.ok && entry.paid) return <span className="text-emerald-400" title={when}>bought {when}</span>;
-    if (entry.ok) {
-        return (
-            <span className="text-emerald-300/80" title={when}>
-                ready: dry run passed{entry.usd != null ? ` ($${entry.usd.toFixed(4)})` : ''}
-            </span>
-        );
-    }
-    return <span className={entry.approved ? 'text-red-400' : 'text-amber-300'} title={when}>{entry.error}</span>;
+const PlanSummary = ({ plan }) => {
+    if (!plan) return null;
+    if (plan.state === 'dry run') return <p className="text-sky-300">Dry run running…</p>;
+    const passed = plan.accounts.filter((account) => account.passed);
+    return (
+        <div className="space-y-0.5">
+            {plan.error && <p className="text-red-300">Dry run stopped: {plan.error}</p>}
+            <p className={passed.length ? 'text-emerald-300' : 'text-amber-300'}>
+                Dry run passed on {passed.length} of {plan.accounts.length}
+                {passed.length ? `: ${passed.map((account) => account.account_name).join(', ')}` : ''}.
+                {plan.job_id
+                    ? ' This plan was executed: the last run per account is in the table.'
+                    : plan.executable
+                        ? ` Buy for real buys only these, until ${formatTime(plan.expires_at)}.`
+                        : plan.state === 'replaced'
+                            ? ' A newer dry run covers these accounts: this plan can no longer be bought.'
+                            : plan.state === 'failed'
+                                ? ' This plan cannot be bought: run the dry run again.'
+                                : plan.expired
+                                    ? ' The plan expired: run the dry run again.' : ''}
+            </p>
+        </div>
+    );
 };
 
-const MarketUnlocker = ({ status, accounts, onUnlock, starting, startError, onClose }) => {
+const MarketUnlocker = ({ status, accounts, plan, onDryRun, onExecute, starting, startError, onClose }) => {
     const unlocker = status?.unlocker || {};
     const job = status?.job || {};
     const running = Boolean(job.running) || starting;
-    const latest = useMemo(() => lastUnlockByAccount(status?.unlocks), [status?.unlocks]);
-    const [selected, setSelected] = useState(() => new Set(
+    const lastUnlocks = status?.last_unlocks || {};
+    // null until the first tick: the backend's choice, also when the status loads after the dialog opened.
+    const [picked, setPicked] = useState(null);
+    const selected = picked ?? new Set(
         accounts
-            .filter((account) => needsPurchase(status?.accounts?.[account.steamid]))
+            .filter((account) => status?.accounts?.[account.steamid]?.purchase_would_help)
             .map((account) => account.steamid),
-    ));
+    );
     const [confirmOpen, setConfirmOpen] = useState(false);
     const buying = useRef(false);
 
-    const toggle = (steamid) => setSelected((previous) => {
-        const next = new Set(previous);
+    const toggle = (steamid) => {
+        const next = new Set(selected);
         if (next.has(steamid)) next.delete(steamid); else next.add(steamid);
-        return next;
-    });
+        setPicked(next);
+    };
     const chosen = accounts.filter((account) => selected.has(account.steamid)).map((account) => account.steamid);
+    const passedNames = (plan?.accounts || []).filter((account) => account.passed).map((account) => account.account_name);
+    const canBuy = Boolean(plan?.executable) && !running;
 
     const buyForReal = async () => {
         if (buying.current) return;
         buying.current = true;
         try {
-            await onUnlock(chosen, false);      // a refusal shows above the table
+            await onExecute(plan.plan_id);      // a refusal shows above the table
             setConfirmOpen(false);
         } finally {
             buying.current = false;
@@ -78,8 +97,8 @@ const MarketUnlocker = ({ status, accounts, onUnlock, starting, startError, onCl
             {confirmOpen && (
                 <TypedConfirmDialog
                     title="Buy the Market unlocker for real"
-                    message={`Buys ${unlocker.game || 'Zombie Hunter'}'s ${unlocker.item || 'Editor Pack'} on ${chosen.length} account${chosen.length === 1 ? '' : 's'}, from each Steam wallet (about one US cent each, refused above $${(unlocker.max_usd ?? 0.05).toFixed(2)}).`}
-                    phrase={`BUY ${chosen.length}`}
+                    message={`Buys ${unlocker.game || 'Zombie Hunter'}'s ${unlocker.item || 'Editor Pack'} on the ${passedNames.length} account${passedNames.length === 1 ? '' : 's'} that passed the dry run (${passedNames.join(', ')}), from each Steam wallet (about one US cent each, refused above $${(plan?.max_usd ?? unlocker.max_usd ?? 0.05).toFixed(2)}).`}
+                    phrase={`BUY ${passedNames.length}`}
                     confirmLabel="Buy"
                     busy={running}
                     onConfirm={buyForReal}
@@ -95,7 +114,8 @@ const MarketUnlocker = ({ status, accounts, onUnlock, starting, startError, onCl
                             Buys {unlocker.game || 'Zombie Hunter'}&apos;s one-cent &quot;{unlocker.item || 'Editor Pack'}&quot; (an in-game
                             purchase) so the account keeps the Steam Community Market for another year. The free game is
                             claimed first when the account does not own it (a dry run claims it too). A dry run stops on
-                            Steam&apos;s approval page and cancels. Steam asks some accounts for a billing address first: enter it once in a browser.
+                            Steam&apos;s approval page and cancels. Buy for real buys only on the accounts that passed the last dry
+                            run, within 10 minutes of it. Steam asks some accounts for a billing address first: enter it once in a browser.
                         </p>
                     </div>
                     <button onClick={onClose} className="p-1 text-slate-500 hover:text-white" aria-label="Close"><X size={18} /></button>
@@ -114,7 +134,7 @@ const MarketUnlocker = ({ status, accounts, onUnlock, starting, startError, onCl
                                         type="checkbox"
                                         aria-label="Choose every account"
                                         checked={chosen.length === accounts.length && accounts.length > 0}
-                                        onChange={(event) => setSelected(new Set(event.target.checked ? accounts.map((account) => account.steamid) : []))}
+                                        onChange={(event) => setPicked(new Set(event.target.checked ? accounts.map((account) => account.steamid) : []))}
                                     />
                                 </th>
                                 <th className="text-left font-semibold px-4 py-2">Account</th>
@@ -131,12 +151,17 @@ const MarketUnlocker = ({ status, accounts, onUnlock, starting, startError, onCl
                                     </td>
                                     <td className="px-4 py-2 text-slate-200">{account.account_name}</td>
                                     <td className="px-4 py-2"><MarketAccessLine result={status?.accounts?.[account.steamid]} wrap /></td>
-                                    <td className="px-4 py-2 text-xs"><UnlockResult entry={latest[account.steamid]} /></td>
+                                    <td className="px-4 py-2 text-xs"><UnlockResult last={lastUnlocks[account.steamid]} /></td>
                                 </tr>
                             ))}
                         </tbody>
                     </table>
                 </div>
+                {plan && (
+                    <div className="px-5 py-2 border-t border-white/5 text-xs">
+                        <PlanSummary plan={plan} />
+                    </div>
+                )}
                 <div className="flex items-center gap-3 p-4 border-t border-white/5 flex-wrap">
                     <span className="text-xs text-slate-400">
                         {running && job.kind === 'unlock'
@@ -145,7 +170,7 @@ const MarketUnlocker = ({ status, accounts, onUnlock, starting, startError, onCl
                     </span>
                     <div className="ml-auto flex items-center gap-2">
                         <button
-                            onClick={() => onUnlock(chosen, true)}
+                            onClick={() => onDryRun(chosen)}
                             disabled={running || chosen.length === 0}
                             className="flex items-center gap-2 px-3 py-2 rounded-lg bg-sky-500/10 border border-sky-500/30 hover:bg-sky-500/20 text-sky-100 text-sm disabled:opacity-50"
                         >
@@ -153,10 +178,11 @@ const MarketUnlocker = ({ status, accounts, onUnlock, starting, startError, onCl
                         </button>
                         <button
                             onClick={() => setConfirmOpen(true)}
-                            disabled={running || chosen.length === 0}
+                            disabled={!canBuy}
+                            title={plan?.executable ? '' : 'Run the dry run first: only the accounts that pass it can be bought'}
                             className="flex items-center gap-2 px-3 py-2 rounded-lg bg-red-600/20 border border-red-500/40 hover:bg-red-600/30 text-red-100 text-sm disabled:opacity-50"
                         >
-                            <ShoppingCart size={14} /> Buy for real ({chosen.length})
+                            <ShoppingCart size={14} /> Buy for real ({plan?.executable ? passedNames.length : 0})
                         </button>
                     </div>
                 </div>

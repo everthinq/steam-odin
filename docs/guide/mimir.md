@@ -42,15 +42,20 @@ selling), free promotional games and refunded purchases do not count.
 ### Market unlocker
 
 The cheapest purchase that keeps the Market open is a one-cent in-game item: the **Market
-unlocker** button buys Zombie Hunter's "Editor Pack" ($0.01) on the accounts you tick (accounts
-that lose the Market within 30 days are ticked for you). The free game is added first when the
+unlocker** button buys Zombie Hunter's "Editor Pack" ($0.01) on the accounts you tick (the
+accounts a purchase would help, amber or red ones that lose the Market within 30 days or have
+already lost it, are ticked for you, also when the dialog opened before the check result arrived). The free game is added first when the
 account does not own it.
 
 1. **Dry run** goes as far as Steam's approval page, checks the account, the item, one piece and
    a price of at most $0.05, and cancels. It does claim the free game first when the account
-   lacks it (a free license, nothing paid). The last column then says "ready" or why not.
-2. **Buy for real** asks you to type `BUY <number of accounts>`. It approves, then checks that
-   Purchase History lists the purchase and the account's date moves a year on. If something fails
+   lacks it (a free license, nothing paid). The last column then says "ready" or why not, and a
+   line under the table names the accounts that passed.
+2. **Buy for real** is enabled only after a dry run, and buys **only on the accounts that passed
+   that dry run**, within 10 minutes of it (after that, run the dry run again). It asks you to
+   type `BUY <number of accounts that passed>`. It approves, then checks that
+   Purchase History lists the purchase and the account's date moves a year on. Clicking twice
+   never buys twice. If something fails
    after approving, the row says **MAY BE PAID**: look at the account's Purchase History.
 
 Steam asks some accounts for a **billing address** before any web purchase: log in to that

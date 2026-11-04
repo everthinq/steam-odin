@@ -119,8 +119,9 @@ card_seller_service = CardSellerService(settings_manager, steam_service, asf_ser
 store_purchase_service = StorePurchaseService(steam_service, card_deals_service, asf_service,
                                               settings_provider=settings_manager.get_settings)
 # Market access (Mímir's button; the Dashboard shows the result): when each account loses the Steam Community Market
-# (a purchase older than 7 days and under a year keeps it open; read-only).
-market_access_service = MarketAccessService(steam_service, card_deals_service)
+# (a purchase older than 7 days and under a year keeps it open; read-only), and the Market unlocker
+# (plan = a dry run -> execute once -> a job, followed at GET /api/jobs/<id>).
+market_access_service = MarketAccessService(steam_service, card_deals_service, jobs=jobs)
 # Ratatoskr "Storage shop": buy Counter-Strike 2 Storage Units on many accounts through the
 # game store (Game Coordinator transaction, approved with the account's web session).
 storage_shop_service = StorageShopService(steam_service, ratatoskr_service, card_deals_service)

@@ -7,7 +7,7 @@ The page only shows what these return and sends instructions back:
 - `rename(steamid, item_id, name)`: one unit, one new name. Free in the game.
 - `plan_name_unnamed(steamid)` → `execute(plan_id)`: give every unit without a name
   a "Storage N" name (the same numbering Buy Storage Units uses), one after another
-  (rule 21). A plan runs once and expires after `PLAN_TTL_SECONDS`.
+  (rule 21). A plan runs once and expires after `PLAN_LIFETIME_SECONDS`.
 
 Rules (all checked here, never in the page):
 - a name is 1 to 20 characters after trimming (the game's limit);
@@ -26,7 +26,7 @@ from storage_deposit import CommandError, free_places, unit_count
 from storage_shop_service import next_storage_names
 
 NAME_MAX_LENGTH = 20
-PLAN_TTL_SECONDS = 10 * 60
+PLAN_LIFETIME_SECONDS = 10 * 60
 
 
 def unit_name(unit):
@@ -104,7 +104,7 @@ class RenameService:
         names = next_storage_names([unit_name(unit) for unit in caskets], len(unnamed))
         now = self.clock()
         plan = {'id': secrets.token_hex(8), 'steamid': str(steamid), 'created_at': now,
-                'expires_at': now + PLAN_TTL_SECONDS, 'executed': False,
+                'expires_at': now + PLAN_LIFETIME_SECONDS, 'executed': False,
                 'renames': [{'item_id': str(unit.get('item_id')), 'name': name}
                             for unit, name in zip(unnamed, names)]}
         with self._lock:

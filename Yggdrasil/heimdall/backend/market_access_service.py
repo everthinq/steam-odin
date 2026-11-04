@@ -40,6 +40,17 @@ default) cancels (``approved=0``, what the page's Cancel does); a real run appro
 (``approved=1``) and opens Steam's finalize link. From the approval on nothing is
 cancelled and a failure reads "MAY BE PAID". Then that account's access is checked
 again. A real purchase only on Ivan's word, for the accounts he names.
+
+The unlocker is a command, like Transfer's moves: ``plan_unlock`` runs the dry run
+as a job and makes a plan (per account: passed, or failed and why; the price; the
+ceiling); ``execute_plan(plan_id, dry_run=False)`` buys only on the accounts that
+passed that dry run, once (a second call answers the same job). A plan expires
+``PLAN_LIFETIME_SECONDS`` after its dry run ends. There is no other way to buy.
+
+``status()`` also decides what the pages print: per account ``headline``,
+``advice``, ``purchase_would_help`` + ``reason`` (which accounts the unlocker
+ticks), the order of the banner (``flagged``, ``not_checked``) and the last
+unlocker run per account (``last_unlocks``).
 """
 import datetime
 import html
@@ -48,12 +59,15 @@ import logging
 import re
 import threading
 import time
+import uuid
 from urllib.parse import unquote
 
 import requests
 
 import community_pacer
+from jobs import JobRegistry
 from jsonio import atomic_write_json, read_json
+from storage_deposit import CommandError
 from storage_shop_service import WHOLE_UNIT_CURRENCIES, approval_form
 from store_purchase_service import CURRENCY_CODES, to_usd
 
@@ -88,6 +102,8 @@ APPROVAL_PREFIX = 'https://checkout.steampowered.com/checkout/approvetxn/'
 FINALIZE_PREFIX = 'https://store.steampowered.com/buyitem/{app}/finalize/'.format(app=UNLOCK_APP)
 MARKET_URL = 'https://steamcommunity.com/market/'
 UNLOCK_HISTORY_CAP = 300
+PLAN_LIFETIME_SECONDS = 10 * 60       # a dry run's plan can be bought this long after the dry run ended
+PLAN_KEEP_SECONDS = 60 * 60      # then it is forgotten (an executed one keeps answering its job until then)
 BILLING_ADDRESS_TEXT = 'You must enter a billing address'
 
 
@@ -275,13 +291,101 @@ def access_state(summary, steam):
     return STATE_OK
 
 
+def _day(iso):
+    """'2026-10-02' -> '2 Oct 2026'."""
+    day = datetime.date.fromisoformat(iso)
+    return f'{day.day} {day.strftime("%b")} {day.year}'
+
+
+def headline(result):
+    """The one line Mímir and the Dashboard print for an account: which fact wins."""
+    summary = result.get('summary') or {}
+    steam = result.get('steam') or {}
+    if result.get('error') and not result.get('summary'):
+        return f'Not checked: {result["error"]}'
+    if steam.get('allowed') is False:
+        allowed_at = steam.get('allowed_at')
+        try:
+            when = (datetime.datetime.fromtimestamp(int(allowed_at), datetime.timezone.utc).date().isoformat()
+                    if allowed_at else None)
+        except (TypeError, ValueError, OverflowError, OSError):
+            when = None                  # one bad saved value must not break the whole status
+        if when:
+            return f'No Market access (Steam) until {_day(when)}'
+        return 'No Market access (Steam says so)'
+    if summary.get('opens_on'):
+        return f'Market opens {_day(summary["opens_on"])}'
+    if not summary.get('access_until'):
+        return 'No counted purchase on the first page of Purchase History'
+    if summary.get('days_left') is not None and summary['days_left'] < 0:
+        return f'Market access lapsed {_day(summary["access_until"])}'
+    return f'Market until {_day(summary["access_until"])} · {summary.get("days_left")} days'
+
+
+def advice(result):
+    """What to do about it, or None."""
+    if result.get('state') == STATE_WARN:
+        return 'buy something (a game, a wallet top-up or an in-game item) to keep it open'
+    return None
+
+
+def purchase_help(result):
+    """(would the Market unlocker's purchase help, why): amber or red with no counted
+    purchase that keeps the Market open for more than ``WARN_DAYS`` (red with one:
+    Steam blocks it for another reason, which a purchase does not fix)."""
+    summary = result.get('summary') or {}
+    days_left = summary.get('days_left')
+    state = result.get('state')
+    if state == STATE_UNKNOWN:
+        return False, 'not checked yet'
+    if state == STATE_OK:
+        return False, f'the Market stays open {days_left} more days'
+    if summary.get('opens_on') and days_left is not None and days_left > WARN_DAYS:
+        return False, f'a purchase under {MINIMUM_AGE_DAYS} days old opens the Market on {_day(summary["opens_on"])}'
+    if days_left is None:
+        return True, 'no counted purchase keeps the Market open'
+    if days_left < 0:
+        return True, f'Market access lapsed {_day(summary["access_until"])}'
+    if days_left <= WARN_DAYS:
+        return True, f'Market access lapses in {days_left} days'
+    return False, f'Steam blocks the Market for another reason (a purchase keeps it open until {_day(summary["access_until"])})'
+
+
+def describe_unlock(entry, plan_open=True):
+    """An unlocker run as the pages print it: {kind, text, at, ...}; kind is running,
+    bought, passed (a dry run that would buy), failed or may_be_paid. *plan_open* is
+    False when the dry run's plan can no longer be bought (expired, replaced, forgotten)."""
+    if entry.get('state') == 'in progress':
+        kind, text = 'running', f'{entry.get("step")}…'
+    elif entry.get('ok') and entry.get('paid'):
+        kind, text = 'bought', 'bought'
+    elif entry.get('ok'):
+        kind = 'passed'
+        price = f' (${entry["usd"]:.4f})' if entry.get('usd') is not None else ''
+        text = (f'ready: dry run passed{price}' if plan_open
+                else f'dry run passed{price}; its plan can no longer be bought: run the dry run again')
+    else:
+        kind = 'may_be_paid' if entry.get('approved') else 'failed'
+        text = entry.get('error') or 'failed'
+    return {'kind': kind, 'text': text, 'at': entry.get('at'), 'dry_run': entry.get('dry_run'),
+            'plan_id': entry.get('plan_id')}
+
+
+def _days_left_or_first(result):
+    """Banner order: soonest first; no date at all (nothing keeps it open) before everything."""
+    days_left = (result.get('summary') or {}).get('days_left')
+    return -9999 if days_left is None else days_left
+
+
 # ---- the service -------------------------------------------------------------------------------
 
 class MarketAccessService:
     def __init__(self, steam_service, card_deals_service=None, state_path=STATE_PATH, http=None,
-                 sleep=time.sleep, today=datetime.date.today):
+                 sleep=time.sleep, today=datetime.date.today, jobs=None):
         self.steam = steam_service
         self.card_deals = card_deals_service
+        self.jobs = jobs or JobRegistry()
+        self._plans = {}                 # plan id -> Market unlocker plan (memory only, like Transfer's)
         self.state_path = state_path
         self._http = http or requests.Session()
         self._sleep = sleep
@@ -299,7 +403,8 @@ class MarketAccessService:
                                   + (' after approving — it MAY BE PAID: check the account'
                                      if entry.get('approved') else ' before approving'))
         self._job = {'running': False, 'kind': None, 'done': 0, 'total': 0, 'current': None, 'error': None,
-                     'started_at': None, 'finished_at': saved.get('finished_at'), 'dry_run': False}
+                     'started_at': None, 'finished_at': saved.get('finished_at'), 'dry_run': False,
+                     'job_id': None}
 
     def _save(self):
         with self._lock:
@@ -315,15 +420,38 @@ class MarketAccessService:
             self._job.update(fields)
 
     def status(self):
+        """Every account's result plus what the pages print (``headline``, ``advice``,
+        ``purchase_would_help`` + ``reason``), the banner's order (``flagged``: amber and
+        red, soonest first; ``not_checked``), the last unlocker run per account
+        (``last_unlocks``) and the running job."""
         with self._lock:
             state = json.loads(json.dumps({'job': self._job, 'accounts': self._accounts,
                                            'unlocks': self._unlocks[-50:][::-1]}))
+            last_unlocks = {}
+            for entry in reversed(self._unlocks):          # newest first
+                if entry.get('steamid') in last_unlocks:
+                    continue
+                plan = self._plans.get(entry.get('plan_id'))
+                # a dry run still running on other accounts is not a closed plan
+                plan_open = (not entry.get('dry_run') or self._buyable(plan)
+                             or bool(plan and plan['state'] == 'dry run'))
+                last_unlocks[entry.get('steamid')] = describe_unlock(entry, plan_open)
         for result in state['accounts'].values():     # days left move on every day
             if result.get('summary') and result['summary'].get('access_until'):
                 until = datetime.date.fromisoformat(result['summary']['access_until'])
                 result['summary']['days_left'] = (until - self._today()).days
                 result['state'] = access_state(result['summary'], result.get('steam'))
-        return {**state, 'warn_days': WARN_DAYS,
+            result['headline'] = headline(result)
+            result['advice'] = advice(result)
+            result['purchase_would_help'], result['reason'] = purchase_help(result)
+        flagged = sorted((steamid for steamid, result in state['accounts'].items()
+                          if result['state'] in (STATE_WARN, STATE_LAPSED)),
+                         key=lambda steamid: _days_left_or_first(state['accounts'][steamid]))
+        not_checked = sorted((steamid for steamid, result in state['accounts'].items()
+                              if result['state'] == STATE_UNKNOWN),
+                             key=lambda steamid: (state['accounts'][steamid].get('account_name') or '').lower())
+        return {**state, 'warn_days': WARN_DAYS, 'flagged': flagged, 'not_checked': not_checked,
+                'last_unlocks': last_unlocks,
                 'unlocker': {'game': UNLOCK_GAME_NAME, 'item': UNLOCK_ITEM_NAME, 'app': UNLOCK_APP,
                              'max_usd': UNLOCK_MAX_USD}}
 
@@ -334,42 +462,248 @@ class MarketAccessService:
             accounts.append((str(steamid), data.get('account_name') or str(steamid)))
         return sorted(accounts, key=lambda account: account[1].lower())
 
-    def _start(self, kind, accounts, step, dry_run=False):
-        """One job at a time (a check or an unlock): *step(steamid, name)* per account."""
+    def _start(self, kind, accounts, step, dry_run=False, on_finish=None, job_fields=None):
+        """One job at a time (a check or an unlock): *step(steamid, name)* per account (it
+        answers False for an account that failed). Followed in ``status()['job']`` and at
+        ``GET /api/jobs/<job_id>``; *on_finish(error)* gives the job's result and runs
+        before the job reads as finished."""
         if not self._job_lock.acquire(blocking=False):
             return {'started': False, 'error': f'a market access {self._job.get("kind") or "job"} is already running'}
         started_at = time.time()
-        self._set_job(running=True, kind=kind, done=0, total=len(accounts), current=None, error=None,
-                      started_at=started_at, finished_at=None, dry_run=dry_run)
+        try:
+            job = self.jobs.create(f'market-access-{kind}', {'total': len(accounts), 'dry_run': dry_run,
+                                                            **(job_fields or {})})
+            self._set_job(running=True, kind=kind, done=0, total=len(accounts), current=None, error=None,
+                          started_at=started_at, finished_at=None, dry_run=dry_run, job_id=job['id'])
+        except BaseException:
+            self._job_lock.release()     # never leave the service locked when the job could not start
+            raise
 
         def run():
+            error, result, passed, failed = None, None, 0, 0
             try:
                 for steamid, name in accounts:
                     self._set_job(current=name)
-                    step(steamid, name)
+                    self.jobs.update(job['id'], phase=name)
+                    if step(steamid, name) is False:
+                        failed += 1
+                    else:
+                        passed += 1
                     self._set_job(done=self._job['done'] + 1)
+                    self.jobs.update(job['id'], done=passed, failed=failed)
             except Exception as e:
                 log.exception('[MARKET-ACCESS] %s failed', kind)
-                self._set_job(error=str(e))
+                error = str(e)
+                self._set_job(error=error)
             finally:
-                self._set_job(running=False, current=None, finished_at=time.time())
-                self._save()
-                self._job_lock.release()
-        threading.Thread(target=run, daemon=True, name=f'market-access-{kind}').start()
-        return {'started': True, 'started_at': started_at}
+                # The plan is ready and the next job may start before this job reads as finished.
+                if on_finish:
+                    try:
+                        result = on_finish(error)
+                    except Exception:
+                        log.exception('[MARKET-ACCESS] %s: could not finish the plan', kind)
+                try:
+                    self._set_job(running=False, current=None, finished_at=time.time())
+                    self._save()
+                finally:
+                    self._job_lock.release()
+                    self.jobs.finish(job['id'], result=result, error=error, phase=None)
+        try:
+            threading.Thread(target=run, daemon=True, name=f'market-access-{kind}').start()
+        except BaseException as e:
+            self._set_job(running=False, error=str(e), finished_at=time.time())
+            self._job_lock.release()
+            self.jobs.finish(job['id'], error=f'could not start ({type(e).__name__})', phase=None)
+            raise
+        return {'started': True, 'started_at': started_at, 'job_id': job['id']}
 
     def start_check(self):
         return self._start('check', self._all_accounts(), self._check_and_store)
 
-    def start_unlock(self, steamids, dry_run=True):
-        """Buy Zombie Hunter's one-cent Editor Pack on *steamids* (see the module docstring).
-        ``dry_run`` (the default) cancels on the approval page."""
+    # ---- Market unlocker commands: plan (a dry run) -> execute once -> a job ---------------
+
+    def plan_unlock(self, steamids):
+        """Dry-run the Market unlocker on *steamids* as a job and make a plan of it.
+        Answers the plan at once (``state`` "dry run", ``dry_run_job_id``); it is
+        ready when that job finishes (``GET .../plans/<plan_id>`` or the job's result)."""
         wanted = {str(steamid) for steamid in steamids or []}
         accounts = [account for account in self._all_accounts() if account[0] in wanted]
         if not accounts:
-            return {'started': False, 'error': 'no known account chosen'}
-        return self._start('unlock', accounts, lambda steamid, name: self._unlock(steamid, name, dry_run),
-                           dry_run=dry_run)
+            raise CommandError('no_accounts', 'Choose at least one known account')
+        now = time.time()
+        plan = {'id': uuid.uuid4().hex, 'created_at': now, 'accounts': accounts, 'state': 'dry run',
+                'results': None, 'error': None, 'finished_at': None, 'expires_at': None,
+                'dry_run_job_id': None, 'job_id': None}
+        with self._lock:
+            for plan_id in [key for key, old in self._plans.items()
+                            if not self._job_running(old)
+                            and ((old['expires_at'] and old['expires_at'] < now and not old['job_id'])
+                                 or old['created_at'] < now - PLAN_KEEP_SECONDS)]:
+                del self._plans[plan_id]
+            self._plans[plan['id']] = plan
+            try:
+                started = self._start('unlock', accounts,
+                                      lambda steamid, name: self._unlock(steamid, name, True, plan['id']),
+                                      dry_run=True, on_finish=lambda error: self._finish_dry_run_safely(plan, error),
+                                      job_fields={'plan_id': plan['id']})
+            except BaseException:
+                del self._plans[plan['id']]  # the dry run never started: no plan
+                raise
+            if not started['started']:
+                del self._plans[plan['id']]
+                raise CommandError('busy', started['error'], 409)
+            plan['dry_run_job_id'] = started['job_id']
+            # An older plan for any of these accounts can no longer be bought: two plans
+            # covering one account would buy on it twice.
+            mine = {steamid for steamid, _ in accounts}
+            for old in self._plans.values():
+                if (old is not plan and not old['job_id'] and old['state'] in ('dry run', 'ready')
+                        and mine & {steamid for steamid, _ in old['accounts']}):
+                    old['state'] = 'replaced'
+            return self.describe_plan(plan)
+
+    def _job_running(self, plan):
+        """True while the plan's dry run or purchase job still runs."""
+        for job_id in (plan.get('dry_run_job_id'), plan.get('job_id')):
+            job = self.jobs.get(job_id) if job_id else None
+            if job and job.get('running'):
+                return True
+        return False
+
+    def _finish_dry_run_safely(self, plan, error):
+        """``_finish_dry_run``, but a failure while finishing marks the plan failed
+        instead of leaving it in "dry run" for ever."""
+        try:
+            return self._finish_dry_run(plan, error)
+        except Exception as e:
+            log.exception('[MARKET-ACCESS] plan %s: could not finish the dry run', plan['id'])
+            with self._lock:
+                plan.update(state='failed', error=f'could not finish the dry run ({type(e).__name__})',
+                            finished_at=time.time())
+            return self.describe_plan(plan)
+
+    def _finish_dry_run(self, plan, error):
+        """The dry run ended: each account passed (Steam's approval page was right and
+        offered Authorize) or failed with the reason. The plan can be bought from now
+        until ``expires_at``."""
+        with self._lock:
+            entries = {entry['steamid']: entry for entry in self._unlocks
+                       if entry.get('plan_id') == plan['id'] and entry.get('dry_run')}
+            results = []
+            for steamid, name in plan['accounts']:
+                entry = entries.get(steamid)
+                if entry is None:
+                    results.append({'steamid': steamid, 'account_name': name, 'passed': False,
+                                    'reason': f'not tried: the dry run stopped ({error})' if error else 'not tried',
+                                    'usd': None, 'total': None, 'currency': None, 'claimed_game': False,
+                                    'max_usd': UNLOCK_MAX_USD})
+                    continue
+                passed = bool(entry['ok']) and not entry['approved']
+                results.append({'steamid': steamid, 'account_name': name, 'passed': passed,
+                                'reason': None if passed else (entry['error'] or 'failed'),
+                                'usd': entry['usd'], 'total': entry['total'], 'currency': entry['currency'],
+                                'claimed_game': entry['claimed_game'], 'max_usd': UNLOCK_MAX_USD})
+            now = time.time()
+            plan.update(results=results, state='ready', error=error, finished_at=now,
+                        expires_at=now + PLAN_LIFETIME_SECONDS)
+            return self.describe_plan(plan)
+
+    @staticmethod
+    def _iso(seconds):
+        return datetime.datetime.fromtimestamp(seconds, datetime.timezone.utc).isoformat() if seconds else None
+
+    def describe_plan(self, plan):
+        """What a client sees of a plan."""
+        with self._lock:
+            results = plan['results'] or [{'steamid': steamid, 'account_name': name, 'passed': None,
+                                           'reason': None, 'usd': None, 'total': None, 'currency': None,
+                                           'claimed_game': False, 'max_usd': UNLOCK_MAX_USD}
+                                          for steamid, name in plan['accounts']]
+            passed = [result for result in results if result['passed']]
+            expired = bool(plan['expires_at'] and plan['expires_at'] < time.time())
+            state = 'expired' if expired and plan['state'] == 'ready' and not plan['job_id'] else plan['state']
+            return {
+                'plan_id': plan['id'],
+                'state': state,
+                'accounts': [dict(result) for result in results],
+                'passed': len(passed),
+                'max_usd': UNLOCK_MAX_USD,
+                'error': plan['error'],
+                'created_at': self._iso(plan['created_at']),
+                'expires_at': self._iso(plan['expires_at']),
+                'expired': expired,
+                'executable': self._buyable(plan),
+                'dry_run_job_id': plan['dry_run_job_id'],
+                'job_id': plan['job_id'],
+            }
+
+    @staticmethod
+    def _buyable(plan):
+        """True when *plan* can be bought now: its dry run is done, at least one account
+        passed, it has not expired, was not replaced and was not executed."""
+        return bool(plan and plan['state'] == 'ready' and not plan['job_id']
+                    and plan['expires_at'] and plan['expires_at'] >= time.time()
+                    and any(result['passed'] for result in plan['results'] or []))
+
+    def get_plan(self, plan_id):
+        with self._lock:
+            plan = self._plans.get(plan_id)
+            if plan is None:
+                raise CommandError('plan_unknown', 'Unknown plan (make a new dry run)', 404)
+            return self.describe_plan(plan)
+
+    def execute_plan(self, plan_id, dry_run=None):
+        """Buy for real on the accounts that passed this plan's dry run, once; a second
+        call answers the same job. Fails closed: only ``dry_run`` exactly False buys,
+        anything else is refused (``real_purchase_only``) without touching Steam or the
+        plan, so a missing or misspelt flag can neither buy nor start an unasked dry run
+        (which would claim free licenses and open transactions); a new dry run is
+        ``plan_unlock``."""
+        with self._lock:
+            plan = self._plans.get(plan_id)
+            if plan is None:
+                raise CommandError('plan_unknown', 'Unknown plan (make a new dry run)', 404)
+            if dry_run is not False:
+                raise CommandError('real_purchase_only',
+                                   'Executing a plan buys for real: send dry_run false (a new dry run is a new plan)')
+            if plan['job_id']:
+                job = self.jobs.get(plan['job_id'])
+                if job is None:
+                    raise CommandError('job_gone', 'This plan already ran; its result is no longer kept', 410)
+                return job
+            if plan['state'] == 'replaced':
+                raise CommandError('plan_replaced', 'A newer dry run covers these accounts: buy that plan', 409)
+            if plan['state'] == 'failed':
+                raise CommandError('plan_failed', plan['error'] or 'The dry run of this plan failed: make a new one', 409)
+            if plan['state'] != 'ready':
+                raise CommandError('plan_not_ready', 'The dry run of this plan is still running', 409)
+            if plan['expires_at'] < time.time():
+                raise CommandError('plan_expired', 'The plan expired: make a new dry run')
+            names = dict(plan['accounts'])
+            accounts = [(result['steamid'], names[result['steamid']]) for result in plan['results'] if result['passed']]
+            if not accounts:
+                raise CommandError('nothing_passed', 'No account passed the dry run of this plan')
+            started = self._start('unlock', accounts,
+                                  lambda steamid, name: self._unlock(steamid, name, False, plan_id),
+                                  dry_run=False, on_finish=lambda error: self._purchase_result(plan_id, error),
+                                  job_fields={'plan_id': plan_id})
+            if not started['started']:
+                raise CommandError('busy', started['error'], 409)
+            plan.update(job_id=started['job_id'], state='executed')
+            log.warning('[MARKET-UNLOCK] plan %s: buying for real on %s', plan_id,
+                        ', '.join(name for _, name in accounts))
+            return self.jobs.get(started['job_id'])
+
+    def _purchase_result(self, plan_id, error):
+        """The real run's result per account: bought, failed (nothing paid) or MAY BE PAID."""
+        with self._lock:
+            entries = [entry for entry in self._unlocks if entry.get('plan_id') == plan_id and not entry.get('dry_run')]
+            return {'plan_id': plan_id, 'error': error,
+                    'accounts': [{'steamid': entry['steamid'], 'account_name': entry['account_name'],
+                                  'paid': entry['paid'], 'approved': entry['approved'], 'error': entry['error'],
+                                  'usd': entry['usd'], **{key: value for key, value in describe_unlock(entry).items()
+                                                          if key in ('kind', 'text')}}
+                                 for entry in entries]}
 
     def _check_and_store(self, steamid, name):
         result = {'account_name': name, 'checked_at': time.time(), 'error': None,
@@ -450,11 +784,12 @@ class MarketAccessService:
             entry.update(fields)
         self._save()
 
-    def _unlock(self, steamid, name, dry_run):
+    def _unlock(self, steamid, name, dry_run, plan_id):
+        """One account of a plan's dry run or real run; answers whether it went through."""
         entry = {'steamid': steamid, 'account_name': name, 'at': time.time(), 'dry_run': dry_run,
                  'state': 'in progress', 'step': 'starting', 'ok': False, 'error': None, 'approved': False,
                  'paid': False, 'total': None, 'currency': None, 'usd': None, 'transaction_id': None,
-                 'claimed_game': False}
+                 'claimed_game': False, 'plan_id': plan_id}
         with self._lock:
             self._unlocks.append(entry)
         try:
@@ -478,6 +813,7 @@ class MarketAccessService:
                      'ok' if entry['ok'] else entry['error'])
         if entry['approved']:
             self._check_and_store(steamid, name)      # the new purchase moves the date
+        return bool(entry['ok'])
 
     def _unlock_steps(self, entry, steamid, name, dry_run):
         cookies = self._cookies(steamid)

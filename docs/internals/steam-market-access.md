@@ -87,8 +87,8 @@ in our Purchase Histories from early 2026), stopped working: Steam no longer sel
 the account does not own. The new one (shared by a trading course, 2026-10-29): claim the free
 game **Zombie Hunter** (app 1723420, free package 617273) and buy its **"Editor Pack"** (item 330,
 $0.01 on the item store; HK$ 0.08 on a Hong Kong dollar wallet). Mímir's **Market unlocker**
-button does it (`MarketAccessService.start_unlock`, `POST /api/mimir/market-access/unlock
-{steamids, dry_run}`; anything but `dry_run: false` is a dry run). Per account, one at a time:
+button does it, as two backend commands (plan → execute once → a job, like Transfer's moves; see
+"The commands" below). Per account, one at a time:
 
 1. Owned games from `store.steampowered.com/dynamicstore/userdata/`. Without Zombie Hunter:
    `POST store.steampowered.com/freelicense/addfreelicense/617273` (`ajax=true`, `sessionid`),
@@ -121,13 +121,50 @@ in a browser; the address for each account is kept in its Mímir row); 2 Hong Ko
 Buy Storage Units' approval page (an in-game purchase started by the game) never asked for a
 billing address. Every account now owns Zombie Hunter.
 
+### The commands
+
+There is no route that buys without a plan.
+
+- `POST /api/mimir/market-access/unlock/plan {steamids: [...]}` → 202 and the plan at once
+  (`MarketAccessService.plan_unlock`): `{plan_id, state: "dry run", accounts, passed, max_usd,
+  error, created_at, expires_at, expired, executable: false, dry_run_job_id, job_id}`. The dry
+  run (steps 1 to 5, always cancelled) runs as the job `dry_run_job_id` (kind
+  `market-access-unlock`, `GET /api/jobs/<id>`; `done` = accounts that passed, `failed` = the
+  others, `phase` = the account being tried). When it ends the job's `result` is the finished
+  plan: `state: "ready"`, per account `{steamid, account_name, passed, reason, usd, total,
+  currency, claimed_game, max_usd}` (`reason` says why it failed; accounts the dry run never
+  reached, after an HTTP 429, read "not tried: the dry run stopped (…)"), and `expires_at` =
+  10 minutes (`PLAN_LIFETIME_SECONDS`) after the dry run ended. `GET
+  /api/mimir/market-access/plans/<plan_id>` reads it again.
+- `POST /api/mimir/market-access/plans/<plan_id>/execute {dry_run: false}` → 202 and the job
+  (`execute_plan`): buys only on the accounts that passed that plan's dry run, with every guard
+  of steps 3 to 6 checked again. A second call answers the same job (a double click never buys
+  twice). Its `result` per account: `{steamid, account_name, paid, approved, error, usd, kind,
+  text}`, kind `bought`, `failed` or `may_be_paid`.
+- Refusals are `{error, code}`: `bad_request` (no accounts list), `no_accounts` (none known),
+  `busy` 409 (a check or an unlocker run is going), `plan_unknown` 404 (also after a backend
+  restart: plans are kept in memory), `plan_not_ready` 409 (its dry run still runs),
+  `plan_expired`, `plan_replaced` 409 (a newer dry run covers one of its accounts, so
+  two plans can never buy on one account twice), `plan_failed` 409 (the dry run could
+  not be finished), `nothing_passed`, `job_gone` 410, `real_purchase_only`. A plan
+  reads `state` "expired" once it can no longer be bought, and the page reads the
+  plan again every 30 seconds and at its expiry, so Buy for real turns off by itself.
+- **Fails closed:** execute buys only on `dry_run` exactly `false`. Anything else (missing,
+  `true`, `"false"`, `0`, `null`, a body that is not JSON) is refused with `real_purchase_only`
+  without touching Steam or the plan. It is not turned into a dry run: a dry run claims free
+  licenses and opens transactions on Steam, which nobody asked for there; a new dry run is a new
+  plan.
+- Plans are forgotten an hour after they were made (an unexecuted one once it expired).
+
 ## What the pages show
 
 - **Mímir** (`pages/mimir/Vault.jsx`): the **Market access** button in the header starts the
   check and shows `done/total` while it runs (also while the unlocker runs); the **Market
-  unlocker** button opens `components/MarketUnlocker.jsx` (choose accounts, amber and red ones
-  ticked; last run per account: ready, bought, or why not; **Dry run**; **Buy for real** after
-  typing `BUY <n>`); a **Market access** column on every row with a
+  unlocker** button opens `components/MarketUnlocker.jsx` (choose accounts; the ones the backend
+  marks `purchase_would_help` start ticked, also when the result arrives after the dialog opened;
+  last run per account from `last_unlocks`: ready, bought, or why not; **Dry run** makes a plan;
+  **Buy for real** executes it, enabled only while the plan is executable, after typing
+  `BUY <accounts that passed>`); a **Market access** column on every row with a
   maFile; a banner with every amber or red account, soonest first, and accounts that could not
   be checked.
 - **Dashboard** (`pages/Dashboard.jsx`): the same result, read-only: a line on each account card
@@ -135,8 +172,17 @@ billing address. Every account now owns Zombie Hunter.
 - Colours: green; amber within 30 days (`WARN_DAYS`) or when Steam allows the Market but no
   counted purchase is on the first page; red when lapsed or when Steam's check says no. The
   tooltip names the last counted purchase, Steam's verdict and when it was checked.
+- The backend decides what the pages print: `GET /api/mimir/market-access` adds per account
+  `headline` (the one line: which fact wins), `advice` (amber: buy something to keep it open),
+  `purchase_would_help` and `reason` (amber or red with nothing keeping the Market open for more
+  than 30 days; a red account with a later purchase is blocked by Steam for another reason, and
+  a purchase under 7 days old will open it), and at the top `flagged` (amber and red steamids,
+  no date first, then soonest), `not_checked`, and `last_unlocks` (per steamid the newest
+  unlocker run: `{kind, text, at, dry_run, plan_id}`, kind `running`, `bought`, `passed`,
+  `failed` or `may_be_paid`). `job.job_id` names the running job.
 - Shared pieces: `components/MarketAccess.jsx` (`MarketAccessButton`, `MarketAccessBanner`,
   `MarketAccessLine`) and `utils/useMarketAccess.js` (loads the result, polls every 3 seconds
-  while a check runs, starts it).
+  while a job runs, starts the check, `planUnlock` and `executePlan` with `followJob` from
+  `utils/moveCommands.js`).
 - Days left are recomputed from the saved date every time a page asks, so old results still
   count down; press the button again after a purchase.
