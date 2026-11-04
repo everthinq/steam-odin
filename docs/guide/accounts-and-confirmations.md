@@ -38,12 +38,12 @@ immediately — there is no second question, so read the card first. Press
 | Setting | Effect |
 |---------|--------|
 | Automatic Checking | Check every account on a timer |
-| Check interval | Seconds between checks (default 300) |
+| Check interval | Seconds between checks (default 300, from 10 to 3600; a value outside is refused with the reason, never changed) |
 | Auto-confirm Market Listings | Approve every Market listing confirmation by itself |
 | Auto-confirm Trades | Approve every trade confirmation by itself |
-| Check All Now | Run one check over every account right now |
+| Check All Now | Run one check over every account right now; the button counts the accounts, then says how many were checked and how many could not be read. If a check is already running, it says so |
 
-Press **Save Settings**. Account recovery, phone-number changes and other
+Press **Save Settings**. The line under the interval says what Heimdall does with the saved settings: auto-confirm keeps checking on the timer even with Automatic Checking off. Account recovery, phone-number changes and other
 sensitive confirmation types are never approved automatically.
 
 > **Careful with Auto-confirm Trades.** With it on, any trade offer an account

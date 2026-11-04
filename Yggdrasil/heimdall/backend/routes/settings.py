@@ -5,6 +5,7 @@ Services are read from :data:`context.ctx` at request time.
 """
 from flask import Blueprint, jsonify, request
 
+import confirmation_settings
 from context import ctx
 
 bp = Blueprint('settings', __name__)
@@ -21,6 +22,15 @@ def update_settings():
     """Update global application settings."""
     if not request.json:
         return jsonify({"error": "Missing JSON body"}), 400
+
+    # The confirmation settings have one checker (confirmation_settings.clean), here too.
+    confirmation_keys = {key: value for key, value in request.json.items()
+                         if key in confirmation_settings.KEYS}
+    if confirmation_keys:
+        try:
+            confirmation_settings.clean(confirmation_keys)
+        except confirmation_settings.SettingsError as e:
+            return jsonify({"error": str(e), "code": e.code}), 400
 
     success = ctx.settings_manager.save_settings(request.json)
     if success:

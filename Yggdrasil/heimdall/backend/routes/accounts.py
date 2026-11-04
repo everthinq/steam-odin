@@ -7,6 +7,7 @@ import logging
 
 from flask import Blueprint, jsonify, request
 
+import confirmation_settings
 from context import ctx
 
 logger = logging.getLogger(__name__)
@@ -102,28 +103,34 @@ def remove_account(steamid):
     return jsonify({"error": "Account not found"}), 404
 
 
+@bp.route('/api/confirmations/settings', methods=['GET'])
+def get_confirmation_settings():
+    """The Global Confirmations window: values, the interval limits and a plain note."""
+    return jsonify(confirmation_settings.view(ctx.settings_manager.get_settings()))
+
+
+@bp.route('/api/confirmations/settings', methods=['POST'])
+def save_confirmation_settings():
+    """Save only the confirmation settings. A value outside the limits is refused
+    ({error, code}), never changed silently."""
+    try:
+        changes = confirmation_settings.clean(request.get_json(silent=True))
+    except confirmation_settings.SettingsError as e:
+        return jsonify({"error": str(e), "code": e.code}), 400
+    if not ctx.settings_manager.save_settings(changes):
+        return jsonify({"error": "The settings could not be saved.", "code": "save_failed"}), 500
+    return jsonify(confirmation_settings.view(ctx.settings_manager.get_settings()))
+
+
 @bp.route('/api/confirmations/check-all', methods=['POST'])
 def check_all_confirmations():
-    """Trigger an immediate check for confirmations on all accounts."""
-    try:
-        settings = ctx.settings_manager.get_settings()
-        if not ctx.scheduler._check_all_accounts(settings):
-            return jsonify({
-                "error": "A confirmation check is already running",
-                "already_running": True,
-            }), 409
-        return jsonify({
-            "status": "success",
-            "message": "Check completed",
-            "settings": {
-                "auto_check_enabled": settings.get("auto_check_enabled"),
-                "auto_confirm_market": settings.get("auto_confirm_market"),
-                "auto_confirm_trades": settings.get("auto_confirm_trades"),
-                "check_interval": settings.get("check_interval"),
-            },
-        })
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    """Check All Now: one confirmation sweep over every account, as a job
+    (GET /api/jobs/<id>; its result says how many accounts were checked)."""
+    job = ctx.scheduler.start_check_all(ctx.settings_manager.get_settings(), ctx.jobs)
+    if job is None:
+        return jsonify({"error": "A confirmation check is already running. Wait for it to finish.",
+                        "code": "already_running"}), 409
+    return jsonify({"job": job}), 202
 
 
 @bp.route('/api/accounts/update-session', methods=['POST'])

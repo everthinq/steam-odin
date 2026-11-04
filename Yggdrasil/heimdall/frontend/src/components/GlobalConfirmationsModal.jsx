@@ -1,101 +1,79 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { X, Check, Save, Play, Loader2 } from 'lucide-react';
 import NorseStepper from './NorseStepper';
-import { readJson, readJsonOrThrow } from '../utils/readJson';
+import { readJsonOrThrow, failureMessage } from '../utils/readJson';
+import { postCommand, followJob } from '../utils/moveCommands';
 
-// The only settings keys this modal edits. Saving posts just these, so it can
-// never overwrite settings other pages own (tokens, alert channels, and so on)
-// with a stale copy loaded when the modal opened.
-const CONFIRMATION_SETTING_KEYS = [
-    'check_interval',
-    'auto_check_enabled',
-    'auto_confirm_market',
-    'auto_confirm_trades',
-];
-
-const pickConfirmationSettings = (source) => Object.fromEntries(
-    CONFIRMATION_SETTING_KEYS
-        .filter((key) => source && source[key] !== undefined)
-        .map((key) => [key, source[key]])
-);
-
+// Every rule lives in the backend (confirmation_settings.py): the interval limits, what a
+// value outside them gets (refused with its reason), and the note on what the loop does.
 const GlobalConfirmationsModal = ({ isOpen, onClose }) => {
-    const [settings, setSettings] = useState({
-        check_interval: 300,
-        auto_check_enabled: false,
-        auto_confirm_market: false,
-        auto_confirm_trades: false
-    });
+    const [view, setView] = useState(null);      // {settings, limits, polling_note} from the backend
+    const [settings, setSettings] = useState(null);
     const [loading, setLoading] = useState(false);
-    // True once the current settings were read from the backend, so the form
-    // never shows (or saves) the placeholder defaults as if they were real.
-    const [loaded, setLoaded] = useState(false);
     const [checking, setChecking] = useState(false);
+    const [progress, setProgress] = useState(null);
     const [message, setMessage] = useState(null);
+    const openRef = useRef(isOpen);
 
-    useEffect(() => {
-        if (isOpen) {
-            fetchSettings();
-        }
-    }, [isOpen]);
+    const showView = useCallback((data) => {
+        setView(data);
+        setSettings(data.settings);
+    }, []);
 
-    const fetchSettings = async () => {
+    const fetchSettings = useCallback(async () => {
         setLoading(true);
-        setLoaded(false);
+        setView(null);
         setMessage(null);
         try {
-            const res = await fetch('/api/settings');
-            const data = await readJsonOrThrow(res);
-            setSettings((previous) => ({ ...previous, ...pickConfirmationSettings(data) }));
-            setLoaded(true);
+            showView(await readJsonOrThrow(await fetch('/api/confirmations/settings')));
         } catch (error) {
-            console.error("Failed to load settings", error);
-            setMessage({ type: 'error', text: error.message || 'Failed to load settings' });
+            setMessage({ type: 'error', text: failureMessage(error) || 'Failed to load settings' });
         } finally {
             setLoading(false);
         }
-    };
+    }, [showView]);
+
+    useEffect(() => {
+        openRef.current = isOpen;
+        if (isOpen) {
+            fetchSettings();
+        }
+    }, [isOpen, fetchSettings]);
 
     const handleSave = async () => {
-        if (loading || !loaded) return;
+        if (loading || !view) return;
         setLoading(true);
         try {
-            const res = await fetch('/api/settings', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(pickConfirmationSettings(settings))
-            });
-            if (res.ok) {
-                const data = await readJson(res).catch(() => ({}));
-                if (data.settings) {
-                    setSettings((previous) => ({ ...previous, ...pickConfirmationSettings(data.settings) }));
-                }
-                setMessage({ type: 'success', text: 'Settings saved successfully' });
-                setTimeout(() => setMessage(null), 3000);
-            } else {
-                setMessage({ type: 'error', text: 'Failed to save settings' });
-            }
+            showView(await postCommand('/api/confirmations/settings', settings));
+            setMessage({ type: 'success', text: 'Settings saved.' });
+            setTimeout(() => setMessage(null), 3000);
         } catch (error) {
-            setMessage({ type: 'error', text: error.message });
+            setMessage({ type: 'error', text: failureMessage(error) });
         } finally {
             setLoading(false);
         }
     };
 
     const handleCheckNow = async () => {
+        if (checking) return;
         setChecking(true);
+        setMessage(null);
         try {
-            const res = await fetch('/api/confirmations/check-all', { method: 'POST' });
-            if (res.ok) {
-                setMessage({ type: 'success', text: 'Check initiated for all accounts' });
-                setTimeout(() => setMessage(null), 3000);
-            } else {
-                setMessage({ type: 'error', text: `Failed to initiate check (HTTP ${res.status})` });
-            }
+            const { job } = await postCommand('/api/confirmations/check-all');
+            const finished = await followJob(job.id, {
+                onProgress: setProgress,
+                isActive: () => openRef.current,
+                lostMessage: 'The backend restarted during the check, so its result is unknown.',
+                lostTrackMessage: (reason) => `Lost track of the check (${reason}). It keeps running in the backend.`,
+            });
+            setMessage(finished.error
+                ? { type: 'error', text: `The check failed: ${finished.error}` }
+                : { type: 'success', text: finished.result.message });
         } catch (error) {
-            setMessage({ type: 'error', text: `Failed to initiate check: ${error.message}` });
+            if (!error.cancelled) setMessage({ type: 'error', text: failureMessage(error) });
         } finally {
             setChecking(false);
+            setProgress(null);
         }
     };
 
@@ -117,7 +95,7 @@ const GlobalConfirmationsModal = ({ isOpen, onClose }) => {
 
                 {/* Body */}
                 <div className="p-6 space-y-6">
-                    {!loaded ? (
+                    {!view ? (
                         <div className="flex flex-col items-center gap-4 p-8">
                             {loading ? (
                                 <Loader2 className="animate-spin text-asgard-gold" size={32} />
@@ -153,18 +131,15 @@ const GlobalConfirmationsModal = ({ isOpen, onClose }) => {
                                     </label>
                                 </div>
 
-                                {settings.auto_check_enabled && (
-                                    <div className="animate-in fade-in slide-in-from-top-2 duration-300">
-                                        <NorseStepper
-                                            label="Check Interval (seconds)"
-                                            value={settings.check_interval}
-                                            onChange={(val) => setSettings({ ...settings, check_interval: val })}
-                                            min={1}
-                                            max={3600}
-                                            step={5}
-                                        />
-                                    </div>
-                                )}
+                                <NorseStepper
+                                    label="Check Interval (seconds)"
+                                    value={settings.check_interval}
+                                    onChange={(val) => setSettings({ ...settings, check_interval: val })}
+                                    min={view.limits.check_interval.min}
+                                    max={view.limits.check_interval.max}
+                                    step={view.limits.check_interval.step}
+                                />
+                                <p className="text-xs text-slate-400 px-1">{view.polling_note}</p>
                             </div>
 
                             <hr className="border-white/5" />
@@ -199,12 +174,6 @@ const GlobalConfirmationsModal = ({ isOpen, onClose }) => {
                                     <span className="text-sm text-frost-white/80 group-hover:text-frost-white">Auto-confirm Trades</span>
                                 </label>
 
-                                {(settings.auto_confirm_market || settings.auto_confirm_trades) && !settings.auto_check_enabled && (
-                                    <p className="text-xs text-amber-200/80 px-3">
-                                        Auto-confirm still runs on the timer below. Turn on Automatic Checking to
-                                        control how often Heimdall polls Steam.
-                                    </p>
-                                )}
                             </div>
 
                             {/* Actions */}
@@ -215,7 +184,9 @@ const GlobalConfirmationsModal = ({ isOpen, onClose }) => {
                                     className="w-full sm:w-auto flex justify-center items-center gap-2 px-4 py-2 bg-odin-blue hover:bg-odin-blue/80 text-frost-white/70 hover:text-frost-white rounded-lg text-sm font-medium transition-colors disabled:opacity-50 border border-white/5"
                                 >
                                     {checking ? <Loader2 size={16} className="animate-spin" /> : <Play size={16} />}
-                                    Check All Now
+                                    {checking && progress?.total
+                                        ? `Checking ${(progress.done || 0) + (progress.failed || 0)} of ${progress.total}…`
+                                        : 'Check All Now'}
                                 </button>
 
                                 <button

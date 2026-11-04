@@ -5,6 +5,7 @@ import time
 from datetime import datetime, timezone
 
 import auto_store
+import confirmation_settings
 import notifications
 from storage_deposit import CommandError
 
@@ -133,7 +134,7 @@ class ConfirmationScheduler:
                     logger.error(f"[SCHEDULER] Error in auto-store sweep: {e}")
 
             # Sleep for the configured interval, checking stop_event frequently
-            interval = max(10, settings.get("check_interval", 300))
+            interval = confirmation_settings.loop_interval(settings)
             # Sleep in 1s chunks to respond to stop_event quickly
             for _ in range(interval):
                 if self.stop_event.is_set():
@@ -206,35 +207,85 @@ class ConfirmationScheduler:
             self._sweep_lock.release()
         return True
 
-    def _check_all_accounts_locked(self, settings):
+    def start_check_all(self, settings, jobs):
+        """Check All Now as a command: one sweep in the background, followed as a job.
+
+        Returns the job, or None when a sweep (the loop's or a button's) already runs.
+        The lock is taken here, before the thread starts, so two clicks never both
+        get a job.
+        """
+        if not self._sweep_lock.acquire(blocking=False):
+            return None
+        job = jobs.create('confirmation_check', {'phase': 'checking'})
+
+        def run():
+            try:
+                summary = self._check_all_accounts_locked(settings, job_id=job['id'], jobs=jobs)
+                jobs.finish(job['id'], result=summary, phase='done')
+            except Exception as e:
+                logger.error(f"[SCHEDULER] Check All Now failed: {e}")
+                jobs.finish(job['id'], error=str(e), phase='failed')
+            finally:
+                self._sweep_lock.release()
+
+        threading.Thread(target=run, name='confirmation-check-all', daemon=True).start()
+        return job
+
+    def _check_all_accounts_locked(self, settings, job_id=None, jobs=None):
+        """One sweep. Returns {accounts, checked, failed, stopped_early, message}."""
         # If mobileconf is in backoff, skip the whole sweep so we don't keep hitting it.
         cooldown = self.steam_service._mobileconf_cooldown_remaining()
         if cooldown:
             logger.warning(f"[SCHEDULER] Skipping sweep — mobileconf backoff active ({int(cooldown)}s left)")
-            return
+            return {'accounts': 0, 'checked': 0, 'failed': 0, 'stopped_early': True,
+                    'message': f'Steam asked Heimdall to wait. Nothing was checked; '
+                               f'try again in {int(cooldown)} seconds.'}
 
         logger.info(f"[{datetime.now().strftime('%H:%M:%S')}] [SCHEDULER] Checking confirmations for all accounts...")
         accounts = self.steam_service.get_all_accounts_data()
+        if jobs and job_id:
+            jobs.update(job_id, total=len(accounts))
+        checked = failed = 0
+        stopped_early = False
 
         for i, account in enumerate(accounts):
             steamid = account['steamid']
             try:
-                self._process_account(steamid, settings)
+                if self._process_account(steamid, settings) is False:
+                    failed += 1
+                else:
+                    checked += 1
             except Exception as e:
+                failed += 1
                 logger.error(f"[SCHEDULER] Failed to process {steamid}: {e}")
+            if jobs and job_id:
+                jobs.update(job_id, done=checked, failed=failed)
             # Stop the sweep immediately if the backoff was tripped mid-run.
             if self.steam_service._mobileconf_cooldown_remaining():
                 logger.info("[SCHEDULER] mobileconf backoff tripped mid-sweep — aborting remaining accounts")
+                stopped_early = i < len(accounts) - 1
                 break
             if i < len(accounts) - 1:
                 time.sleep(1)
+        return {'accounts': len(accounts), 'checked': checked, 'failed': failed,
+                'stopped_early': stopped_early,
+                'message': self._check_all_message(len(accounts), checked, failed, stopped_early)}
+
+    @staticmethod
+    def _check_all_message(accounts, checked, failed, stopped_early):
+        text = f'Checked {checked} of {accounts} accounts.'
+        if failed:
+            text += f' {failed} could not be read (see the log).'
+        if stopped_early:
+            text += ' Steam asked Heimdall to wait, so the rest were not checked.'
+        return text
 
     def _process_account(self, steamid, settings):
         # 1. Fetch confirmations
         result = self.steam_service.get_confirmations(steamid)
         if not result.get('success'):
             logger.error(f"[SCHEDULER] Failed to fetch for {steamid}: {result.get('message')}")
-            return
+            return False
 
         confirmations = result.get('confirmations', [])
         if not confirmations:

@@ -148,7 +148,11 @@ Accounts, Draupnir and Mímir, then Huginn and Andvari.
   (with or without the last prices, and when Heimdall tries again) and no token are all named. The pages
   poll while the backend says so (no 8-poll limit) and show one `components/draupnir/PricingNote.jsx`;
   CombinedLedger's own copy of the line is gone.
-- 11 Confirmation settings: interval 1-9 silently raised to 10; check-all synchronous, 409 shown as HTTP 409; wording.
+- 11 DONE Confirmation settings: `backend/confirmation_settings.py` holds the interval limits (10 to 3600, step 5),
+  checks the four keys (out of range refused with `interval_out_of_range`, also on `POST /api/settings`) and writes the
+  note on what the loop does; `GET/POST /api/confirmations/settings`. Check All Now is a job
+  (`ConfirmationScheduler.start_check_all`, the lock taken before the thread; 409 `already_running`; result
+  `Checked N of M accounts`). The window reads limits and note from the backend.
 - 12 copied date normaliser and valuation market list.
 - Other bugs: no success checks (delete transaction, rename, delete portfolio navigates away on failure, create/delete portfolio); "Drip last" drops is_arbitrage; old search answers win; Dashboard transient error filter misses readJson/Safari messages (use failureMessage).
 
