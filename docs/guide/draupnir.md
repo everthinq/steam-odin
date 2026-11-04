@@ -33,6 +33,13 @@ platform and date are kept for the next one.
 Holdings and transactions can be searched, filtered by collection and sorted;
 every transaction can be edited or deleted.
 
+**Which holdings are listed:** items you still hold, items sold at a profit or
+loss, and oversold items. The same rule applies to one portfolio and to All
+accounts. A red **oversold N** mark next to the quantity means N more units
+were sold than bought: a buy is missing or a quantity is wrong, so fix the
+transactions. The All accounts headline shows total profit as a percentage of
+what was invested.
+
 **How profit is counted:** moving average — each sell is measured against the
 average price of the units held at that moment. Fees are not deducted.
 

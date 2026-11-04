@@ -861,19 +861,37 @@ class DraupnirService:
                 'oversold': net_qty < 0,
                 'oversold_qty': max(-net_qty, 0),
             })
+        for h in holdings:
+            h['listed'] = DraupnirService._is_listed(h)
         holdings.sort(key=lambda x: (x['market_value'] or x['cost_basis'] or 0), reverse=True)
         return holdings
 
     @staticmethod
-    def _summarize(p, holdings):
+    def _is_listed(h):
+        """Whether a holding is shown in the holdings table: still held, sold at a
+        profit or loss, or oversold (more sold than bought, so the user can fix
+        it). One rule for every view."""
+        return h['net_qty'] > 0 or bool(h['realized_pl']) or bool(h['oversold'])
+
+    @staticmethod
+    def _with_totals(txns):
+        """Each transaction with its ``total`` (quantity × price), so no page
+        multiplies it itself."""
+        for t in txns:
+            t['total'] = round((t.get('qty') or 0) * (t.get('price') or 0), 2)
+        return txns
+
+    @staticmethod
+    def _totals(holdings):
+        """The headline numbers of a set of holdings, for one account or all.
+        Current value covers the WHOLE set: live market value for holdings we
+        can price, and cost basis as a neutral fallback for the rest (items not
+        in the pulse feed), so it stays comparable to Invested. Unrealized P/L
+        counts only priced holdings: we don't invent gains on items we can't
+        value. ``return_pct`` is total P/L as a percentage of what was invested
+        (None when nothing was invested)."""
         invested = sum(h['buy_cost'] for h in holdings)
         cost_basis = sum(h['cost_basis'] for h in holdings)
-        # Current value covers the WHOLE portfolio: live market value for holdings
-        # we can price, and cost basis as a neutral fallback for the rest (items
-        # not in the pulse feed). This keeps the headline comparable to Invested
-        # instead of only counting the handful of priced items. Unrealized P/L
-        # below still counts only priced holdings — we don't invent gains on items
-        # we can't value.
         current_value = sum(
             h['market_value'] if h['market_value'] is not None else h['cost_basis']
             for h in holdings
@@ -882,20 +900,28 @@ class DraupnirService:
         unrealized = sum(h['unrealized_pl'] or 0 for h in holdings)
         priced = any(h['current_price'] is not None for h in holdings)
         held = [h for h in holdings if h['net_qty'] > 0]
-        unpriced_count = sum(1 for h in held if h['current_price'] is None)
+        total_pl = round(realized + unrealized, 2) if priced else round(realized, 2)
         return {
-            'id': p['id'], 'name': p['name'],
-            'created_at': p['created_at'], 'updated_at': p['updated_at'],
-            'txn_count': len(p['transactions']),
             'holdings_count': len(held),
-            'unpriced_count': unpriced_count,
+            'unpriced_count': sum(1 for h in held if h['current_price'] is None),
+            'oversold_count': sum(1 for h in holdings if h['oversold']),
             'invested': round(invested, 2),
             'cost_basis': round(cost_basis, 2),
             'current_value': round(current_value, 2) if priced else None,
             'realized_pl': round(realized, 2),
             'unrealized_pl': round(unrealized, 2) if priced else None,
-            'total_pl': round(realized + unrealized, 2) if priced else round(realized, 2),
+            'total_pl': total_pl,
+            'return_pct': round(total_pl / invested * 100, 1) if invested else None,
             'priced': priced,
+        }
+
+    @staticmethod
+    def _summarize(p, holdings):
+        return {
+            'id': p['id'], 'name': p['name'],
+            'created_at': p['created_at'], 'updated_at': p['updated_at'],
+            'txn_count': len(p['transactions']),
+            **DraupnirService._totals(holdings),
         }
 
     @staticmethod
@@ -967,7 +993,7 @@ class DraupnirService:
                       reverse=True)
         cmap = self._collection_map()
         self._attach_collections(holdings, cmap)
-        self._attach_collections(txns, cmap)
+        self._attach_collections(self._with_totals(txns), cmap)
         return {
             **self._summarize(p, holdings),
             'arbitrage_count': sum(1 for t in p['transactions'] if t.get('is_arbitrage')),
@@ -1051,35 +1077,21 @@ class DraupnirService:
                 'oversold': m['oversold_qty'] > 0,
                 'oversold_qty': m['oversold_qty'],
             })
+        for h in holdings:
+            h['listed'] = self._is_listed(h)
         holdings.sort(key=lambda x: (x['market_value'] or x['cost_basis'] or 0), reverse=True)
 
-        # Summary from the merged (already per-account-correct) holdings.
-        invested = sum(h['buy_cost'] for h in holdings)
-        cost_basis = sum(h['cost_basis'] for h in holdings)
-        current_value = sum(h['market_value'] if h['market_value'] is not None else h['cost_basis'] for h in holdings)
-        realized = sum(h['realized_pl'] for h in holdings)
-        unrealized = sum(h['unrealized_pl'] or 0 for h in holdings)
-        priced = any(h['current_price'] is not None for h in holdings)
-        held = [h for h in holdings if h['net_qty'] > 0]
         arb = sum(1 for t in txns if t.get('is_arbitrage'))
         sorted_txns = sorted(txns,
                              key=lambda t: (t.get('date') or '', t.get('created_at') or ''),
                              reverse=True)
         cmap = self._collection_map()
         self._attach_collections(holdings, cmap)
-        self._attach_collections(sorted_txns, cmap)
+        self._attach_collections(self._with_totals(sorted_txns), cmap)
         return {
             'id': 'combined', 'name': 'All accounts', 'created_at': '', 'updated_at': '',
             'txn_count': len(txns),
-            'holdings_count': len(held),
-            'unpriced_count': sum(1 for h in held if h['current_price'] is None),
-            'invested': round(invested, 2),
-            'cost_basis': round(cost_basis, 2),
-            'current_value': round(current_value, 2) if priced else None,
-            'realized_pl': round(realized, 2),
-            'unrealized_pl': round(unrealized, 2) if priced else None,
-            'total_pl': round(realized + unrealized, 2) if priced else round(realized, 2),
-            'priced': priced,
+            **self._totals(holdings),
             'transactions': sorted_txns,
             'holdings': holdings,
             'account_count': len(ps),

@@ -3,6 +3,7 @@ import { RefreshCw, TrendingUp, TrendingDown, ArrowLeftRight } from 'lucide-reac
 import { matchesSearchQuery } from '../utils/transferItems';
 import SectionHead from './draupnir/SectionHead';
 import SortTh from './draupnir/SortTh';
+import OversoldMark from './draupnir/OversoldMark';
 import { useColumnSort, sortRows } from './draupnir/columnSort';
 
 // How each sortable column reads its value from a row (see columnSort.js).
@@ -20,7 +21,7 @@ const TXN_ACCESSORS = {
     type: t => t.type,
     qty: t => t.qty,
     price: t => t.price,
-    total: t => t.qty * t.price,
+    total: t => t.total,
     platform: t => t.platform,
     date: t => t.date,
 };
@@ -70,7 +71,7 @@ const CombinedLedger = ({ data, loading, pricing }) => {
         setTimeout(() => setCopiedName(c => (c === name ? '' : c)), 1200);
     };
 
-    const holdings = useMemo(() => data?.holdings || [], [data]);
+    const holdings = useMemo(() => (data?.holdings || []).filter(h => h.listed), [data]);
     const txns = useMemo(() => data?.transactions || [], [data]);
 
     // Collections available to filter on — from each row's backend collection
@@ -105,7 +106,7 @@ const CombinedLedger = ({ data, loading, pricing }) => {
     if (!data) return null;
 
     const up = (data.total_pl ?? 0) >= 0;
-    const pct = (data.invested && data.total_pl != null) ? (data.total_pl / data.invested) * 100 : null;
+    const pct = data.return_pct;
 
     return (
         <div className="flex flex-col gap-5">
@@ -177,7 +178,7 @@ const CombinedLedger = ({ data, loading, pricing }) => {
                                                     {copiedName === h.item_name && <span className="shrink-0 text-xs font-medium text-emerald-400">Copied!</span>}
                                                 </div>
                                             </td>
-                                            <td className="px-3 py-2 text-right tabular-nums text-slate-300">{h.net_qty}</td>
+                                            <td className="px-3 py-2 text-right tabular-nums text-slate-300">{h.net_qty}<OversoldMark holding={h} /></td>
                                             <td className="px-3 py-2 text-right tabular-nums text-slate-400">{money(h.avg_cost)}</td>
                                             <td className="px-3 py-2 text-right tabular-nums text-slate-300">{money(h.current_price)}</td>
                                             <td className="px-3 py-2 text-right tabular-nums text-slate-100">{money(h.market_value)}</td>
@@ -245,7 +246,7 @@ const CombinedLedger = ({ data, loading, pricing }) => {
                                             </td>
                                             <td className="px-3 py-2 text-right tabular-nums text-slate-300">{t.qty}</td>
                                             <td className="px-3 py-2 text-right tabular-nums text-slate-400">{money(t.price)}</td>
-                                            <td className="px-3 py-2 text-right tabular-nums text-slate-200">{money(t.qty * t.price)}</td>
+                                            <td className="px-3 py-2 text-right tabular-nums text-slate-200">{money(t.total)}</td>
                                             <td className="px-3 py-2 text-slate-400 truncate max-w-[160px]" title={t.platform}>{t.platform}</td>
                                             <td className="px-3 py-2 text-slate-400 whitespace-nowrap">{t.date}</td>
                                         </tr>

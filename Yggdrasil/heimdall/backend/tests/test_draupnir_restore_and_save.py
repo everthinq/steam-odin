@@ -192,6 +192,37 @@ def test_combined_ledger_unchanged_for_normal_data(tmp_path):
     assert h['oversold'] is False
 
 
+# ---- what the pages only display ----------------------------------------------
+
+def test_listed_is_one_rule_for_held_sold_and_oversold():
+    held, = DraupnirService._holdings([_txn('A', 'buy', 1, 2.0)], None)
+    flat, = DraupnirService._holdings([_txn('B', 'buy', 1, 2.0), _txn('B', 'sell', 1, 2.0)], None)
+    oversold, = DraupnirService._holdings([_txn('C', 'sell', 1, 0.0)], None)
+    assert held['listed'] is True
+    assert flat['listed'] is False                     # nothing held, no profit or loss
+    assert oversold['listed'] is True                  # realized 0, still shown to be fixed
+
+
+def test_portfolio_and_combined_send_return_pct_totals_and_oversold_count(tmp_path):
+    svc, _ = _wired(tmp_path)
+    p = svc.create_portfolio('acct')
+    svc.add_transaction(p['id'], _txn('A', 'buy', 4, 2.5))
+    svc.add_transaction(p['id'], _txn('B', 'sell', 1, 1.0))
+    for data in (svc.get_portfolio(p['id'], {'A': 3.0}), svc.combined_ledger({'A': 3.0})):
+        assert data['invested'] == 10.0
+        assert data['total_pl'] == 3.0                # 2 unrealized + 1 realized
+        assert data['return_pct'] == 30.0
+        assert data['oversold_count'] == 1
+        assert sorted(t['total'] for t in data['transactions']) == [1.0, 10.0]
+    assert svc.list_portfolios({'A': 3.0})[0]['return_pct'] == 30.0
+
+
+def test_return_pct_is_none_when_nothing_was_invested(tmp_path):
+    svc, _ = _wired(tmp_path)
+    svc.create_portfolio('empty')
+    assert svc.combined_ledger({})['return_pct'] is None
+
+
 # ---- sub-second snapshot names -------------------------------------------------
 
 def test_snapshots_within_one_second_sort_in_order(tmp_path, monkeypatch):

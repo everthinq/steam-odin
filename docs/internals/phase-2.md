@@ -136,7 +136,11 @@ Accounts, Draupnir and Mímir, then Huginn and Andvari.
   phrase (`DELETE N`) and writes nothing (`no_accounts`); `POST /api/accounts/remove-all/plans/<id>/execute {phrase}`
   soft-deletes only the plan's accounts, once (`phrase_mismatch`, `unknown_plan` 404, `already_executed` 409,
   `REMOVE_ALL_PLAN_LIFETIME_SECONDS`); an account added after the plan stays; `DELETE /api/accounts` is gone.
-- 8 Draupnir return_pct, holdings visibility differs between views, oversold flag never shown, transaction total.
+- 8 Draupnir numbers **DONE 2026-11-04**: one `_totals` serves every account, the list and All accounts, and
+  adds `return_pct` (total P/L ÷ invested × 100, None when nothing was invested) and `oversold_count`; each
+  holding carries `listed` (`_is_listed`: held, a realized profit or loss, or oversold; one rule for both
+  views, an oversold row is never hidden); each transaction carries `total` (`_with_totals`); both tables
+  show an "oversold N" mark (`components/draupnir/OversoldMark.jsx`); the pages compute none of these.
 - 9 live price status: page gives up after 8 polls; inactive/error unhandled in Portfolios, CombinedLedger, ArbitrageDeals.
 - 11 Confirmation settings: interval 1-9 silently raised to 10; check-all synchronous, 409 shown as HTTP 409; wording.
 - 12 copied date normaliser and valuation market list.

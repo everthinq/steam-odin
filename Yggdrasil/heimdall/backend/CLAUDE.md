@@ -192,7 +192,8 @@ The backend **does not reload by itself**: after editing a `.py` file run
 `make reload` (restarts this container only; every background loop starts again
 with it). Until then the old code runs. Test long runs with outward effects
 (Steam calls, Telegram alerts) in a sandbox script with its own cache file and a
-stubbed notifier.
+stubbed notifier. Never `make reload` while the test suite runs inside the
+container: the restart kills it (exit code 137); run the suite again afterwards.
 
 ```bash
 # tests inside the running container (pytest installed ephemerally)

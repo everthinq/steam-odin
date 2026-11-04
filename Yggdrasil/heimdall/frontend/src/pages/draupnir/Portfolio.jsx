@@ -6,6 +6,7 @@ import { ConfirmDialog, PromptDialog } from '../../components/DraupnirDialog';
 import { DateField } from '../../components/DateField';
 import SectionHead from '../../components/draupnir/SectionHead';
 import SortTh from '../../components/draupnir/SortTh';
+import OversoldMark from '../../components/draupnir/OversoldMark';
 import { useColumnSort, sortRows } from '../../components/draupnir/columnSort';
 import { readJson } from '../../utils/readJson';
 
@@ -24,7 +25,7 @@ const TXN_ACCESSORS = {
     type: t => t.type,
     qty: t => t.qty,
     price: t => t.price,
-    total: t => t.qty * t.price,
+    total: t => t.total,
     platform: t => t.platform,
     date: t => t.date,
 };
@@ -178,7 +179,7 @@ const DraupnirPortfolio = () => {
     }, [data]);
 
     const baseHoldings = useMemo(
-        () => (data?.holdings || []).filter(h => h.net_qty > 0 || h.realized_pl),
+        () => (data?.holdings || []).filter(h => h.listed),
         [data]
     );
     const filteredHoldings = useMemo(() => {
@@ -548,7 +549,7 @@ const DraupnirPortfolio = () => {
                                                                 )}
                                                             </div>
                                                         </td>
-                                                        <td className="px-3 py-2 text-right tabular-nums text-slate-300">{h.net_qty}</td>
+                                                        <td className="px-3 py-2 text-right tabular-nums text-slate-300">{h.net_qty}<OversoldMark holding={h} /></td>
                                                         <td className="px-3 py-2 text-right tabular-nums text-slate-400">{money(h.avg_cost)}</td>
                                                         <td className="px-3 py-2 text-right tabular-nums text-slate-300">{money(h.current_price)}</td>
                                                         <td className="px-3 py-2 text-right tabular-nums text-slate-100">{money(h.market_value)}</td>
@@ -626,7 +627,7 @@ const DraupnirPortfolio = () => {
                                                         </td>
                                                         <td className="px-3 py-2 text-right tabular-nums text-slate-300">{t.qty}</td>
                                                         <td className="px-3 py-2 text-right tabular-nums text-slate-300">{money(t.price)}</td>
-                                                        <td className="px-3 py-2 text-right tabular-nums text-slate-400">{money(t.qty * t.price)}</td>
+                                                        <td className="px-3 py-2 text-right tabular-nums text-slate-400">{money(t.total)}</td>
                                                         <td className="px-3 py-2 text-slate-400"><div className="max-w-[160px] truncate" title={t.platform}>{t.platform || '—'}</div></td>
                                                         <td className="px-3 py-2 text-slate-500 tabular-nums whitespace-nowrap">{prettyDate(t.date)}</td>
                                                         <td className="px-3 py-2">
