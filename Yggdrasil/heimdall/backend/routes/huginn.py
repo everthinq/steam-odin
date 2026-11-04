@@ -645,30 +645,69 @@ def gjallarhorn_holds_set():
     return jsonify(clean)
 
 
+# One add or remove of a Gjallarhorn target at a time: each reads the saved list and
+# writes it back, so two at once could lose one of them.
+_targets_lock = threading.Lock()
+
+
+def _saved_targets():
+    settings = ctx.settings_manager.get_settings()
+    return [t.get('name') for t in (settings.get('gjallarhorn_targets') or []) if t.get('name')]
+
+
 @bp.route('/api/huginn/gjallarhorn/targets', methods=['GET'])
 def gjallarhorn_targets_get():
-    """Priced target basket. ?capital=<usd> adds units-buyable per target."""
+    """Priced target basket. ?capital=<usd> adds units-buyable per target.
+    The names always come back: when pricing fails, prices are empty and
+    pricing_error says why (an empty answer once made the page save over the list)."""
     settings = ctx.settings_manager.get_settings()
     token = settings.get('tradeon_token', '')
-    targets = [t.get('name') for t in (settings.get('gjallarhorn_targets') or []) if t.get('name')]
+    targets = _saved_targets()
     capital = request.args.get('capital', type=float)
     market = request.args.get('market', 'steam')
     try:
         return jsonify(ctx.gjallarhorn_service.basket(token, targets, capital, market))
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        logger.warning('Gjallarhorn target prices failed: %s', e)
+        return jsonify({'rows': [{'item_name': name, 'price': None, 'unitsForCapital': None} for name in targets],
+                        'capital': capital, 'pricing': None, 'priced': False, 'market': market,
+                        'pricing_error': str(e)})
 
 
-@bp.route('/api/huginn/gjallarhorn/targets', methods=['POST'])
-def gjallarhorn_targets_set():
-    """Replace the target basket: {"targets": [{"name": "Kilowatt Case"}, ...]}."""
-    body = request.get_json(silent=True) or {}
-    targets = body.get('targets')
-    if not isinstance(targets, list):
-        return jsonify({'error': 'targets array required'}), 400
-    clean = ctx.gjallarhorn_service.clean_targets(targets)
-    ctx.settings_manager.save_settings({'gjallarhorn_targets': clean})
-    return jsonify(clean)
+@bp.route('/api/huginn/gjallarhorn/targets/add', methods=['POST'])
+def gjallarhorn_targets_add():
+    """Add one target: {"name": "Kilowatt Case"}. Every other target stays.
+    Answers the saved names; 409 when the list already has 50."""
+    name = str((request.get_json(silent=True) or {}).get('name') or '').strip()
+    if not name:
+        return jsonify({'error': 'name required', 'code': 'name_required'}), 400
+    with _targets_lock:
+        names = _saved_targets()
+        if any(existing.lower() == name.lower() for existing in names):
+            return jsonify({'targets': names})
+        if len(names) >= 50:
+            return jsonify({'error': 'the target basket holds 50 items at most', 'code': 'basket_full'}), 409
+        clean = ctx.gjallarhorn_service.clean_targets(names + [name])
+        if not ctx.settings_manager.save_settings({'gjallarhorn_targets': clean}):
+            return jsonify({'error': 'settings could not be saved', 'code': 'save_failed'}), 500
+    return jsonify({'targets': [t['name'] for t in clean]})
+
+
+@bp.route('/api/huginn/gjallarhorn/targets/remove', methods=['POST'])
+def gjallarhorn_targets_remove():
+    """Remove one target by name (any capital letters): {"name": "Kilowatt Case"}."""
+    name = str((request.get_json(silent=True) or {}).get('name') or '').strip()
+    if not name:
+        return jsonify({'error': 'name required', 'code': 'name_required'}), 400
+    with _targets_lock:
+        names = _saved_targets()
+        kept = [existing for existing in names if existing.lower() != name.lower()]
+        if len(kept) == len(names):
+            return jsonify({'error': 'not in the target basket', 'code': 'not_found'}), 404
+        clean = ctx.gjallarhorn_service.clean_targets(kept)
+        if not ctx.settings_manager.save_settings({'gjallarhorn_targets': clean}):
+            return jsonify({'error': 'settings could not be saved', 'code': 'save_failed'}), 500
+    return jsonify({'targets': [t['name'] for t in clean]})
 
 
 @bp.route('/api/huginn/gjallarhorn/ring/status', methods=['GET'])

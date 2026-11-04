@@ -4,8 +4,9 @@ import { readJson } from '../../utils/readJson';
 
 // The buy side: the freshly-limited case(s)/item(s) to rotate INTO. Enter a
 // capital amount (what dumping the sell list raises) and each target shows how
-// many units that buys at the current price. Persisted via POST
-// /api/huginn/gjallarhorn/targets; priced via GET (?capital=).
+// many units that buys at the current price. Adding or removing sends one
+// backend command for that one item (POST …/targets/add, …/targets/remove), so
+// nothing else in the list is touched; priced via GET (?capital=).
 const money = (v) => (v == null ? '—' : `$${Number(v).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`);
 
 const TargetBasket = ({ market, defaultCapital }) => {
@@ -17,15 +18,20 @@ const TargetBasket = ({ market, defaultCapital }) => {
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState(null);
     const [count, setCount] = useState(0);
+    const [pricingError, setPricingError] = useState(null);
     const ref = useRef(null);
+    const request = useRef(0);
 
     const refresh = useCallback((cap) => {
         const c = cap ?? capital;
         const q = c ? `?capital=${encodeURIComponent(c)}&market=${market}` : `?market=${market}`;
+        const n = ++request.current;
         return fetch(`/api/huginn/gjallarhorn/targets${q}`)
             .then((r) => (r.ok ? readJson(r) : null))
             .then((data) => {
+                if (n !== request.current) return;      // only the newest answer
                 if (data && Array.isArray(data.rows)) {
+                    setPricingError(data.pricing_error || null);
                     setTargets(data.rows.map((row) => ({ name: row.item_name, price: row.price, unitsForCapital: row.unitsForCapital })));
                     setCount(data.rows.length);
                 }
@@ -54,14 +60,14 @@ const TargetBasket = ({ market, defaultCapital }) => {
         return () => clearTimeout(id);
     }, [query, open]);
 
-    const persist = async (names) => {
+    const send = async (action, name) => {
         setSaving(true);
         setError(null);
         try {
-            const res = await fetch('/api/huginn/gjallarhorn/targets', {
+            const res = await fetch(`/api/huginn/gjallarhorn/targets/${action}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ targets: names.map((n) => ({ name: n })) }),
+                body: JSON.stringify({ name }),
             });
             if (!res.ok) throw new Error((await readJson(res).catch(() => ({}))).error || 'Save failed');
             await refresh();
@@ -73,12 +79,11 @@ const TargetBasket = ({ market, defaultCapital }) => {
     };
 
     const addTarget = (name) => {
-        if (targets.some((t) => t.name.toLowerCase() === name.toLowerCase())) return;
         setQuery('');
         setResults([]);
-        persist([...targets.map((t) => t.name), name]);
+        send('add', name);
     };
-    const removeTarget = (name) => persist(targets.filter((t) => t.name !== name).map((t) => t.name));
+    const removeTarget = (name) => send('remove', name);
 
     return (
         <div ref={ref} className="relative shrink-0">
@@ -151,6 +156,7 @@ const TargetBasket = ({ market, defaultCapital }) => {
                             </div>
                         )}
                     </div>
+                    {pricingError && <div className="px-3 py-2 text-xs text-amber-400">Prices unavailable: {pricingError}</div>}
                     {error && <div className="px-3 py-2 text-xs text-red-400">{error}</div>}
                     {saving && <div className="px-3 py-1.5 text-[11px] text-slate-500">Saving…</div>}
                 </div>

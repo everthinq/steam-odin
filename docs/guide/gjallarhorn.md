@@ -45,7 +45,8 @@ and a **score**: high = sell first (deflated, liquid, tradable).
 - **Redeploy markets**: the markets where sale money is usable again at once
   (and how many days a hold lasts on each). Sell there when speed matters.
 - **Target basket**: the items you want to rotate into, with your capital in
-  dollars; it shows how many units each buys.
+  dollars; it shows how many units each buys. Adding or removing an item never
+  changes the others, and the list stays visible when prices cannot be read.
 
 ## Readiness
 

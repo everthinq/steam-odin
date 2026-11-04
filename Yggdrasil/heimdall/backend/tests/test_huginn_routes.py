@@ -154,3 +154,54 @@ def test_card_deals_buy_order_check_starts_in_the_background(client, fake_ctx):
     response = client.post('/api/huginn/card-deals/buy-orders')
     assert response.status_code == 200 and response.get_json() == {'running': True}
     assert card_deals.buy_order_checks == 1
+
+
+class SavingSettingsManager(FakeSettingsManager):
+    def save_settings(self, new_settings):
+        self.settings.update(new_settings)
+        return True
+
+
+class BrokenPricing:
+    @staticmethod
+    def clean_targets(targets):
+        from gjallarhorn_service import GjallarhornService
+        return GjallarhornService.clean_targets(targets)
+
+    def basket(self, *args):
+        raise RuntimeError('pulse is down')
+
+
+def _targets(settings):
+    return [t['name'] for t in settings.settings['gjallarhorn_targets']]
+
+
+def test_adding_a_target_keeps_every_other_target(client, fake_ctx):
+    settings = SavingSettingsManager({'gjallarhorn_targets': [{'name': 'Kilowatt Case'}, {'name': 'Revolution Case'}]})
+    fake_ctx(settings_manager=settings, gjallarhorn_service=BrokenPricing())
+    response = client.post('/api/huginn/gjallarhorn/targets/add', json={'name': 'Fever Case'})
+    assert response.status_code == 200
+    assert _targets(settings) == ['Kilowatt Case', 'Revolution Case', 'Fever Case']
+    client.post('/api/huginn/gjallarhorn/targets/add', json={'name': 'fever case'})
+    assert _targets(settings) == ['Kilowatt Case', 'Revolution Case', 'Fever Case']
+
+
+def test_removing_a_target_removes_only_that_one(client, fake_ctx):
+    settings = SavingSettingsManager({'gjallarhorn_targets': [{'name': 'Kilowatt Case'}, {'name': 'Revolution Case'}]})
+    fake_ctx(settings_manager=settings, gjallarhorn_service=BrokenPricing())
+    assert client.post('/api/huginn/gjallarhorn/targets/remove', json={'name': 'kilowatt case'}).status_code == 200
+    assert _targets(settings) == ['Revolution Case']
+    assert client.post('/api/huginn/gjallarhorn/targets/remove', json={'name': 'Nope'}).status_code == 404
+
+
+def test_targets_still_listed_when_pricing_fails(client, fake_ctx):
+    settings = SavingSettingsManager({'gjallarhorn_targets': [{'name': 'Kilowatt Case'}]})
+    fake_ctx(settings_manager=settings, gjallarhorn_service=BrokenPricing())
+    body = client.get('/api/huginn/gjallarhorn/targets').get_json()
+    assert [row['item_name'] for row in body['rows']] == ['Kilowatt Case']
+    assert body['pricing_error'] == 'pulse is down'
+
+
+def test_the_whole_list_replace_route_is_gone(client, fake_ctx):
+    fake_ctx(settings_manager=SavingSettingsManager())
+    assert client.post('/api/huginn/gjallarhorn/targets', json={'targets': []}).status_code == 405

@@ -91,7 +91,8 @@ def test_huginn_blueprint_registers_all_routes():
                  '/api/huginn/markets/fees', '/api/huginn/tradeon/pair',
                  '/api/huginn/gjallarhorn/rotation', '/api/huginn/gjallarhorn/accounts',
                  '/api/huginn/gjallarhorn/readiness', '/api/huginn/gjallarhorn/holds',
-                 '/api/huginn/gjallarhorn/targets', '/api/huginn/gjallarhorn/ring',
+                 '/api/huginn/gjallarhorn/targets', '/api/huginn/gjallarhorn/targets/add',
+                 '/api/huginn/gjallarhorn/targets/remove', '/api/huginn/gjallarhorn/ring',
                  '/api/huginn/gjallarhorn/ring/status',
                  '/api/huginn/gjallarhorn/news/status',
                  '/api/huginn/gjallarhorn/news/check',
@@ -118,14 +119,14 @@ def test_huginn_blueprint_registers_all_routes():
     # A real purchase only through a purchase plan's dry run: the old bare route is gone.
     assert '/api/huginn/card-deals/buy/run' not in rules
     # +9 gjallarhorn rules: rotation, accounts, readiness, holds (GET+POST),
-    # targets (GET+POST), ring, ring/status; +3 news rules: news/status,
+    # targets (GET, add, remove: the whole-list POST is gone), ring, ring/status; +3 news rules: news/status,
     # news/check, news/test; +1 cross-profile arbitrage; +2 cross-profile config
     # (GET+POST); +1 csfloat/connectivity.
     # +7 Andvari card-deals rules: deals, scan, buy-orders, status, config (GET+POST), alerts/test.
     # +5 Team Fortress 2 rules: status, play, check-news, detect, sell-now; +1 card auto-sell status;
     # +5 Buy games: status, plan, purchase plan, purchase plan (GET), execute (run removed); +5 pulse feed: kept, download, price dips (+ markets), check live;
     # Active profiles (GET+POST) replaced the Pulse feed switchboard (kept, download) on 2026-10-31.
-    assert _rule_count(bp, "/api/huginn") == 86
+    assert _rule_count(bp, "/api/huginn") == 87
 
 
 def test_register_blueprints_wires_onto_app():

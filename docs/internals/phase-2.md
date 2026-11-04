@@ -84,7 +84,7 @@ real purchase (Ivan's hands-on test list is in the session reminders).
 
 ### Accounts / Draupnir / Mímir, next
 - 3 Add Account: 4-step flow + rollback in page -> one import command (authenticate before writing). Bugs: re-import overwrites a working maFile before authentication; rollback DELETE unchecked; password trimmed.
-- 4 Draupnir transaction: BUG canonical name ignored (case-different name becomes its own holding, never priced); required fields only in page; unknown_item confirm should be a code from POST /transactions.
+- 4 Draupnir transaction: NOT a bug (Ivan, 2026-11-04): a case-different name staying its own holding is fine, he picks names from the hints and can price any item; never raise it again. Still open: required fields only in page; unknown_item confirm should be a code from POST /transactions.
 - 5 Draupnir CSV import: answers ignored, 400 and skipped rows silently lost -> import plan/execute.
 - 6 Confirmations: page picks nonce/key; type 12 unknown -> backend looks up the key, sends type_name.
 - 7 Remove All accounts: phrase only in page, DELETE removes accounts added later -> plan/execute.
@@ -100,7 +100,7 @@ real purchase (Ivan's hands-on test list is in the session reminders).
 - 3 card selling return computed in page from two endpoints, own currency map, "buy order" text search -> return_on_purchases + listed code.
 - 4 Arbitrage fixed+generated profiles in page; canCheckLive is the only gate (backend check_live accepts ineligible pairs) -> GET /api/huginn/profiles; check-live refuses with code.
 - 5 active-profile ready/warming/newer computed in page -> /active returns them.
-- 6 BUG data loss: Gjallarhorn TargetBasket rebuilds whole list; GET targets 500 on pricing failure -> adding one target erases all -> targets/add, targets/remove, names without prices. Refresh per keystroke, no stale guard.
+- 6 FIXED 2026-11-04: Gjallarhorn Target basket sends one `targets/add` or `targets/remove` per item (the whole-list POST is gone); GET always answers the names, with `pricing_error` when prices fail; only the newest answer is applied.
 - 7 CaseArbitrage hardcoded MARKETS -> markets list from /api/huginn/cases.
 - 8 Harvest: profitable-only differs from backend count; stale via frontend constant; hardcoded 8 days; offers count -> counted, short_of_offers, best.stale, stale_after_seconds.
 - 9 CrossProfile chain price from first/last priced legs (wrong) -> backend buy_price, sell_net.
@@ -109,4 +109,5 @@ real purchase (Ivan's hands-on test list is in the session reminders).
 - 12 traffic estimates ignore active hours -> estimated_megabytes_per_day.
 - 13 SkinSwap 1.4 ratio copy.
 - 14 MarketHoldEditor re-clean; Gjallarhorn _PRICE_MARKETS copy; NewsWatcher raw settings + ignored failures; DealsTable 20 listings; CaseAlertsPanel reads whole settings incl. Telegram token.
-- BUGS: TeamFortress auto-stop hours empty -> 0 = never stop (farming paused indefinitely); CaseArbitrage + CardDeals no stale-answer guard; startScan unchecked; app-id regex grabs every 2-9 digit run (page + backend parse_app_ids, Buy games uses it); CrossProfile save fails silently, warm polling uncapped; ReadinessPanel stale numbers.
+- Team Fortress 2: left alone as a whole feature (Ivan, 2026-11-04: not used for now); do not work on it.
+- BUGS: CaseArbitrage + CardDeals no stale-answer guard; startScan unchecked; app-id regex grabs every 2-9 digit run (page + backend parse_app_ids, Buy games uses it); CrossProfile save fails silently, warm polling uncapped; ReadinessPanel stale numbers.
