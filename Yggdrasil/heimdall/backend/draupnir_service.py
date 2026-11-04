@@ -11,15 +11,19 @@ import json
 import logging
 import os
 import threading
+import time
 import uuid
 from datetime import datetime, timezone
 
 from jsonio import atomic_write_json
+from storage_deposit import CommandError
 from validation import normalize_datetime, validate_transaction
 
 log = logging.getLogger(__name__)
 
 PORTFOLIOS_FILE = os.path.join(os.path.dirname(__file__), 'portfolios.json')
+# How long a checked CSV import (plan_import) waits for its execute.
+IMPORT_PLAN_LIFETIME_SECONDS = 10 * 60
 
 # Spellings of one market typed into the platform field -> its one canonical,
 # lower-case name. Keys are matched lower-cased with runs of whitespace
@@ -113,15 +117,6 @@ class PortfolioSaveError(RuntimeError):
     """portfolios.json could not be written. The change is NOT on disk; the
     in-memory store is rolled back to what the file holds whenever that file can
     be read, so a retry does not double-apply the change."""
-
-
-class CsvImportError(ValueError):
-    """A CSV import had no valid row, so nothing (not even an empty portfolio)
-    was created. ``errors`` lists what was wrong, row by row."""
-
-    def __init__(self, message, errors):
-        super().__init__(message)
-        self.errors = errors
 
 
 def parse_store_bytes(data):
@@ -238,6 +233,7 @@ class DraupnirService:
         # keystroke) can memoize its name set instead of rescanning every transaction.
         self._store_gen = 0
         self._names_cache = None   # (gen, set)
+        self._import_plans = {}    # plan id -> checked CSV import (plan_import)
         # Optional BackupService, wired by app.py via set_backup(). Every
         # persisted change is snapshotted for point-in-time restore (deduped by
         # content hash), and it doubles as the corruption-recovery source in
@@ -644,14 +640,9 @@ class DraupnirService:
         transaction dicts. See :meth:`_parse_csv_rows`."""
         return [txn for _, txn in DraupnirService._parse_csv_rows(text)]
 
-    def import_csv(self, text, name=None, pid=None):
-        """Import a CSV into a new portfolio (default) or append to `pid`.
-
-        Every row goes through the same validation as a hand-entered
-        transaction; invalid rows are skipped and reported. Returns
-        ``(portfolio, imported_count, errors)`` — ``(None, 0, [])`` when `pid`
-        does not exist. Raises :class:`CsvImportError` when no row is valid,
-        before anything (not even a new portfolio) is created."""
+    def _check_csv(self, text):
+        """Every row through the same validation as a hand-entered transaction.
+        Returns ``(clean_transactions, errors)``; invalid rows are in ``errors``."""
         txns, errors = [], []
         for line_number, raw in self._parse_csv_rows(text):
             row_errors = validate_transaction(raw)
@@ -660,24 +651,70 @@ class DraupnirService:
                               + '; '.join(row_errors))
                 continue
             txns.append(self._clean_txn(raw))
+        return txns, errors
+
+    def plan_import(self, text, name=None, pid=None):
+        """Check a CSV and keep it as a plan: what would be imported and which
+        lines would be skipped, and why. Nothing is written until
+        :meth:`execute_import` runs the plan (once). Appends to `pid` when given,
+        else makes a new portfolio called `name`."""
+        if not (text or '').strip():
+            raise CommandError('csv_required', 'csv is required')
+        txns, errors = self._check_csv(text)
+        now = time.time()
         with self._lock:
-            if pid:
-                p = self._get(pid)
-                if not p:
-                    return None, 0, []
+            target = self._get(pid) if pid else None
+            if pid and not target:
+                raise CommandError('portfolio_not_found', 'portfolio not found', 404)
             if not txns:
-                raise CsvImportError('no valid rows to import', errors)
-            if not pid:
-                pid = _new_id()
-                p = {
-                    'id': pid, 'name': (name or 'Imported').strip() or 'Imported',
-                    'created_at': _now(), 'updated_at': _now(), 'transactions': [],
-                }
-                self._data['portfolios'][pid] = p
-            p['transactions'].extend(txns)
+                raise CommandError('no_valid_rows', 'no valid rows to import: '
+                                   + ('; '.join(errors) or 'the file has no rows'))
+            plan = {
+                'id': uuid.uuid4().hex, 'pid': pid,
+                'name': target['name'] if target else ((name or '').strip() or 'Imported'),
+                'transactions': txns, 'errors': errors,
+                'expires_at': now + IMPORT_PLAN_LIFETIME_SECONDS, 'executed': False,
+            }
+            for plan_id in [k for k, old in self._import_plans.items() if old['expires_at'] < now]:
+                del self._import_plans[plan_id]
+            self._import_plans[plan['id']] = plan
+        return {'id': plan['id'], 'pid': pid, 'name': plan['name'],
+                'imported': len(txns), 'skipped': len(errors), 'errors': errors,
+                'expires_at': plan['expires_at']}
+
+    def execute_import(self, plan_id):
+        """Write what :meth:`plan_import` checked, once."""
+        with self._lock:
+            plan = self._import_plans.get(plan_id)
+            if not plan or plan['expires_at'] < time.time():
+                raise CommandError('unknown_plan', 'no such import plan, or it expired: check the file again', 404)
+            if plan['executed']:
+                raise CommandError('already_executed', 'this import plan already ran', 409)
+            if plan['pid']:
+                p = self._get(plan['pid'])
+                if not p:
+                    raise CommandError('portfolio_not_found', 'portfolio not found', 404)
+            else:
+                p = {'id': _new_id(), 'name': plan['name'], 'created_at': _now(),
+                     'updated_at': _now(), 'transactions': []}
+                self._data['portfolios'][p['id']] = p
+            count_before = len(p['transactions'])
+            p['transactions'].extend(plan['transactions'])
             p['updated_at'] = _now()
-            self._persist()
-            return p, len(txns), errors
+            try:
+                self._persist()
+            except PortfolioSaveError:
+                # _persist puts memory back to the file only when the file reads
+                # cleanly; undo our part in every case, so running the plan
+                # again later never adds the rows twice.
+                del p['transactions'][count_before:]
+                if not plan['pid']:
+                    self._data['portfolios'].pop(p['id'], None)
+                raise
+            plan['executed'] = True
+            return {'portfolio': {'id': p['id'], 'name': p['name']},
+                    'imported': len(plan['transactions']),
+                    'skipped': len(plan['errors']), 'errors': plan['errors']}
 
     # ---- CSV export --------------------------------------------------------
 
@@ -687,7 +724,7 @@ class DraupnirService:
 
     def export_csv(self, pid):
         """Serialize one portfolio's transactions to CSV text (real dollars, not
-        cents). Round-trips back through import_csv. Returns (name, csv) or None.
+        cents). Round-trips back through plan_import + execute_import. Returns (name, csv) or None.
         Rows are ordered newest-date first to match the on-screen table."""
         with self._lock:
             p = self._get(pid)

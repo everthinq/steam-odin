@@ -121,7 +121,11 @@ Accounts, Draupnir and Mímir, then Huginn and Andvari.
   (409, with suggestions) unless the request says `confirm_unknown_item: true`; `PATCH` checks the same
   (a blank platform is refused too); one rule `_item_check` serves this and `validate-item`; the page
   has no checks of its own any more. A case-different name staying its own holding is NOT a bug (Ivan).
-- 5 Draupnir CSV import: answers ignored, 400 and skipped rows silently lost -> import plan/execute.
+- 5 Draupnir CSV import **DONE 2026-11-04**: `POST /api/draupnir/portfolios/import/plan {csv, name | pid}` checks
+  the file and writes nothing (rows to import, each skipped line and why; `csv_required`, `no_valid_rows`,
+  `portfolio_not_found` 404); `POST …/import/plans/<id>/execute` writes it once (`already_executed` 409,
+  `unknown_plan` 404, `IMPORT_PLAN_LIFETIME_SECONDS`); the old `/import` route is gone. The page shows every
+  file's plan (skipped lines included) before Import and reports a file that failed.
 - 6 Confirmations: page picks nonce/key; type 12 unknown -> backend looks up the key, sends type_name.
 - 7 Remove All accounts: phrase only in page, DELETE removes accounts added later -> plan/execute.
 - 8 Draupnir return_pct, holdings visibility differs between views, oversold flag never shown, transaction total.

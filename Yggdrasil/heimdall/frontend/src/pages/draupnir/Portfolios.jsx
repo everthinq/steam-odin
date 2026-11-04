@@ -14,7 +14,7 @@ import {
     togglePortfolioPin,
     reorderPortfolioList,
 } from '../../utils/portfolioLayout';
-import { readJsonOrThrow } from '../../utils/readJson';
+import { failureMessage, readJsonOrThrow } from '../../utils/readJson';
 
 const MARKETS = [
     { id: 'steam', label: 'Steam' },
@@ -124,37 +124,72 @@ const DraupnirPortfolios = () => {
         },
     });
 
-    // Picking files opens a styled confirm listing them; import runs on confirm.
-    const handleFilePick = (e) => {
+    // Picking files asks the backend to check each one (an import plan: rows to
+    // import, lines it would skip and why); the confirm shows that, and Import
+    // runs each plan once. Nothing is written before Import.
+    const postJson = async (url, body) => {
+        const r = await fetch(url, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: body === undefined ? undefined : JSON.stringify(body),
+        });
+        return readJsonOrThrow(r);
+    };
+
+    const handleFilePick = async (e) => {
         const files = Array.from(e.target.files || []);
         if (fileRef.current) fileRef.current.value = '';
         if (!files.length) return;
-        const names = files.map(f => f.name.replace(/\.csv$/i, ''));
+        setImporting(true);
+        setError(null);
+        const checked = [];
+        for (const file of files) {
+            const name = file.name.replace(/\.csv$/i, '');
+            try {
+                checked.push({ name, plan: await postJson('/api/draupnir/portfolios/import/plan', { name, csv: await file.text() }) });
+            } catch (err) {
+                checked.push({ name, refused: failureMessage(err) });
+            }
+        }
+        setImporting(false);
+        const plans = checked.filter(c => c.plan);
         setDialog({
-            kind: 'confirm', confirmLabel: 'Import',
-            title: `Import ${files.length} file${files.length > 1 ? 's' : ''}?`,
-            message: `Creates ${files.length} new portfolio${files.length > 1 ? 's' : ''}: ${names.join(', ')}.`,
-            onConfirm: () => runImport(files),
+            kind: 'confirm', confirmLabel: plans.length ? 'Import' : 'Close',
+            title: plans.length
+                ? `Import ${plans.length} file${plans.length > 1 ? 's' : ''}?`
+                : 'Nothing to import',
+            message: (
+                <>
+                    {checked.map(c => (
+                        <span key={c.name} className="block mt-2">
+                            <span className="text-slate-200">{c.name}</span>
+                            {c.plan
+                                ? `: new portfolio, ${c.plan.imported} row${c.plan.imported === 1 ? '' : 's'}${c.plan.skipped ? `, ${c.plan.skipped} skipped` : ''}.`
+                                : ': not imported.'}
+                            {(c.plan?.errors || []).map(line => (
+                                <span key={line} className="block text-amber-300/80 text-xs">Skipped {line}</span>
+                            ))}
+                            {c.refused && <span className="block text-red-300 text-xs">{c.refused}</span>}
+                        </span>
+                    ))}
+                </>
+            ),
+            onConfirm: () => plans.length && runImport(plans),
         });
     };
 
-    const runImport = async (files) => {
+    const runImport = async (plans) => {
         setImporting(true);
-        try {
-            for (const file of files) {
-                const csv = await file.text();
-                const name = file.name.replace(/\.csv$/i, '');
-                await fetch('/api/draupnir/portfolios/import', {
-                    method: 'POST', headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ name, csv }),
-                });
+        const failed = [];
+        for (const { name, plan } of plans) {
+            try {
+                await postJson(`/api/draupnir/portfolios/import/plans/${plan.id}/execute`);
+            } catch (err) {
+                failed.push(`${name}: ${failureMessage(err)}`);
             }
-            await fetchList();
-        } catch (e) {
-            setError(e.message);
-        } finally {
-            setImporting(false);
         }
+        setImporting(false);
+        if (failed.length) setError(`Not imported: ${failed.join('; ')}`);
+        await fetchList();
     };
 
     // Download this portfolio's transactions as CSV (re-importable). Anchor to the

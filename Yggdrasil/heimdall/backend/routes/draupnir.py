@@ -9,7 +9,8 @@ import re
 from flask import Blueprint, Response, jsonify, request
 
 from context import ctx
-from draupnir_service import CsvImportError, PortfolioSaveError
+from draupnir_service import PortfolioSaveError
+from storage_deposit import CommandError
 from validation import validate_new_transaction, validate_portfolio_name, validate_transaction
 
 bp = Blueprint('draupnir', __name__)
@@ -52,28 +53,26 @@ def portfolios_create():
     return jsonify(ctx.draupnir_service.create_portfolio(body.get('name'))), 201
 
 
-@bp.route('/api/draupnir/portfolios/import', methods=['POST'])
-def portfolios_import():
-    """Import a CSV as a new portfolio (or append to ?pid=). Body: {name, csv}."""
+@bp.route('/api/draupnir/portfolios/import/plan', methods=['POST'])
+def portfolios_import_plan():
+    """Check a CSV: what would be imported, which lines would be skipped and why.
+    Body: {csv, name} for a new portfolio, or {csv, pid} to append. Writes nothing."""
     body = request.get_json(silent=True) or {}
-    csv_text = body.get('csv')
-    if not csv_text:
-        return jsonify({'error': 'csv is required'}), 400
+    return _command(lambda: ctx.draupnir_service.plan_import(
+        body.get('csv'), name=body.get('name'), pid=body.get('pid')))
+
+
+@bp.route('/api/draupnir/portfolios/import/plans/<plan_id>/execute', methods=['POST'])
+def portfolios_import_execute(plan_id):
+    """Import what the plan checked, once."""
+    return _command(lambda: ctx.draupnir_service.execute_import(plan_id), 201)
+
+
+def _command(run, status=200):
     try:
-        p, count, errors = ctx.draupnir_service.import_csv(
-            csv_text, name=body.get('name'), pid=body.get('pid'))
-    except CsvImportError as e:
-        # No valid row: nothing was created. Say why, row by row.
-        return jsonify({'error': str(e), 'errors': e.errors, 'imported': 0}), 400
-    if p is None:
-        return jsonify({'error': 'portfolio not found'}), 404
-    return jsonify({
-        'portfolio': {'id': p['id'], 'name': p['name']},
-        'imported': count,
-        # Rows skipped because they failed validation (the rest were imported).
-        'skipped': len(errors),
-        'errors': errors,
-    }), 201
+        return jsonify(run()), status
+    except CommandError as error:
+        return jsonify(error.body()), error.status
 
 
 @bp.route('/api/draupnir/portfolios/combined', methods=['GET'])

@@ -4,13 +4,22 @@ round-trip (Arbitrage + Created At columns, 4-decimal unit prices) that still
 accepts the older files without those columns."""
 import pytest
 
-from draupnir_service import CsvImportError, DraupnirService
+from draupnir_service import DraupnirService
+from storage_deposit import CommandError
 
 PRICE_TRACKER_HEADER = 'Name,Type,Quantity,Unit Price,Total Price,Marketplace,Date,Note,Fee Percentage'
 
 
 def _make(tmp_path):
     return DraupnirService(huginn_service=None, path=str(tmp_path / 'portfolios.json'))
+
+
+def _import(svc, text, name=None, pid=None):
+    """Check the file (plan) and run it, like the page: (portfolio, imported, errors)."""
+    plan = svc.plan_import(text, name=name, pid=pid)
+    done = svc.execute_import(plan['id'])
+    assert (done['imported'], done['errors']) == (plan['imported'], plan['errors'])
+    return svc._data['portfolios'][done['portfolio']['id']], done['imported'], done['errors']
 
 
 def _only_portfolio(svc):
@@ -24,7 +33,7 @@ def test_price_tracker_file_keeps_integer_cents_and_mojibake_repair(tmp_path):
     text = (PRICE_TRACKER_HEADER + '\n'
             + mojibake_name + ',buy,2,158,316,N/A,2026-08-11,buff163,0\n'
             'Fracture Case,sell,10,41,410,Steam,2026-08-12,,0\n')
-    p, count, errors = svc.import_csv(text, name='acct')
+    p, count, errors = _import(svc, text, name='acct')
     assert (count, errors) == (2, [])
     first, second = p['transactions']
     assert first['item_name'] == 'StatTrak™ AK-47 | Redline'
@@ -36,7 +45,7 @@ def test_price_tracker_file_keeps_integer_cents_and_mojibake_repair(tmp_path):
 def test_byte_order_mark_is_stripped(tmp_path):
     svc = _make(tmp_path)
     text = '﻿' + PRICE_TRACKER_HEADER + '\nFracture Case,buy,1,41,41,Steam,2026-08-11,,0\n'
-    _, count, _ = svc.import_csv(text)
+    _, count, _ = _import(svc, text)
     assert count == 1
     assert _only_portfolio(svc)['transactions'][0]['item_name'] == 'Fracture Case'
 
@@ -45,7 +54,7 @@ def test_semicolon_delimiter_is_detected(tmp_path):
     svc = _make(tmp_path)
     text = (PRICE_TRACKER_HEADER.replace(',', ';') + '\n'
             'Kilowatt Case;buy;3;25;75;Steam;2026-08-11;a, b;0\n')
-    _, count, _ = svc.import_csv(text)
+    _, count, _ = _import(svc, text)
     assert count == 1
     txn = _only_portfolio(svc)['transactions'][0]
     assert (txn['item_name'], txn['qty'], txn['price'], txn['note']) == ('Kilowatt Case', 3, 0.25, 'a, b')
@@ -59,7 +68,7 @@ def test_invalid_rows_are_skipped_and_reported_by_line(tmp_path):
             'Bad Price,buy,1,abc,,Steam,2026-08-11,,0\n'
             'Bad Date,buy,1,41,41,Steam,last tuesday,,0\n'
             'Bad Fee,buy,1,41,41,Steam,2026-08-11,,250\n')
-    p, count, errors = svc.import_csv(text)
+    p, count, errors = _import(svc, text)
     assert count == 1
     assert [t['item_name'] for t in p['transactions']] == ['Good Case']
     assert len(errors) == 4
@@ -72,18 +81,50 @@ def test_invalid_rows_are_skipped_and_reported_by_line(tmp_path):
 def test_no_valid_row_creates_no_portfolio(tmp_path):
     svc = _make(tmp_path)
     text = PRICE_TRACKER_HEADER + '\nBad Type,gift,1,41,41,Steam,2026-08-11,,0\n'
-    with pytest.raises(CsvImportError) as raised:
-        svc.import_csv(text, name='should not exist')
-    assert raised.value.errors and 'type' in raised.value.errors[0]
+    with pytest.raises(CommandError) as raised:
+        svc.plan_import(text, name='should not exist')
+    assert raised.value.code == 'no_valid_rows' and 'type' in raised.value.message
     assert svc._data['portfolios'] == {}
-    with pytest.raises(CsvImportError):
-        svc.import_csv('not,a,known,header\n1,2,3,4\n')
+    with pytest.raises(CommandError):
+        svc.plan_import('not,a,known,header\n1,2,3,4\n')
     assert svc._data['portfolios'] == {}
 
 
 def test_unknown_target_portfolio_is_reported_before_row_errors(tmp_path):
     svc = _make(tmp_path)
-    assert svc.import_csv(PRICE_TRACKER_HEADER + '\n', pid='missing') == (None, 0, [])
+    with pytest.raises(CommandError) as raised:
+        svc.plan_import(PRICE_TRACKER_HEADER + '\n', pid='missing')
+    assert (raised.value.code, raised.value.status) == ('portfolio_not_found', 404)
+
+
+def test_plan_writes_nothing_and_runs_only_once(tmp_path):
+    svc = _make(tmp_path)
+    text = (PRICE_TRACKER_HEADER + '\n'
+            'Fracture Case,buy,10,41,410,Steam,2026-08-12,,0\n'
+            'Bad Type,gift,1,41,41,Steam,2026-08-11,,0\n')
+    plan = svc.plan_import(text, name='acct')
+    assert (plan['imported'], plan['skipped'], plan['name']) == (1, 1, 'acct')
+    assert 'line 3 (Bad Type)' in plan['errors'][0]
+    assert svc._data['portfolios'] == {}
+    svc.execute_import(plan['id'])
+    with pytest.raises(CommandError) as raised:
+        svc.execute_import(plan['id'])
+    assert raised.value.code == 'already_executed'
+    assert len(_only_portfolio(svc)['transactions']) == 1
+    with pytest.raises(CommandError) as raised:
+        svc.execute_import('no-such-plan')
+    assert raised.value.code == 'unknown_plan'
+
+
+def test_plan_for_a_portfolio_deleted_meanwhile_is_refused(tmp_path):
+    svc = _make(tmp_path)
+    target = svc.create_portfolio('acct')
+    plan = svc.plan_import(PRICE_TRACKER_HEADER + '\nFracture Case,buy,1,41,41,Steam,2026-08-12,,0\n',
+                           pid=target['id'])
+    svc.delete_portfolio(target['id'])
+    with pytest.raises(CommandError) as raised:
+        svc.execute_import(plan['id'])
+    assert raised.value.code == 'portfolio_not_found'
 
 
 def test_export_then_import_round_trips_every_field(tmp_path):
@@ -105,7 +146,7 @@ def test_export_then_import_round_trips_every_field(tmp_path):
     assert 'Arbitrage' in text.splitlines()[0] and 'Created At' in text.splitlines()[0]
     assert '0.1834' in text                           # 4 decimals, no sub-cent loss
 
-    imported, count, errors = svc.import_csv(text, name='copy')
+    imported, count, errors = _import(svc, text, name='copy')
     assert (count, errors) == (3, [])
 
     def comparable(txns):
@@ -120,7 +161,7 @@ def test_older_export_without_new_columns_still_imports(tmp_path):
     svc = _make(tmp_path)
     old_export = (PRICE_TRACKER_HEADER + '\n'
                   'Fracture Case,buy,10,0.41,4.10,Steam,2026-08-11,,0\n')
-    p, count, _ = svc.import_csv(old_export)
+    p, count, _ = _import(svc, old_export)
     assert count == 1
     txn = p['transactions'][0]
     assert txn['price'] == 0.41                      # decimal point -> real dollars
@@ -130,6 +171,6 @@ def test_older_export_without_new_columns_still_imports(tmp_path):
 def test_fee_percentage_n_a_imports_as_zero(tmp_path):
     svc = _make(tmp_path)
     text = PRICE_TRACKER_HEADER + '\nFracture Case,buy,10,41,410,Steam,2026-08-12,,N/A\n'
-    p, count, errors = svc.import_csv(text, name='acct')
+    p, count, errors = _import(svc, text, name='acct')
     assert (count, errors) == (1, [])
     assert p['transactions'][0]['fee_percent'] == 0

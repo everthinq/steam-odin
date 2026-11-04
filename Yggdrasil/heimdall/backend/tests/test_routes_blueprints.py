@@ -23,7 +23,8 @@ def test_draupnir_blueprint_registers_all_routes():
     rules = _rules_for(bp)
     expected = {
         '/api/draupnir/portfolios',
-        '/api/draupnir/portfolios/import',
+        '/api/draupnir/portfolios/import/plan',
+        '/api/draupnir/portfolios/import/plans/<plan_id>/execute',
         '/api/draupnir/portfolios/combined',
         '/api/draupnir/portfolios/arbitrage',
         '/api/draupnir/portfolios/<pid>/export',
