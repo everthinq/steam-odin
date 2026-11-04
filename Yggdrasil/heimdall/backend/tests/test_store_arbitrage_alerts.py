@@ -5,7 +5,10 @@ import time
 from notifications import telegram_visible_length
 from store_arbitrage_service import (INDICATOR_MARKET, STORE_JOB, SIDE_INSTANT, SIDE_LISTING, StoreArbitrageService,
                                      alert_candidates, fit_alert, indicator_of, item_row, make_offer,
-                                     pulse_link, render_alert, signal_percent)
+                                     pulse_link, render_alert, signal_percent, BEST_MARKET, PAYOUT_CASH,
+                                     PAYOUT_CASH_OR_WALLET, judge_row, owned_of, profile_by_id, profiles_of,
+                                     sell_offer, settings_changes)
+import pytest
 from test_store_arbitrage_service import (FEES, FLICKSHOT, MARKETS, NAME_TAG, TODAY, FakeCatalogue, FakeDraupnir,
                                           FakeHuginn, FakeShop, _indexes)
 
@@ -500,3 +503,67 @@ def test_a_board_built_inside_the_store_job_queues_its_downloads_as_the_job(tmp_
     service._queue_warm('token', [('Buff', SIDE_LISTING)])
     service._queue_warm('token', [('Steam', SIDE_LISTING)], job='other')
     assert [entry[3] for entry in service._queue] == [STORE_JOB, 'other']
+
+
+# ---- one rule for the board, its count and Telegram (Phase 2, C1 to C6) -------------------------
+
+def test_the_indicator_is_near_from_ninety_percent_of_the_threshold():
+    assert _row_with_csmoney(0.95)['indicator']['near']          # 96%: near, no signal
+    assert not _row_with_csmoney(0.99)['indicator']['near']      # 100%: the signal itself
+    assert not _row_with_csmoney(0.50)['indicator']['near']      # 51%: far
+
+
+def test_profiles_start_with_best_market_then_the_indicator_market():
+    markets = [{'id': 'Buff', 'display': 'Buff163', 'instant': True, 'listings': True},
+               {'id': INDICATOR_MARKET, 'display': 'CSMoney (Trade)', 'instant': True, 'listings': False}]
+    ids = [p['id'] for p in profiles_of(markets)]
+    assert ids == ['best|instant', 'best|listing', 'CsMoneyTrade|instant', 'Buff|instant', 'Buff|listing']
+    profiles = profiles_of(markets)
+    assert profile_by_id(profiles, 'gone|instant')['id'] == 'CsMoneyTrade|instant'
+
+
+def test_sell_offer_is_the_one_rule_and_alerts_use_it():
+    row = _row_with_csmoney(0.99)
+    best = sell_offer(row, BEST_MARKET, None, PAYOUT_CASH_OR_WALLET)
+    assert best and (not best['balance'] or best['market'] == 'Steam')
+    cash = sell_offer(row, BEST_MARKET, None, PAYOUT_CASH)
+    assert cash is None or not cash['balance']
+    found = alert_candidates([row])
+    assert found and found[0]['sell'] == best
+
+
+def test_judge_row_gives_profit_only_for_a_real_price():
+    row = _row_with_csmoney(0.99)
+    judge_row(row, {'market': INDICATOR_MARKET, 'side': SIDE_INSTANT}, 'any')
+    assert row['sell']['market'] == INDICATOR_MARKET and row['sell_profit'] == 0.0
+    row['offers'][0]['suspicious'] = True
+    judge_row(row, {'market': row['offers'][0]['market'], 'side': row['offers'][0]['side']}, 'any')
+    assert row['sell'] and row['sell_profit'] is None and row['sell_pct'] is None
+
+
+def test_owned_comes_from_the_last_inventory_scan():
+    by_hash = {'Sticker | Flickshot': {'count': 2, 'instances': [
+        {'account_name': 'a', 'collection': 'C', 'steam_id': '1'}, {'account_name': 'b'}]}}
+    assert owned_of(by_hash, 'Sticker | Flickshot') == {'count': 2, 'instances': [
+        {'account_name': 'a', 'collection': 'C'}, {'account_name': 'b', 'collection': ''}]}
+    assert owned_of(by_hash, 'other') is None and owned_of(None, 'x') is None
+
+
+def test_the_board_judges_rows_under_the_profile_and_counts_the_profitable(tmp_path):
+    service = _warmed(_service(tmp_path))
+    service.huginn.scan = {'by_hash': {'Sticker | Flickshot': {'count': 1, 'instances': [{'account_name': 'a'}]}}}
+    board = service.board('token', ['Buff', 'Steam', 'LisSkins'], {}, profile_id='best|listing')
+    assert board['profile']['id'] == 'best|listing' and board['inventory_scanned']
+    flickshot = next(r for r in board['rows'] if r['name'] == 'Sticker | Flickshot')
+    assert flickshot['sell']['side'] == SIDE_LISTING and flickshot['owned']['count'] == 1
+    assert board['summary']['profitable'] == sum(1 for r in board['rows']
+                                                 if not r['unconfirmed'] and (r['sell_profit'] or 0) > 0)
+
+
+def test_the_settings_command_checks_every_value():
+    assert settings_changes({'signal_pct': '95,5'}) == {'store_arbitrage_signal_pct': 95.5}
+    assert settings_changes({'alerts_enabled': False}) == {'store_arbitrage_alerts_enabled': False}
+    assert settings_changes({}) == {}
+    for bad in ({'signal_pct': 0}, {'signal_pct': 5000}, {'signal_pct': 'x'}, {'alerts_enabled': 'yes'}):
+        with pytest.raises(ValueError):
+            settings_changes(bad)

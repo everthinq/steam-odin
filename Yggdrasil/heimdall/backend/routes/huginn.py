@@ -20,6 +20,7 @@ from notifications import notification_channel, send_notification
 import pulse_views
 from pulse_feed import ACTIVE_MINUTES, NotActive
 from storage_deposit import CommandError
+from store_arbitrage_service import settings_changes
 
 bp = Blueprint('huginn', __name__)
 logger = logging.getLogger(__name__)
@@ -1324,20 +1325,25 @@ def store_arbitrage_board():
     settings = ctx.settings_manager.get_settings()
     markets = [m for m in (request.args.get('markets') or '').split(',') if m]
     try:
-        return jsonify(ctx.store_arbitrage_service.board(settings.get('tradeon_token', ''), markets, settings))
+        return jsonify(ctx.store_arbitrage_service.board(
+            settings.get('tradeon_token', ''), markets, settings, profile_id=request.args.get('profile'),
+            cash_only=request.args.get('cash_only') in ('1', 'true')))
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
 
 @bp.route('/api/huginn/store-arbitrage/refresh', methods=['POST'])
 def store_arbitrage_refresh():
-    """Pull the board's markets again now (the Refresh button); body {markets: [ids]} or none
-    for the default set. A side pulled in the last minute is not pulled again."""
+    """Pull the board's markets again now (the Refresh button); body {profile} (the markets a
+    board under that profile prices), {markets: [ids]}, or none for the default set. A side
+    pulled in the last minute is not pulled again."""
     settings = ctx.settings_manager.get_settings()
     body = request.get_json(silent=True) or {}
     markets = body.get('markets') if isinstance(body.get('markets'), list) else None
     markets = [m for m in (markets or []) if isinstance(m, str)]
-    result = ctx.store_arbitrage_service.refresh(settings.get('tradeon_token', ''), markets, settings)
+    profile = body.get('profile') if isinstance(body.get('profile'), str) else None
+    result = ctx.store_arbitrage_service.refresh(settings.get('tradeon_token', ''), markets, settings,
+                                                 profile_id=profile)
     return jsonify(result), (400 if result.get('error') else 200)
 
 
@@ -1346,6 +1352,22 @@ def store_arbitrage_send_alerts():
     """Post today's profitable store items to the Huginn Telegram bot now ("Send now")."""
     result = ctx.store_arbitrage_service.send_alerts(ctx.settings_manager.get_settings(), daily=True, force=True)
     return jsonify(result), (200 if result['sent'] else 400)
+
+
+@bp.route('/api/huginn/store-arbitrage/settings', methods=['POST'])
+def store_arbitrage_settings():
+    """Change the tab's own settings, checked: body {signal_pct} (above 0, at most
+    SIGNAL_PCT_MAX) and/or {alerts_enabled: true|false}. Answers the new options."""
+    try:
+        changes = settings_changes(request.get_json(silent=True) or {})
+    except ValueError as e:
+        code, message = e.args
+        return jsonify({'error': message, 'code': code}), 400
+    if not changes:
+        return jsonify({'error': 'nothing to change', 'code': 'nothing_to_change'}), 400
+    if not ctx.settings_manager.save_settings(changes):
+        return jsonify({'error': 'the settings could not be saved', 'code': 'not_saved'}), 500
+    return jsonify(ctx.store_arbitrage_service.options(ctx.settings_manager.get_settings()))
 
 
 @bp.route('/api/huginn/store-arbitrage/options', methods=['GET'])

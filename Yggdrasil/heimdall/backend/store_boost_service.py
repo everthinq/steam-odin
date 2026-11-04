@@ -98,6 +98,10 @@ PREFLAG_MAX_PER_CHECK = 10          # flagged items queued per hourly check, str
 LEVELS = ('unknown', 'calm', 'fading', 'watch', 'second_wave', 'boost')
 SEVERITY = {level: index for index, level in enumerate(LEVELS)}
 ACTIVE_LEVELS = ('watch', 'boost', 'fading', 'second_wave')
+# The levels at which buying in the store is recommended (fading means sell, never buy).
+BUY_LEVELS = ('watch', 'boost', 'second_wave')
+# The page shows a ratio green from this many times its threshold (amber from the threshold).
+STRONG_RATIO_FACTOR = 1.6
 
 # Case odds by rarity tier (Valve's published odds: High Grade 80%, Remarkable 16%, Exotic 3.2%,
 # Extraordinary 0.64%), shared equally inside a tier, rescaled to the tiers a capsule has.
@@ -399,6 +403,23 @@ def _escape(text):
 
 def _dollars(value):
     return f'${value:.2f}' if value is not None else '?'
+
+
+def level_hints():
+    """What each level means, written from the detector's own thresholds (the page shows them)."""
+    hold = round(HOLD_SHARE_OF_PEAK * 100)
+    return {
+        'boost': (f'Steam price at least {BOOST_PRICE_RATIO:g}× its usual with at least {BOOST_SALES_RATIO:g}× the usual '
+                  f'sales, or still near the peak of a boost. Bought in the store today, copies unlock in '
+                  f'{TRADE_HOLD_DAYS} days.'),
+        'second_wave': f'After a boost peaked, the price climbed {SECOND_WAVE_RISE:g}× off its low again.',
+        'watch': (f'Early sign: price at least {WATCH_PRICE_RATIO:g}× its usual with at least {WATCH_SALES_RATIO:g}× '
+                  'the usual sales.'),
+        'fading': (f'The boost turned: under {hold}% of its peak but still above the usual price. Sell what you hold '
+                   'before third-party markets follow Steam down.'),
+        'calm': 'Nothing unusual on Steam.',
+        'unknown': f'Not enough sales in the last {BASELINE_FROM_DAYS} days to know the usual price.',
+    }
 
 
 ALERT_TITLES = {
@@ -1144,7 +1165,8 @@ class StoreBoostService:
         queued = name in snapshot['priority']
         analysis = entry.get('analysis') or {}
         points = [tuple(point) for point in entry.get('points') or []]
-        return {'name': name, 'level': analysis.get('level') or ('unknown' if entry else None),
+        level = analysis.get('level') or ('unknown' if entry else None)
+        return {'name': name, 'level': level, 'active': level in ACTIVE_LEVELS,
                 'analysis': analysis or None, 'read_at': entry.get('read_at'), 'error': entry.get('error'),
                 'spark': spark(points, int(now)) if points and with_spark else [], 'pulse': quote, 'queued': queued,
                 'reading': snapshot['reading'] == name}
@@ -1165,6 +1187,7 @@ class StoreBoostService:
             offer = confirm.get(item['store_name'])
             row['confirm'] = offer
             row['confirmed'] = bool(offer and offer['net'] >= item['usd'])
+            row['recommend_buy'] = row['level'] in BUY_LEVELS
             capsule = contents.get(item['entry'])
             if capsule:
                 chances = item_chances(capsule['items'])
@@ -1177,11 +1200,17 @@ class StoreBoostService:
                 inside.sort(key=lambda summary: (SEVERITY.get(summary['level'] or 'unknown', 0),
                                            (summary['analysis'] or {}).get('price_ratio') or 0), reverse=True)
                 opening = self._opening(item['entry'], snapshot)
+                inside_level = max((summary['level'] or 'unknown' for summary in inside),
+                                   key=lambda level: SEVERITY.get(level, 0), default='unknown')
                 row['contents'] = {'items': inside, 'opening': opening,
                                    'opening_beats_store': bool(opening['buff'] and opening['buff']['value'] > item['usd']),
-                                   'level': max((summary['level'] or 'unknown' for summary in inside),
-                                                key=lambda level: SEVERITY.get(level, 0), default='unknown')}
+                                   'level': inside_level, 'level_active': inside_level in ACTIVE_LEVELS,
+                                   # the stickers or patches inside that move, most urgent first
+                                   'moving': [summary['name'] for summary in inside if summary['active']]}
                 row['confirmed'] = row['confirmed'] or row['contents']['opening_beats_store']
+            # "Moving now": its own level, one inside, or pulse's hourly pre-flag.
+            row['moving'] = bool(row['active'] or (row.get('contents') or {}).get('level_active')
+                                 or (row.get('pulse') or {}).get('preflag'))
             rows.append(row)
 
         def rank(row):
@@ -1194,9 +1223,9 @@ class StoreBoostService:
         for row in rows:
             if row['level'] in summary:
                 summary[row['level']] += 1
-        summary['capsule_signals'] = sum(1 for row in rows if (row.get('contents') or {}).get('level') in ('watch', 'boost', 'second_wave'))
+        summary['capsule_signals'] = sum(1 for row in rows if (row.get('contents') or {}).get('level') in BUY_LEVELS)
         summary['preflagged'] = sum(1 for row in rows if (row.get('pulse') or {}).get('preflag'))
-        summary['confirmed'] = sum(1 for row in rows if row['confirmed'] and row['level'] in ('watch', 'boost', 'second_wave'))
+        summary['confirmed'] = sum(1 for row in rows if row['confirmed'] and row['recommend_buy'])
         with self._alert_lock:
             alert_log = list(self._alerts.get('log') or [])
         with self._lock:
@@ -1234,8 +1263,13 @@ class StoreBoostService:
                            'hold_share': HOLD_SHARE_OF_PEAK, 'second_wave_rise': SECOND_WAVE_RISE,
                            'preflag': PREFLAG_RATIO, 'preflag_listing': PREFLAG_LISTING_RATIO, 'store_item_every_hours': STORE_ITEM_EVERY // HOUR,
                            'active_every_hours': ACTIVE_EVERY // HOUR,
-                           'content_every_hours': CONTENT_EVERY // HOUR},
+                           'content_every_hours': CONTENT_EVERY // HOUR,
+                           'watch_min_sales': WATCH_MIN_SALES, 'boost_min_sales': BOOST_MIN_SALES,
+                           'baseline_from_days': BASELINE_FROM_DAYS, 'baseline_to_days': BASELINE_TO_DAYS,
+                           'strong_ratio_factor': STRONG_RATIO_FACTOR},
+            'level_hints': level_hints(),
             'trade_hold_days': TRADE_HOLD_DAYS,
+            'tradable_if_bought_now': now + TRADE_HOLD_DAYS * DAY,
             'has_token': bool(settings.get('tradeon_token')),
         }
 

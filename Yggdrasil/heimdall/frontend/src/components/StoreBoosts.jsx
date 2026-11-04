@@ -1,4 +1,4 @@
-import { Fragment, useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { Fragment, createContext, useContext, useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import {
     Search, Loader2, ShoppingCart, ChevronRight, ChevronDown, RefreshCw, Rocket, Eye, TrendingDown, Repeat,
@@ -42,28 +42,26 @@ const when = (epochSeconds, withTime = true) => (epochSeconds
     : '—');
 
 // The levels, most urgent first. Emerald: worth buying in the store now; red: time to sell.
+// What each level means comes from the backend (level_hints, written from its own thresholds).
 const LEVELS = {
-    boost: { label: 'Boost', Icon: Rocket, chip: 'border-emerald-400/60 bg-emerald-500/15 text-emerald-200', line: '#34d399',
-        hint: 'Steam price at least 2× its usual with at least 3× the usual sales, or still near the peak of a boost. Bought in the store today, copies unlock in 7 days.' },
-    second_wave: { label: 'Second wave', Icon: Repeat, chip: 'border-sky-400/60 bg-sky-500/15 text-sky-200', line: '#38bdf8',
-        hint: 'After a boost peaked, the price climbed 1.3× off its low again.' },
-    watch: { label: 'Watch', Icon: Eye, chip: 'border-amber-400/60 bg-amber-500/15 text-amber-200', line: '#fbbf24',
-        hint: 'Early sign: price at least 1.2× its usual with at least 3× the usual sales.' },
-    fading: { label: 'Fading', Icon: TrendingDown, chip: 'border-red-400/50 bg-red-500/10 text-red-300', line: '#f87171',
-        hint: 'The boost turned: under 70% of its peak but still above the usual price. Sell what you hold before third-party markets follow Steam down.' },
-    calm: { label: 'Calm', Icon: null, chip: 'border-white/10 text-slate-500', line: '#94a3b8', hint: 'Nothing unusual on Steam.' },
-    unknown: { label: 'Too few sales', Icon: null, chip: 'border-white/10 text-slate-600', line: '#94a3b8',
-        hint: 'Not enough sales in the last 30 days to know the usual price.' },
+    boost: { label: 'Boost', Icon: Rocket, chip: 'border-emerald-400/60 bg-emerald-500/15 text-emerald-200', line: '#34d399' },
+    second_wave: { label: 'Second wave', Icon: Repeat, chip: 'border-sky-400/60 bg-sky-500/15 text-sky-200', line: '#38bdf8' },
+    watch: { label: 'Watch', Icon: Eye, chip: 'border-amber-400/60 bg-amber-500/15 text-amber-200', line: '#fbbf24' },
+    fading: { label: 'Fading', Icon: TrendingDown, chip: 'border-red-400/50 bg-red-500/10 text-red-300', line: '#f87171' },
+    calm: { label: 'Calm', Icon: null, chip: 'border-white/10 text-slate-500', line: '#94a3b8' },
+    unknown: { label: 'Too few sales', Icon: null, chip: 'border-white/10 text-slate-600', line: '#94a3b8' },
 };
-const ACTIVE = new Set(['boost', 'second_wave', 'watch', 'fading']);
+// The board's thresholds and level hints, for the pieces deep in the table (one source: the backend).
+const BoardContext = createContext({ thresholds: {}, hints: {} });
 const levelOf = (level) => LEVELS[level] || null;
 
 const LevelChip = ({ level, small = false }) => {
+    const { hints } = useContext(BoardContext);
     const meta = levelOf(level);
     if (!meta) return <span className="text-[11px] text-slate-600" title="Steam's price history has not been read yet">not read yet</span>;
     const { Icon } = meta;
     return (
-        <span title={meta.hint}
+        <span title={hints[level]}
             className={`inline-flex items-center gap-1 rounded-md border whitespace-nowrap ${small ? 'px-1 text-[10px]' : 'px-1.5 py-0.5 text-[11px] font-semibold'} ${meta.chip}`}>
             {Icon && <Icon size={small ? 10 : 12} />}{meta.label}
         </span>
@@ -186,8 +184,13 @@ const Stat = ({ label, value, sub, tone = 'text-slate-100' }) => (
     </div>
 );
 
-const ratioTone = (ratio, threshold) => (ratio == null ? 'text-slate-500'
-    : ratio >= threshold * 1.6 ? 'text-emerald-300' : ratio >= threshold ? 'text-amber-300' : 'text-slate-300');
+const ratioTone = (ratio, threshold, strongFactor) => (ratio == null || threshold == null ? 'text-slate-500'
+    : ratio >= threshold * strongFactor ? 'text-emerald-300' : ratio >= threshold ? 'text-amber-300' : 'text-slate-300');
+// A price or sales ratio's colour: amber from the watch threshold, green from strong_ratio_factor times it.
+const makeTones = (thresholds) => ({
+    price: (ratio) => ratioTone(ratio, thresholds.watch_price, thresholds.strong_ratio_factor),
+    sales: (ratio) => ratioTone(ratio, thresholds.watch_sales, thresholds.strong_ratio_factor),
+});
 
 // Everything known about one item, shown under its row.
 // Pin an item: shown on top, read on the same schedule as every other item (settings store_boost_tracked).
@@ -200,7 +203,8 @@ const TrackButton = ({ name, tracking, onTrack, size = 12 }) => (
     </button>
 );
 
-const Detail = ({ row, now, tradeHoldDays, onRead, owned, tracking, onTrack }) => {
+const Detail = ({ row, now, tradeHoldDays, tradableAt, onRead, owned, tracking, onTrack }) => {
+    const tones = makeTones(useContext(BoardContext).thresholds);
     const [detail, setDetail] = useState(null);
     const [failed, setFailed] = useState(false);
     useEffect(() => {
@@ -214,7 +218,6 @@ const Detail = ({ row, now, tradeHoldDays, onRead, owned, tracking, onTrack }) =
     const analysis = row.analysis || {};
     const pulse = row.pulse || {};
     const contents = row.contents;
-    const unlock = now ? now + tradeHoldDays * 86400 : null;
     return (
         <div className="px-3 pb-4 pt-1 space-y-3 bg-black/20 border-t border-white/5">
             <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_300px]">
@@ -235,15 +238,15 @@ const Detail = ({ row, now, tradeHoldDays, onRead, owned, tracking, onTrack }) =
                 <div className="rounded-lg border border-white/10 bg-slate-950/60 p-3 grid grid-cols-2 gap-x-4 gap-y-3 content-start text-sm">
                     <Stat label="Usual price" value={money(analysis.usual_price, analysis.usual_price < 1 ? 3 : 2)} sub="median day, 30 to 3 days ago" />
                     <Stat label="Now (6 hours)" value={money(analysis.price_6h, analysis.price_6h < 1 ? 3 : 2)} sub={analysis.price_ratio ? `${times(analysis.price_ratio)} usual` : null}
-                        tone={ratioTone(analysis.price_ratio, 1.2)} />
+                        tone={tones.price(analysis.price_ratio)} />
                     <Stat label="Sold in 24 hours" value={analysis.sales_24h ?? '—'} sub={analysis.usual_sales != null ? `usual ${analysis.usual_sales} a day` : null}
-                        tone={ratioTone(analysis.sales_ratio, 3)} />
+                        tone={tones.sales(analysis.sales_ratio)} />
                     <Stat label="Sales vs usual" value={times(analysis.sales_ratio)} sub={analysis.sales_6h != null ? `${analysis.sales_6h} in the last 6 hours` : null}
-                        tone={ratioTone(analysis.sales_ratio, 3)} />
+                        tone={tones.sales(analysis.sales_ratio)} />
                     <Stat label="Peak" value={analysis.peak ? money(analysis.peak) : '—'} sub={analysis.peak_at ? when(analysis.peak_at, false) : 'no boost in 14 days'} />
                     <Stat label="Low since peak" value={analysis.low_after_peak ? money(analysis.low_after_peak) : '—'} />
                     <Stat label="Rise started" value={analysis.started_at ? when(analysis.started_at) : '—'} />
-                    <Stat label="Bought now, tradable" value={unlock ? when(unlock) : '—'} sub={`after the ${tradeHoldDays}-day hold`} tone="text-amber-200" />
+                    <Stat label="Bought now, tradable" value={tradableAt ? when(tradableAt) : '—'} sub={`after the ${tradeHoldDays}-day hold`} tone="text-amber-200" />
                     <div className="col-span-2 border-t border-white/5 pt-2 grid grid-cols-2 gap-x-4 gap-y-2">
                         <Stat label="Steam lowest listing" value={money(pulse.listing)} sub={pulse.listing_count != null ? `${pulse.listing_count} listed` : null} />
                         <Stat label="Steam buy order" value={money(pulse.buy)} sub={pulse.buy_count != null ? `${pulse.buy_count} orders` : null} />
@@ -276,21 +279,22 @@ const Detail = ({ row, now, tradeHoldDays, onRead, owned, tracking, onTrack }) =
 // A capsule's stickers (or a patch pack's patches): each one's level, odds and price, and what one
 // capsule is worth opened.
 const Contents = ({ row, contents, now, onRead, tracking, onTrack }) => {
+    const tones = makeTones(useContext(BoardContext).thresholds);
     const buff = contents.opening?.buff;
     const steam = contents.opening?.steam_buy;
-    const active = contents.items.filter((item) => ACTIVE.has(item.level));
+    const active = contents.moving;
     return (
         <div className="rounded-lg border border-white/10 bg-slate-950/60">
             <div className="flex flex-wrap items-center gap-x-6 gap-y-2 px-3 py-2 border-b border-white/10">
                 <span className="flex items-center gap-1.5 text-[10px] font-bold tracking-widest uppercase text-slate-400"><Package size={12} /> Inside: {contents.items.length}</span>
                 <span className="text-xs text-slate-400" title="The chance of each sticker times its price, summed: what one capsule is worth opened">
-                    Opening value: <b className={`tabular-nums ${buff && buff.value > row.cost ? 'text-emerald-300' : 'text-slate-200'}`}>{buff ? money(buff.value) : '—'}</b> on Buff163 listings
+                    Opening value: <b className={`tabular-nums ${contents.opening_beats_store ? 'text-emerald-300' : 'text-slate-200'}`}>{buff ? money(buff.value) : '—'}</b> on Buff163 listings
                     {buff && buff.priced_share < 0.99 && <span className="text-slate-500"> ({Math.round(buff.priced_share * 100)}% of the odds priced)</span>}
                     {' · '}<b className="tabular-nums text-slate-200">{steam ? money(steam.value) : '—'}</b> on Steam buy orders
                     {' · store '}{money(row.cost)}
                 </span>
                 {contents.opening_beats_store && <span className="text-xs text-emerald-300 inline-flex items-center gap-1"><ShieldCheck size={12} /> opening beats the store price</span>}
-                {active.length > 0 && <span className="text-xs text-amber-200">{active.length} moving: {active.slice(0, 3).map((item) => item.name.replace(/^(Sticker|Patch) \| /, '')).join(', ')}</span>}
+                {active.length > 0 && <span className="text-xs text-amber-200">{active.length} moving: {active.slice(0, 3).map((name) => name.replace(/^(Sticker|Patch) \| /, '')).join(', ')}</span>}
             </div>
             <div className="max-h-80 overflow-auto">
                 <table className="w-full text-xs">
@@ -310,7 +314,7 @@ const Contents = ({ row, contents, now, onRead, tracking, onTrack }) => {
                         {contents.items.map((item) => {
                             const analysis = item.analysis || {};
                             return (
-                                <tr key={item.name} className={`border-t border-white/5 ${ACTIVE.has(item.level) ? 'bg-amber-500/[0.04]' : ''}`}>
+                                <tr key={item.name} className={`border-t border-white/5 ${item.active ? 'bg-amber-500/[0.04]' : ''}`}>
                                     <td className="py-1 pl-3">
                                         <span className="flex items-center gap-2 min-w-0">
                                             <img src={imageOf(item.name)} alt="" loading="lazy" className="w-7 h-5 object-contain shrink-0" />
@@ -325,9 +329,9 @@ const Contents = ({ row, contents, now, onRead, tracking, onTrack }) => {
                                     <td className="pl-3"><LevelChip level={item.level} small /></td>
                                     <td className="text-right tabular-nums">
                                         <span className="text-slate-200">{money(analysis.price_6h, analysis.price_6h < 1 ? 3 : 2)}</span>
-                                        {analysis.price_ratio != null && <span className={`ml-1 ${ratioTone(analysis.price_ratio, 1.2)}`}>{times(analysis.price_ratio)}</span>}
+                                        {analysis.price_ratio != null && <span className={`ml-1 ${tones.price(analysis.price_ratio)}`}>{times(analysis.price_ratio)}</span>}
                                     </td>
-                                    <td className={`text-right tabular-nums ${ratioTone(analysis.sales_ratio, 3)}`}>{analysis.sales_ratio != null ? times(analysis.sales_ratio) : '—'}</td>
+                                    <td className={`text-right tabular-nums ${tones.sales(analysis.sales_ratio)}`}>{analysis.sales_ratio != null ? times(analysis.sales_ratio) : '—'}</td>
                                     <td className="text-right tabular-nums text-slate-300">{money(item.pulse?.buff)}</td>
                                     <td className="text-right pr-3 whitespace-nowrap text-slate-500">
                                         {item.reading ? <Loader2 size={11} className="inline animate-spin" /> : ago(item.read_at, now) || 'never'}
@@ -378,7 +382,7 @@ const READER_STATUS = {
 };
 
 const VIEWS = [
-    { id: 'moving', label: 'Moving now', test: (row) => ACTIVE.has(row.level) || ACTIVE.has(row.contents?.level) || row.pulse?.preflag },
+    { id: 'moving', label: 'Moving now', test: (row) => row.moving },
     { id: 'capsules', label: 'Capsules', test: (row) => Boolean(row.contents) },
     { id: 'all', label: 'All', test: () => true },
 ];
@@ -496,6 +500,8 @@ const StoreBoosts = () => {
     const reader = data.reader;
     const alerts = data.alerts;
     const thresholds = data.thresholds;
+    const tones = makeTones(thresholds);
+    const board = { thresholds, hints: data.level_hints || {} };
     const [readerLabel, readerTone] = READER_STATUS[reader.status] || [reader.status, 'text-slate-300'];
     const toggle = (name) => setOpen((previous) => {
         const next = new Set(previous);
@@ -504,6 +510,7 @@ const StoreBoosts = () => {
     });
 
     return (
+        <BoardContext.Provider value={board}>
         <div>
             {/* The alarm, the Steam reader, the pulse check and the alerts. */}
             <div className="grid gap-3 p-3 md:grid-cols-2 xl:grid-cols-4 border-b border-white/10">
@@ -515,7 +522,7 @@ const StoreBoosts = () => {
                             const { Icon } = meta;
                             const count = summary[level] || 0;
                             return (
-                                <div key={level} title={meta.hint}
+                                <div key={level} title={board.hints[level]}
                                     className={`rounded-md border px-2 py-1.5 ${count ? meta.chip : 'border-white/5 text-slate-500'}`}>
                                     <div className="flex items-center gap-1 text-[11px]"><Icon size={12} /> {meta.label}</div>
                                     <div className="text-xl font-bold tabular-nums">{count}</div>
@@ -646,17 +653,17 @@ const StoreBoosts = () => {
                                         </span>
                                         <span className="flex flex-col items-start gap-0.5">
                                             <LevelChip level={item.level} />
-                                            {analysis.started_at && ACTIVE.has(item.level) && <span className="text-[10px] text-slate-500">since {when(analysis.started_at)}</span>}
+                                            {analysis.started_at && item.active && <span className="text-[10px] text-slate-500">since {when(analysis.started_at)}</span>}
                                         </span>
                                         <span className="text-right tabular-nums leading-tight" title="Steam's sales-weighted price of the last 6 hours, against its usual">
                                             <span className="block text-slate-100 text-base">{money(analysis.price_6h, analysis.price_6h < 1 ? 3 : 2)}</span>
-                                            <span className={`block text-[11px] ${ratioTone(analysis.price_ratio, 1.2)}`}>
+                                            <span className={`block text-[11px] ${tones.price(analysis.price_ratio)}`}>
                                                 {analysis.price_ratio != null ? `${times(analysis.price_ratio)} usual ${money(analysis.usual_price, analysis.usual_price < 1 ? 3 : 2)}` : ''}
                                             </span>
                                         </span>
                                         <span className="text-right tabular-nums leading-tight" title="Sales in the last 24 hours, against the usual a day">
                                             <span className="block text-slate-200 text-base">{analysis.sales_24h ?? '—'} sold</span>
-                                            <span className={`block text-[11px] ${ratioTone(analysis.sales_ratio, 3)}`}>{analysis.sales_ratio != null ? `${times(analysis.sales_ratio)} usual` : ''}</span>
+                                            <span className={`block text-[11px] ${tones.sales(analysis.sales_ratio)}`}>{analysis.sales_ratio != null ? `${times(analysis.sales_ratio)} usual` : ''}</span>
                                         </span>
                                         <span className="text-right tabular-nums leading-tight text-[11px] text-slate-400" title="Buff163's lowest listing and Steam's highest buy order (pulse)">
                                             <span className="block">Buff {money(item.pulse?.buff)}</span>
@@ -672,7 +679,7 @@ const StoreBoosts = () => {
                                             <PinOff size={14} />
                                         </button>
                                     </div>
-                                    {isOpen && <Detail row={item} now={now} tradeHoldDays={data.trade_hold_days} onRead={readNow}
+                                    {isOpen && <Detail row={item} now={now} tradeHoldDays={data.trade_hold_days} tradableAt={data.tradable_if_bought_now} onRead={readNow}
                                         owned={byHash?.[item.name] || null} tracking={tracking} onTrack={track} />}
                                 </div>
                             );
@@ -748,7 +755,7 @@ const StoreBoosts = () => {
                         const analysis = row.analysis || {};
                         const isOpen = open.has(row.name);
                         const insideLevel = row.contents?.level;
-                        const movingInside = (row.contents?.items || []).filter((item) => ACTIVE.has(item.level));
+                        const movingInside = row.contents?.moving || [];
                         const owned = byHash?.[row.name] || null;
                         return (
                             <Fragment key={row.entry}>
@@ -771,28 +778,28 @@ const StoreBoosts = () => {
                                                 {row.store_name && row.store_name !== row.name ? ` · the store calls it ${row.store_name}` : ''}
                                                 {owned ? ` · you hold ${owned.count}` : ''}
                                                 {movingInside.length > 0 && (
-                                                    <span className="text-amber-300"> · {movingInside.length} inside moving: {movingInside.slice(0, 2).map((item) => item.name.replace(/^(Sticker|Patch) \| /, '')).join(', ')}</span>
+                                                    <span className="text-amber-300"> · {movingInside.length} inside moving: {movingInside.slice(0, 2).map((name) => name.replace(/^(Sticker|Patch) \| /, '')).join(', ')}</span>
                                                 )}
                                             </span>
                                         </span>
                                     </span>
                                     <span className="flex flex-col items-start gap-0.5">
                                         <LevelChip level={row.level} />
-                                        {insideLevel && ACTIVE.has(insideLevel) && insideLevel !== row.level && (
+                                        {row.contents?.level_active && insideLevel !== row.level && (
                                             <span className="text-[10px] text-slate-400 inline-flex items-center gap-1">inside: <LevelChip level={insideLevel} small /></span>
                                         )}
-                                        {analysis.started_at && ACTIVE.has(row.level) && <span className="text-[10px] text-slate-500">since {when(analysis.started_at)}</span>}
+                                        {analysis.started_at && row.active && <span className="text-[10px] text-slate-500">since {when(analysis.started_at)}</span>}
                                     </span>
                                     <span className="text-right tabular-nums text-slate-200">{money(row.cost)}</span>
                                     <span className="text-right tabular-nums leading-tight">
                                         <span className="block text-slate-100">{money(analysis.price_6h, analysis.price_6h < 1 ? 3 : 2)}</span>
-                                        <span className={`block text-[11px] ${ratioTone(analysis.price_ratio, 1.2)}`}>
+                                        <span className={`block text-[11px] ${tones.price(analysis.price_ratio)}`}>
                                             {analysis.price_ratio != null ? `${times(analysis.price_ratio)} usual` : row.pulse?.listing ? `listed ${money(row.pulse.listing)}` : ''}
                                         </span>
                                     </span>
                                     <span className="text-right tabular-nums leading-tight">
                                         <span className="block text-slate-200">{analysis.sales_24h ?? '—'}</span>
-                                        <span className={`block text-[11px] ${ratioTone(analysis.sales_ratio, 3)}`}>{analysis.sales_ratio != null ? `${times(analysis.sales_ratio)} usual` : ''}</span>
+                                        <span className={`block text-[11px] ${tones.sales(analysis.sales_ratio)}`}>{analysis.sales_ratio != null ? `${times(analysis.sales_ratio)} usual` : ''}</span>
                                     </span>
                                     <span className="pl-4"><Spark spark={row.spark} cost={row.cost} usual={analysis.usual_price} level={row.level} /></span>
                                     <span className="text-[11px] leading-tight">
@@ -815,13 +822,13 @@ const StoreBoosts = () => {
                                     <span className="text-right" onClick={(event) => event.stopPropagation()}>
                                         {row.definition_index != null && (
                                             <Link to={`/store-catalogue/buy/${encodeURIComponent(row.entry)}`} title={`Buy ${row.name} on any of your accounts (guarded, dry run first)`}
-                                                className={`inline-flex items-center gap-1 px-2 py-0.5 rounded border text-xs ${ACTIVE.has(row.level) && row.level !== 'fading' ? 'border-emerald-500/50 text-emerald-200 hover:bg-emerald-500/10' : 'border-amber-500/30 text-amber-200 hover:bg-amber-500/10'}`}>
+                                                className={`inline-flex items-center gap-1 px-2 py-0.5 rounded border text-xs ${row.recommend_buy ? 'border-emerald-500/50 text-emerald-200 hover:bg-emerald-500/10' : 'border-amber-500/30 text-amber-200 hover:bg-amber-500/10'}`}>
                                                 <ShoppingCart size={11} /> Buy
                                             </Link>
                                         )}
                                     </span>
                                 </div>
-                                {isOpen && <Detail row={row} now={now} tradeHoldDays={data.trade_hold_days} onRead={readNow} owned={owned} tracking={tracking} onTrack={track} />}
+                                {isOpen && <Detail row={row} now={now} tradeHoldDays={data.trade_hold_days} tradableAt={data.tradable_if_bought_now} onRead={readNow} owned={owned} tracking={tracking} onTrack={track} />}
                             </Fragment>
                         );
                     })}
@@ -832,6 +839,7 @@ const StoreBoosts = () => {
                 {' '}A recommendation and an alarm only: Buy opens the guarded buy page. Store purchases cannot be traded for {data.trade_hold_days} days.
             </p>
         </div>
+        </BoardContext.Provider>
     );
 };
 

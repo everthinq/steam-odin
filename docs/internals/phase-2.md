@@ -92,10 +92,20 @@ Accounts, Draupnir and Mímir, then Huginn and Andvari.
   tabs of the Arbitrage page (`/huginn?view=store-arbitrage`, `?view=store-boosts`;
   the old Store Catalogue addresses redirect), routes `/api/huginn/store-arbitrage…`
   and `/api/huginn/store-boosts…`. Step 1, the move with no change in behaviour, is
-  done; step 2 fixes C1 to C6 and D1 to D5 below.
-- C1/C2 CS2 Store Arbitrage: page picks sell offer and profit; board, count and Telegram use three different rules -> one backend function with profile + cash_only; summary.profitable.
-- C3 near band, C4 settings unchecked -> store-arbitrage/settings route, C5 job follow, C6 owned.
-- D1-D5 CS2 Store Boosts: recommend_buy flag, thresholds from data.thresholds (page copies disagree), moving flags, opening_beats_store, tradable_if_bought_now.
+  done; step 2 (C1 to C6, D1 to D5) **DONE 2026-11-04**:
+- C1/C2: one rule, `sell_offer(row, market, side, payout)` in `store_arbitrage_service.py`, for the
+  board, its count and Telegram (Telegram asks "Best market", either side, money or Steam wallet);
+  the profiles come from the backend (`options.profiles`, `profiles_of`); the board takes
+  `?profile=…&cash_only=…`, judges every row (`sell`, `sell_profit`, `sell_pct`) and counts
+  `summary.profitable`; the page sends no market list any more.
+- C3 `indicator.near` (`NEAR_SIGNAL_RATIO`), C4 `POST /api/huginn/store-arbitrage/settings`
+  (`settings_changes`: signal threshold above 0 and at most `SIGNAL_PCT_MAX`, alert switch a
+  boolean; `{error, code}`), C5 "Read store prices" follows its job by id (`/api/jobs/<id>`),
+  C6 each row carries `owned` from the last "Get all items" (`inventory_scanned`).
+- D1 `recommend_buy` (`BUY_LEVELS`), D2 `level_hints` written from the detector's thresholds and
+  `thresholds.strong_ratio_factor` for the colours, D3 `active` / `moving` / `contents.moving` /
+  `contents.level_active`, D4 the capsule colour reads `opening_beats_store`, D5
+  `tradable_if_bought_now` on the board.
 
 ### Accounts, Draupnir and Mímir
 - 3 Add Account: 4-step flow + rollback in page -> one import command (authenticate before writing). Bugs: re-import overwrites a working maFile before authentication; rollback DELETE unchecked; password trimmed.

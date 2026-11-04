@@ -71,6 +71,14 @@ DEFAULT_MARKETS = ['Buff', 'Steam', 'CsFloat', 'LisSkins', 'AvanMarket', 'Tm']
 # Its instant offer, as a share of the store price, is the buy signal (Ivan's indicator).
 INDICATOR_MARKET = 'CsMoneyTrade'
 DEFAULT_SIGNAL_PCT = 100.0
+SIGNAL_PCT_MAX = 1000.0
+NEAR_SIGNAL_RATIO = 0.9             # the indicator reads "near" from 90% of the signal threshold
+# A profile is "In-game store → market"; BEST_MARKET is "Best market" (the best real offer).
+BEST_MARKET = 'best'
+PROFILE_MODES = {SIDE_INSTANT: 'autobuy', SIDE_LISTING: 'min'}
+DEFAULT_PROFILE = f'{INDICATOR_MARKET}|{SIDE_INSTANT}'
+# How a sale must pay to count (sell_offer): anything, money only, or money or the Steam wallet.
+PAYOUT_ANY, PAYOUT_CASH, PAYOUT_CASH_OR_WALLET = 'any', 'cash', 'cash_or_wallet'
 REFERENCE_MARKET = 'Buff'           # its lowest listing is the sanity reference for every cash price
 # Store prices move slowly; the Refresh button pulls on demand. 30 minutes keeps the ~35 sides
 # of the default set from being pulled again every 10 minutes while the page is open.
@@ -273,9 +281,94 @@ def indicator_of(offers, cost, signal_pct=DEFAULT_SIGNAL_PCT):
     if not offer or not cost:
         return None
     pct = round(offer['net'] / cost * 100, 1)
+    signal = bool(not offer['suspicious'] and pct >= signal_pct)
     return {'net': offer['net'], 'gross': offer['gross'], 'count': offer['count'], 'display': offer['display'],
-            'balance': offer['balance'], 'pct_of_store': pct,
-            'signal': bool(not offer['suspicious'] and pct >= signal_pct)}
+            'balance': offer['balance'], 'pct_of_store': pct, 'signal': signal,
+            'near': bool(not signal and pct >= signal_pct * NEAR_SIGNAL_RATIO)}
+
+
+# ---- profiles: the one rule for "what a row sells for" ---------------------------------------
+
+def profiles_of(markets):
+    """Every profile the tab offers, "In-game store → market": the two "Best market" profiles,
+    then the indicator market, then the registry's order; autobuy where the market has buy
+    orders, min where it has real listings. Each is {id, market, side, display, mode, best}."""
+    found = [{'id': f'{BEST_MARKET}|{side}', 'market': BEST_MARKET, 'side': side, 'display': 'Best market',
+              'mode': PROFILE_MODES[side], 'best': True} for side in (SIDE_INSTANT, SIDE_LISTING)]
+    ordered = sorted(markets, key=lambda m: m['id'] != INDICATOR_MARKET)
+    for market in ordered:
+        for side, offered in ((SIDE_INSTANT, market['instant']), (SIDE_LISTING, market['listings'])):
+            if offered:
+                found.append({'id': f"{market['id']}|{side}", 'market': market['id'], 'side': side,
+                              'display': market['display'], 'mode': PROFILE_MODES[side], 'best': False})
+    return found
+
+
+def profile_by_id(profiles, profile_id):
+    """The profile *profile_id*, else the default one (an old or unknown id falls back)."""
+    by_id = {p['id']: p for p in profiles}
+    return by_id.get(profile_id) or by_id.get(DEFAULT_PROFILE) or (profiles[0] if profiles else None)
+
+
+def pays_out(offer, payout):
+    """Whether *offer* pays the way *payout* asks: PAYOUT_ANY, PAYOUT_CASH (money, no balance)
+    or PAYOUT_CASH_OR_WALLET (money or the Steam wallet, which the store is paid from)."""
+    if payout == PAYOUT_CASH:
+        return not offer['balance']
+    if payout == PAYOUT_CASH_OR_WALLET:
+        return not offer['balance'] or offer['market'] in WALLET_MARKETS
+    return True
+
+
+def sell_offer(row, market, side=None, payout=PAYOUT_ANY):
+    """The offer a row is judged by, for the board, its count and Telegram alike. A market: its
+    offer on *side*. BEST_MARKET: the best real (not suspicious) offer that pays as *payout*
+    asks, on *side* (None: either side). None when there is no such offer."""
+    if market != BEST_MARKET:
+        return next((o for o in row['offers'] if o['market'] == market and o['side'] == side), None)
+    found = [o for o in row['offers'] if (side is None or o['side'] == side)
+             and not o['suspicious'] and pays_out(o, payout)]
+    return max(found, key=lambda o: o['net'], default=None)
+
+
+def judge_row(row, profile, payout):
+    """Adds what *row* sells for under *profile*: 'sell' (the offer), and 'sell_profit' and
+    'sell_pct' when that offer is a real price (a suspicious one shows, but earns nothing)."""
+    sell = sell_offer(row, profile['market'], profile['side'], payout)
+    real = sell if sell and not sell['suspicious'] else None
+    row.update(sell=sell, sell_profit=round(real['net'] - row['cost'], 3) if real else None,
+               sell_pct=real['profit_pct'] if real else None)
+    return row
+
+
+def owned_of(by_hash, name):
+    """How many copies of *name* the last "Get all items" found: {count, instances: [{account_name,
+    collection}]}, or None."""
+    entry = (by_hash or {}).get(name)
+    if not entry or not entry.get('count'):
+        return None
+    return {'count': entry['count'], 'instances': [{'account_name': i.get('account_name'),
+                                                    'collection': i.get('collection') or ''}
+                                                   for i in entry.get('instances') or []]}
+
+
+def settings_changes(body):
+    """The settings the tab may change, checked: {store_arbitrage_signal_pct, store_arbitrage_alerts_enabled}.
+    Raises ValueError(code, message) for a wrong value; an empty answer changes nothing."""
+    changes = {}
+    if 'signal_pct' in body:
+        try:
+            value = float(str(body['signal_pct']).replace(',', '.'))
+        except (TypeError, ValueError):
+            raise ValueError('signal_pct_invalid', 'the signal threshold must be a number') from None
+        if not (0 < value <= SIGNAL_PCT_MAX):
+            raise ValueError('signal_pct_invalid', f'the signal threshold must be above 0 and at most {SIGNAL_PCT_MAX:g}%')
+        changes['store_arbitrage_signal_pct'] = value
+    if 'alerts_enabled' in body:
+        if not isinstance(body['alerts_enabled'], bool):
+            raise ValueError('alerts_enabled_invalid', 'alerts_enabled must be true or false')
+        changes['store_arbitrage_alerts_enabled'] = body['alerts_enabled']
+    return changes
 
 
 def item_row(item, markets, indexes, fees, ledger, history, wallets, rates, sheet_prices, today=None,
@@ -345,6 +438,8 @@ def board_summary(rows, excluded):
         'listing_profit': sum(1 for r in sellable if r['verdict'] == 'listing'),
         'cash_profit': sum(1 for r in sellable if r['cash'] and r['cash']['net'] > r['cost']),
         'unconfirmed': sum(1 for r in rows if r['unconfirmed']),
+        # Under the chosen profile (judge_row): the resellable rows that sell above the store price.
+        'profitable': sum(1 for r in sellable if (r.get('sell_profit') or 0) > 0),
         'excluded': len(excluded),
         'best_profit_pct': max((r['profit_pct'] for r in sellable
                                 if r['verdict'] in ('instant', 'listing') and r['profit_pct'] is not None), default=None),
@@ -375,14 +470,12 @@ def alert_candidates(rows, min_pct=0.0):
     for row in rows:
         if row['unconfirmed'] or not row['cost']:
             continue
-        real = [o for o in row['offers'] if not o['suspicious']
-                and (not o['balance'] or o['market'] in WALLET_MARKETS)]
-        sell = max(real, key=lambda o: o['net'], default=None)
+        sell = sell_offer(row, BEST_MARKET, None, PAYOUT_CASH_OR_WALLET)
         if not sell or sell['net'] <= row['cost'] or (sell['profit_pct'] or 0) < min_pct:
             continue
         cash = None
         if sell['balance']:
-            cash = max((o for o in real if not o['balance']), key=lambda o: o['net'], default=None)
+            cash = sell_offer(row, BEST_MARKET, None, PAYOUT_CASH)
             if cash and cash['net'] <= row['cost']:
                 cash = None
         found.append({'row': row, 'sell': sell, 'cash': cash})
@@ -780,12 +873,14 @@ class StoreArbitrageService:
         timer.daemon = True
         timer.start()
 
-    def refresh(self, token, market_ids=None, settings=None, job=None):
+    def refresh(self, token, market_ids=None, settings=None, job=None, profile_id=None):
         """Pull the board's markets again now, not waiting for the 10-minute cache (the Refresh
         button, the daily refresh). A side pulled under REFRESH_MIN_AGE seconds ago is left as it is,
         so pressing it again and again never floods pulse. Returns {queued, markets}."""
         if not token:
             return {'queued': 0, 'error': 'no Tradeon token (tradeon_token in backend/settings.json)'}
+        if not market_ids and profile_id:
+            market_ids = self.profile_market_ids(profile_id, settings)
         market_ids = self.clean_markets(market_ids, settings)
         sides = self._sides(market_ids, settings)       # the registry is built outside the lock
         now = time.time()
@@ -1048,11 +1143,26 @@ class StoreArbitrageService:
             log.info('[STORE-ARBITRAGE] wallets unavailable: %s', e)
             return [], {}, {}
 
-    def board(self, token, market_ids=None, settings=None):
+    def profile_market_ids(self, profile_id, settings=None):
+        """The markets a board under *profile_id* prices: the default set plus the profile's market,
+        so switching profile never waits for a pull."""
+        profile = profile_by_id(profiles_of(self.markets(settings)), profile_id)
+        ids = self.default_market_ids(settings)
+        if profile and profile['market'] != BEST_MARKET and profile['market'] not in ids:
+            ids.append(profile['market'])
+        return ids
+
+    def board(self, token, market_ids=None, settings=None, profile_id=None, cash_only=False):
+        """The board. Every row is judged under *profile_id* (default DEFAULT_PROFILE; *cash_only*:
+        a "Best market" profile counts only offers paid as money) by ``judge_row``."""
         catalogue = self.catalogue.status()
         candidates, excluded = split_items(catalogue.get('items'))
-        market_ids = self.clean_markets(market_ids, settings)
-        listed = {m['id']: m for m in self.markets(settings)}
+        listed_markets = self.markets(settings)
+        profile = profile_by_id(profiles_of(listed_markets), profile_id)
+        payout = PAYOUT_CASH if cash_only else PAYOUT_ANY
+        market_ids = self.clean_markets(market_ids or self.profile_market_ids(profile and profile['id'], settings),
+                                        settings)
+        listed = {m['id']: m for m in listed_markets}
         markets = [listed[m] for m in market_ids]
         pairs = self._sides(market_ids, settings)
         indexes, status, failed = self._index_state(token, pairs)
@@ -1063,6 +1173,8 @@ class StoreArbitrageService:
             history = json.loads(json.dumps(self._history))
         today = self._today()
         signal_pct = signal_percent(settings)
+        scan = self.huginn.get_cache() or {}      # shared and read-only (HuginnService.get_cache)
+        by_hash = scan.get('by_hash')
         rows, unpriced = [], []
         for item in candidates:
             row = item_row(item, markets, indexes, fees, ledger, history, wallets, rates, sheet, today=today,
@@ -1071,6 +1183,9 @@ class StoreArbitrageService:
                 unpriced.append({'entry': item['entry'], 'name': item['name'], 'category': item.get('category'),
                                  'reason': 'no_price', 'reason_text': EXCLUDED_REASONS['no_price']})
             elif row['verdict'] != 'no_price':
+                if profile:
+                    judge_row(row, profile, payout)
+                row['owned'] = owned_of(by_hash, item['name'])
                 rows.append(row)
         # Unconfirmed rows (probably not resellable) go below every confirmed one.
         rows.sort(key=lambda r: (not r['unconfirmed'], r['profit_pct'] is not None, r['profit_pct'] or 0), reverse=True)
@@ -1099,6 +1214,9 @@ class StoreArbitrageService:
             'prices_newest_at': max(fetched) if fetched else None,
             'indicator_market': INDICATOR_MARKET,
             'signal_pct': signal_pct,
+            'profile': profile,
+            'cash_only': bool(cash_only),
+            'inventory_scanned': by_hash is not None,
             'pulling': self.pulling(pairs),
         }
 
@@ -1129,6 +1247,9 @@ class StoreArbitrageService:
 
     def options(self, settings=None):
         settings = settings or {}
-        return {'markets': self.markets(settings), 'default_markets': self.default_market_ids(settings),
+        markets = self.markets(settings)
+        return {'markets': markets, 'default_markets': self.default_market_ids(settings),
+                'profiles': profiles_of(markets), 'default_profile': DEFAULT_PROFILE,
                 'indicator_market': INDICATOR_MARKET, 'signal_pct': signal_percent(settings),
+                'signal_pct_max': SIGNAL_PCT_MAX,
                 'alerts': self.alert_status(settings)}

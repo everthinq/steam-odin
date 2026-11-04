@@ -455,6 +455,14 @@ def test_the_board_ranks_boosts_first_and_values_the_capsule(tmp_path, histories
     detail = service.item(WORLD_EATERS)
     assert detail['points'] and detail['analysis']['level'] == 'boost'
     assert service.item('nothing') is None
+    # The backend decides every flag the page shows (Phase 2, D1 to D5).
+    assert capsule['recommend_buy'] and capsule['active'] and capsule['moving']
+    assert capsule['contents']['level_active'] and capsule['contents']['moving'][0] == WORLD_EATERS
+    assert capsule['contents']['items'][0]['active']
+    assert capsule['contents']['opening_beats_store'] == (capsule['contents']['opening']['buff']['value'] > capsule['cost'])
+    assert board['tradable_if_bought_now'] == clock.now + 7 * 86400
+    assert set(board['level_hints']) >= {'boost', 'second_wave', 'watch', 'fading', 'calm', 'unknown'}
+    assert '2×' in board['level_hints']['boost'] and board['thresholds']['strong_ratio_factor'] == 1.6
 
 
 def test_the_state_survives_a_restart(tmp_path, histories):

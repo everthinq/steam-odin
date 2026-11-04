@@ -117,6 +117,7 @@ def test_huginn_blueprint_registers_all_routes():
                  '/api/huginn/card-deals/buy/purchase-plans/<purchase_plan_id>/execute',
                  '/api/huginn/store-arbitrage', '/api/huginn/store-arbitrage/options',
                  '/api/huginn/store-arbitrage/refresh', '/api/huginn/store-arbitrage/alerts/send',
+                     '/api/huginn/store-arbitrage/settings',
                  '/api/huginn/store-boosts', '/api/huginn/store-boosts/item', '/api/huginn/store-boosts/read',
                  '/api/huginn/store-boosts/check', '/api/huginn/store-boosts/test-alert',
                  '/api/huginn/store-boosts/track']:
@@ -131,8 +132,9 @@ def test_huginn_blueprint_registers_all_routes():
     # +5 Team Fortress 2 rules: status, play, check-news, detect, sell-now; +1 card auto-sell status;
     # +5 Buy games: status, plan, purchase plan, purchase plan (GET), execute (run removed); +5 pulse feed: kept, download, price dips (+ markets), check live;
     # Active profiles (GET+POST) replaced the Pulse feed switchboard (kept, download) on 2026-10-31.
-    # +10 CS2 Store Arbitrage (4) and CS2 Store Boosts (6), moved from Ratatoskr on 2026-11-04.
-    assert _rule_count(bp, "/api/huginn") == 97
+    # +10 CS2 Store Arbitrage (4) and CS2 Store Boosts (6), moved from Ratatoskr on 2026-11-04;
+    # +1 CS2 Store Arbitrage settings (checked), Phase 2 step 2.
+    assert _rule_count(bp, "/api/huginn") == 98
 
 
 def test_register_blueprints_wires_onto_app():

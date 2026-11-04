@@ -11,6 +11,7 @@ import PriceCell from './arbitrage/PriceCell';
 import FeeEditor from './arbitrage/FeeEditor';
 import ArbitrageFilters, { ActiveFilterChips } from './arbitrage/ArbitrageFilters';
 import { activeFilterCount, buildOptions, collectionByName, priceInRange, useStoredFilters } from '../utils/arbitrageFilters';
+import { followJob } from '../utils/moveCommands';
 import SteamMarketLink from './SteamMarketLink';
 import BuffMarketLink from './BuffMarketLink';
 import CSFloatMarketLink from './CSFloatMarketLink';
@@ -22,10 +23,13 @@ import { failureMessage, readJson, readJsonOrThrow } from '../utils/readJson';
 // price; at the threshold (100% by default) the row signals BUY, meaning the item is worth
 // buying in the in-game store and selling where the profile's market pays most.
 // A recommendation board only: Buy opens the item's guarded buy page (dry run first).
-// Backend: GET /api/huginn/store-arbitrage?markets=… (non-blocking: it warms missing
-// markets in the background, so the page polls while warming or refreshing),
-// POST …/refresh (the Refresh button), POST …/alerts/send (Telegram "Send now"),
-// GET …/options (markets, default set, indicator, alert switch). The morning routine
+// The backend decides everything (Phase 2): GET /api/huginn/store-arbitrage?profile=…&cash_only=…
+// answers every row already judged under the profile (sell, sell_profit, sell_pct), the owned
+// copies, the indicator's near band and summary.profitable (non-blocking: it warms missing
+// markets in the background, so the page polls while warming or refreshing); POST …/refresh
+// {profile} (the Refresh button), POST …/alerts/send (Telegram "Send now"), POST …/settings
+// (signal threshold and alert switch, checked), GET …/options (profiles, markets, indicator,
+// alert switch). The morning routine
 // refreshes everything after "Get all items" and posts the profitable items to Telegram.
 
 const money = (v, digits = 2) => (v == null ? '—' : `${v < 0 ? '−' : ''}$${Math.abs(v).toFixed(digits)}`);
@@ -44,8 +48,6 @@ const SIDE_LABEL = { instant: 'sell instantly', listing: 'list' };
 const REASON_ORDER = ['cannot_trade', 'store_copies', 'keys', 'passes', 'no_price'];
 const GRID = 'grid grid-cols-[minmax(0,2.4fr)_52px_84px_100px_76px_76px_128px_104px_64px] gap-2';
 
-const DEFAULT_PROFILE = 'CsMoneyTrade|instant';
-const BEST = 'best';
 
 // Remembered per browser: the profile and the switches. Filters have their own key.
 const PREFERENCES_KEY = 'ratatoskr.storeArbitrage';
@@ -62,17 +64,6 @@ const PRICE_SIDES = [
     ['buy', 'Store price', 'What the in-game store charges, in US dollars', 'Store'],
     ['sell', 'Sell price', 'What the profile’s market pays, after its fee', 'Sell'],
 ];
-
-// The offer a row is judged by under a profile: that market and side, or for a "Best
-// market" profile the best real offer on that side (money only with "Cash only").
-const sellOfferOf = (row, profile, cashOnly) => {
-    if (!profile) return null;
-    if (profile.market === BEST) {
-        // Offers come sorted by what you get, best first.
-        return row.offers.find((o) => o.side === profile.side && !o.suspicious && (!cashOnly || !o.balance)) || null;
-    }
-    return row.offers.find((o) => o.market === profile.market && o.side === profile.side) || null;
-};
 
 const Badge = ({ className, title, children }) => (
     <span title={title} className={`px-1 rounded border text-[10px] whitespace-nowrap ${className}`}>{children}</span>
@@ -99,7 +90,7 @@ const IndicatorCell = ({ indicator, signalPct, display }) => {
     if (!indicator) {
         return <span className="text-right text-slate-600 text-sm" title={`${display} has no buy order for this item`}>—</span>;
     }
-    const near = !indicator.signal && indicator.pct_of_store >= signalPct * 0.9;
+    const { near } = indicator;
     return (
         <span className="flex flex-col items-end leading-tight"
             title={`${display} pays ${money(indicator.net, 3)} at once (${indicator.count ?? '?'} offers), ${indicator.pct_of_store}% of the store price. The signal fires at ${signalPct}%.${indicator.balance ? ` It pays in ${indicator.balance}.` : ''}`}>
@@ -120,7 +111,7 @@ const StoreArbitrage = () => {
     const [preferences] = useState(loadPreferences);
     const [options, setOptions] = useState(null);
     const [huginnMarkets, setHuginnMarkets] = useState([]);      // the Fees editor's list
-    const [profileId, setProfileId] = useState(preferences.profile || DEFAULT_PROFILE);
+    const [profileId, setProfileId] = useState(preferences.profile || null);
     const [cashOnly, setCashOnly] = useState(preferences.cashOnly ?? false);
     const [profitableOnly, setProfitableOnly] = useState(preferences.profitableOnly ?? true);
     const [signalsOnly, setSignalsOnly] = useState(preferences.signalsOnly ?? false);
@@ -132,14 +123,13 @@ const StoreArbitrage = () => {
     const [answers, setAnswers] = useState(0);   // every finished request, so a failed one still re-arms polling
     const [open, setOpen] = useState(() => new Set());
     const [showExcluded, setShowExcluded] = useState(false);
-    const [byHash, setByHash] = useState(null);
     const [now, setNow] = useState(0);
     const [refreshNote, setRefreshNote] = useState(null);
     const [signalDraft, setSignalDraft] = useState(null);       // null: show the server's value
     const [alerts, setAlerts] = useState(null);
     const [alertNote, setAlertNote] = useState(null);
     const [sending, setSending] = useState(false);
-    const [sheetStartedAt, setSheetStartedAt] = useState(null);  // our "Read store prices" job
+    const [readingSheet, setReadingSheet] = useState(false);    // our "Read store prices" job runs
     const [copiedName, setCopiedName] = useState(null);
     const deferredSearch = useDeferredValue(search);
     const sort = useColumnSort();
@@ -155,11 +145,6 @@ const StoreArbitrage = () => {
             .then(readJsonOrThrow)
             .then((o) => { setOptions(o); setAlerts(o.alerts || null); })
             .catch((error) => setError(failureMessage(error)));
-        // Owned counts, accounts and collections come from Huginn's "Get all items".
-        fetch('/api/huginn/scan/cache')
-            .then((r) => (r.ok ? readJson(r) : null))
-            .then((scan) => { if (scan?.by_hash) setByHash(scan.by_hash); })
-            .catch(() => {});
         refreshHuginnMarkets();
     }, [refreshHuginnMarkets]);
 
@@ -174,40 +159,20 @@ const StoreArbitrage = () => {
     useEffect(() => { savePreferences({ profile: profileId, cashOnly, profitableOnly, signalsOnly }); },
         [profileId, cashOnly, profitableOnly, signalsOnly]);
 
-    // Profiles: "In-game store → market", autobuy where the market has buy orders, min where it
-    // has real listings, plus the two "Best market" profiles.
-    const profiles = useMemo(() => {
-        if (!options) return [];
-        const from = { from: 'In-game store', fromSub: 'store price' };
-        const list = [
-            { ...from, id: `${BEST}|instant`, market: BEST, side: 'instant', to: 'Best market', toSub: 'autobuy' },
-            { ...from, id: `${BEST}|listing`, market: BEST, side: 'listing', to: 'Best market', toSub: 'min' },
-        ];
-        // The indicator market first, the rest as the registry lists them.
-        const ordered = [...options.markets].sort((a, b) => (b.id === options.indicator_market) - (a.id === options.indicator_market));
-        for (const m of ordered) {
-            if (m.instant) list.push({ ...from, id: `${m.id}|instant`, market: m.id, side: 'instant', to: m.display, toSub: 'autobuy', info: m });
-            if (m.listings !== false) list.push({ ...from, id: `${m.id}|listing`, market: m.id, side: 'listing', to: m.display, toSub: 'min', info: m });
-        }
-        return list;
-    }, [options]);
-    // A remembered profile that no longer exists falls back to the default.
-    const profile = profiles.find((p) => p.id === profileId) || profiles.find((p) => p.id === DEFAULT_PROFILE) || profiles[0] || null;
-
-    // Every request prices the default set (every market with buy orders, the indicator, your
-    // usual markets), plus the profile's market, so switching profile never waits for a pull.
-    const requestMarkets = useMemo(() => {
-        if (!options) return null;
-        const set = [...options.default_markets];
-        if (profile && profile.market !== BEST && !set.includes(profile.market)) set.push(profile.market);
-        return set;
-    }, [options, profile]);
-    const marketsKey = requestMarkets ? requestMarkets.join(',') : null;
+    // The backend's profiles ("In-game store → market"), shaped for the ProfilePicker.
+    const profiles = useMemo(() => (options?.profiles || []).map((p) => ({
+        id: p.id, market: p.market, side: p.side, best: p.best, from: 'In-game store', fromSub: 'store price',
+        to: p.display, toSub: p.mode, info: options.markets.find((m) => m.id === p.market),
+    })), [options]);
+    // A remembered profile that no longer exists falls back to the backend's default.
+    const profile = profiles.find((p) => p.id === profileId) || profiles.find((p) => p.id === options?.default_profile) || profiles[0] || null;
+    const profileKey = profile ? profile.id : null;
+    const isBest = Boolean(profile?.best);
 
     const load = useCallback(() => {
-        if (!marketsKey) return Promise.resolve();
+        if (!profileKey) return Promise.resolve();
         const number = ++requests.current;
-        return fetch(`/api/huginn/store-arbitrage?markets=${encodeURIComponent(marketsKey)}`)
+        return fetch(`/api/huginn/store-arbitrage?profile=${encodeURIComponent(profileKey)}&cash_only=${cashOnly ? 1 : 0}`)
             .then(async (r) => {
                 const body = await readJson(r).catch(() => null);
                 if (number !== requests.current) return;
@@ -216,7 +181,7 @@ const StoreArbitrage = () => {
             })
             .catch((error) => { if (number === requests.current) setError(failureMessage(error)); })
             .finally(() => { if (number === requests.current) setAnswers((count) => count + 1); });
-    }, [marketsKey]);
+    }, [profileKey, cashOnly]);
 
     useEffect(() => { load(); }, [load]);
     const warming = data?.status === 'warming' || data?.status === 'refreshing';
@@ -233,7 +198,7 @@ const StoreArbitrage = () => {
     const refresh = () => {
         setRefreshNote(null);
         fetch('/api/huginn/store-arbitrage/refresh', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ markets: requestMarkets }),
+            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ profile: profileKey }),
         })
             .then(async (r) => {
                 const body = await readJson(r).catch(() => ({}));
@@ -244,57 +209,43 @@ const StoreArbitrage = () => {
             .finally(load);
     };
 
-    // "Read store prices": the game store's price sheet (one Ratatoskr login), followed by its
-    // server start time until it finishes, then the board again.
+    // "Read store prices": the game store's price sheet (one Ratatoskr login), a backend job
+    // followed by its id until it finishes, then the board again.
     const readStorePrices = () => {
         setRefreshNote(null);
+        setReadingSheet(true);
         fetch('/api/ratatoskr/store-catalogue/refresh', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })
             .then(readJson)
-            .then((d) => { if (d.started) setSheetStartedAt(d.started_at); else setRefreshNote(d.error || 'The store prices could not be read.'); })
-            .catch((error) => setRefreshNote(failureMessage(error)));
+            .then((d) => {
+                if (!d.started) throw new Error(d.error || 'The store prices could not be read.');
+                return followJob(d.job_id, { lostTrackMessage: (reason) => `Lost track of the store price read (${reason}); it keeps running in the backend.` });
+            })
+            .then((job) => { if (job.error) setRefreshNote(`The store prices could not be read: ${job.error}`); })
+            .catch((error) => setRefreshNote(failureMessage(error)))
+            .finally(() => { setReadingSheet(false); load(); });
     };
-    useEffect(() => {
-        if (sheetStartedAt == null) return undefined;
-        let polls = 0;
-        const timer = setInterval(() => {
-            polls += 1;
-            fetch('/api/ratatoskr/store-catalogue')
-                .then(readJson)
-                .then((d) => {
-                    const job = d.job || {};
-                    const ours = job.started_at === sheetStartedAt;
-                    // Still reading. A newer job (a purchase, the morning refresh) means ours ended;
-                    // after 3 minutes we stop following it anyway.
-                    if (ours && job.running && polls < 120) return;
-                    setSheetStartedAt(null);
-                    if (ours && job.error) setRefreshNote(`The store prices could not be read: ${job.error}`);
-                    else if (ours && job.running) setRefreshNote('The store prices are still being read: look again in a minute.');
-                    load();
-                })
-                .catch(() => {});
-        }, 1500);
-        return () => clearInterval(timer);
-    }, [sheetStartedAt, load]);
 
-    // Settings this tab owns (only these keys are posted).
-    const saveSettings = (changes) => fetch('/api/settings', {
+    // The tab's own settings, checked by the backend (answers the new options or {error, code}).
+    const saveSettings = (changes) => fetch('/api/huginn/store-arbitrage/settings', {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(changes),
-    }).then((r) => { if (!r.ok) throw new Error(`HTTP ${r.status}`); });
+    }).then(async (r) => {
+        const body = await readJson(r).catch(() => ({}));
+        if (!r.ok) throw new Error(body.error || `HTTP ${r.status}`);
+        return body;
+    });
 
     const commitSignal = () => {
-        if (signalDraft == null) return;
-        const value = parseFloat(String(signalDraft).replace(',', '.'));
-        if (!Number.isFinite(value) || value <= 0 || value > 1000 || value === data?.signal_pct) { setSignalDraft(null); return; }
-        saveSettings({ store_arbitrage_signal_pct: value })
+        if (signalDraft == null || String(signalDraft) === String(data?.signal_pct)) { setSignalDraft(null); return; }
+        saveSettings({ signal_pct: String(signalDraft) })
             .then(() => load())
-            .catch(() => setRefreshNote('The signal threshold could not be saved.'))
+            .catch((error) => setRefreshNote(`The signal threshold was not saved: ${error.message}`))
             .finally(() => setSignalDraft(null));
     };
 
     const toggleAlerts = () => {
         const enabled = !alerts?.enabled;
-        saveSettings({ store_arbitrage_alerts_enabled: enabled })
-            .then(() => setAlerts((a) => ({ ...(a || {}), enabled })))
+        saveSettings({ alerts_enabled: enabled })
+            .then((o) => setAlerts(o.alerts || null))
             .catch(() => setAlertNote('Could not save the switch.'));
     };
 
@@ -324,13 +275,10 @@ const StoreArbitrage = () => {
         }).catch(() => {});
     };
 
-    // Every row priced under the current profile.
-    const priced = useMemo(() => (data?.rows || []).map((r) => {
-        const sell = sellOfferOf(r, profile, cashOnly);
-        const real = sell && !sell.suspicious ? sell : null;
-        return { ...r, sell, sellProfit: real ? real.net - r.cost : null, sellPct: real ? real.profit_pct : null,
-            owned: byHash?.[r.name] || null };
-    }), [data, profile, cashOnly, byHash]);
+    // Every row comes judged under the profile (sell, sell_profit, sell_pct) with its owned copies.
+    const priced = useMemo(() => data?.rows || [], [data]);
+    // The owned copies in the shape the shared filters read (name → {instances}).
+    const byHash = useMemo(() => Object.fromEntries(priced.filter((r) => r.owned).map((r) => [r.name, r.owned])), [priced]);
 
     const collections = useMemo(() => collectionByName(byHash), [byHash]);
     const accountOptions = useMemo(() => buildOptions(priced, (r) => (r.owned?.instances || []).map((i) => i.account_name),
@@ -345,7 +293,7 @@ const StoreArbitrage = () => {
         const cols = filters.collections.length ? new Set(filters.collections) : null;
         const matching = priced.filter((r) => (category === 'all' || r.category === category)
             && (!needle || r.name.toLowerCase().includes(needle))
-            && (!profitableOnly || (r.sellProfit ?? 0) > 0)
+            && (!profitableOnly || (r.sell_profit ?? 0) > 0)
             && (!signalsOnly || r.indicator?.signal)
             && priceInRange(filters.priceSide === 'sell' ? r.sell?.net : r.cost, filters)
             // Account and collection must hold for the same copy.
@@ -353,14 +301,14 @@ const StoreArbitrage = () => {
                 (!accounts || accounts.has(i.account_name)) && (!cols || cols.has(i.collection) || cols.has(collections.get(r.name))))));
         // Unconfirmed items (probably not resellable) below every confirmed one, then by profit.
         const byProfit = [...matching].sort((a, b) => (a.unconfirmed - b.unconfirmed)
-            || (b.sellPct ?? -Infinity) - (a.sellPct ?? -Infinity));
+            || (b.sell_pct ?? -Infinity) - (a.sell_pct ?? -Infinity));
         return sortRows(byProfit, sort.sortKey, sort.sortDir, {
             item: (r) => r.name,
             owned: (r) => r.owned?.count ?? null,
             store: (r) => r.cost,
             sell: (r) => r.sell?.net ?? null,
-            profit: (r) => r.sellProfit,
-            profit_pct: (r) => r.sellPct,
+            profit: (r) => r.sell_profit,
+            profit_pct: (r) => r.sell_pct,
             indicator: (r) => r.indicator?.pct_of_store ?? null,
             history: (r) => (r.history.days ? r.history.profitable_days / r.history.days : null),
         });
@@ -377,7 +325,7 @@ const StoreArbitrage = () => {
     }
     const indicatorDisplay = options.markets.find((m) => m.id === options.indicator_market)?.display || options.indicator_market;
     const summary = data?.summary || {};
-    const profitable = priced.filter((r) => !r.unconfirmed && (r.sellProfit ?? 0) > 0).length;
+    const profitable = summary.profitable ?? 0;
     const marketInfo = profile.info;
     const signalPct = data?.signal_pct ?? options.signal_pct ?? 100;
     const columns = [
@@ -429,11 +377,11 @@ const StoreArbitrage = () => {
                             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-500 text-white text-xs font-medium disabled:opacity-50 transition-colors">
                             <RefreshCw size={12} className={warming ? 'animate-spin' : ''} /> Refresh
                         </button>
-                        <button type="button" onClick={readStorePrices} disabled={sheetStartedAt != null}
+                        <button type="button" onClick={readStorePrices} disabled={readingSheet}
                             title="Read the in-game store's price list again: one account logs in to Ratatoskr and out (about 15 seconds); nothing is bought. It also runs every morning after Get all items."
                             className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-white/15 text-slate-300 hover:bg-white/5 disabled:opacity-50 text-xs">
-                            <Tags size={12} className={sheetStartedAt != null ? 'animate-pulse' : ''} />
-                            {sheetStartedAt != null ? 'Reading store prices…' : `Store prices ${ago(data?.catalogue_read_at, now) || 'never read'}`}
+                            <Tags size={12} className={readingSheet ? 'animate-pulse' : ''} />
+                            {readingSheet ? 'Reading store prices…' : `Store prices ${ago(data?.catalogue_read_at, now) || 'never read'}`}
                         </button>
                     </span>
                 </div>
@@ -495,7 +443,7 @@ const StoreArbitrage = () => {
                         className={`shrink-0 inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${signalsOnly ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-300' : 'bg-black/20 border-white/10 text-slate-400 hover:text-white hover:border-white/20'}`}>
                         <Zap size={11} /> BUY signals
                     </button>
-                    {profile.market === BEST && (
+                    {isBest && (
                         <button type="button" onClick={() => setCashOnly((v) => !v)} aria-pressed={cashOnly}
                             title="Best market only among markets that pay money: no Steam wallet, no site balance"
                             className={`shrink-0 px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${cashOnly ? 'bg-sky-500/20 border-sky-500/40 text-sky-300' : 'bg-black/20 border-white/10 text-slate-400 hover:text-white hover:border-white/20'}`}>
@@ -508,7 +456,7 @@ const StoreArbitrage = () => {
                         {categories.map((c) => <option key={c} value={c}>{c}</option>)}
                     </select>
                     <ArbitrageFilters filters={filters} onChange={setFilters} accountOptions={accountOptions}
-                        collectionOptions={collectionOptions} hasScan={!!byHash} priceSides={PRICE_SIDES}
+                        collectionOptions={collectionOptions} hasScan={!!data?.inventory_scanned} priceSides={PRICE_SIDES}
                         countTitle="Store items it holds"
                         scanHint='Press "Get all items" in Huginn first: accounts and collections come from the inventory scan.' />
                     <span className="text-sm text-slate-500 shrink-0">showing {visible.length} of {priced.length}</span>
@@ -593,7 +541,7 @@ const StoreArbitrage = () => {
                                                     <PriceCell market={sell.market} itemName={r.name} price={sell.net}
                                                         className={`text-base tabular-nums ${sell.suspicious ? 'text-slate-500 line-through' : 'text-slate-300'}`} />
                                                     <span className="text-[10px] text-slate-500 truncate max-w-full">
-                                                        {profile.market === BEST ? sell.display
+                                                        {isBest ? sell.display
                                                             : sell.fee ? `${money(sell.gross)} before fee`
                                                                 : sell.count != null ? `${sell.count} offers` : ''}
                                                     </span>
@@ -601,8 +549,8 @@ const StoreArbitrage = () => {
                                             ) : (
                                                 <span className="text-right text-slate-600 text-sm" title={`${profile.to} has no ${profile.side === 'instant' ? 'buy order' : 'listing'} for this item`}>—</span>
                                             )}
-                                            <span className={`text-base text-right tabular-nums ${tone(r.sellProfit)}`}>{r.sellProfit == null ? '—' : money(r.sellProfit)}</span>
-                                            <span className={`text-base text-right font-semibold tabular-nums ${tone(r.sellPct)}`}>{r.sellPct == null ? '—' : `${r.sellPct.toFixed(0)}%`}</span>
+                                            <span className={`text-base text-right tabular-nums ${tone(r.sell_profit)}`}>{r.sell_profit == null ? '—' : money(r.sell_profit)}</span>
+                                            <span className={`text-base text-right font-semibold tabular-nums ${tone(r.sell_pct)}`}>{r.sell_pct == null ? '—' : `${r.sell_pct.toFixed(0)}%`}</span>
                                             <IndicatorCell indicator={r.indicator} signalPct={signalPct} display={indicatorDisplay} />
                                             <span className="flex flex-col items-end text-xs text-slate-400 tabular-nums">
                                                 <span>{r.history.days ? `${r.history.profitable_days} of ${r.history.days}` : '—'}</span>

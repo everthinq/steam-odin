@@ -200,6 +200,11 @@ class FakeHuginn:
         self.listeners = []
         self.pulse = _FakeFeed()
 
+    scan = None       # HuginnService.get_cache(): the last "Get all items", or None
+
+    def get_cache(self):
+        return self.scan
+
     def add_pull_listener(self, listener):
         self.listeners.append(listener)
 
