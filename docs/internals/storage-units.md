@@ -12,6 +12,13 @@ goes through its commands:
   deposit command, on a timer;
 - the **command line** (planned): the same endpoints.
 
+Renaming is separate (`backend/storage_rename.py`, the **Rename Storage Unit**
+tab): it moves nothing, but it is refused while a move runs on the account,
+because the Game Coordinator gives a renamed unit a new item id and a running
+move addresses units by id. A unit without a name refuses deposits; Buy Storage
+Units names new units "Storage N", and the tab's "Name them Storage N" does the
+same for any others.
+
 Users: see [the user guide](../guide/ratatoskr.md#transfer). Agents: the rules
 at the end of this page are binding.
 

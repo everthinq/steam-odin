@@ -5,7 +5,7 @@ game were running) so items can be moved in and out of **Storage Units**, so
 Storage Units can be bought from the game's own store, and so the store's price
 list can be read.
 
-## One account: transfer, auto-store
+## One account: transfer, auto-store, rename
 
 Dashboard → account card → **Ratatoskr** (opens Transfer).
 
@@ -123,6 +123,22 @@ never hold are skipped. Items that do not fit anywhere wait for the next sweep.
 The history lists only moves the game confirmed; an item the game refused is
 not tried again for 6 hours (one that simply was not sent, for example while
 Ratatoskr restarted, is tried again at the next sweep).
+
+### Rename Storage Unit
+
+The third tab lists every Storage Unit of the account: its name, how many items
+it holds and its free places. Units **without a name** come first, marked "no
+name": the game refuses items into them until they have one.
+
+- **Rename** opens a field on the row; Enter (or ✓) saves, Escape cancels.
+  Renaming is free in the game.
+- A name is 1 to 20 characters, and two units of one account never share a
+  name (upper and lower case count as the same).
+- **Name them "Storage N"** (shown only when some units have no name) first
+  lists the names it would give, numbered on from your highest "Storage N";
+  **Execute plan** names them one after another.
+- Nothing is renamed while items are moving on that account (the game gives a
+  renamed unit a new id, which would break the move): wait for the move to end.
 
 ## Buy Storage Units
 
