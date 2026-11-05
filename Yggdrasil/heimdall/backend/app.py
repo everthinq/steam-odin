@@ -68,6 +68,9 @@ rename_service = RenameService(ratatoskr_service, deposit_service.busy)
 huginn_service = HuginnService(steam_service, ratatoskr_service)
 # Every fee comes from the one Fees editor (settings huginn_market_fees).
 huginn_service.settings_provider = settings_manager.get_settings
+# Each pulse table is downloaded and parsed in a short-lived process: its ~200 MB peak goes back
+# to the Mac afterwards instead of staying in the backend (8 GB Macs lag otherwise).
+huginn_service.pulse.download_in_separate_processes()
 # The active Huginn profiles: the only tables the keeper thread below downloads.
 apply_active_settings(huginn_service, settings_manager.get_settings())
 # Today's price history samples are saved at shutdown too: a docker stop / `make reload`

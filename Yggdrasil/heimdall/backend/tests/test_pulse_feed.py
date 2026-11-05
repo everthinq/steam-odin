@@ -228,7 +228,7 @@ def test_at_most_four_downloads_run_at_once():
         thread.start()
     for thread in threads:
         thread.join(10)
-    assert peak[0] == pulse_feed.MAX_PARALLEL_DOWNLOADS == 4
+    assert peak[0] == pulse_feed.MAX_PARALLEL_DOWNLOADS == 2
 
 
 class _Gated:
@@ -276,12 +276,13 @@ def _on_page(feed, market):
 def test_background_jobs_leave_a_slot_for_a_button():
     pulse = _Gated()
     feed = PulseFeed(post=pulse.post)
+    background = pulse_feed.MAX_BACKGROUND_DOWNLOADS
     jobs = [_in_job(feed, f'Job{i}') for i in range(6)]
-    assert len(pulse.wait_started(pulse_feed.MAX_BACKGROUND_DOWNLOADS)) == 3
+    pulse.wait_started(background)
     threading.Event().wait(0.1)
-    assert len(pulse.started) == 3                       # the fourth slot stays free
+    assert len(pulse.started) == background              # the last slot stays free
     button = _on_page(feed, 'Page')
-    assert pulse.wait_started(4)[-1] == 'Page'           # the click starts at once
+    assert pulse.wait_started(background + 1)[-1] == 'Page'      # the click starts at once
     pulse.release('Page')
     button.join(5)
     assert not button.is_alive()
@@ -295,16 +296,17 @@ def test_background_jobs_leave_a_slot_for_a_button():
 def test_the_keeper_is_a_background_download():
     pulse = _Gated()
     feed = PulseFeed(post=pulse.post)
-    jobs = [_in_job(feed, f'Job{i}') for i in range(3)]
-    pulse.wait_started(3)
+    background = pulse_feed.MAX_BACKGROUND_DOWNLOADS
+    jobs = [_in_job(feed, f'Job{i}') for i in range(background)]
+    pulse.wait_started(background)
     keeper = threading.Thread(target=feed.table, args=('token', 'Kept', 'Sell'),
                               kwargs={'count_read': False, 'keeper': True}, daemon=True)
     keeper.start()
     threading.Event().wait(0.1)
-    assert 'Kept' not in pulse.started                   # the fourth slot is not the keeper's
+    assert 'Kept' not in pulse.started                   # the last slot is not the keeper's
     pulse.release('Job0')
-    assert pulse.wait_started(4)[-1] == 'Kept'
-    for market in ['Kept', 'Job1', 'Job2']:
+    assert pulse.wait_started(background + 1)[-1] == 'Kept'
+    for market in ['Kept'] + [f'Job{i}' for i in range(1, background)]:
         pulse.release(market)
     for thread in jobs + [keeper]:
         thread.join(5)
@@ -313,15 +315,16 @@ def test_the_keeper_is_a_background_download():
 def test_a_waiting_page_goes_before_the_queued_jobs():
     pulse = _Gated()
     feed = PulseFeed(post=pulse.post)
-    first = [_on_page(feed, f'Page{i}') for i in range(4)]   # pages fill all four slots
-    pulse.wait_started(4)
+    slots = pulse_feed.MAX_PARALLEL_DOWNLOADS
+    first = [_on_page(feed, f'Page{i}') for i in range(slots)]   # pages fill every slot
+    pulse.wait_started(slots)
     jobs = [_in_job(feed, f'Job{i}') for i in range(3)]
     threading.Event().wait(0.1)
     late = _on_page(feed, 'Late')
     threading.Event().wait(0.1)
     pulse.release('Page0')                               # one slot frees: the page takes it
-    assert pulse.wait_started(5)[4] == 'Late'
-    for market in ['Page1', 'Page2', 'Page3', 'Late', 'Job0', 'Job1', 'Job2']:
+    assert pulse.wait_started(slots + 1)[slots] == 'Late'
+    for market in [f'Page{i}' for i in range(1, slots)] + ['Late', 'Job0', 'Job1', 'Job2']:
         pulse.release(market)
     for thread in first + jobs + [late]:
         thread.join(5)
@@ -330,18 +333,19 @@ def test_a_waiting_page_goes_before_the_queued_jobs():
 def test_a_page_joining_a_queued_job_download_moves_it_to_the_front():
     pulse = _Gated()
     feed = PulseFeed(post=pulse.post)
-    running = [_in_job(feed, f'Job{i}') for i in range(3)]
-    pulse.wait_started(3)
-    queued = _in_job(feed, 'Steam')                      # a fourth job download waits for a slot
+    background = pulse_feed.MAX_BACKGROUND_DOWNLOADS
+    running = [_in_job(feed, f'Job{i}') for i in range(background)]
+    pulse.wait_started(background)
+    queued = _in_job(feed, 'Steam')                      # one more job download waits for a slot
     threading.Event().wait(0.1)
     assert 'Steam' not in pulse.started
     page = _on_page(feed, 'Steam')                       # the button wants the same table
-    assert pulse.wait_started(4)[-1] == 'Steam'          # one download, started now
+    assert pulse.wait_started(background + 1)[-1] == 'Steam'     # one download, started now
     pulse.release('Steam')
     page.join(5)
     queued.join(5)
     assert pulse.started.count('Steam') == 1
-    for i in range(3):
+    for i in range(background):
         pulse.release(f'Job{i}')
     for thread in running:
         thread.join(5)
@@ -598,3 +602,19 @@ def test_quotes_are_the_index_without_a_dictionary_per_item():
     assert table.quotes() == {name: (quote['price'], quote['count'], quote['updated'])
                               for name, quote in table.index().items()}
     assert list(table.quotes()) == ['Sticker | A']
+
+
+# ---- a download in a process of its own (the app: its parsing memory goes back to the Mac) -----------
+
+def test_a_table_compacted_in_a_separate_process_comes_back_whole():
+    row = {'itemName': {'marketHashName': 'Item A'}, 'imageUrl': 'image',
+           'firstMarket': {'price': 1.0}, 'secondMarket': {'price': 2.0, 'totalOffersCount': 3},
+           'itemPopularity': [{'market': 'Steam', 'salesCount': 7}]}
+    entries, items, sales, repeated = pulse_feed._run_in_child(pulse_feed.compact_rows, ([row, row],))
+    assert entries == pulse_feed.compact_rows([row])[0]
+    assert items['Item A'][1] == 'image' and sales == {'Item A': {'Steam': 7}} and repeated == 1
+
+
+def test_a_failure_in_the_separate_process_reaches_the_caller():
+    with pytest.raises(ValueError, match='not a table'):
+        pulse_feed._run_in_child(pulse_feed.compact_rows, ('not rows',))

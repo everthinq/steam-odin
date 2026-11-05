@@ -94,9 +94,14 @@ Errors are `{message, responseType}` with types such as `MarketSubscriptionRequi
   `table(token, market, price_type, max_age)`; "Check live" uses `lookup(...)`. The read-only views
   on top of it live in `backend/pulse_views.py`.
 - **Single flight**: while a table downloads, every other caller of the same table waits for that
-  download; at most 4 tables download at once (`MAX_PARALLEL_DOWNLOADS`: each download peaks at
-  about 200 MB of memory; the Case Arbitrage alert poll's 7 markets arrive in two waves, about 3
-  seconds apart). Background jobs (`job()`, the keeper) take at most 3 of the 4
+  download; at most 2 tables download at once (`MAX_PARALLEL_DOWNLOADS`, 4 before 2026-11-05: each
+  download peaks at about 200 MB of memory and 8 GB Macs lagged). In the app each table is
+  downloaded and compacted in a short-lived Python process (`download_in_separate_processes`,
+  `_run_in_child`: arguments on stdin, so the token never shows in the process list), only item
+  details the backend does not know yet come back, and freed memory is handed back after every
+  download and profile answer (`give_memory_back`; the backend runs with `PYTHONMALLOC=malloc` and
+  `MALLOC_ARENA_MAX=2`, docker-compose.yml). Measured 2026-11-05 with real tables, 16 active
+  profiles, two rounds: 542 MB held before, 351 MB after. Background jobs (`job()`, the keeper) take at most 1 of the 2
   (`MAX_BACKGROUND_DOWNLOADS`) and a waiting page or button goes before them; a page that joins a
   job's queued download moves it to the front. So Fetch live data never queues behind the jobs:
   on 2026-10-29 the connection pulled ~0.8 MB/s and a table took 2–5 minutes (1–15 seconds

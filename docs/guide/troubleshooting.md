@@ -33,6 +33,15 @@ rejected code is tried once more after asking Steam for the time again, so a clo
 that fell behind while the Mac slept no longer breaks logins. If it keeps failing,
 the account's shared secret (maFile) is the likely problem.
 
+## The Mac lags while Heimdall runs
+
+Heimdall downloads at most two price tables at once, each in a short helper process that
+gives its memory back when it ends, and the Arbitrage page keeps the rows of only two
+profiles (the one shown and the one before; an active profile reopens in about a second).
+If the Mac still lags, lower Docker Desktop's memory (Settings → Resources): all four
+containers together stay around 1.5 GB, so 3 GB is enough on an 8 GB Mac. `docker stats`
+shows what each container uses.
+
 ## Prices do not load (Huginn, Draupnir)
 
 The Tradeon token is missing or expired. Get a fresh one

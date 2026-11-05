@@ -19,9 +19,9 @@ its answers:
 
 - **One download per table at a time** (single flight): a caller that asks while that table is
   being downloaded waits for the same download instead of starting another; at most
-  ``MAX_PARALLEL_DOWNLOADS`` (4) tables download at once.
+  ``MAX_PARALLEL_DOWNLOADS`` (2) tables download at once.
 - **Pages first**: background jobs (``job()``, the keeper) take at most
-  ``MAX_BACKGROUND_DOWNLOADS`` (3) of those slots, and a page or a button waiting for a slot goes
+  ``MAX_BACKGROUND_DOWNLOADS`` (1) of those slots, and a page or a button waiting for a slot goes
   before them, so a click never queues behind the jobs' downloads (on a slow connection a table
   takes minutes). A page that joins a job's queued download moves that download to the front.
 - **Freshness is the caller's choice**: ``max_age`` seconds (``FRESH`` = 10 minutes for background
@@ -59,9 +59,17 @@ its answers:
 Facts about the pulse API and ideas not used yet are in docs/internals/pulse-api.md.
 """
 import copy
+import ctypes
+import gzip
+import json
 import logging
+import os
+import pickle
+import subprocess
+import sys
 import threading
 import time
+import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 
@@ -71,10 +79,13 @@ TABLE_URL = 'https://api-pulse.tradeon.space/api/table/counter-strike/TradeOnMar
 FRESH = 10 * 60                 # background reads (boards, Case Arbitrage refresh, warmers)
 ON_DEMAND = 60                  # a button the user pressed (Fetch live data, Refresh)
 KEEP_SECONDS = FRESH            # a table older than this is dropped (nobody asks for older)
-# Each download peaks at ~200 MB (raw bytes, text, parsed rows), so four at most: the Case
-# Arbitrage alert poll's 7 markets arrive in two waves, about 3 seconds apart.
-MAX_PARALLEL_DOWNLOADS = 4
-MAX_BACKGROUND_DOWNLOADS = 3    # the last slot is kept for a page or a button
+# Each download peaks at ~200 MB (raw bytes, text, parsed rows), so two at most (the Case
+# Arbitrage alert poll's 7 markets arrive in four waves). In the app each
+# download runs in its own short-lived process (download_in_separate_processes), so that peak is
+# given back to the Mac when the process ends.
+# Two at once since 2026-11-05 (four before): 8 GB Macs lagged while four ~200 MB peaks ran together.
+MAX_PARALLEL_DOWNLOADS = 2
+MAX_BACKGROUND_DOWNLOADS = 1    # the last slot is kept for a page or a button
 WAIT_FOR_DOWNLOAD = 600         # seconds a caller waits on another caller's download (queue included)
 # Active profiles: every how many minutes their tables are downloaded again (Huginn Arbitrage).
 ACTIVE_MINUTES = (5, 10, 15, 30, 60)
@@ -210,6 +221,111 @@ def _weekly_sales(row):
     return out
 
 
+def compact_rows(rows, scale=None, known=frozenset()):
+    """A downloaded table's rows → (entries {name: (first quote, second quote, profit, profit
+    percent)}, items {name: (itemName, imageUrl)} for the names not in *known*, weekly sales
+    {name: {market: count}}, how many rows repeated a name). Only the fields Heimdall reads are kept."""
+    if not isinstance(rows, list):
+        raise ValueError('the answer is not a table')
+    entries, items, sales, repeated = {}, {}, {}, 0
+    for row in rows:
+        item_name = (row or {}).get('itemName') or {}
+        name = item_name.get('marketHashName')
+        if not name:
+            continue
+        if name in entries:
+            repeated += 1            # never seen (2026-10-15); the first row is kept
+            continue
+        if name not in known:
+            items.setdefault(name, (item_name, row.get('imageUrl')))
+        entries[name] = (_quote(row.get('firstMarket')), _quote(row.get('secondMarket'), scale),
+                         row.get('profit'), row.get('profitPercent'))
+        weekly = _weekly_sales(row)
+        if weekly:
+            sales[name] = weekly
+    return entries, items, sales, repeated
+
+
+# The browser headers pulse wants: without Device-Id and User-Agent it answers 403.
+_PULSE_HEADERS = {
+    'Accept': '*/*',
+    'Accept-Encoding': 'gzip',
+    'Accept-Language': 'ru',
+    'Content-Type': 'application/json',
+    'Device-Id': '5c28d24a632e4c88f73c84a5e4aad23b',
+    'Origin': 'https://pulse.tradeon.space',
+    'Referer': 'https://pulse.tradeon.space/',
+    'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36',
+    'Usercurrency': 'USD',
+}
+
+
+def post_table(url, token, body):
+    """POST one pulse query and return its rows (no caching). Asks for gzip: a table is ~4 MB
+    compressed instead of ~42-59 MB of JSON (2.5 s instead of ~100 s on the slow connection,
+    measured 2026-10-30)."""
+    request = urllib.request.Request(url, data=json.dumps(body).encode('utf-8'), method='POST',
+                                     headers={**_PULSE_HEADERS, 'Authorization': f'Bearer {token}'})
+    with urllib.request.urlopen(request, timeout=30) as response:
+        raw = response.read()
+        if (response.headers.get('Content-Encoding') or '').strip().lower() in ('gzip', 'x-gzip'):
+            raw = gzip.decompress(raw)
+        data = json.loads(raw)       # bytes: no second decoded copy of a ~59 MB table
+    if isinstance(data, list):
+        return data
+    if isinstance(data, dict):
+        return next((data[k] for k in ('items', 'data', 'result', 'records') if isinstance(data.get(k), list)), data)
+    return data
+
+
+def _download_compact(url, token, body, scale, known):
+    """Download one table and compact it (runs in a short-lived process)."""
+    return compact_rows(post_table(url, token, body), scale, known)
+
+
+def give_memory_back():
+    """Ask the C allocator to return its free memory to the system (glibc only; elsewhere nothing)."""
+    try:
+        ctypes.CDLL('libc.so.6').malloc_trim(0)
+    except (OSError, AttributeError):
+        pass
+
+
+def _child_main():
+    """The short-lived process: (function name, arguments) pickled on stdin, (succeeded, answer)
+    pickled on stdout. Only functions of this module run here."""
+    name, arguments = pickle.load(sys.stdin.buffer)
+    try:
+        answer = (True, globals()[name](*arguments))
+    except Exception as error:                          # noqa: BLE001  (handed back to the caller)
+        answer = (False, (isinstance(error, ValueError), f'{type(error).__name__}: {error}'))
+    pickle.dump(answer, sys.stdout.buffer)
+
+
+def _run_in_child(function, arguments):
+    """function(*arguments) in a new Python process that imports only this module, returning its
+    answer. Parsing a table makes hundreds of megabytes of temporary objects; in a process of its
+    own they all go back to the Mac when it ends, instead of staying pinned in the backend by the
+    few objects kept from them (measured 2026-11-05 with real tables: ~280 MB held in the backend
+    after 8 tables, beyond the ~90 MB of the tables themselves). Arguments travel on stdin, so the
+    token never shows in the process list. Not multiprocessing: it would import app.py again in
+    every child."""
+    try:
+        done = subprocess.run([sys.executable, '-c', f'import {__name__}; {__name__}._child_main()'],
+                              input=pickle.dumps((function.__name__, arguments)), capture_output=True,
+                              cwd=os.path.dirname(os.path.abspath(__file__)), timeout=WAIT_FOR_DOWNLOAD)
+    except subprocess.TimeoutExpired:
+        raise RuntimeError(f'the download process did not finish in {WAIT_FOR_DOWNLOAD} seconds') from None
+    if done.returncode != 0 or not done.stdout:
+        last = done.stderr.decode('utf-8', 'replace').strip().splitlines()[-1:] or ['no message']
+        raise RuntimeError(f'the download process stopped (exit {done.returncode}, out of memory?): {last[0]}')
+    succeeded, answer = pickle.loads(done.stdout)
+    if succeeded:
+        return answer
+    is_value_error, message = answer
+    raise (ValueError if is_value_error else RuntimeError)(message)
+
+
 class PulseTable:
     """One downloaded table: (market id, price type), when its download started, and per item
     (first market quote, second market quote, pulse's profit, pulse's profit percent)."""
@@ -296,6 +412,7 @@ class PulseFeed:
         """*post(url, token, body)* sends one request and returns the parsed rows; *scale*:
         {market id: factor} for bonus-balance markets."""
         self._post = post
+        self._separate_processes = False     # download_in_separate_processes (the app only)
         self._scale = dict(scale or {})
         self._clock = clock
         self._lock = threading.Lock()
@@ -464,30 +581,29 @@ class PulseFeed:
                 self._running_background -= background
                 self._slots.notify_all()
 
+    def download_in_separate_processes(self):
+        """Download and compact every table in a short-lived process of its own (app.py; tests keep
+        the injected *post* in this process)."""
+        self._separate_processes = True
+
     def _download(self, token, market_id, price_type, flight=None):
-        with self._download_slot(flight or _Flight(urgent=True)):
-            started = self._clock()
-            rows = self._post(TABLE_URL.format(market_id), token, body_for(price_type))
-            seconds = self._clock() - started
-        if not isinstance(rows, list):
-            raise ValueError(f'pulse {market_id} {price_type}: the answer is not a table')
-        # Parsed outside the lock: callers of other (cached) tables never wait for it.
-        scale = self._scale.get(market_id)
-        entries, new_items, sales, repeated = {}, {}, {}, 0
-        for row in rows:
-            item_name = (row or {}).get('itemName') or {}
-            name = item_name.get('marketHashName')
-            if not name:
-                continue
-            if name in entries:
-                repeated += 1            # never seen (2026-10-15); the first row is kept
-                continue
-            new_items.setdefault(name, (item_name, row.get('imageUrl')))
-            entries[name] = (_quote(row.get('firstMarket')), _quote(row.get('secondMarket'), scale),
-                             row.get('profit'), row.get('profitPercent'))
-            weekly = _weekly_sales(row)
-            if weekly:
-                sales[name] = weekly
+        url, body, scale = TABLE_URL.format(market_id), body_for(price_type), self._scale.get(market_id)
+        with self._lock:     # names whose details are kept already: only new ones come back
+            known = frozenset(self._items)
+        try:
+            with self._download_slot(flight or _Flight(urgent=True)):
+                started = self._clock()
+                if self._separate_processes:     # compacted there too: only the kept fields come back
+                    compacted = _run_in_child(_download_compact, (url, token, body, scale, known))
+                    seconds = self._clock() - started
+                else:
+                    rows = self._post(url, token, body)
+                    seconds = self._clock() - started
+                    compacted = None
+            # Parsed outside the slot: other downloads never wait for it.
+            entries, new_items, sales, repeated = compacted or compact_rows(rows, scale, known)
+        except ValueError as error:
+            raise ValueError(f'pulse {market_id} {price_type}: {error}') from None
         if repeated:
             logger.warning('[PULSE] %s %s: %d rows repeat an item name; the first of each was kept',
                            market_id, price_type, repeated)
@@ -503,6 +619,9 @@ class PulseFeed:
             counts['last_download_at'] = started
             self._drop_old_tables(self._clock())
         logger.info('[PULSE] %s %s: %d items in %.1f s', market_id, price_type, len(entries), seconds)
+        if self._separate_processes:
+            del entries, new_items, sales
+            give_memory_back()
         self._announce(table)
         return table
 

@@ -19,7 +19,7 @@ from huginn_service import DEFAULT_PRICE_MARKET
 from huginn_service import load_csfloat_keys, load_csfloat_proxy, classify_proxy_error, detect_public_ip
 from notifications import notification_channel, send_notification
 import pulse_views
-from pulse_feed import ACTIVE_MINUTES, NotActive
+from pulse_feed import ACTIVE_MINUTES, NotActive, give_memory_back
 from storage_deposit import CommandError
 from store_arbitrage_service import settings_changes
 
@@ -65,6 +65,8 @@ def _profile_reads_end(error=None):
     stack = g.pop('pulse_reading', None)
     if stack is not None:
         stack.close()
+        # A profile answer builds ~34,000 rows (~15 MB of JSON): hand that memory back at once.
+        give_memory_back()
 
 
 # Background CSFloat buy-order sweep state (one at a time). Progress is polled by the UI.

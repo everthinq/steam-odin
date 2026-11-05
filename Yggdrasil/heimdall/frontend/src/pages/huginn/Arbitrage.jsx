@@ -52,6 +52,10 @@ const pulseTablesOf = (response) => {
 // When the oldest table behind shown prices was downloaded (the feed's clock, epoch seconds: the
 // header's fourth value, the same clock as /api/huginn/active's downloaded_at).
 const downloadedAt = ({ tables }) => (tables.length ? Math.min(...tables.map(table => table[3] ?? 0)) : 0);
+// Rows of at most this many profiles stay in the browser: the one shown and the one before. Each
+// answer is ~15 MB of JSON and far more as objects, so keeping every profile opened made 8 GB Macs
+// lag (2026-11-05). An active profile reopens from the backend's memory in about a second.
+const PROFILES_KEPT_IN_BROWSER = 2;
 const ACTIVE_POLL_MILLISECONDS = 15000; // the active profiles' table ages (memory only on the backend, cheap)
 
 const formatTs = (ts) => {
@@ -89,6 +93,7 @@ const HuginnArbitrage = () => {
     const [pricesByProfile, setPricesByProfile] = useState({});
     const pricesRef = useRef({});
     const uploadedRef = useRef(new Set());                 // profiles showing a JSON file you loaded
+    const recentRef = useRef([]);                          // profile ids, most recently shown first
     // The active profiles (GET /api/huginn/active), the only ones pulse is asked for, and when that answer arrived.
     const [activeStatus, setActiveStatus] = useState(null);
     const [activeBusy, setActiveBusy] = useState(false);
@@ -177,6 +182,11 @@ const HuginnArbitrage = () => {
     // collapse the fetch panel if it does, open it (prompt to fetch) if it doesn't.
     useEffect(() => {
         setUploadOpen(!dataByProfile[profileId]);
+        // Only the last PROFILES_KEPT_IN_BROWSER profiles keep their rows.
+        if (profileId == null) return;
+        recentRef.current = [profileId, ...recentRef.current.filter(id => id !== profileId)].slice(0, PROFILES_KEPT_IN_BROWSER);
+        setDataByProfile(prev => Object.fromEntries(Object.entries(prev).filter(([id]) => recentRef.current.includes(id))));
+        for (const id of [...uploadedRef.current]) if (!recentRef.current.includes(id)) uploadedRef.current.delete(id);
     }, [profileId]); // eslint-disable-line react-hooks/exhaustive-deps
 
     const handleScan = async () => {
@@ -194,7 +204,8 @@ const HuginnArbitrage = () => {
         }
     };
 
-    const setProfileData = (id, data) => setDataByProfile(prev => ({ ...prev, [id]: data }));
+    // An answer for a profile left behind meanwhile is not kept (PROFILES_KEPT_IN_BROWSER).
+    const setProfileData = (id, data) => setDataByProfile(prev => (recentRef.current.includes(id) ? { ...prev, [id]: data } : prev));
 
     const setProfilePrices = (id, prices) => {
         pricesRef.current = { ...pricesRef.current, [id]: prices };

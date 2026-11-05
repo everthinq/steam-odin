@@ -10,6 +10,11 @@ services:
       - /etc/localtime:/etc/localtime:ro
     environment:
       - PORT=5000
+      # Memory on 8 GB Macs (measured 2026-11-05 with real pulse tables, 8 active tables: 525 MB
+      # held before, ~290 MB after): the C allocator for every object and two allocator arenas,
+      # so memory freed after a pulse download goes back instead of staying with the backend.
+      - PYTHONMALLOC=malloc
+      - MALLOC_ARENA_MAX=2
       - RATATOSKR_URL=http://ratatoskr:3000
       # ArchiSteamFarm API (card farming). Empty password = ASF integration off;
       # `make asf-setup` puts it in the root .env (gitignored).

@@ -1,5 +1,4 @@
 import email.utils
-import gzip
 import json
 import logging
 import os
@@ -13,7 +12,7 @@ import urllib.parse
 from datetime import datetime, timezone, timedelta
 from jsonio import atomic_write_json
 from price_history import PriceHistory
-from pulse_feed import COUNT, FRESH, ON_DEMAND, PRICE, NotActive, PulseFeed
+from pulse_feed import COUNT, FRESH, ON_DEMAND, PRICE, NotActive, PulseFeed, post_table
 from ratatoskr_service import items_moving
 from notifications import (TELEGRAM_MESSAGE_LIMIT, delete_notification, edit_notification,
                            notification_channel, send_notification, telegram_visible_length)
@@ -767,37 +766,9 @@ class HuginnService:
         return data
 
     def _post_tradeon(self, url, token, body):
-        """POST one pulse table query and return its rows (no caching). Only PulseFeed calls this.
-        Asks for gzip: a table is ~4 MB compressed instead of ~42-59 MB of JSON (2.5 s instead of
-        ~100 s on the slow connection, measured 2026-10-30)."""
-        body_bytes = json.dumps(body).encode('utf-8')
-        req = urllib.request.Request(
-            url,
-            data=body_bytes,
-            method='POST',
-            headers={
-                'Accept': '*/*',
-                'Accept-Encoding': 'gzip',
-                'Accept-Language': 'ru',
-                'Authorization': f'Bearer {token}',
-                'Content-Type': 'application/json',
-                'Device-Id': '5c28d24a632e4c88f73c84a5e4aad23b',
-                'Origin': 'https://pulse.tradeon.space',
-                'Referer': 'https://pulse.tradeon.space/',
-                'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36',
-                'Usercurrency': 'USD',
-            },
-        )
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            raw = resp.read()
-            if (resp.headers.get('Content-Encoding') or '').strip().lower() in ('gzip', 'x-gzip'):
-                raw = gzip.decompress(raw)
-            data = json.loads(raw)       # bytes: no second decoded copy of a ~59 MB table
-        if isinstance(data, list):
-            return data
-        if isinstance(data, dict):
-            return next((data[k] for k in ('items', 'data', 'result', 'records') if isinstance(data.get(k), list)), data)
-        return data
+        """POST one pulse table query and return its rows (pulse_feed.post_table). Only PulseFeed
+        calls this; tests replace it."""
+        return post_table(url, token, body)
 
     def _tradeon_first_rows(self, token, market_id, price_type, settings=None):
         """A curated Tradeon-first profile: buy at Tradeon's lowest listing (the table's first
