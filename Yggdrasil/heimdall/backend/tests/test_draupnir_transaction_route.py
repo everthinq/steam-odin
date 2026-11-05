@@ -5,6 +5,8 @@ from types import SimpleNamespace
 import pytest
 from flask import Flask
 
+import error_handlers  # noqa: E402
+
 from context import ctx
 from draupnir_service import DraupnirService
 from validation import validate_new_transaction
@@ -30,6 +32,7 @@ def client(tmp_path, monkeypatch):
     monkeypatch.setattr(ctx, 'huginn_service',
                         SimpleNamespace(known_item_names=lambda token, block=True: names['pulse']))
     app = Flask(__name__)
+    error_handlers.install(app)
     app.register_blueprint(bp)
     portfolio = svc.create_portfolio('acct')
     return app.test_client(), svc, portfolio['id'], names

@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 import auto_store
 import confirmation_settings
 import notifications
-from storage_deposit import CommandError
+from commands import CommandError
 
 logger = logging.getLogger(__name__)
 

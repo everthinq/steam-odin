@@ -11,7 +11,7 @@ before it: the local tag `checkpoint/before-phase-2` (never pushed).
 | 2 | No auto-reloader: one process, `make reload`, loops start once from `python app.py`, clean stop on SIGTERM | **Done**, pushed 76ee0eb |
 | 3 | Health checks for every container | **Done**, pushed 31dc36e |
 | 4 | Move the remaining page logic to the backend, tool by tool | **In progress** — see below |
-| 5 | One shape for plans, jobs and errors (`{error, code}` everywhere, one shared plan registry, one `CommandError` handler) | Not started |
+| 5 | One shape for plans, jobs and errors (`{error, code}` everywhere, one shared plan registry, one `CommandError` handler) | **In progress** — see the end |
 | 6 | Endpoint list + System health page | Not started |
 | 7 | `odin` command-line tool | Not started — decided: Python with only built-in libraries, talks to localhost:5001, installed on PATH; dry runs only for purchases; first version has four groups: Accounts (code, confirmations, accounts), Ratatoskr (storage, store, autostore), Prices and portfolio (price, arbitrage, harvest, portfolio), System (status, logs, job, routes) |
 
@@ -209,6 +209,10 @@ News watcher, Case alerts, Readiness); Andvari = 1, 2, 3, 10, 11, DealsTable and
   Python objects: tables 112 -> 56 MB, weekly sales 40 -> 29, today's history 57 -> 40 (the rest is
   the item names). `MEGABYTES_PER_TABLE_IN_MEMORY` 15 -> 7. Still open: the ~15 MB profile answers
   (built as one JSON per request), then Phase 2 bullets 5, 6, 7.
+- Memory work **CLOSED 2026-11-05** (Ivan chose to stop here): a profile answer (Steam, 31,751 rows,
+  22.9 MB of JSON) does not leak: the backend stays at about 320-330 MB after repeated answers (240
+  idle). About 8 MB of each answer is picture addresses; dropping them belongs with the local item
+  picture library.
 - 12 + 13 (H5) **DONE 2026-11-05**: `/api/huginn/active` answers `estimated_megabytes_per_day`
   (and per `preview`), counting only the active hours (`active_minutes_a_day`) plus the daily
   reference; the feed's `status()` answers `downloaded_megabytes` and `megabytes_in_memory` from
@@ -226,3 +230,13 @@ News watcher, Case alerts, Readiness); Andvari = 1, 2, 3, 10, 11, DealsTable and
   `steamid` and `looseFree`; the page drops an answer for another account.
 - Team Fortress 2: left alone as a whole feature (Ivan, 2026-11-04: not used for now); do not work on it.
 - BUGS: CardDeals no stale-answer guard (CaseArbitrage's fixed in H2); startScan unchecked; app-id regex grabs every 2-9 digit run (page + backend parse_app_ids, Buy games uses it); ReadinessPanel stale numbers (FIXED in H6).
+
+## Bullet 5 — one shape for plans, jobs and errors
+
+- 5a **DONE 2026-11-05**: one `CommandError` in `commands.py` (was in `storage_deposit.py`, plus a second
+  copy in `gjallarhorn_reminders.py`); `error_handlers.install` answers it as `{error, code}` with its
+  status for every route, so the three `_command` helpers (Mímir, Draupnir, Ratatoskr) and Huginn's
+  `_purchase_command` are gone: a route returns its answer only.
+- Next: the other refusal classes with a `code` (`SettingsError`, `AlertSettingsError`,
+  `NewsSettingsError`, `SellingConfigError`) become `CommandError`; errors still without a `code`
+  (mostly `routes/huginn.py`); one shared plan registry; `self._job` mirroring the registry job.

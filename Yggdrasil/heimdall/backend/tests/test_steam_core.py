@@ -5,6 +5,7 @@ guards, transient backoff, the confirmation sweep lock and auto-accept rules.
 Nothing here touches the network: every Steam call is replaced by a fake, and
 every file lives in a pytest temporary directory.
 """
+import error_handlers  # noqa: E402
 import base64
 import json
 import logging
@@ -143,6 +144,7 @@ def test_delete_routes_do_not_restart_the_backend(service, monkeypatch):
     service.storage.save_account(STEAMID, {'shared_secret': 's'})
 
     app = Flask(__name__)
+    error_handlers.install(app)
     app.register_blueprint(accounts_routes.bp)
     client = app.test_client()
     response = client.delete(f'/api/accounts/{STEAMID}')

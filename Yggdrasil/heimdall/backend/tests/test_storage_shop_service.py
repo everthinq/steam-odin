@@ -9,7 +9,7 @@ import time
 import pytest
 
 import storage_shop_service as shop
-from storage_deposit import CommandError
+from commands import CommandError
 from storage_shop_service import (ShopError, StorageShopService, amount_shown, approval_form, can_buy, can_deliver_again,
                                   check_auth_request, decode_auth_request, decode_price_sheet, order_totals, parse_selection,
                                   plan_account, plan_lines, purchase_outcome, shop_statistics, steam_error,

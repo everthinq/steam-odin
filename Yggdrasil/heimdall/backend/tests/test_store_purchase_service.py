@@ -1,12 +1,13 @@
 """Andvari "Buy games": the plan (owned, currency, maximum price, balance, best
 profit first) and the guarded purchase (empty cart only, exact cart and final
 price, cancel + empty the cart on any mismatch, dry run pays nothing)."""
+import error_handlers  # noqa: E402
 import json
 
 import pytest
 
 import store_purchase_service
-from storage_deposit import CommandError
+from commands import CommandError
 from store_purchase_service import (StorePurchaseService, STATUS_BALANCE, STATUS_BUY, STATUS_CURRENCY,
                                     STATUS_OWNED, STATUS_TOO_EXPENSIVE, choose_package, default_selection,
                                     parse_app_ids, plan_account, purchase_statistics, to_usd)
@@ -668,6 +669,7 @@ def test_the_routes_follow_the_commands(world, monkeypatch):
     service, web, _ = world
     monkeypatch.setattr(ctx, 'store_purchase_service', service)
     app = Flask(__name__)
+    error_handlers.install(app)
     app.register_blueprint(bp)
     client = app.test_client()
     plan(service)

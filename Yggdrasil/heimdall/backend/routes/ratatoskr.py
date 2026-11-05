@@ -6,7 +6,7 @@ Services are read from :data:`context.ctx` at request time.
 from flask import Blueprint, jsonify, request
 
 from context import ctx
-from storage_deposit import CommandError, storage_block
+from storage_deposit import storage_block
 
 bp = Blueprint('ratatoskr', __name__)
 
@@ -73,17 +73,11 @@ def ratatoskr_disconnect():
 # Transfer, Auto-Store and the command line move items only through these: the rules
 # (what a Storage Unit refuses, the fullest unit with room first) live in the backend.
 
-def _command(run, status=200):
-    try:
-        return jsonify(run()), status
-    except CommandError as error:
-        return jsonify(error.body()), error.status
-
 
 @bp.route('/api/ratatoskr/storage/<steamid>', methods=['GET'])
 def ratatoskr_storage(steamid):
     """Free places across every Storage Unit (they count as one storage)."""
-    return _command(lambda: ctx.deposit_service.storage(steamid))
+    return jsonify(ctx.deposit_service.storage(steamid))
 
 
 @bp.route('/api/ratatoskr/deposit/plan', methods=['POST'])
@@ -95,7 +89,7 @@ def ratatoskr_deposit_plan():
     item_ids = body.get('item_ids')
     if item_ids is not None and not isinstance(item_ids, list):
         return jsonify({'error': 'item_ids must be a list', 'code': 'bad_request'}), 400
-    return _command(lambda: ctx.deposit_service.plan_deposit(
+    return jsonify(ctx.deposit_service.plan_deposit(
         body['steamid'], item_ids=item_ids, all_storable=bool(body.get('all_storable'))))
 
 
@@ -105,13 +99,13 @@ def ratatoskr_withdraw_plan():
     body = request.get_json(silent=True) or {}
     if not body.get('steamid') or not isinstance(body.get('items'), list):
         return jsonify({'error': 'Needs steamid and items', 'code': 'bad_request'}), 400
-    return _command(lambda: ctx.deposit_service.plan_withdraw(body['steamid'], body['items']))
+    return jsonify(ctx.deposit_service.plan_withdraw(body['steamid'], body['items']))
 
 
 @bp.route('/api/ratatoskr/plans/<plan_id>/execute', methods=['POST'])
 def ratatoskr_execute_plan(plan_id):
     """Run a plan once; answers its job (GET /api/jobs/<id>). Again: the same job."""
-    return _command(lambda: ctx.deposit_service.execute(plan_id), 202)
+    return jsonify(ctx.deposit_service.execute(plan_id)), 202
 
 
 @bp.route('/api/ratatoskr/move/status/<steamid>', methods=['GET'])
@@ -204,26 +198,26 @@ def ratatoskr_casket_rename():
 @bp.route('/api/ratatoskr/storage-units/<steamid>', methods=['GET'])
 def ratatoskr_storage_units(steamid):
     """Every Storage Unit of the account: name, items held, named or not."""
-    return _command(lambda: ctx.rename_service.units(steamid))
+    return jsonify(ctx.rename_service.units(steamid))
 
 
 @bp.route('/api/ratatoskr/storage-units/<steamid>/rename', methods=['POST'])
 def ratatoskr_storage_unit_rename(steamid):
     """Rename one Storage Unit: {item_id, name}."""
     body = request.json or {}
-    return _command(lambda: ctx.rename_service.rename(steamid, body.get('item_id'), body.get('name')))
+    return jsonify(ctx.rename_service.rename(steamid, body.get('item_id'), body.get('name')))
 
 
 @bp.route('/api/ratatoskr/storage-units/<steamid>/name-unnamed/plan', methods=['POST'])
 def ratatoskr_storage_units_name_plan(steamid):
     """Plan: a "Storage N" name for every Storage Unit without one."""
-    return _command(lambda: ctx.rename_service.plan_name_unnamed(steamid))
+    return jsonify(ctx.rename_service.plan_name_unnamed(steamid))
 
 
 @bp.route('/api/ratatoskr/storage-units/name-plans/<plan_id>/execute', methods=['POST'])
 def ratatoskr_storage_units_name_execute(plan_id):
     """Execute a naming plan, once."""
-    return _command(lambda: ctx.rename_service.execute(plan_id))
+    return jsonify(ctx.rename_service.execute(plan_id))
 
 
 # ---- Auto-Store (auto_store.py): one watchlist per account, one item per command ----
@@ -232,48 +226,48 @@ def ratatoskr_storage_units_name_execute(plan_id):
 @bp.route('/api/ratatoskr/auto-store', methods=['GET'])
 def get_auto_store():
     """The switches, every account's watchlist, the master view and the move history."""
-    return _command(ctx.auto_store.status)
+    return jsonify(ctx.auto_store.status())
 
 
 @bp.route('/api/ratatoskr/auto-store/enabled', methods=['POST'])
 def auto_store_enabled():
     """The master switch: {enabled: true|false}."""
     body = request.get_json(silent=True) or {}
-    return _command(lambda: ctx.auto_store.set_enabled(body.get('enabled')))
+    return jsonify(ctx.auto_store.set_enabled(body.get('enabled')))
 
 
 @bp.route('/api/ratatoskr/auto-store/account', methods=['POST'])
 def auto_store_account():
     """Switch Auto-Store on or off for one account: {steamid, on: true|false}."""
     body = request.get_json(silent=True) or {}
-    return _command(lambda: ctx.auto_store.set_account(body.get('steamid'), body.get('on')))
+    return jsonify(ctx.auto_store.set_account(body.get('steamid'), body.get('on')))
 
 
 @bp.route('/api/ratatoskr/auto-store/items/add', methods=['POST'])
 def auto_store_add_item():
     """Add one item to one account's watchlist: {steamid, name}."""
     body = request.get_json(silent=True) or {}
-    return _command(lambda: ctx.auto_store.add_item(body.get('steamid'), body.get('name')))
+    return jsonify(ctx.auto_store.add_item(body.get('steamid'), body.get('name')))
 
 
 @bp.route('/api/ratatoskr/auto-store/items/remove', methods=['POST'])
 def auto_store_remove_item():
     """Remove one item from one account's watchlist: {steamid, name}."""
     body = request.get_json(silent=True) or {}
-    return _command(lambda: ctx.auto_store.remove_item(body.get('steamid'), body.get('name')))
+    return jsonify(ctx.auto_store.remove_item(body.get('steamid'), body.get('name')))
 
 
 @bp.route('/api/ratatoskr/auto-store/suggestions/<steamid>', methods=['GET'])
 def auto_store_suggestions(steamid):
     """Names in this account's inventory a Storage Unit can hold and it does not watch yet."""
-    return _command(lambda: ctx.auto_store.suggestions(steamid))
+    return jsonify(ctx.auto_store.suggestions(steamid))
 
 
 @bp.route('/api/ratatoskr/auto-store/sweep', methods=['POST'])
 def trigger_auto_store_sweep():
     """Sweep now, one account: {steamid}. Answers {job} to follow, or {job: null, nothing}."""
     body = request.get_json(silent=True) or {}
-    return _command(lambda: ctx.scheduler.sweep_account(body.get('steamid')), 202)
+    return jsonify(ctx.scheduler.sweep_account(body.get('steamid'))), 202
 
 
 # ---- Buy Storage Units, or any in-game store item (storage_shop_service.py) ----
@@ -291,13 +285,13 @@ def storage_shop_plan():
     """{"item": entry, "selection": [{"steamid", "quantity"}] (none: read every wallet, no order)}:
     answers the plan in state "checking"; follow its check_job_id, then read the plan again."""
     body = request.get_json(silent=True) or {}
-    return _command(lambda: ctx.storage_shop_service.start_plan(body.get('selection'), body.get('item') or 'casket'))
+    return jsonify(ctx.storage_shop_service.start_plan(body.get('selection'), body.get('item') or 'casket'))
 
 
 @bp.route('/api/ratatoskr/storage-shop/plans/<plan_id>', methods=['GET'])
 def storage_shop_plan_view(plan_id):
     """The plan: state (checking / ready / failed / replaced / expired), lines, totals, expires_at."""
-    return _command(lambda: ctx.storage_shop_service.describe_plan(plan_id))
+    return jsonify(ctx.storage_shop_service.describe_plan(plan_id))
 
 
 @bp.route('/api/ratatoskr/storage-shop/plans/<plan_id>/execute', methods=['POST'])
@@ -306,8 +300,8 @@ def storage_shop_execute(plan_id):
     shows (optional; must be the plan's)}: buys the plan's payable lines once and answers the
     purchase job (GET /api/jobs/<id>). Again: the same job, never a second purchase."""
     body = request.get_json(silent=True) or {}
-    return _command(lambda: ctx.storage_shop_service.execute_plan(
-        plan_id, body.get('dry_run') is not False, body.get('item')), 202)
+    return jsonify(ctx.storage_shop_service.execute_plan(
+        plan_id, body.get('dry_run') is not False, body.get('item'))), 202
 
 
 @bp.route('/api/ratatoskr/storage-shop/quote', methods=['POST'])
@@ -315,7 +309,7 @@ def storage_shop_quote():
     """{"item", "selection": [{"steamid", "quantity"}]}: the order panel's totals from what is
     last known (no Steam call, nothing planned)."""
     body = request.get_json(silent=True) or {}
-    return _command(lambda: ctx.storage_shop_service.quote(body.get('item') or 'casket', body.get('selection')))
+    return jsonify(ctx.storage_shop_service.quote(body.get('item') or 'casket', body.get('selection')))
 
 
 @bp.route('/api/ratatoskr/storage-shop/deliver-again', methods=['POST'])
@@ -328,7 +322,7 @@ def storage_shop_deliver_again():
         at = float(body['at'])
     except (KeyError, TypeError, ValueError):
         return jsonify({'error': 'at must be the purchase time', 'code': 'bad_request'}), 400
-    return _command(lambda: ctx.storage_shop_service.start_deliver_again(at), 202)
+    return jsonify(ctx.storage_shop_service.start_deliver_again(at)), 202
 
 
 # ---- Store Catalogue: every item the game store sells (store_catalogue_service.py) ----

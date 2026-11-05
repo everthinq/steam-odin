@@ -8,6 +8,8 @@ from datetime import datetime, timezone
 import pytest
 from flask import Flask
 
+import error_handlers  # noqa: E402
+
 import draupnir_backup_service
 import draupnir_service
 from draupnir_backup_service import BackupService
@@ -95,6 +97,7 @@ def test_restore_route_uses_the_store(tmp_path, monkeypatch):
     monkeypatch.setattr(ctx, 'draupnir_service', svc)
     monkeypatch.setattr(ctx, 'draupnir_backup', backup)
     app = Flask(__name__)
+    error_handlers.install(app)
     app.register_blueprint(bp)
     response = app.test_client().post('/api/draupnir/portfolios/backups/restore',
                                       json={'name': name})
@@ -126,6 +129,7 @@ def test_failed_write_answers_500_from_the_route(tmp_path, monkeypatch):
     monkeypatch.setattr(draupnir_service, 'atomic_write_json',
                         lambda *a, **k: (_ for _ in ()).throw(OSError('read-only')))
     app = Flask(__name__)
+    error_handlers.install(app)
     app.register_blueprint(bp)
     response = app.test_client().post(f"/api/draupnir/portfolios/{p['id']}/transactions",
                                       json={**_txn('Fracture Case', 'buy', 1, 0.41), 'platform': 'steam',

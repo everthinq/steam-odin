@@ -9,6 +9,8 @@ import json
 import pytest
 from flask import Flask
 
+import error_handlers  # noqa: E402
+
 import pulse_feed
 import pulse_views
 from context import ctx
@@ -59,6 +61,7 @@ def client(monkeypatch, service):
     monkeypatch.setattr(ctx, 'huginn_service', service, raising=False)
     monkeypatch.setattr(ctx, 'settings_manager', settings, raising=False)
     app = Flask(__name__)
+    error_handlers.install(app)
     app.register_blueprint(huginn_routes.bp)
     client = app.test_client()
     client.settings = settings

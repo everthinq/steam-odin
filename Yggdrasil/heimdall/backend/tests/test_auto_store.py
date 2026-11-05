@@ -5,7 +5,7 @@ import pytest
 import auto_store
 from auto_store import AutoStore
 from scheduler import ConfirmationScheduler
-from storage_deposit import CommandError
+from commands import CommandError
 
 
 class FakeSettingsManager:

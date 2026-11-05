@@ -2,6 +2,8 @@
 import pytest
 from flask import Flask
 
+import error_handlers  # noqa: E402
+
 from huginn_service import DEFAULT_PRICE_MARKET, HuginnService
 from validation import date_display, date_editable
 
@@ -26,6 +28,7 @@ def test_date_forms():
 def client():
     from routes.draupnir import bp
     app = Flask(__name__)
+    error_handlers.install(app)
     app.register_blueprint(bp)
     return app.test_client()
 

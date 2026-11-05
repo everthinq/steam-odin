@@ -1,4 +1,5 @@
 """Tests for Mimir — the credential vault (parser + encrypted CRUD/import)."""
+import error_handlers  # noqa: E402
 import pytest
 
 from mimir_service import MimirService, parse_credentials_text
@@ -192,6 +193,7 @@ def test_unreadable_vault_route_answers_409(tmp_path, monkeypatch):
     monkeypatch.setattr(ctx, 'mimir_service',
                         MimirService(SecureStorage(storage_dir=str(directory))))
     app = Flask(__name__)
+    error_handlers.install(app)
     app.register_blueprint(bp)
     response = app.test_client().post('/api/mimir/import', json={'text': 'a;b;c@d.com'})
     assert response.status_code == 409
@@ -255,6 +257,7 @@ def mimir_client(tmp_path, monkeypatch):
     monkeypatch.setattr(ctx, 'mimir_service', service)
     monkeypatch.setattr(ctx, 'steam_service', _FakeSteamService())
     app = Flask(__name__)
+    error_handlers.install(app)
     app.register_blueprint(bp)
     return app.test_client(), service
 
@@ -351,6 +354,7 @@ def test_test_login_with_a_reused_session_is_not_recorded_as_ok(monkeypatch):
     from flask import Flask
     from context import ctx
     app = Flask(__name__)
+    error_handlers.install(app)
     app.register_blueprint(mimir_routes.bp)
     monkeypatch.setattr(ctx, 'mimir_service', FakeMimir(), raising=False)
     monkeypatch.setattr(ctx, 'steam_service', FakeSteam(), raising=False)

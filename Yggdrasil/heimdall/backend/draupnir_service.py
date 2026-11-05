@@ -16,7 +16,7 @@ import uuid
 from datetime import datetime, timezone
 
 from jsonio import atomic_write_json
-from storage_deposit import CommandError
+from commands import CommandError
 from validation import date_display, date_editable, normalize_datetime, validate_transaction
 
 log = logging.getLogger(__name__)

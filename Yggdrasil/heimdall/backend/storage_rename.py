@@ -22,7 +22,8 @@ import secrets
 import threading
 import time
 
-from storage_deposit import CommandError, free_places, unit_count
+from commands import CommandError
+from storage_deposit import free_places, unit_count
 from storage_shop_service import next_storage_names
 
 NAME_MAX_LENGTH = 20

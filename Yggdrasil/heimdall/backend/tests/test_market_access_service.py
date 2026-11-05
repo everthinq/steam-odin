@@ -1,6 +1,7 @@
 """Market access: Purchase History parsing, which rows count, the lapse date and
 Steam's eligibility verdict. The page below copies the structure of Steam's real
 Purchase History table (2026-10-29); every amount and game is made up."""
+import error_handlers  # noqa: E402
 import datetime
 import time
 
@@ -356,7 +357,7 @@ import threading  # noqa: E402
 
 from market_access_service import (MarketAccessError, advice, describe_unlock, headline,  # noqa: E402
                                    purchase_help)
-from storage_deposit import CommandError  # noqa: E402
+from commands import CommandError  # noqa: E402
 
 
 def _finish(service, job_id):
@@ -711,6 +712,7 @@ def _client(service):
 
     from routes.mimir import bp
     app = Flask(__name__)
+    error_handlers.install(app)
     app.register_blueprint(bp)
     return app.test_client()
 

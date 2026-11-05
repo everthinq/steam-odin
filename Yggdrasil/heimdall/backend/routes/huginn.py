@@ -21,7 +21,6 @@ from huginn_service import load_csfloat_keys, load_csfloat_proxy, classify_proxy
 from notifications import notification_channel, send_notification
 import pulse_views
 from pulse_feed import ACTIVE_MINUTES, NotActive, give_memory_back
-from storage_deposit import CommandError
 from store_arbitrage_service import settings_changes
 
 bp = Blueprint('huginn', __name__)
@@ -836,21 +835,13 @@ def gjallarhorn_reminders_list():
 @bp.route('/api/huginn/gjallarhorn/reminders', methods=['POST'])
 def gjallarhorn_reminders_add():
     """{item_name, unlock_at (ISO with offset), note} → one Telegram text at that time."""
-    from gjallarhorn_reminders import CommandError
     body = request.get_json(silent=True) or {}
-    try:
-        return jsonify(ctx.gjallarhorn_reminders.add(body.get('item_name'), body.get('unlock_at'), body.get('note')))
-    except CommandError as e:
-        return jsonify({'error': str(e), 'code': e.code}), 400
+    return jsonify(ctx.gjallarhorn_reminders.add(body.get('item_name'), body.get('unlock_at'), body.get('note')))
 
 
 @bp.route('/api/huginn/gjallarhorn/reminders/<reminder_id>', methods=['DELETE'])
 def gjallarhorn_reminders_remove(reminder_id):
-    from gjallarhorn_reminders import CommandError
-    try:
-        ctx.gjallarhorn_reminders.remove(reminder_id)
-    except CommandError as e:
-        return jsonify({'error': str(e), 'code': e.code}), 404
+    ctx.gjallarhorn_reminders.remove(reminder_id)
     return jsonify({'ok': True})
 
 
@@ -1375,12 +1366,6 @@ def card_deals_buy_plan():
 # purchase of only what passed that dry run, once (store_purchase_service.py). Errors are
 # {error, code}; the dry run and the purchase are jobs followed at GET /api/jobs/<id>.
 
-def _purchase_command(run, status=200):
-    try:
-        return jsonify(run()), status
-    except CommandError as error:
-        return jsonify(error.body()), error.status
-
 
 @bp.route('/api/huginn/card-deals/buy/purchase-plan', methods=['POST'])
 def card_deals_buy_purchase_plan():
@@ -1388,13 +1373,13 @@ def card_deals_buy_purchase_plan():
     "empty_cart": bool}: the purchase plan (lines per account, totals, refused accounts, its dry run's
     state, expires_at, executable). Nothing is bought or tried yet."""
     body = request.get_json(silent=True) or {}
-    return _purchase_command(lambda: ctx.store_purchase_service.create_purchase_plan(
+    return jsonify(ctx.store_purchase_service.create_purchase_plan(
         body.get('plan_created_at'), body.get('selection'), body.get('empty_cart', True) is not False))
 
 
 @bp.route('/api/huginn/card-deals/buy/purchase-plans/<purchase_plan_id>', methods=['GET'])
 def card_deals_buy_purchase_plan_get(purchase_plan_id):
-    return _purchase_command(lambda: ctx.store_purchase_service.get_purchase_plan(purchase_plan_id))
+    return jsonify(ctx.store_purchase_service.get_purchase_plan(purchase_plan_id))
 
 
 @bp.route('/api/huginn/card-deals/buy/purchase-plans/<purchase_plan_id>/execute', methods=['POST'])
@@ -1402,8 +1387,8 @@ def card_deals_buy_purchase_plan_execute(purchase_plan_id):
     """{"dry_run": bool}: anything but exactly false runs the dry run (repeatable); exactly false
     buys, once, only the accounts whose dry run of this purchase plan passed. Answers the job."""
     body = request.get_json(silent=True) or {}
-    return _purchase_command(lambda: ctx.store_purchase_service.execute_purchase_plan(
-        purchase_plan_id, dry_run=body.get('dry_run') is not False), 202)
+    return jsonify(ctx.store_purchase_service.execute_purchase_plan(
+        purchase_plan_id, dry_run=body.get('dry_run') is not False)), 202
 
 
 # ---- CS2 Store Arbitrage: in-game store items that resell above the store price (store_arbitrage_service.py) ----

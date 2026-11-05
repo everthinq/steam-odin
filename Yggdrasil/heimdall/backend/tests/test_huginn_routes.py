@@ -7,6 +7,8 @@ import threading
 import pytest
 from flask import Flask
 
+import error_handlers  # noqa: E402
+
 from context import ctx
 from pulse_feed import PulseFeed
 from routes import huginn as huginn_routes
@@ -15,6 +17,7 @@ from routes import huginn as huginn_routes
 @pytest.fixture
 def client():
     app = Flask(__name__)
+    error_handlers.install(app)
     app.register_blueprint(huginn_routes.bp)
     return app.test_client()
 

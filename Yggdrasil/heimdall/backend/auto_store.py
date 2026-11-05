@@ -11,7 +11,8 @@ Settings:
 """
 import threading
 
-from storage_deposit import CommandError, storage_block
+from commands import CommandError
+from storage_deposit import storage_block
 
 # Items a Storage Unit can never hold; trade protection ends, so those items are still suggested.
 _NEVER_STORABLE = {'storage_unit', 'unstorable'}

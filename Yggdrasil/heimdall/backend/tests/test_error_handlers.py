@@ -3,6 +3,7 @@ import pytest
 from flask import Flask, jsonify
 
 import error_handlers
+from commands import CommandError
 
 
 @pytest.fixture
@@ -14,6 +15,10 @@ def client():
     def export():
         return jsonify({'text': 'ok'})
 
+    @app.route('/api/refused')
+    def refused():
+        raise CommandError('plan_unknown', 'no such plan', 404)
+
     @app.route('/api/crash')
     def crash():
         raise RuntimeError('boom')
@@ -23,6 +28,7 @@ def client():
 @pytest.mark.parametrize('method, path, status, code', [
     ('get', '/api/export', 405, 'method_not_allowed'),
     ('get', '/api/nowhere', 404, 'not_found'),
+    ('get', '/api/refused', 404, 'plan_unknown'),
     ('get', '/api/crash', 500, 'unexpected_error'),
 ])
 def test_each_error_keeps_its_status_and_answers_json(client, method, path, status, code):

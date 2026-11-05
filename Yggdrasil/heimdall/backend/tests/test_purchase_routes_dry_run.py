@@ -4,6 +4,8 @@ tests/test_storage_shop_service.py)."""
 import pytest
 from flask import Flask
 
+import error_handlers  # noqa: E402
+
 from context import ctx
 
 
@@ -28,6 +30,7 @@ def client(monkeypatch):
     monkeypatch.setattr(ctx, 'store_purchase_service', purchases)
     monkeypatch.setattr(ctx, 'storage_shop_service', purchases)
     app = Flask(__name__)
+    error_handlers.install(app)
     app.register_blueprint(huginn_bp)
     app.register_blueprint(ratatoskr_bp)
     return app.test_client(), purchases
@@ -72,6 +75,7 @@ def test_buy_games_buys_only_after_a_passed_dry_run(tmp_path, monkeypatch, dry_r
         'dry_run_results': results, 'dry_run_error': None, 'job_id': None, 'purchase_results': None}
     monkeypatch.setattr(ctx, 'store_purchase_service', service)
     app = Flask(__name__)
+    error_handlers.install(app)
     app.register_blueprint(huginn_bp)
     answer = app.test_client().post('/api/huginn/card-deals/buy/purchase-plans/abc/execute', json={'dry_run': False})
     assert answer.status_code == 409 and answer.get_json()['code'] == code

@@ -4,6 +4,7 @@ The fixture holds Steam's own price history (public market prices, read 2026-10-
 boosts Ivan sent: Sticker | Flickshot (January 2026, daily points by then) and Sticker | World
 Eaters 1 with the Warhammer 40,000 Traitor Astartes Sticker Capsule (October 2026, hourly).
 """
+import error_handlers  # noqa: E402
 import contextlib
 import datetime
 import gzip
@@ -653,6 +654,7 @@ def test_the_track_route_pins_unpins_and_refuses_a_text_flag(monkeypatch):
     monkeypatch.setattr(ctx, 'settings_manager', settings, raising=False)
     monkeypatch.setattr(ctx, 'store_boost_service', Boosts(), raising=False)
     app = Flask(__name__)
+    error_handlers.install(app)
     app.register_blueprint(huginn_routes.bp)
     client = app.test_client()
     url = '/api/huginn/store-boosts/track'

@@ -5,7 +5,7 @@ accepts the older files without those columns."""
 import pytest
 
 from draupnir_service import DraupnirService
-from storage_deposit import CommandError
+from commands import CommandError
 
 PRICE_TRACKER_HEADER = 'Name,Type,Quantity,Unit Price,Total Price,Marketplace,Date,Note,Fee Percentage'
 

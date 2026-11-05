@@ -54,7 +54,7 @@ import requests
 
 from jobs import JobRegistry
 from jsonio import atomic_write_json, read_json
-from storage_deposit import CommandError
+from commands import CommandError
 
 log = logging.getLogger(__name__)
 

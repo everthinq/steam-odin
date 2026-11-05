@@ -63,7 +63,7 @@ import community_pacer
 from jobs import JobRegistry
 from jsonio import atomic_write_json, read_json
 from ratatoskr_service import items_moving
-from storage_deposit import CommandError
+from commands import CommandError
 from store_purchase_service import CURRENCY_CODES, to_usd
 
 log = logging.getLogger(__name__)

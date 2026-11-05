@@ -8,7 +8,8 @@ import pytest
 import storage_deposit
 from jobs import JobRegistry
 from scheduler import ConfirmationScheduler
-from storage_deposit import (STORAGE_CAPACITY, CommandError, DepositService, plan_deposit,
+from commands import CommandError
+from storage_deposit import (STORAGE_CAPACITY, DepositService, plan_deposit, 
                              storage_block)
 
 STEAMID = '76561190000000001'

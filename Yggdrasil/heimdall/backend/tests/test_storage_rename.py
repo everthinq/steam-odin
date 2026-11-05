@@ -1,7 +1,7 @@
 """Rename Storage Unit commands (storage_rename.py)."""
 import pytest
 
-from storage_deposit import CommandError
+from commands import CommandError
 from storage_rename import RenameService, check_name
 
 

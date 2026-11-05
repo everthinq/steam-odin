@@ -15,6 +15,7 @@ import threading
 import time
 from datetime import datetime, timezone
 
+from commands import CommandError
 from jsonio import atomic_write_json, read_json
 from notifications import send_notification
 
@@ -24,12 +25,6 @@ REMINDERS_FILE = 'cache/gjallarhorn_reminders.json'
 CHECK_SECONDS = 60
 MAX_NAME = 200
 MAX_NOTE = 500
-
-
-class CommandError(Exception):
-    def __init__(self, code, message):
-        super().__init__(message)
-        self.code = code
 
 
 def parse_when(value):
@@ -93,7 +88,7 @@ class ResellReminderService:
             before = len(self._reminders)
             self._reminders = [r for r in self._reminders if r['id'] != reminder_id]
             if len(self._reminders) == before:
-                raise CommandError('unknown_reminder', 'no such reminder')
+                raise CommandError('unknown_reminder', 'no such reminder', 404)
             self._save()
 
     def check_once(self, now=None):

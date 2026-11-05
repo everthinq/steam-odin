@@ -28,6 +28,8 @@ import time
 import uuid
 from datetime import datetime, timezone
 
+from commands import CommandError
+
 logger = logging.getLogger(__name__)
 
 STORAGE_CAPACITY = 1000
@@ -106,19 +108,6 @@ def casket_label(caskets, casket_id):
         if str(casket.get('item_id')) == str(casket_id):
             return casket.get('item_customname') or casket.get('item_name') or 'Storage Unit'
     return 'Storage Unit'
-
-
-class CommandError(Exception):
-    """A command refused before anything was sent; `code` is for clients to act on."""
-
-    def __init__(self, code, message, status=400):
-        super().__init__(message)
-        self.code = code
-        self.message = message
-        self.status = status
-
-    def body(self):
-        return {'error': self.message, 'code': self.code}
 
 
 class DepositService:

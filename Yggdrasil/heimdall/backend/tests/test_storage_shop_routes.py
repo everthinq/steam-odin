@@ -4,6 +4,8 @@ import time
 import pytest
 from flask import Flask
 
+import error_handlers  # noqa: E402
+
 import storage_shop_service as shop
 from context import ctx
 from jobs import JobRegistry
@@ -22,6 +24,7 @@ def setup(monkeypatch, tmp_path):
     monkeypatch.setattr(ctx, 'storage_shop_service', service)
     monkeypatch.setattr(ctx, 'jobs', service.jobs)
     app = Flask(__name__)
+    error_handlers.install(app)
     app.register_blueprint(ratatoskr_bp)
     app.register_blueprint(jobs_bp)
     return app.test_client(), service, http

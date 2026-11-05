@@ -3,10 +3,13 @@ its expected routes on a Flask app, without needing the real services.
 """
 from flask import Flask
 
+import error_handlers  # noqa: E402
+
 
 def _rules_for(bp):
     """Set of URL path strings (GET/POST on one path collapse to one entry)."""
     app = Flask(__name__)
+    error_handlers.install(app)
     app.register_blueprint(bp)
     return {r.rule for r in app.url_map.iter_rules()}
 
@@ -14,6 +17,7 @@ def _rules_for(bp):
 def _rule_count(bp, prefix):
     """Count actual Rule objects (method variants counted separately)."""
     app = Flask(__name__)
+    error_handlers.install(app)
     app.register_blueprint(bp)
     return len([r for r in app.url_map.iter_rules() if prefix in r.rule])
 
@@ -144,6 +148,7 @@ def test_huginn_blueprint_registers_all_routes():
 def test_register_blueprints_wires_onto_app():
     from routes import register_blueprints
     app = Flask(__name__)
+    error_handlers.install(app)
     register_blueprints(app)
     rules = {r.rule for r in app.url_map.iter_rules()}
     for want in ['/api/draupnir/portfolios', '/api/draupnir/portfolios/backups/restore',

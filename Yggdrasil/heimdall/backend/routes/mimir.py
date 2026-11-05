@@ -25,7 +25,6 @@ from flask import Blueprint, jsonify, request
 
 from context import ctx
 from mimir_service import VaultUnreadableError
-from storage_deposit import CommandError
 
 logger = logging.getLogger(__name__)
 
@@ -192,13 +191,6 @@ def market_access_check():
     return jsonify(result), (200 if result.get('started') else 409)
 
 
-def _command(run, status=200):
-    """A Market unlocker command: its answer, or ``{error, code}`` with the refusal's status."""
-    try:
-        return jsonify(run()), status
-    except CommandError as error:
-        return jsonify(error.body()), error.status
-
 
 @bp.route('/api/mimir/market-access/unlock/plan', methods=['POST'])
 def market_access_unlock_plan():
@@ -209,13 +201,13 @@ def market_access_unlock_plan():
     steamids = body.get('steamids')
     if not isinstance(steamids, list) or not steamids:
         return jsonify({'error': 'choose at least one account', 'code': 'bad_request'}), 400
-    return _command(lambda: ctx.market_access_service.plan_unlock(steamids), 202)
+    return jsonify(ctx.market_access_service.plan_unlock(steamids)), 202
 
 
 @bp.route('/api/mimir/market-access/plans/<plan_id>', methods=['GET'])
 def market_access_plan(plan_id):
     """A Market unlocker plan: per account passed, or failed and why; executable; expires_at."""
-    return _command(lambda: ctx.market_access_service.get_plan(plan_id))
+    return jsonify(ctx.market_access_service.get_plan(plan_id))
 
 
 @bp.route('/api/mimir/market-access/plans/<plan_id>/execute', methods=['POST'])
@@ -223,4 +215,4 @@ def market_access_execute_plan(plan_id):
     """Market unlocker, step 2: buy for real on the accounts that passed the plan's dry run
     ({dry_run: false}, nothing else buys). Once: again answers the same job."""
     body = request.get_json(silent=True) or {}
-    return _command(lambda: ctx.market_access_service.execute_plan(plan_id, dry_run=body.get('dry_run')), 202)
+    return jsonify(ctx.market_access_service.execute_plan(plan_id, dry_run=body.get('dry_run'))), 202

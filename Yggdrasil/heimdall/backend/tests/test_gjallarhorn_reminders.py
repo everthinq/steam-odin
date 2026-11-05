@@ -2,7 +2,8 @@ from datetime import datetime, timezone
 
 import pytest
 
-from gjallarhorn_reminders import CommandError, ResellReminderService, message_for
+from commands import CommandError
+from gjallarhorn_reminders import ResellReminderService, message_for
 
 
 class FakeSettings:

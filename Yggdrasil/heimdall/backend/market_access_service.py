@@ -67,7 +67,7 @@ import requests
 import community_pacer
 from jobs import JobRegistry
 from jsonio import atomic_write_json, read_json
-from storage_deposit import CommandError
+from commands import CommandError
 from storage_shop_service import WHOLE_UNIT_CURRENCIES, approval_form
 from store_purchase_service import CURRENCY_CODES, to_usd
 

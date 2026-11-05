@@ -11,7 +11,6 @@ from flask import Blueprint, Response, jsonify, request
 from context import ctx
 from huginn_service import DEFAULT_PRICE_MARKET
 from draupnir_service import PortfolioSaveError, pricing_status
-from storage_deposit import CommandError
 from validation import date_editable, normalize_datetime, validate_new_transaction, validate_portfolio_name, validate_transaction
 
 bp = Blueprint('draupnir', __name__)
@@ -71,21 +70,15 @@ def portfolios_import_plan():
     """Check a CSV: what would be imported, which lines would be skipped and why.
     Body: {csv, name} for a new portfolio, or {csv, pid} to append. Writes nothing."""
     body = request.get_json(silent=True) or {}
-    return _command(lambda: ctx.draupnir_service.plan_import(
+    return jsonify(ctx.draupnir_service.plan_import(
         body.get('csv'), name=body.get('name'), pid=body.get('pid')))
 
 
 @bp.route('/api/draupnir/portfolios/import/plans/<plan_id>/execute', methods=['POST'])
 def portfolios_import_execute(plan_id):
     """Import what the plan checked, once."""
-    return _command(lambda: ctx.draupnir_service.execute_import(plan_id), 201)
+    return jsonify(ctx.draupnir_service.execute_import(plan_id)), 201
 
-
-def _command(run, status=200):
-    try:
-        return jsonify(run()), status
-    except CommandError as error:
-        return jsonify(error.body()), error.status
 
 
 @bp.route('/api/draupnir/portfolios/combined', methods=['GET'])
