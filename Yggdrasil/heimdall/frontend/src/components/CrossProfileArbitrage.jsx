@@ -3,7 +3,7 @@ import { RefreshCw, Filter, Boxes, Settings2, Plus, X, ArrowRight, Link2 } from 
 import InfoTip from './gjallarhorn/InfoTip';
 import ArbitrageFilters, { ActiveFilterChips } from './arbitrage/ArbitrageFilters';
 import { activeFilterCount, buildOptions, collectionByName, priceInRange, useStoredFilters } from '../utils/arbitrageFilters';
-import { readJson } from '../utils/readJson';
+import { readJson, readJsonOrThrow } from '../utils/readJson';
 
 // Cross-profile arbitrage tab (lives inside the Huginn Arbitrage page, right after
 // Case Arbitrage). For every item held across ALL Draupnir accounts:
@@ -16,18 +16,15 @@ import { readJson } from '../utils/readJson';
 // and GET/POST .../cross-profile/config for the market + chain config.
 
 // Filters (price / account / collection), as on the Arbitrage tab. They narrow the
-// best-route table and every chain table alike. A chain's "Buy" is its first leg's
-// buy price, its "Sell" the last leg's instant-sell price.
+// best-route table and every chain table alike. The backend answers every row's
+// buy_price and sell_net (for a chain: its first market's ask and its last market's
+// net pay, null when that end is not priced).
 const FILTERS_KEY = 'huginn.crossProfileFilters';
 const PRICE_SIDES = [
     ['buy', 'Buy price', 'Cheapest listing on the buy market', 'Buy'],
     ['sell', 'Sell price', 'What the instant-sell market pays, after its fee', 'Sell'],
 ];
-const rowPrice = (r, side) => {
-    if (!r.legs) return side === 'sell' ? r.sell_net : r.buy_price;
-    const priced = r.legs.filter(Boolean);
-    return side === 'sell' ? priced[priced.length - 1]?.sell_net : priced[0]?.buy_price;
-};
+const rowPrice = (r, side) => (side === 'sell' ? r.sell_net : r.buy_price);
 
 const money = (v) => `$${Number(v || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const pct = (v) => (v === null || v === undefined ? '—' : `${v > 0 ? '+' : ''}${v.toFixed(2)}%`);
@@ -85,6 +82,7 @@ const CrossProfileArbitrage = ({ byHash }) => {
     const [chainsDraft, setChainsDraft] = useState([]);
     const [newChain, setNewChain] = useState([]);   // markets of the chain being built
     const [savingConfig, setSavingConfig] = useState(false);
+    const [saveError, setSaveError] = useState('');
 
     const available = useMemo(() => config?.available || [], [config]);
     const dispOf = useCallback((id) => available.find((m) => m.id === id)?.display || id, [available]);
@@ -121,13 +119,14 @@ const CrossProfileArbitrage = ({ byHash }) => {
 
     useEffect(() => { fetchData(); }, [fetchData]);
 
-    // Poll while the backend warms its price caches.
+    // Ask again only when the backend says so (while a warm runs); a failed warm
+    // answers null, so a broken scan is not asked for every few seconds forever.
+    const pollAfterSeconds = data?.poll_after_seconds;
     useEffect(() => {
-        if (data && (data.status === 'warming' || data.status === 'refreshing')) {
-            const id = setTimeout(fetchData, 5000);
-            return () => clearTimeout(id);
-        }
-    }, [data, fetchData]);
+        if (pollAfterSeconds == null) return undefined;
+        const id = setTimeout(fetchData, pollAfterSeconds * 1000);
+        return () => clearTimeout(id);
+    }, [data, pollAfterSeconds, fetchData]);
 
     const allRows = useMemo(() => data?.rows || [], [data]);
     const allChains = useMemo(() => data?.chains || [], [data]);
@@ -180,14 +179,15 @@ const CrossProfileArbitrage = ({ byHash }) => {
 
     const saveConfig = () => {
         setSavingConfig(true);
+        setSaveError('');
         fetch('/api/huginn/arbitrage/cross-profile/config', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ buy_markets: buyDraft, sell_markets: sellDraft, chains: chainsDraft }),
         })
-            .then((r) => (r.ok ? readJson(r) : null))
-            .then((c) => { if (c) { setConfig(c); initDrafts(c); } setSavingConfig(false); refresh(); })
-            .catch(() => setSavingConfig(false));
+            .then(readJsonOrThrow)
+            .then((c) => { setConfig(c); initDrafts(c); setSavingConfig(false); refresh(); })
+            .catch((e) => { setSaveError(e.message || 'Saving failed.'); setSavingConfig(false); });
     };
 
     return (
@@ -352,6 +352,7 @@ const CrossProfileArbitrage = ({ byHash }) => {
                             Reset
                         </button>
                         {dirty && <span className="text-xs text-amber-400/80">Unsaved changes — Save to apply and rescan.</span>}
+                {saveError && <span className="text-xs text-red-400">{saveError}</span>}
                     </div>
                 </div>
             )}
@@ -372,6 +373,9 @@ const CrossProfileArbitrage = ({ byHash }) => {
                         <RefreshCw size={12} className="animate-spin" />
                         Warming prices across markets — this takes up to a minute the first time…
                     </span>
+                )}
+                {status === 'failed' && (
+                    <span className="text-red-400">{data?.error} Press Refresh in a couple of minutes to try again.</span>
                 )}
                 {status === 'no_token' && (
                     <span className="text-amber-400/80">No tradeon_token set — add it in Settings to price markets.</span>

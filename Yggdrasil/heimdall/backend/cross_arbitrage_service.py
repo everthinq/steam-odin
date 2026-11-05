@@ -50,6 +50,7 @@ class CrossArbitrageService:
                        'Dmarket': 'dmarket', 'Steam': 'steam'}
     _RESULT_TTL = 10 * 60      # seconds a warmed scan is served before re-warming
     _RETRY_AFTER_FAILURE = 120 # a scan with a failed market pull is re-warmed this soon instead
+    _POLL_SECONDS = 5          # the page asks again this soon while a warm runs
     _ALL_MODE_CAP = 300        # max rows when not restricted to owned items
     _CACHE_CAP = 8             # distinct (mode, config) results kept warm at once
     # Pulse throttles hard under many concurrent big pulls, so cap concurrency low
@@ -61,6 +62,7 @@ class CrossArbitrageService:
         self.draupnir = draupnir_service
         self._cache = {}        # signature -> (ts, base_result)
         self._warming = {}      # signature -> bool (single-flight guard)
+        self._failed = {}       # signature -> (ts, message) of the last warm that crashed
         self._lock = threading.Lock()
         self._autobuy_cache = None   # cached set of autobuy-capable market ids
 
@@ -136,16 +138,19 @@ class CrossArbitrageService:
         buy = self._clean_ids((body or {}).get('buy_markets'), self._DEFAULT_BUY)
         sell = self._clean_ids((body or {}).get('sell_markets'), self._DEFAULT_SELL, autobuy_only=True)
         chains = self._clean_chains((body or {}).get('chains'))
-        settings_manager.save_settings({
+        saved = settings_manager.save_settings({
             'cross_arb_buy_markets': buy,
             'cross_arb_sell_markets': sell,
             'cross_arb_chains': chains,
         })
+        if saved is False:
+            return None
         with self._lock:
             # Drop the warmed results only. In-flight warm flags stay: clearing them
             # would let a second warm of the same config start while the first runs
             # (each warm clears its own flag when it finishes).
             self._cache.clear()
+            self._failed.clear()
         return {'buy_markets': buy, 'sell_markets': sell, 'chains': chains,
                 'available': self._available_markets()}
 
@@ -168,10 +173,15 @@ class CrossArbitrageService:
             chains_out = [self._filter_chain(ch, min_profit_pct) for ch in chains_out]
 
         owned = (base or {}).get('owned') or {}
+        with self._lock:
+            failed = self._failed.get(sig) if status == 'failed' else None
         return {
             'rows': rows,
             'chains': chains_out,
-            'status': status,                       # no_token | warming | refreshing | fresh
+            'status': status,                       # no_token | warming | refreshing | fresh | failed
+            'error': failed[1] if failed else None,
+            # The page polls only while a warm runs; None means stop asking.
+            'poll_after_seconds': self._POLL_SECONDS if status in ('warming', 'refreshing') else None,
             'summary': self._summary(rows, owned),
             'markets': (base or {}).get('markets') or {'buy': [], 'sell': []},
             'csfloat': self._csfloat_status(),
@@ -194,6 +204,11 @@ class CrossArbitrageService:
             return cached[1], 'fresh'
         # cold or stale → warm in the background (single-flight per config)
         with self._lock:
+            failed = self._failed.get(sig)
+            if (failed and not self._warming.get(sig)
+                    and time.time() - failed[0] < self._RETRY_AFTER_FAILURE):
+                # The last warm crashed: do not start another one on every poll.
+                return (cached[1] if cached else None), 'failed'
             if not self._warming.get(sig):
                 self._warming[sig] = True
                 threading.Thread(target=self._warm, args=(token, sig, config, settings), daemon=True).start()
@@ -212,6 +227,7 @@ class CrossArbitrageService:
                 # _RETRY_AFTER_FAILURE instead of holding the gap for the full TTL.
                 warmed_at -= self._RESULT_TTL - self._RETRY_AFTER_FAILURE
             with self._lock:
+                self._failed.pop(sig, None)
                 self._cache[sig] = (warmed_at, base)
                 # keep only the most recent few configs warm
                 if len(self._cache) > self._CACHE_CAP:
@@ -222,6 +238,8 @@ class CrossArbitrageService:
                         len(base['rows']), len(base['chains']), time.time() - started)
         except Exception as e:
             logger.error('[CROSS-ARB] warm failed after %.0fs: %s', time.time() - started, e)
+            with self._lock:
+                self._failed[sig] = (time.time(), f'The scan failed: {e}')
         finally:
             with self._lock:
                 self._warming[sig] = False
@@ -376,6 +394,10 @@ class CrossArbitrageService:
         return {
             'item_name': name, 'owned_qty': owned_qty, 'holders': holders.get(name, []),
             'legs': legs,
+            # The chain's own ends: what its first market asks and what its last
+            # market pays. None when that end is not priced.
+            'buy_price': legs[0]['buy_price'] if legs[0] else None,
+            'sell_net': legs[-1]['sell_net'] if legs[-1] else None,
             'total_profit': round(total_profit, 3),
             'total_profit_pct': round(total_profit / total_cost * 100, 2) if total_cost else None,
             'potential_profit': round(total_profit * owned_qty, 2) if owned_qty else 0.0,

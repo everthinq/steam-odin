@@ -313,3 +313,43 @@ def test_partial_warm_is_rewarmed_sooner():
     warmed_at = svc._cache[sig][0]
     age_until_stale = svc._RESULT_TTL - (time.time() - warmed_at)
     assert age_until_stale <= svc._RETRY_AFTER_FAILURE + 1
+
+
+def test_chain_row_answers_its_own_buy_and_sell_ends():
+    chain = _svc()._compute('tok', owned_only=False, config=_chain_config())['chains'][0]
+    rows = {r['item_name']: r for r in chain['rows']}
+    # Both ends priced: the first market's ask and the last market's net pay.
+    assert rows['M4']['buy_price'] == 20.0 and rows['M4']['sell_net'] == rows['M4']['legs'][1]['sell_net']
+    # The first leg is not priced, so the chain has no buy price (never the second leg's).
+    assert rows['AWP']['buy_price'] is None
+    assert rows['AWP']['sell_net'] == rows['AWP']['legs'][1]['sell_net']
+
+
+def test_save_config_answers_none_when_settings_are_not_saved():
+    class Refusing(FakeSettingsManager):
+        def save_settings(self, updates):
+            return False
+    svc = _svc()
+    svc._cache['x'] = (time.time(), {'rows': []})
+    assert svc.save_config({'buy_markets': ['LisSkins']}, Refusing()) is None
+    assert 'x' in svc._cache                         # nothing changed
+
+
+def test_crashed_warm_stops_the_polling_until_the_retry_time():
+    svc = _svc()
+    svc._compute = lambda *a, **k: (_ for _ in ()).throw(RuntimeError('boom'))
+    buy, sell, chains = svc._config_from_settings({})
+    sig = (True, tuple(buy), tuple(sell), tuple((c['id'], tuple(c['markets'])) for c in chains))
+    svc._warm('tok', sig, (buy, sell, chains), {})
+    out = svc.scan('tok', owned_only=True, settings={})
+    assert out['status'] == 'failed' and 'boom' in out['error']
+    assert out['poll_after_seconds'] is None          # the page stops asking
+    assert svc._warming.get(sig) is False             # and no new warm started
+
+
+def test_warming_scan_tells_the_page_when_to_ask_again():
+    svc = _svc()
+    svc._warm = lambda *a, **k: None                   # keep the warm "running"
+    out = svc.scan('tok', owned_only=True, settings={})
+    assert out['status'] == 'warming'
+    assert out['poll_after_seconds'] == svc._POLL_SECONDS

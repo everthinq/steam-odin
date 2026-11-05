@@ -577,7 +577,10 @@ def huginn_cross_profile_config_set():
     chains:[{id?,name?,markets:[id,...]}]}. Unknown ids and sell markets without
     autobuy are dropped; chains need >= 2 markets. Persisted to settings.json."""
     body = request.get_json(silent=True) or {}
-    return jsonify(ctx.cross_arbitrage_service.save_config(body, ctx.settings_manager))
+    saved = ctx.cross_arbitrage_service.save_config(body, ctx.settings_manager)
+    if saved is None:
+        return jsonify({'error': 'settings could not be saved', 'code': 'save_failed'}), 500
+    return jsonify(saved)
 
 
 @bp.route('/api/huginn/harvest', methods=['GET'])

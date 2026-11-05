@@ -185,11 +185,15 @@ News watcher, Case alerts, Readiness); Andvari = 1, 2, 3, 10, 11, DealsTable and
   stale) and `short_of_offers` (more copies held than offers at the best price); the board answers
   `trade_hold_days` and `stale_after_seconds`, and `summary.profitable_not_counted` explains why "Profitable
   only" can show more lots than the count. The page uses `best.stale`, never its own clock rule.
-- 9 CrossProfile chain price from first/last priced legs (wrong) -> backend buy_price, sell_net.
+- 9 + the CrossProfile bugs (H4) **DONE 2026-11-05**: each chain row answers `buy_price` (its first
+  market) and `sell_net` (its last market), null when that end is not priced; the page's own leg
+  picking is gone. The save answers `{error, code: 'save_failed'}` when settings are not written and
+  the page shows it. The scan answers `poll_after_seconds` only while a warm runs; a crashed warm is
+  `status: failed` with `error` and is not retried for `_RETRY_AFTER_FAILURE`, so polling stops.
 - 10 CardDeals All counts, scan_running inferred.
 - 11 FarmingPanel actions per state -> actions list.
 - 12 traffic estimates ignore active hours -> estimated_megabytes_per_day.
 - 13 SkinSwap 1.4 ratio copy.
 - 14 MarketHoldEditor re-clean; Gjallarhorn _PRICE_MARKETS copy; NewsWatcher raw settings + ignored failures; DealsTable 20 listings; CaseAlertsPanel reads whole settings incl. Telegram token.
 - Team Fortress 2: left alone as a whole feature (Ivan, 2026-11-04: not used for now); do not work on it.
-- BUGS: CardDeals no stale-answer guard (CaseArbitrage's fixed in H2); startScan unchecked; app-id regex grabs every 2-9 digit run (page + backend parse_app_ids, Buy games uses it); CrossProfile save fails silently, warm polling uncapped; ReadinessPanel stale numbers.
+- BUGS: CardDeals no stale-answer guard (CaseArbitrage's fixed in H2); startScan unchecked; app-id regex grabs every 2-9 digit run (page + backend parse_app_ids, Buy games uses it); ReadinessPanel stale numbers.

@@ -208,8 +208,14 @@ choose the markets and build multi-step chains (for example LisSkins →
 CS.MONEY trade → CSFloat).
 
 The **Filters** button works as on Arbitrage and narrows the chain tables too:
-**Price** on the buy or the sell price (a chain's first buy and last sell),
-**Accounts** from Draupnir holders, **Collections** from Get all items.
+**Price** on the buy or the sell price (a chain's buy on its first market and
+its sell on its last market; a chain whose first or last step is not priced has
+no such price, so a price filter leaves it out), **Accounts** from Draupnir
+holders, **Collections** from Get all items.
+
+If saving **Markets & chains** fails, a red message says why. If a scan fails,
+a red message says so and the page stops asking; press **Refresh** a couple of
+minutes later.
 
 ## Price dips
 
