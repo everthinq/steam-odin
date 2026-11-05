@@ -250,4 +250,11 @@ News watcher, Case alerts, Readiness); Andvari = 1, 2, 3, 10, 11, DealsTable and
   `missing_body`, `missing_field`, `bad_request`, `bad_value`, `bad_name`, `account_not_found`,
   `portfolio_not_found`, `credential_not_found`, `market_unreachable`, `save_failed` and others;
   `start_csfloat_sweep` returns a fourth value, the code; the confirmations list's own crash catch is gone.
-- Next: one shared plan registry, then `self._job` mirroring the registry job.
+- 5d step 1 **DONE 2026-11-05**: one shared plan store, `plans.py` (`PlanStore`: id, `created_at`,
+  `expires_at`, cleanup by `forget`), used by the four plans that spend nothing: Transfer and Auto-Store
+  moves (`storage_deposit.py`, cleanup keeps a plan that ran for an hour), Rename Storage Unit, Remove All
+  accounts and the Draupnir CSV import. Same lifetimes, checks and codes; ids are now 32 hex characters
+  everywhere.
+- Next: 5d step 2, the three money flows (Market unlocker, Buy Storage Units, Buy games) on `PlanStore`
+  (needs a review: plans without an expiry until their dry run ends, Buy Storage Units saves its plans to
+  disk), then `self._job` mirroring the registry job.

@@ -11,12 +11,12 @@ import json
 import logging
 import os
 import threading
-import time
 import uuid
 from datetime import datetime, timezone
 
 from jsonio import atomic_write_json
 from commands import CommandError
+from plans import PlanStore
 from validation import date_display, date_editable, normalize_datetime, validate_transaction
 
 log = logging.getLogger(__name__)
@@ -277,7 +277,7 @@ class DraupnirService:
         # keystroke) can memoize its name set instead of rescanning every transaction.
         self._store_gen = 0
         self._names_cache = None   # (gen, set)
-        self._import_plans = {}    # plan id -> checked CSV import (plan_import)
+        self._import_plans = PlanStore(IMPORT_PLAN_LIFETIME_SECONDS)   # checked CSV imports (plan_import)
         # Optional BackupService, wired by app.py via set_backup(). Every
         # persisted change is snapshotted for point-in-time restore (deduped by
         # content hash), and it doubles as the corruption-recovery source in
@@ -705,7 +705,6 @@ class DraupnirService:
         if not (text or '').strip():
             raise CommandError('csv_required', 'csv is required')
         txns, errors = self._check_csv(text)
-        now = time.time()
         with self._lock:
             target = self._get(pid) if pid else None
             if pid and not target:
@@ -713,15 +712,11 @@ class DraupnirService:
             if not txns:
                 raise CommandError('no_valid_rows', 'no valid rows to import: '
                                    + ('; '.join(errors) or 'the file has no rows'))
-            plan = {
-                'id': uuid.uuid4().hex, 'pid': pid,
+            plan = self._import_plans.add({
+                'pid': pid,
                 'name': target['name'] if target else ((name or '').strip() or 'Imported'),
-                'transactions': txns, 'errors': errors,
-                'expires_at': now + IMPORT_PLAN_LIFETIME_SECONDS, 'executed': False,
-            }
-            for plan_id in [k for k, old in self._import_plans.items() if old['expires_at'] < now]:
-                del self._import_plans[plan_id]
-            self._import_plans[plan['id']] = plan
+                'transactions': txns, 'errors': errors, 'executed': False,
+            })
         return {'id': plan['id'], 'pid': pid, 'name': plan['name'],
                 'imported': len(txns), 'skipped': len(errors), 'errors': errors,
                 'expires_at': plan['expires_at']}
@@ -730,7 +725,7 @@ class DraupnirService:
         """Write what :meth:`plan_import` checked, once."""
         with self._lock:
             plan = self._import_plans.get(plan_id)
-            if not plan or plan['expires_at'] < time.time():
+            if not plan or self._import_plans.is_expired(plan):
                 raise CommandError('unknown_plan', 'no such import plan, or it expired: check the file again', 404)
             if plan['executed']:
                 raise CommandError('already_executed', 'this import plan already ran', 409)

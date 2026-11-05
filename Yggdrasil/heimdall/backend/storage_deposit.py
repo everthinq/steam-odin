@@ -25,10 +25,10 @@ drift apart; the page only displays what the backend decides.
 import logging
 import threading
 import time
-import uuid
 from datetime import datetime, timezone
 
 from commands import CommandError
+from plans import PlanStore
 
 logger = logging.getLogger(__name__)
 
@@ -110,6 +110,11 @@ def casket_label(caskets, casket_id):
     return 'Storage Unit'
 
 
+def _forget_plan(plan, now):
+    """An expired plan that never ran, or any plan older than `PLAN_KEEP_SECONDS`."""
+    return (plan['expires_at'] < now and not plan['job_id']) or plan['created_at'] < now - PLAN_KEEP_SECONDS
+
+
 class DepositService:
     """Deposit and withdraw commands over Ratatoskr, for Transfer, Auto-Store and the command line."""
 
@@ -117,7 +122,7 @@ class DepositService:
         self.ratatoskr = ratatoskr_service
         self.jobs = jobs
         self._lock = threading.Lock()
-        self._plans = {}          # plan id -> plan
+        self._plans = PlanStore(PLAN_LIFETIME_SECONDS, forget=_forget_plan)
         self._running = {}        # steamid -> job id of its move run
         self._expected = {}       # steamid -> {casket_id: (count, at)}
         self._last_finished = {}  # steamid -> when its last move run finished
@@ -261,16 +266,8 @@ class DepositService:
         return self.describe(plan)
 
     def _store_plan(self, plan):
-        now = time.time()
-        plan.update({'id': uuid.uuid4().hex, 'created_at': now,
-                     'expires_at': now + PLAN_LIFETIME_SECONDS, 'job_id': None})
-        with self._lock:
-            for plan_id in [p for p, old in self._plans.items()
-                            if (old['expires_at'] < now and not old['job_id'])
-                            or old['created_at'] < now - PLAN_KEEP_SECONDS]:
-                del self._plans[plan_id]
-            self._plans[plan['id']] = plan
-        return plan
+        plan['job_id'] = None
+        return self._plans.add(plan)
 
     @staticmethod
     def describe(plan):

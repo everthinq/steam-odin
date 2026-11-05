@@ -14,6 +14,7 @@ from logging.handlers import TimedRotatingFileHandler
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 from datetime import datetime, timedelta
 from hashlib import sha1
+from plans import PlanStore
 from storage import SecureStorage
 
 logger = logging.getLogger(__name__)  # general diagnostics; steam_debug logger is separate
@@ -225,7 +226,7 @@ class SteamService:
         # {steamid: {confirmation id: key}}. Lets an answer name only the id.
         self._confirmation_keys = {}
         # Remove All accounts plans by id (memory only): which accounts, the phrase.
-        self._remove_all_plans = {}
+        self._remove_all_plans = PlanStore(REMOVE_ALL_PLAN_LIFETIME_SECONDS)
         self._remove_all_lock = threading.Lock()
         # One lock per SteamID64 around every read-modify-write of a maFile, so the
         # scheduler, keep-alive, request threads and Ratatoskr callbacks never
@@ -412,14 +413,8 @@ class SteamService:
         steamids = sorted(self.storage.list_accounts())
         if not steamids:
             return {'error': 'there are no accounts to remove', 'code': 'no_accounts'}
-        now = time.time()
-        plan = {'id': secrets.token_hex(16), 'steamids': steamids,
-                'phrase': f'DELETE {len(steamids)}',
-                'expires_at': now + REMOVE_ALL_PLAN_LIFETIME_SECONDS, 'executed': False}
-        with self._remove_all_lock:
-            for plan_id in [k for k, old in self._remove_all_plans.items() if old['expires_at'] < now]:
-                del self._remove_all_plans[plan_id]
-            self._remove_all_plans[plan['id']] = plan
+        plan = self._remove_all_plans.add({'steamids': steamids, 'executed': False,
+                                           'phrase': f'DELETE {len(steamids)}'})
         return {'id': plan['id'], 'steamids': steamids, 'count': len(steamids),
                 'phrase': plan['phrase'], 'expires_at': plan['expires_at']}
 
@@ -428,7 +423,7 @@ class SteamService:
         when `phrase` is the plan's phrase. An account added after the plan stays."""
         with self._remove_all_lock:
             plan = self._remove_all_plans.get(plan_id)
-            if not plan or plan['expires_at'] < time.time():
+            if not plan or self._remove_all_plans.is_expired(plan):
                 return {'error': 'no such plan, or it expired: start again', 'code': 'unknown_plan'}
             if plan['executed']:
                 return {'error': 'this plan already ran', 'code': 'already_executed'}

@@ -18,11 +18,11 @@ Rules (all checked here, never in the page):
 Errors are `CommandError` (`{error, code}`).
 """
 import re
-import secrets
 import threading
 import time
 
 from commands import CommandError
+from plans import PlanStore
 from storage_deposit import free_places, unit_count
 from storage_shop_service import next_storage_names
 
@@ -65,7 +65,7 @@ class RenameService:
         self.moves_in_progress = moves_in_progress
         self.clock = clock
         self._lock = threading.Lock()
-        self._plans = {}
+        self._plans = PlanStore(PLAN_LIFETIME_SECONDS, clock=clock)
 
     # ---- reading ----------------------------------------------------------
 
@@ -103,21 +103,15 @@ class RenameService:
         if not unnamed:
             raise CommandError('nothing_to_name', 'every Storage Unit already has a name')
         names = next_storage_names([unit_name(unit) for unit in caskets], len(unnamed))
-        now = self.clock()
-        plan = {'id': secrets.token_hex(8), 'steamid': str(steamid), 'created_at': now,
-                'expires_at': now + PLAN_LIFETIME_SECONDS, 'executed': False,
-                'renames': [{'item_id': str(unit.get('item_id')), 'name': name}
-                            for unit, name in zip(unnamed, names)]}
-        with self._lock:
-            for plan_id in [p for p, old in self._plans.items() if old['expires_at'] < now]:
-                del self._plans[plan_id]
-            self._plans[plan['id']] = plan
+        plan = self._plans.add({'steamid': str(steamid), 'executed': False,
+                                'renames': [{'item_id': str(unit.get('item_id')), 'name': name}
+                                            for unit, name in zip(unnamed, names)]})
         return {key: plan[key] for key in ('id', 'steamid', 'renames', 'expires_at')}
 
     def execute(self, plan_id):
         with self._lock:
             plan = self._plans.get(plan_id)
-            if not plan or plan['expires_at'] < self.clock():
+            if not plan or self._plans.is_expired(plan):
                 raise CommandError('unknown_plan', 'no such plan, or it expired: make a new one', 404)
             if plan['executed']:
                 raise CommandError('already_executed', 'this plan already ran', 409)
