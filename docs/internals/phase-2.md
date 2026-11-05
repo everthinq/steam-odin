@@ -203,6 +203,12 @@ News watcher, Case alerts, Readiness); Andvari = 1, 2, 3, 10, 11, DealsTable and
   20; each deal row answers `few_listings` (`FEW_LISTINGS`); Buy games reads the plan life from
   `plan_time_to_live_seconds`; a request counter drops old deals answers. Andvari done; next the
   memory work (reminder 11).
+- Memory work, step 1 **DONE 2026-11-05**: `packed_rows.py` keeps the pulse tables' rows, the weekly
+  sales (one `PackedRows` per market) and today's price history rows in typed arrays; reads give back
+  the same tuples, so no reader changed. Sandbox with real data, 16 profiles, one round: 365 -> 242 MB;
+  Python objects: tables 112 -> 56 MB, weekly sales 40 -> 29, today's history 57 -> 40 (the rest is
+  the item names). `MEGABYTES_PER_TABLE_IN_MEMORY` 15 -> 7. Still open: the ~15 MB profile answers
+  (built as one JSON per request), then Phase 2 bullets 5, 6, 7.
 - 12 + 13 (H5) **DONE 2026-11-05**: `/api/huginn/active` answers `estimated_megabytes_per_day`
   (and per `preview`), counting only the active hours (`active_minutes_a_day`) plus the daily
   reference; the feed's `status()` answers `downloaded_megabytes` and `megabytes_in_memory` from

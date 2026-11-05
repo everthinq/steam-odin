@@ -124,7 +124,10 @@ Errors are `{message, responseType}` with types such as `MarketSubscriptionRequi
 - **Compact**: per item `(first quote, second quote, pulse profit, pulse profit percent)` with a
   quote `(price, count, rising, falling, overstock info, page price, updated)` (`updated` = the
   market's `offersUpdateTime`, epoch seconds); names and images stored once
-  for all tables. About 15 MB a table instead of 155 MB. `rows()` rebuilds fresh pulse-shaped
+  for all tables. The rows are packed into typed arrays (`packed_rows.py`, `PackedEntries`: reads
+  give back the same tuples): about 7 MB a table (15 MB as Python tuples, 155 MB as pulse's
+  dictionaries). Weekly sales (one `PackedRows` per market) and today's price history rows are
+  packed the same way. `rows()` rebuilds fresh pulse-shaped
   dicts (only for `names` when given: pairs build rows for the items both sides have, LOOT.Farm
   boards for the items in its feed, CSFloat autobuy for swept items); `index()` (`{price, count,
   image, rising, falling, updated}`), `prices()` and `entries` serve the boards without building

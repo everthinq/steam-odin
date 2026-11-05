@@ -38,6 +38,8 @@ the account's shared secret (maFile) is the likely problem.
 Heimdall downloads at most two price tables at once, each in a short helper process that
 gives its memory back when it ends, and the Arbitrage page keeps the rows of only two
 profiles (the one shown and the one before; an active profile reopens in about a second).
+Prices, weekly sales and today's price history are kept packed (about a quarter of the
+memory they took before November 2026).
 If the Mac still lags, lower Docker Desktop's memory (Settings → Resources): all four
 containers together stay around 1.5 GB, so 3 GB is enough on an 8 GB Mac. `docker stats`
 shows what each container uses.

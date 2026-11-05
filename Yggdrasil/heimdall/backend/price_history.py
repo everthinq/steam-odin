@@ -26,6 +26,7 @@ import threading
 import time
 
 from jsonio import atomic_write_bytes
+from packed_rows import FLOAT, INT, PackedRows
 from pulse_feed import is_stale
 
 logger = logging.getLogger(__name__)
@@ -44,6 +45,7 @@ SEED_MAX_AGE_DAYS = 30          # pulse's 30-day seed is downloaded again once a
 SEED_TRUSTED_DAYS = 45          # an older seed is no longer used (its market stopped being active)
 SEED_UNAVAILABLE_DAYS = 30      # a seed pulse refused (its Table subscription) is not asked again for this long
 MEAN, LOWEST, HIGHEST, LAST, SAMPLES = range(5)
+DAY_KINDS = (FLOAT, INT, FLOAT, FLOAT, FLOAT)     # today's row in memory: sum, count, lowest, highest, last
 
 
 def _day(epoch):
@@ -72,7 +74,7 @@ class PriceHistory:
         self._clock = clock
         self._lock = threading.Lock()       # the in-memory rows and caches (held briefly)
         self._writing = threading.Lock()    # recording and saving the day files (one writer at a time)
-        self._today = {}        # (market, price type) -> {'day', 'items': {name: [sum, count, lowest, highest, last]}, 'flushed_at'}
+        self._today = {}        # (market, price type) -> {'day', 'items': PackedRows {name: (sum, count, lowest, highest, last)}, 'flushed_at'}
         self._statistics = {}   # (market, price type, basis) -> (day computed, {name: value}, {name: own value only})
         self._seed_generation = 0   # changes with every new seed: statistics computed before it are dropped
         self._reading = {}      # (market, price type) -> lock: one read of the window at a time
@@ -127,23 +129,22 @@ class PriceHistory:
 
     @staticmethod
     def _fold(items, prices):
-        """Add one sample per item to a day's row ({name: [sum, count, lowest, highest, last]})."""
+        """Add one sample per item to a day's row (PackedRows {name: (sum, count, lowest, highest, last)})."""
         for name, price in prices.items():
             row = items.get(name)
             if row is None:
-                items[name] = [price, 1, price, price, price]
+                items.set(name, (price, 1, price, price, price))
             else:
-                row[0] += price
-                row[1] += 1
-                row[2] = min(row[2], price)
-                row[3] = max(row[3], price)
-                row[4] = price
+                total, count, lowest, highest, _ = row
+                items.set(name, (total + price, count + 1, min(lowest, price), max(highest, price), price))
 
     def _load_today(self, key, day):
         """Today's row as saved before a restart (sums rebuilt from the averages)."""
         saved = _read_gzip_json(self._day_path(*key, day)) or {}
-        items = {name: [row[MEAN] * row[SAMPLES], row[SAMPLES], row[LOWEST], row[HIGHEST], row[LAST]]
-                 for name, row in saved.items() if isinstance(row, list) and len(row) == 5}
+        items = PackedRows(DAY_KINDS)
+        for name, row in saved.items():
+            if isinstance(row, list) and len(row) == 5:
+                items.set(name, (row[MEAN] * row[SAMPLES], row[SAMPLES], row[LOWEST], row[HIGHEST], row[LAST]))
         return {'day': day, 'items': items, 'flushed_at': self._clock() if items else 0}   # a new day: saved at once
 
     @staticmethod

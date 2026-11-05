@@ -73,6 +73,8 @@ import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 
+from packed_rows import FLOAT, INT, PackedEntries, PackedRows
+
 logger = logging.getLogger(__name__)
 
 TABLE_URL = 'https://api-pulse.tradeon.space/api/table/counter-strike/TradeOnMarket/{}/all'
@@ -80,9 +82,10 @@ FRESH = 10 * 60                 # background reads (boards, Case Arbitrage refre
 ON_DEMAND = 60                  # a button the user pressed (Fetch live data, Refresh)
 KEEP_SECONDS = FRESH            # a table older than this is dropped (nobody asks for older)
 # One table on the wire, gzipped (~42-59 MB of JSON), measured 2026-10-30, and one table in
-# memory in the compact form: every traffic and memory estimate on the pages uses these two.
+# memory, packed (packed_rows.py, measured 2026-11-05: 8 real tables ~56 MB): every traffic and
+# memory estimate on the pages uses these two.
 MEGABYTES_PER_DOWNLOAD = 5
-MEGABYTES_PER_TABLE_IN_MEMORY = 15
+MEGABYTES_PER_TABLE_IN_MEMORY = 7
 
 # Each download peaks at ~200 MB (raw bytes, text, parsed rows), so two at most (the Case
 # Arbitrage alert poll's 7 markets arrive in four waves). In the app each
@@ -232,7 +235,7 @@ def compact_rows(rows, scale=None, known=frozenset()):
     {name: {market: count}}, how many rows repeated a name). Only the fields Heimdall reads are kept."""
     if not isinstance(rows, list):
         raise ValueError('the answer is not a table')
-    entries, items, sales, repeated = {}, {}, {}, 0
+    entries, items, sales, repeated = PackedEntries(), {}, {}, 0
     for row in rows:
         item_name = (row or {}).get('itemName') or {}
         name = item_name.get('marketHashName')
@@ -341,7 +344,8 @@ class PulseTable:
         self.started_at = started_at
         self.seconds = seconds
         self._items = items          # the feed's shared {name: (itemName, imageUrl)}
-        self.entries = entries       # {name: (first, second, profit, profit percent)}, pulse's order
+        # {name: (first, second, profit, profit percent)}, pulse's order, packed (packed_rows.py)
+        self.entries = entries if isinstance(entries, PackedEntries) else PackedEntries(entries)
 
     def __len__(self):
         return len(self.entries)
@@ -424,7 +428,7 @@ class PulseFeed:
         self._tables = {}            # (market id, price type) -> PulseTable
         self._flights = {}           # (market id, price type) -> _Flight while downloading
         self._items = {}             # name -> (itemName dict, imageUrl), shared by every table
-        self._sales = {}             # name -> {market: (sales in the last week, download start)}, newest kept
+        self._sales = {}             # market -> PackedRows {name: (sales in the last week, download start)}, newest kept
         self._sales_at = None        # when the newest weekly sales arrived
         self._slots = threading.Condition()     # download slots (_download_slot)
         self._running = 0            # downloads running
@@ -635,10 +639,13 @@ class PulseFeed:
         if not sales:
             return
         for name, weekly in sales.items():
-            known = self._sales.setdefault(name, {})
             for market, count in weekly.items():
-                if market not in known or known[market][1] <= at:     # a slower, older download never wins
-                    known[market] = (count, at)
+                column = self._sales.get(market)
+                if column is None:
+                    column = self._sales[market] = PackedRows((INT, FLOAT))
+                known = column.get(name)
+                if known is None or known[1] <= at:     # a slower, older download never wins
+                    column.set(name, (count, at))
         self._sales_at = max(at, self._sales_at or at)
 
     def _drop_old_tables(self, now):
@@ -757,8 +764,13 @@ class PulseFeed:
         """{name: {market: sales in the last week}} from every table downloaded since boot (pulse's
         itemPopularity: Steam, Market.CSGO ('Tm'), Tradeon, plus each table's own market)."""
         with self._lock:
-            wanted = self._sales if names is None else {name: self._sales[name] for name in names if name in self._sales}
-            return {name: {market: count for market, (count, _) in sales.items()} for name, sales in wanted.items()}
+            out = {}
+            for market, column in self._sales.items():
+                for name in (column if names is None else names):
+                    known = column.get(name)
+                    if known is not None:
+                        out.setdefault(name, {})[market] = known[0]
+            return out
 
     # ---- active tables and the keeper ----------------------------------------------------------
 
@@ -1017,5 +1029,5 @@ class PulseFeed:
                     'downloaded_megabytes': downloads * MEGABYTES_PER_DOWNLOAD,
                     'active_tables': len(self._active), 'keeper': keeper,
                     'lookups': dict(self._lookups), 'jobs': jobs,
-                    'weekly_sales_items': len(self._sales), 'weekly_sales_at': self._sales_at,
+                    'weekly_sales_items': len(set().union(*self._sales.values())), 'weekly_sales_at': self._sales_at,
                     'tables': tables}
