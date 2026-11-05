@@ -11,7 +11,7 @@ before it: the local tag `checkpoint/before-phase-2` (never pushed).
 | 2 | No auto-reloader: one process, `make reload`, loops start once from `python app.py`, clean stop on SIGTERM | **Done**, pushed 76ee0eb |
 | 3 | Health checks for every container | **Done**, pushed 31dc36e |
 | 4 | Move the remaining page logic to the backend, tool by tool | **In progress** — see below |
-| 5 | One shape for plans, jobs and errors (`{error, code}` everywhere, one shared plan registry, one `CommandError` handler) | **In progress** — see the end |
+| 5 | One shape for plans, jobs and errors (`{error, code}` everywhere, one shared plan registry, one `CommandError` handler) | **Done**, last push 16483d5 — see the end |
 | 6 | Endpoint list + System health page | Not started |
 | 7 | `odin` command-line tool | Not started — decided: Python with only built-in libraries, talks to localhost:5001, installed on PATH; dry runs only for purchases; first version has four groups: Accounts (code, confirmations, accounts), Ratatoskr (storage, store, autostore), Prices and portfolio (price, arbitrage, harvest, portfolio), System (status, logs, job, routes) |
 
