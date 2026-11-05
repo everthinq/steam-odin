@@ -15,18 +15,18 @@ bp = Blueprint('ratatoskr', __name__)
 def ratatoskr_login():
     """Start a Ratatoskr session for a specific account."""
     if not request.json:
-        return jsonify({"error": "Missing JSON body"}), 400
+        return jsonify({"error": "Missing JSON body", "code": "missing_body"}), 400
 
     data = request.json
     steam_id = data.get('steam_id')
 
     if not steam_id:
-        return jsonify({"error": "Missing steam_id"}), 400
+        return jsonify({"error": "Missing steam_id", "code": "missing_field"}), 400
 
     # Fetch credentials from SteamService (which reads .maFiles)
     account_data = ctx.steam_service.get_account(steam_id)
     if not account_data:
-        return jsonify({"error": "Account not found"}), 404
+        return jsonify({"error": "Account not found", "code": "account_not_found"}), 404
 
     password = data.get('password')
     if not password:
@@ -34,7 +34,7 @@ def ratatoskr_login():
         password = ctx.steam_service.get_password(steam_id)
 
     if not password:
-        return jsonify({"error": "Password required (not found in storage)"}), 400
+        return jsonify({"error": "Password required (not found in storage)", "code": "password_missing"}), 400
 
     result = ctx.ratatoskr_service.login(
         account_name=account_data.get('account_name'),
@@ -57,11 +57,11 @@ def ratatoskr_status(steamid):
 def ratatoskr_disconnect():
     """End a Ratatoskr GC session."""
     if not request.json:
-        return jsonify({"error": "Missing JSON body"}), 400
+        return jsonify({"error": "Missing JSON body", "code": "missing_body"}), 400
 
     steam_id = request.json.get('steam_id')
     if not steam_id:
-        return jsonify({"error": "Missing steam_id"}), 400
+        return jsonify({"error": "Missing steam_id", "code": "missing_field"}), 400
 
     result = ctx.ratatoskr_service.disconnect(steam_id)
     if result.get('error'):
@@ -127,7 +127,7 @@ def ratatoskr_get_move_delay():
 def ratatoskr_set_move_delay():
     """Set delay between queued item moves (ms)."""
     if not request.json or request.json.get('delayMs') is None:
-        return jsonify({"error": "Missing delayMs"}), 400
+        return jsonify({"error": "Missing delayMs", "code": "missing_field"}), 400
     result = ctx.ratatoskr_service.set_move_delay(request.json.get('delayMs'))
     if 'error' in result:
         return jsonify(result), 400
@@ -147,7 +147,7 @@ def ratatoskr_get_session_idle():
 def ratatoskr_set_session_idle():
     """Set Ratatoskr auto-disconnect idle timeout (ms); 0 = never."""
     if not request.json or request.json.get('idleTimeoutMs') is None:
-        return jsonify({"error": "Missing idleTimeoutMs"}), 400
+        return jsonify({"error": "Missing idleTimeoutMs", "code": "missing_field"}), 400
     result = ctx.ratatoskr_service.set_session_idle_timeout(request.json.get('idleTimeoutMs'))
     if 'error' in result:
         return jsonify(result), 400
@@ -180,7 +180,7 @@ def ratatoskr_casket_contents(steamid, casketid):
 def ratatoskr_casket_rename():
     """Rename a storage unit via Ratatoskr."""
     if not request.json:
-        return jsonify({"error": "Missing JSON body"}), 400
+        return jsonify({"error": "Missing JSON body", "code": "missing_body"}), 400
 
     result = ctx.ratatoskr_service.rename_casket(
         steam_id=request.json.get('steamID'),

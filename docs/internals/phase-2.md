@@ -245,6 +245,9 @@ News watcher, Case alerts, Readiness); Andvari = 1, 2, 3, 10, 11, DealsTable and
   `_tradeon_token(settings)` that refuses with code `tradeon_token_missing`; the 38 `except Exception`
   blocks answering `str(e)` with 500 are gone, so a crash reaches the app-wide handler (logged, code
   `unexpected_error`).
-- Next, 5c step 2: the other answers without a `code` (missing fields, not found, `str(e)` with 400,
-  404, 409, 502), about 70 in the other route files. Then one shared plan registry, then `self._job`
-  mirroring the registry job.
+- 5c step 2 **DONE 2026-11-05**: every error answer in `routes/` carries a `code` (64 added in place,
+  same text, status and extra keys such as `inactive`, `vault_unreadable`, `saved`, `details`):
+  `missing_body`, `missing_field`, `bad_request`, `bad_value`, `bad_name`, `account_not_found`,
+  `portfolio_not_found`, `credential_not_found`, `market_unreachable`, `save_failed` and others;
+  `start_csfloat_sweep` returns a fourth value, the code; the confirmations list's own crash catch is gone.
+- Next: one shared plan registry, then `self._job` mirroring the registry job.

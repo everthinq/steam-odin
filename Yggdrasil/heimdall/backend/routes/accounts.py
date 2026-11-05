@@ -48,13 +48,10 @@ def import_account():
 @bp.route('/api/accounts/<steamid>/confirmations', methods=['GET'])
 def list_confirmations(steamid):
     """List pending trade/market confirmations for an account."""
-    try:
-        result = ctx.steam_service.get_confirmations(steamid)
-        if not result.get('success'):
-            return jsonify({"error": result.get('message', 'Failed to load confirmations'), "details": result.get('details'), "raw": result.get('raw')}), 400
-        return jsonify({"status": "success", "confirmations": result.get('confirmations', [])})
-    except Exception as e:
-        return jsonify({"error": f"Unexpected error: {str(e)}"}), 500
+    result = ctx.steam_service.get_confirmations(steamid)
+    if not result.get('success'):
+        return jsonify({"error": result.get('message', 'Failed to load confirmations'), "details": result.get('details'), "raw": result.get('raw'), "code": "confirmations_failed"}), 400
+    return jsonify({"status": "success", "confirmations": result.get('confirmations', [])})
 
 
 _RESPOND_STATUS = {'confirmation_not_found': 404, 'confirmations_unavailable': 502, 'steam_refused': 502}
@@ -100,7 +97,7 @@ def remove_account(steamid):
     success = ctx.steam_service.remove_account(steamid)
     if success:
         return jsonify({"status": "success", "message": "Account removed."}), 200
-    return jsonify({"error": "Account not found"}), 404
+    return jsonify({"error": "Account not found", "code": "account_not_found"}), 404
 
 
 @bp.route('/api/confirmations/settings', methods=['GET'])
@@ -135,7 +132,7 @@ def update_account_session():
     """Update session cookies from external service (Ratatoskr)."""
     if not request.json:
         logger.error("[DEBUG] Update session failed: Missing JSON body")
-        return jsonify({"error": "Missing JSON body"}), 400
+        return jsonify({"error": "Missing JSON body", "code": "missing_body"}), 400
 
     data = request.json
     # Never log the payload itself: the cookies carry a live Steam web token.
@@ -146,7 +143,7 @@ def update_account_session():
 
     if not steamid or not cookies:
         logger.error("[DEBUG] Update session failed: Missing steamID or cookies")
-        return jsonify({"error": "Missing steamID or cookies"}), 400
+        return jsonify({"error": "Missing steamID or cookies", "code": "missing_field"}), 400
 
     # Extract AccessToken from steamLoginSecure cookie if possible
     access_token = None
@@ -174,22 +171,22 @@ def update_account_session():
         result = ctx.steam_service.update_session_cookies(steamid, access_token, steam_login_secure, session_id)
         if result.get('success'):
             return jsonify({"status": "success", "message": "Session updated"})
-        return jsonify({"error": result.get('message')}), 500
+        return jsonify({"error": result.get('message'), "code": "session_update_failed"}), 500
 
-    return jsonify({"error": "Could not extract access token from cookies"}), 400
+    return jsonify({"error": "Could not extract access token from cookies", "code": "no_access_token"}), 400
 
 
 @bp.route('/api/accounts/clear-web-session', methods=['POST'])
 def clear_web_session():
     """Remove Ratatoskr web session tokens (called when Ratatoskr disconnects)."""
     if not request.json:
-        return jsonify({"error": "Missing JSON body"}), 400
+        return jsonify({"error": "Missing JSON body", "code": "missing_body"}), 400
 
     steamid = request.json.get('steamID')
     if not steamid:
-        return jsonify({"error": "Missing steamID"}), 400
+        return jsonify({"error": "Missing steamID", "code": "missing_field"}), 400
 
     result = ctx.steam_service.clear_web_session(steamid)
     if not result.get('success'):
-        return jsonify({"error": result.get('message', 'Failed')}), 400
+        return jsonify({"error": result.get('message', 'Failed'), "code": "clear_session_failed"}), 400
     return jsonify({"status": "success"})

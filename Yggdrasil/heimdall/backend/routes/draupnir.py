@@ -24,7 +24,7 @@ def _valuation_market():
 @bp.errorhandler(PortfolioSaveError)
 def portfolio_save_failed(error):
     """portfolios.json could not be written: the change was not saved."""
-    return jsonify({'error': str(error), 'saved': False}), 500
+    return jsonify({'error': str(error), 'saved': False, 'code': 'save_failed'}), 500
 
 
 def _portfolio_prices(market):
@@ -61,7 +61,7 @@ def portfolios_create():
     body = request.get_json(silent=True) or {}
     errors = validate_portfolio_name(body.get('name'), required=False)
     if errors:
-        return jsonify({'error': '; '.join(errors)}), 400
+        return jsonify({'error': '; '.join(errors), 'code': 'bad_name'}), 400
     return jsonify(ctx.draupnir_service.create_portfolio(body.get('name'))), 201
 
 
@@ -110,7 +110,7 @@ def portfolios_export(pid):
     """Download one portfolio as a CSV (real dollars; re-importable)."""
     result = ctx.draupnir_service.export_csv(pid)
     if result is None:
-        return jsonify({'error': 'portfolio not found'}), 404
+        return jsonify({'error': 'portfolio not found', 'code': 'portfolio_not_found'}), 404
     name, csv_text = result
     safe = re.sub(r'[^A-Za-z0-9._-]+', '_', name).strip('_') or 'portfolio'
     return Response(
@@ -204,7 +204,7 @@ def portfolios_get(pid):
     prices, status = _portfolio_prices(market)
     data = ctx.draupnir_service.get_portfolio(pid, prices)
     if data is None:
-        return jsonify({'error': 'portfolio not found'}), 404
+        return jsonify({'error': 'portfolio not found', 'code': 'portfolio_not_found'}), 404
     data.update(_pricing_fields(prices, status, market))
     data['market'] = market
     return jsonify(data)
@@ -215,17 +215,17 @@ def portfolios_rename(pid):
     body = request.get_json(silent=True) or {}
     errors = validate_portfolio_name(body.get('name'), required=True)
     if errors:
-        return jsonify({'error': '; '.join(errors)}), 400
+        return jsonify({'error': '; '.join(errors), 'code': 'bad_name'}), 400
     p = ctx.draupnir_service.rename_portfolio(pid, body.get('name'))
     if p is None:
-        return jsonify({'error': 'portfolio not found'}), 404
+        return jsonify({'error': 'portfolio not found', 'code': 'portfolio_not_found'}), 404
     return jsonify(p)
 
 
 @bp.route('/api/draupnir/portfolios/<pid>', methods=['DELETE'])
 def portfolios_delete(pid):
     if not ctx.draupnir_service.delete_portfolio(pid):
-        return jsonify({'error': 'portfolio not found'}), 404
+        return jsonify({'error': 'portfolio not found', 'code': 'portfolio_not_found'}), 404
     return jsonify({'ok': True})
 
 
@@ -257,7 +257,7 @@ def portfolios_update_txn(pid, tid):
 def portfolios_delete_txn(pid, tid):
     result = ctx.draupnir_service.delete_transaction(pid, tid)
     if not result:
-        return jsonify({'error': 'not found'}), 404
+        return jsonify({'error': 'not found', 'code': 'transaction_not_found'}), 404
     return jsonify({'ok': True})
 
 
@@ -282,7 +282,7 @@ def portfolios_backups_snapshot():
 def portfolios_backup_download(name):
     data = ctx.draupnir_backup.read_backup(name)
     if data is None:
-        return jsonify({'error': 'backup not found'}), 404
+        return jsonify({'error': 'backup not found', 'code': 'backup_not_found'}), 404
     # read_backup returns decompressed JSON, so the download is always a usable
     # .json even though snapshots are gzip-compressed on disk.
     filename = name[:-3] if name.endswith('.gz') else name

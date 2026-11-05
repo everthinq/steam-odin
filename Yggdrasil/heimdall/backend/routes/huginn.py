@@ -131,7 +131,7 @@ def huginn_scan():
     try:
         return jsonify(run_scan_exclusive())
     except ScanAlreadyRunning as e:
-        return jsonify({'error': str(e)}), 409
+        return jsonify({'error': str(e), 'code': 'already_running'}), 409
 
 
 @bp.route('/api/huginn/pulse', methods=['GET'])
@@ -163,7 +163,7 @@ def huginn_active_save():
     {"hours": {"enabled": true, "start": "08:00", "end": "01:00"}}."""
     body = request.get_json(silent=True)
     if not isinstance(body, dict):
-        return jsonify({'error': 'send a JSON object'}), 400
+        return jsonify({'error': 'send a JSON object', 'code': 'bad_request'}), 400
     with _active_lock:                  # read, change and save as one step: two tabs never undo each other
         return _save_active_change(body)
 
@@ -198,11 +198,11 @@ def _save_active_change(body):
             pulse_views.parse_clock(clean['end'])
             changes['huginn_active_hours'] = clean
     except (TypeError, ValueError) as error:
-        return jsonify({'error': str(error)}), 400
+        return jsonify({'error': str(error), 'code': 'bad_value'}), 400
     if not changes:
-        return jsonify({'error': 'nothing to change: send add, remove, minutes or hours'}), 400
+        return jsonify({'error': 'nothing to change: send add, remove, minutes or hours', 'code': 'nothing_to_change'}), 400
     if not ctx.settings_manager.save_settings(changes):
-        return jsonify({'error': 'Failed to save settings'}), 500
+        return jsonify({'error': 'Failed to save settings', 'code': 'save_failed'}), 500
     settings = ctx.settings_manager.get_settings()
     pulse_views.apply_active_settings(ctx.huginn_service, settings)
     return jsonify(pulse_views.active_status(ctx.huginn_service, settings, body.get('add') or body.get('remove')))
@@ -224,11 +224,11 @@ def huginn_price_dips():
         return jsonify(pulse_views.price_dips(ctx.huginn_service, token, request.args.get('market', 'Steam'),
                                               request.args.get('basis', 'Median30d')))
     except NotActive as e:
-        return jsonify({'error': str(e), 'inactive': True}), 409
+        return jsonify({'error': str(e), 'inactive': True, 'code': 'inactive'}), 409
     except ValueError as e:
-        return jsonify({'error': str(e)}), 400
+        return jsonify({'error': str(e), 'code': 'bad_value'}), 400
     except Exception as e:
-        return jsonify({'error': str(e)}), 502
+        return jsonify({'error': str(e), 'code': 'market_unreachable'}), 502
 
 
 @bp.route('/api/huginn/profiles', methods=['GET'])
@@ -245,7 +245,7 @@ def huginn_check_live():
     token = _tradeon_token(ctx.settings_manager.get_settings())
     name = (request.args.get('name') or '').strip()
     if not name:
-        return jsonify({'error': 'name is required'}), 400
+        return jsonify({'error': 'name is required', 'code': 'missing_field'}), 400
     refusal = pulse_views.check_live_refusal(request.args.get('buy', ''), request.args.get('sell', ''),
                                              request.args.get('mode', 'autobuy'))
     if refusal:
@@ -254,9 +254,9 @@ def huginn_check_live():
         return jsonify(pulse_views.check_live(ctx.huginn_service, token, name, request.args.get('buy', ''),
                                               request.args.get('sell', ''), request.args.get('mode', 'autobuy')))
     except ValueError as e:
-        return jsonify({'error': str(e)}), 400
+        return jsonify({'error': str(e), 'code': 'bad_value'}), 400
     except Exception as e:
-        return jsonify({'error': str(e)}), 502
+        return jsonify({'error': str(e), 'code': 'market_unreachable'}), 502
 
 
 @bp.route('/api/huginn/morning-routine', methods=['GET'])
@@ -271,7 +271,7 @@ def huginn_scan_cache():
     """Return cached inventory scan result."""
     cache = ctx.huginn_service.get_cache()
     if not cache:
-        return jsonify({'error': 'No scan data yet'}), 404
+        return jsonify({'error': 'No scan data yet', 'code': 'no_scan_yet'}), 404
     return jsonify(cache)
 
 @bp.route('/api/huginn/cases', methods=['GET'])
@@ -364,9 +364,9 @@ def huginn_csfloat_connectivity():
 @bp.route('/api/huginn/csfloat/buy-orders', methods=['POST'])
 def huginn_csfloat_buy_orders_fetch():
     """Kick off a background CSFloat buy-order sweep over owned items."""
-    ok, message, status = start_csfloat_sweep()
+    ok, message, status, code = start_csfloat_sweep()
     if not ok:
-        return jsonify({'error': message}), status
+        return jsonify({'error': message, 'code': code}), status
     return jsonify({'status': 'started'}), 202
 
 
@@ -384,22 +384,22 @@ def csfloat_sweep_state():
 
 
 def start_csfloat_sweep():
-    """Start the background CSFloat buy-order sweep. Returns (ok, message, http status).
+    """Start the background CSFloat buy-order sweep. Returns (ok, message, http status, code).
     Its items are the CSFloat item dictionary, rebuilt first from the latest scan
     plus every item still held in a Draupnir portfolio (the Arbitrage page and
     Harvest share one cache, so both always sweep the same items)."""
     settings = ctx.settings_manager.get_settings()
     token = settings.get('tradeon_token', '')
     if not load_csfloat_keys():
-        return False, 'No CSFloat API keys configured — add them to csfloat_keys.json', 400
+        return False, 'No CSFloat API keys configured — add them to csfloat_keys.json', 400, 'csfloat_keys_missing'
 
     names, _, _ = sync_csfloat_item_links()
     if not names:
-        return False, 'No inventory scan yet — run "Get all items" first', 409
+        return False, 'No inventory scan yet — run "Get all items" first', 409, 'no_scan_yet'
 
     with _csfloat_job_lock:
         if _csfloat_job['running']:
-            return False, 'A CSFloat buy-order sweep is already running', 409
+            return False, 'A CSFloat buy-order sweep is already running', 409, 'already_running'
         _csfloat_job.update({
             'running': True, 'done': 0, 'total': 0, 'found': 0,
             'current': None, 'started_at': time.time(), 'finished_at': None, 'error': None,
@@ -427,7 +427,7 @@ def start_csfloat_sweep():
                 _csfloat_job['finished_at'] = time.time()
 
     threading.Thread(target=_run, daemon=True).start()
-    return True, 'started', 202
+    return True, 'started', 202, None
 
 @bp.route('/api/huginn/tradeon/steam', methods=['GET'])
 def huginn_tradeon_steam():
@@ -481,7 +481,7 @@ def huginn_markets_fees():
     body = request.get_json(silent=True) or {}
     fees = body.get('fees')
     if not isinstance(fees, dict):
-        return jsonify({'error': 'fees object required'}), 400
+        return jsonify({'error': 'fees object required', 'code': 'bad_request'}), 400
     known = ctx.huginn_service.market_ids()
     clean = {}
     for market_id, value in fees.items():
@@ -510,19 +510,19 @@ def huginn_tradeon_pair():
     mode = request.args.get('mode', 'autobuy')
     known = ctx.huginn_service.market_ids()
     if buy not in known or sell not in known:
-        return jsonify({'error': 'unknown market'}), 400
+        return jsonify({'error': 'unknown market', 'code': 'unknown_market'}), 400
     if mode not in ('autobuy', 'min'):
         mode = 'autobuy'
     fee = request.args.get('fee', type=float)
     if fee is None:
         fee = ctx.huginn_service.market_fee(sell, settings)
     elif not (0 <= fee < 1):
-        return jsonify({'error': 'fee must be a fraction with 0 <= fee < 1'}), 400
+        return jsonify({'error': 'fee must be a fraction with 0 <= fee < 1', 'code': 'bad_fee'}), 400
     try:
         data = ctx.huginn_service.fetch_generated_pair(token, buy, sell, mode, fee)
         return jsonify(data)
     except ValueError as e:   # a sell-only market (no listings) asked for as a buy or min side
-        return jsonify({'error': str(e)}), 400
+        return jsonify({'error': str(e), 'code': 'bad_value'}), 400
 
 
 @bp.route('/api/huginn/arbitrage/cross-profile', methods=['GET'])
@@ -639,7 +639,7 @@ def gjallarhorn_holds_set():
     body = request.get_json(silent=True) or {}
     holds = body.get('holds')
     if not isinstance(holds, list):
-        return jsonify({'error': 'holds array required'}), 400
+        return jsonify({'error': 'holds array required', 'code': 'bad_request'}), 400
     clean = ctx.gjallarhorn_service.clean_holds(holds)
     if not ctx.settings_manager.save_settings({'gjallarhorn_market_holds': clean}):
         return jsonify({'error': 'settings could not be saved', 'code': 'save_failed'}), 500
@@ -1057,7 +1057,7 @@ def card_deals_config_set():
     try:
         clean = clean_config(request.get_json(silent=True) or {})
     except ValueError as e:
-        return jsonify({'error': str(e)}), 400
+        return jsonify({'error': str(e), 'code': 'bad_value'}), 400
     if clean:
         ctx.settings_manager.save_settings(clean)
     settings = ctx.settings_manager.get_settings()
@@ -1113,7 +1113,7 @@ def team_fortress_play():
     """{"action": "start" | "stop"}. Start uses the saved account list (empty = every account)."""
     from asf_service import AsfError, UnknownAccount
     if not ctx.asf_service.enabled:
-        return jsonify({'error': 'ASF is not set up'}), 409
+        return jsonify({'error': 'ASF is not set up', 'code': 'asf_not_set_up'}), 409
     action = (request.get_json(silent=True) or {}).get('action')
     try:
         if action == 'start':
@@ -1122,10 +1122,10 @@ def team_fortress_play():
         if action == 'stop':
             return jsonify(ctx.asf_service.stop_team_fortress())
     except UnknownAccount as e:
-        return jsonify({'error': str(e)}), 404
+        return jsonify({'error': str(e), 'code': 'unknown_account'}), 404
     except AsfError as e:
-        return jsonify({'error': str(e)}), 502
-    return jsonify({'error': 'action must be start or stop'}), 400
+        return jsonify({'error': str(e), 'code': 'asf_failed'}), 502
+    return jsonify({'error': 'action must be start or stop', 'code': 'bad_action'}), 400
 
 
 @bp.route('/api/huginn/team-fortress/check-news', methods=['POST'])
@@ -1294,7 +1294,7 @@ def store_boosts_board():
 def store_boosts_item():
     """?name=…: one item's hourly Steam prices and sales (last 14 days) and its analysis."""
     found = ctx.store_boost_service.item(request.args.get('name') or '')
-    return (jsonify(found), 200) if found else (jsonify({'error': 'not read yet'}), 404)
+    return (jsonify(found), 200) if found else (jsonify({'error': 'not read yet', 'code': 'not_read_yet'}), 404)
 
 
 @bp.route('/api/huginn/store-boosts/read', methods=['POST'])
@@ -1315,18 +1315,18 @@ def store_boosts_track():
     body = request.get_json(silent=True) or {}
     name, tracked = body.get('name'), body.get('tracked', True)
     if not isinstance(name, str) or not name.strip() or len(name) > 200:
-        return jsonify({'error': 'name must be an item name'}), 400
+        return jsonify({'error': 'name must be an item name', 'code': 'bad_name'}), 400
     if not isinstance(tracked, bool):
-        return jsonify({'error': 'tracked must be true or false'}), 400
+        return jsonify({'error': 'tracked must be true or false', 'code': 'bad_value'}), 400
     name = name.strip()
     with _track_lock:                    # two quick pins never overwrite each other
         names = [n for n in ctx.store_boost_service.tracked() if n != name]
         if tracked:
             names.insert(0, name)
         if len(names) > 30:
-            return jsonify({'error': 'at most 30 tracked items'}), 400
+            return jsonify({'error': 'at most 30 tracked items', 'code': 'too_many_tracked'}), 400
         if not ctx.settings_manager.save_settings({'store_boost_tracked': names}):
-            return jsonify({'error': 'the setting was not saved'}), 500
+            return jsonify({'error': 'the setting was not saved', 'code': 'save_failed'}), 500
     if tracked:
         ctx.store_boost_service.read_now(name, reason='tracked')
     return jsonify({'tracked': names})

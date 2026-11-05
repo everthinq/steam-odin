@@ -36,7 +36,7 @@ def vault_unreadable(error):
     """The vault file could not be read at boot, so every write is refused
     (the unreadable file is kept untouched). 409: the request itself is fine,
     the store is in a state that does not allow it."""
-    return jsonify({'error': str(error), 'vault_unreadable': True}), 409
+    return jsonify({'error': str(error), 'vault_unreadable': True, 'code': 'vault_unreadable'}), 409
 
 
 def _login_to_steamid():
@@ -95,7 +95,7 @@ def create_credential():
             billing_address=body.get('billing_address', ''),
         )
     except ValueError as e:
-        return jsonify({'error': str(e)}), 400
+        return jsonify({'error': str(e), 'code': 'bad_value'}), 400
     return jsonify(_decorate([rec])[0]), 201
 
 
@@ -105,16 +105,16 @@ def update_credential(rec_id):
     try:
         rec = ctx.mimir_service.update(rec_id, body)
     except KeyError:
-        return jsonify({'error': 'credential not found'}), 404
+        return jsonify({'error': 'credential not found', 'code': 'credential_not_found'}), 404
     except ValueError as e:
-        return jsonify({'error': str(e)}), 400
+        return jsonify({'error': str(e), 'code': 'bad_value'}), 400
     return jsonify(_decorate([rec])[0])
 
 
 @bp.route('/api/mimir/credentials/<rec_id>', methods=['DELETE'])
 def delete_credential(rec_id):
     if not ctx.mimir_service.delete(rec_id):
-        return jsonify({'error': 'credential not found'}), 404
+        return jsonify({'error': 'credential not found', 'code': 'credential_not_found'}), 404
     return jsonify({'success': True})
 
 
@@ -123,7 +123,7 @@ def import_credentials():
     body = request.json or {}
     text = body.get('text', '')
     if not text.strip():
-        return jsonify({'error': 'no text provided'}), 400
+        return jsonify({'error': 'no text provided', 'code': 'missing_field'}), 400
     summary = ctx.mimir_service.import_text(text)
     return jsonify(summary)
 
@@ -138,11 +138,11 @@ def test_login(rec_id):
     """
     cred = ctx.mimir_service.get(rec_id)
     if not cred:
-        return jsonify({'error': 'credential not found'}), 404
+        return jsonify({'error': 'credential not found', 'code': 'credential_not_found'}), 404
 
     steamid = _login_to_steamid().get(cred['login'].lower())
     if not steamid:
-        return jsonify({'error': 'no maFile for this login — cannot test'}), 409
+        return jsonify({'error': 'no maFile for this login — cannot test', 'code': 'no_mafile'}), 409
 
     account_data = ctx.steam_service.get_account(steamid) or {}
     password = cred['password'] or ctx.steam_service.get_password(steamid)

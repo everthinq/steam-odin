@@ -21,7 +21,7 @@ def get_settings():
 def update_settings():
     """Update global application settings."""
     if not request.json:
-        return jsonify({"error": "Missing JSON body"}), 400
+        return jsonify({"error": "Missing JSON body", "code": "missing_body"}), 400
 
     # The confirmation settings have one checker (confirmation_settings.clean), here too.
     confirmation_keys = {key: value for key, value in request.json.items()
@@ -32,4 +32,4 @@ def update_settings():
     success = ctx.settings_manager.save_settings(request.json)
     if success:
         return jsonify({"status": "success", "settings": ctx.settings_manager.get_settings()})
-    return jsonify({"error": "Failed to save settings"}), 500
+    return jsonify({"error": "Failed to save settings", "code": "save_failed"}), 500
