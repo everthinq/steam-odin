@@ -20,7 +20,9 @@ When it finds one, it sends a Telegram message and rings your phone.
 - **Check now** reads the news immediately.
 - **Test detection**: paste an update text to see what it would detect — no
   alarm is sent.
-- **Alert chat id**: where the message goes (see [telegram.md](telegram.md)).
+- **Alert chat id**: where the message goes (see [telegram.md](telegram.md)). It
+  must be a number (a group's starts with a minus sign) or a public @name; anything
+  else is refused in red. A failed save or a failed **Check now** is shown in red too.
 - **Ring test** in the header makes one short test call.
 
 The first check after installing only records what is already out; it never
@@ -44,6 +46,8 @@ and a **score**: high = sell first (deflated, liquid, tradable).
 
 - **Redeploy markets**: the markets where sale money is usable again at once
   (and how many days a hold lasts on each). Sell there when speed matters.
+  Blank or repeated markets are dropped when you save. If the saved list cannot
+  be read, **Save list** stays off, so a blank list never replaces it.
 - **Target basket**: the items you want to rotate into, with your capital in
   dollars; it shows how many units each buys. Adding or removing an item never
   changes the others, and the list stays visible when prices cannot be read.
@@ -51,6 +55,7 @@ and a **score**: high = sell first (deflated, liquid, tradable).
 ## Readiness
 
 Free Storage Unit space and how full the loose inventory is for the chosen
-account (needs it connected in Ratatoskr). Running out of space during a rush
+account (needs it connected in Ratatoskr). When you switch accounts, a slow
+answer for the previous account is ignored, never shown under the new name. Running out of space during a rush
 is the classic mistake — buy Storage Units beforehand with
 [Buy Storage Units](ratatoskr.md#buy-storage-units).

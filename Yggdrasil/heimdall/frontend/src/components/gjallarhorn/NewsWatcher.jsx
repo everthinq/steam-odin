@@ -18,49 +18,58 @@ const NewsWatcher = () => {
     const [testHits, setTestHits] = useState(null);
     const [testing, setTesting] = useState(false);
 
+    const [error, setError] = useState(null);   // the last refusal or failure, shown in red
+
     const load = useCallback(() => (
         fetch('/api/huginn/gjallarhorn/news/status')
-            .then((r) => (r.ok ? readJson(r) : null))
+            .then((r) => {
+                if (!r.ok) throw new Error('the news watcher status could not be read');
+                return readJson(r);
+            })
             .then((d) => {
                 setStatus(d);
                 // Seed the chat-id field once; don't clobber an in-progress edit.
-                if (d) setChatId((prev) => (prev === null ? (d.chat_id || '') : prev));
+                setChatId((prev) => (prev === null ? (d.chat_id || '') : prev));
             })
-            .catch(() => setStatus(null))
+            .catch((e) => { setStatus(null); setError(e.message); })
     ), []);
 
     useEffect(() => { load(); }, [load]);
 
-    const toggleArmed = () => {
-        if (!status) return;
-        setSaving(true);
-        fetch('/api/settings', {
+    // One checked command for both settings; the answer is the new status.
+    const saveSettings = (body, setBusy) => {
+        setBusy(true);
+        setError(null);
+        fetch('/api/huginn/gjallarhorn/news/settings', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ gjallarhorn_news_armed: !status.armed }),
+            body: JSON.stringify(body),
         })
-            .then(() => load())
-            .finally(() => setSaving(false));
+            .then(async (r) => {
+                const d = await readJson(r).catch(() => ({}));
+                if (!r.ok) throw new Error(d.error || 'the setting could not be saved');
+                setStatus(d);
+            })
+            .catch((e) => setError(e.message))
+            .finally(() => setBusy(false));
     };
 
-    const saveChat = () => {
-        setSavingChat(true);
-        fetch('/api/settings', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ gjallarhorn_chat_id: (chatId || '').trim() }),
-        })
-            .then(() => load())
-            .finally(() => setSavingChat(false));
-    };
+    const toggleArmed = () => { if (status) saveSettings({ armed: !status.armed }, setSaving); };
+    const saveChat = () => saveSettings({ chat_id: chatId || '' }, setSavingChat);
 
     const checkNow = () => {
         setChecking(true);
+        setError(null);
         fetch('/api/huginn/gjallarhorn/news/check', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ force: true }),
         })
+            .then(async (r) => {
+                const d = await readJson(r).catch(() => ({}));
+                if (!r.ok || d.ok === false) setError(`Check failed: ${d.error || 'no answer'}`);
+            })
+            .catch((e) => setError(`Check failed: ${e.message}`))
             .then(() => load())
             .finally(() => setChecking(false));
     };
@@ -72,9 +81,12 @@ const NewsWatcher = () => {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ text: testText }),
         })
-            .then((r) => (r.ok ? readJson(r) : null))
-            .then((d) => setTestHits(d ? d.hits : []))
-            .catch(() => setTestHits([]))
+            .then((r) => {
+                if (!r.ok) throw new Error('the detector could not be run');
+                return readJson(r);
+            })
+            .then((d) => setTestHits(d.hits || []))
+            .catch((e) => { setTestHits(null); setError(e.message); })
             .finally(() => setTesting(false));
     };
 
@@ -135,6 +147,8 @@ const NewsWatcher = () => {
                     <span className="text-[11px] text-red-400/80" title={status.last_error}>feed error</span>
                 )}
             </div>
+
+            {error && <p className="mb-3 text-[11px] text-red-400">{error}</p>}
 
             {/* Dedicated alert chat — keeps Gjallarhorn out of the Case Arbitrage board */}
             <div className="flex flex-wrap items-center gap-2 mb-3">

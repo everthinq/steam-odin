@@ -54,6 +54,17 @@ CONTAINER_SNAPSHOT_FILE = os.path.join(os.path.dirname(__file__), 'cache', 'hugi
 # atomic_write_json leaves '.tmp-*.json' behind only when the process is killed
 # mid-write; ones older than this are swept from cache/ on boot.
 _STALE_TEMPORARY_FILE_AGE_SEC = 60 * 60
+# The Case Arbitrage alert poll never runs more often than this (the loop, the job and the
+# settings command all read it).
+CASE_POLL_MINIMUM_SECONDS = 60
+
+
+class AlertSettingsError(ValueError):
+    """A Case Arbitrage alert setting was refused; `code` names why."""
+
+    def __init__(self, message, code):
+        super().__init__(message)
+        self.code = code
 
 # A background warm (portfolio valuation map, container snapshot) that failed is
 # not retried for this long; requests in that window get status 'error' so the
@@ -2989,7 +3000,7 @@ class HuginnService:
                 settings = settings or {}
                 token = settings.get('tradeon_token') or ''
                 try:
-                    interval = max(60, int(settings.get('case_poll_interval_sec') or default_interval))
+                    interval = max(CASE_POLL_MINIMUM_SECONDS, int(settings.get('case_poll_interval_sec') or default_interval))
                 except (TypeError, ValueError):
                     interval = default_interval
                 alerts_on = bool(settings.get('case_alerts_enabled')) and notification_channel(settings) is not None
@@ -3169,16 +3180,66 @@ class HuginnService:
         return '\n'.join(plain), '\n'.join(html)
 
     def case_alert_status(self, settings):
-        """Config + current active alerts, for the UI (no side effects)."""
+        """Config + current active alerts, for the UI (no side effects).
+
+        The Telegram bot token and the webhook address are secrets: the answer only says
+        whether each one is set, never the value."""
         state = self._load_alert_state()
         return {
             'enabled': bool(settings.get('case_alerts_enabled')),
             'channel': notification_channel(settings),
-            'min_pct': settings.get('case_alert_min_pct', 3.0),
+            'min_pct': float(settings.get('case_alert_min_pct') or 0),
+            'poll_interval_sec': int(settings.get('case_poll_interval_sec') or 0),
+            'poll_interval_minimum_sec': CASE_POLL_MINIMUM_SECONDS,
+            'telegram_chat_id': str(settings.get('telegram_chat_id') or ''),
+            'telegram_bot_token_set': bool(settings.get('telegram_bot_token')),
+            'webhook_set': bool(settings.get('notify_webhook_url')),
+            'buy_markets': [self._ALERT_MARKET_LABEL[key] for key in self._ALERT_BUY_MARKETS],
             'categories': settings.get('case_alert_categories') or ['case'],
             'active': list((state.get('details') or {}).values()),
             'updated': state.get('updated'),
         }
+
+    @staticmethod
+    def clean_case_alert_settings(body):
+        """The settings update for the Case Arbitrage alert panel, checked.
+
+        Every key is optional. The two secrets (telegram_bot_token, notify_webhook_url)
+        are replaced by a non-empty text, removed by null, and kept when blank or absent,
+        so the page never needs to read them back. Raises AlertSettingsError."""
+        if not isinstance(body, dict):
+            raise AlertSettingsError('a JSON object is required', 'bad_request')
+        updates = {}
+        if 'enabled' in body:
+            updates['case_alerts_enabled'] = bool(body['enabled'])
+        if 'min_pct' in body:
+            try:
+                min_pct = float(body['min_pct'])
+            except (TypeError, ValueError):
+                min_pct = -1
+            if not min_pct >= 0:
+                raise AlertSettingsError('the alert percentage must be 0 or more', 'bad_min_pct')
+            updates['case_alert_min_pct'] = min_pct
+        if 'poll_interval_sec' in body:
+            try:
+                seconds = int(body['poll_interval_sec'])
+            except (TypeError, ValueError):
+                seconds = 0
+            if seconds < CASE_POLL_MINIMUM_SECONDS:
+                raise AlertSettingsError(
+                    f'the check interval must be at least {CASE_POLL_MINIMUM_SECONDS} seconds',
+                    'bad_poll_interval')
+            updates['case_poll_interval_sec'] = seconds
+        if 'telegram_chat_id' in body:
+            updates['telegram_chat_id'] = str(body['telegram_chat_id'] or '').strip()
+        for key in ('telegram_bot_token', 'notify_webhook_url'):
+            if key not in body:
+                continue
+            if body[key] is None:
+                updates[key] = ''
+            elif str(body[key]).strip():
+                updates[key] = str(body[key]).strip()
+        return updates
 
     def run_case_alerts(self, settings, force=False, refresh=False):
         """Evaluate buy markets cheaper than CSFloat and notify on NEW crossings.
@@ -3204,9 +3265,9 @@ class HuginnService:
         if refresh:
             self._refresh_markets(token, self._ALERT_MARKETS, parallel=True, max_age=ON_DEMAND)
         try:
-            min_pct = float(settings.get('case_alert_min_pct', 3) or 0)
+            min_pct = float(settings.get('case_alert_min_pct') or 0)
         except (TypeError, ValueError):
-            min_pct = 3.0
+            min_pct = 0.0
         cats = settings.get('case_alert_categories') or ['case']
         data = self.cases_prices(token, cats)
         # Never compare with old prices (a market no active Huginn profile keeps has only its

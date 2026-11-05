@@ -146,6 +146,11 @@ path prefix — add your page there. No catch-all route, no Settings page.
 - `custom-scrollbar` and `animate-in fade-in slide-in-*` do nothing (no plugin).
 - UI text "Set tradeon_token in Settings" points nowhere: the token lives in
   `backend/settings.json`.
+- Never read `/api/settings` for a secret: Case Arbitrage alerts read `GET /api/huginn/cases/alerts`
+  (the bot token and webhook only as `telegram_bot_token_set` / `webhook_set`, the buy markets and the
+  poll minimum from the backend) and save through `POST /api/huginn/cases/alerts/settings` (blank keeps
+  a secret, null removes it); the news watcher saves through `POST /api/huginn/gjallarhorn/news/settings`.
+  Both answer `{error, code}`, shown in red.
 - Gjallarhorn's help says "Confirmations → Connect"; Connect is in the
   Ratatoskr sidebar. `NewsWatcher.jsx` passes `text=` to `InfoTip`, which reads
   `tip`, so those hints are empty.

@@ -10,7 +10,7 @@ like `123456789:AA…`). To find a chat id, message your bot once and open
 
 | Messages | Bot | Where to set it |
 |----------|-----|-----------------|
-| Case Arbitrage alerts (one board message, updated as prices move) and a note for each **auto-confirmed trade** | The shared "Huginn" bot | Huginn → Case Arbitrage → **Alerts** (bot token + chat id, or a Discord/Slack webhook) |
+| Case Arbitrage alerts (one board message, updated as prices move) and a note for each **auto-confirmed trade** | The shared "Huginn" bot | Huginn → Case Arbitrage → **Alerts** (bot token + chat id, or a Discord/Slack webhook; once saved, the token and webhook are never shown again: leave the field blank to keep it, **remove** to delete it) |
 | Gjallarhorn news (a case or collection limited) | The shared bot | Gjallarhorn → news watcher → **Alert chat id** (empty = the Huginn chat) |
 | Team Fortress 2 new case, auto-stop | The shared bot | Team Fortress 2 → settings → **Telegram chat** (empty = the Huginn chat) |
 | **In-game store items that sell above the store price**: once a day after the morning refresh, and when an item newly turns profitable (each item at most once a day) | The shared bot (the Huginn chat) | Huginn → CS2 Store Arbitrage → **Telegram: daily post** (on by default) and **Send now** |

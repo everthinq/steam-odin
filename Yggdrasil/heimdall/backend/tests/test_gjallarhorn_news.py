@@ -168,3 +168,36 @@ def test_detect_splits_bullets_on_one_line():
     assert [(hit['action'], hit['kind']) for hit in detect(body)] == [('remove', 'collection'), ('add', 'case')]
     assert detect('[p]The [price] of the Kilowatt Case is now available[/p]')[0]['text'] == \
         'The of the Kilowatt Case is now available'                 # "[price]" is not a paragraph tag
+
+
+# ---- settings command ----------------------------------------------------------------
+
+class SavingSettings(FakeSettings):
+    def __init__(self, saves=True, **values):
+        super().__init__(**values)
+        self.saves = saves
+
+    def save_settings(self, updates):
+        if self.saves:
+            self.settings.update(updates)
+        return self.saves
+
+
+def test_settings_arm_and_set_the_chat():
+    settings = SavingSettings(gjallarhorn_news_armed=False)
+    status = make_service(settings, []).save_settings({'armed': True, 'chat_id': ' -1001234567890 '})
+    assert status['armed'] is True
+    assert status['chat_id'] == '-1001234567890'
+
+
+@pytest.mark.parametrize('chat_id', ['hello', '12a', '@abc'])
+def test_settings_refuse_a_chat_id_that_is_not_one(chat_id):
+    with pytest.raises(gjallarhorn_news_service.NewsSettingsError) as refused:
+        make_service(SavingSettings(), []).save_settings({'chat_id': chat_id})
+    assert refused.value.code == 'bad_chat_id'
+
+
+def test_settings_say_when_they_were_not_saved():
+    with pytest.raises(gjallarhorn_news_service.NewsSettingsError) as refused:
+        make_service(SavingSettings(saves=False), []).save_settings({'armed': True})
+    assert refused.value.code == 'save_failed'

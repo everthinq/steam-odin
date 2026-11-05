@@ -292,6 +292,22 @@ def huginn_cases_alerts_status():
     """Alert config + currently-active deals (a buy market cheaper than CSFloat)."""
     return jsonify(ctx.huginn_service.case_alert_status(ctx.settings_manager.get_settings()))
 
+@bp.route('/api/huginn/cases/alerts/settings', methods=['POST'])
+def huginn_cases_alerts_settings():
+    """Change the alert panel's settings: {enabled, min_pct, poll_interval_sec, telegram_chat_id,
+    telegram_bot_token, notify_webhook_url}, each optional. The token and the webhook are
+    replaced by a non-empty text, removed by null and kept when blank. Answers the new status
+    (secrets only as "set" flags), or {error, code}."""
+    from huginn_service import AlertSettingsError
+    try:
+        updates = ctx.huginn_service.clean_case_alert_settings(request.get_json(silent=True))
+    except AlertSettingsError as e:
+        return jsonify({'error': str(e), 'code': e.code}), 400
+    if updates and not ctx.settings_manager.save_settings(updates):
+        return jsonify({'error': 'settings could not be saved', 'code': 'save_failed'}), 500
+    return jsonify(ctx.huginn_service.case_alert_status(ctx.settings_manager.get_settings()))
+
+
 @bp.route('/api/huginn/cases/alerts/check', methods=['POST'])
 def huginn_cases_alerts_check():
     """Run the alert evaluation now. ?force=1 re-sends all active deals (else only new)."""
@@ -650,11 +666,11 @@ def gjallarhorn_readiness():
     """Free storage-unit slots + loose-inventory count for a connected account."""
     steamid = request.args.get('steamid')
     if not steamid:
-        return jsonify({'error': 'steamid required'}), 400
+        return jsonify({'error': 'steamid required', 'code': 'steamid_required'}), 400
     try:
         return jsonify(ctx.gjallarhorn_service.readiness(steamid))
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': str(e), 'code': 'readiness_failed', 'steamid': steamid}), 500
 
 
 @bp.route('/api/huginn/gjallarhorn/holds', methods=['GET'])
@@ -671,7 +687,8 @@ def gjallarhorn_holds_set():
     if not isinstance(holds, list):
         return jsonify({'error': 'holds array required'}), 400
     clean = ctx.gjallarhorn_service.clean_holds(holds)
-    ctx.settings_manager.save_settings({'gjallarhorn_market_holds': clean})
+    if not ctx.settings_manager.save_settings({'gjallarhorn_market_holds': clean}):
+        return jsonify({'error': 'settings could not be saved', 'code': 'save_failed'}), 500
     return jsonify(clean)
 
 
@@ -776,6 +793,17 @@ def gjallarhorn_ring():
 def gjallarhorn_news_status():
     """Whether the CS2 news watcher is armed/running, plus recent detected events."""
     return jsonify(ctx.gjallarhorn_news_service.status())
+
+
+@bp.route('/api/huginn/gjallarhorn/news/settings', methods=['POST'])
+def gjallarhorn_news_settings():
+    """Arm or disarm the news watcher and set its own chat: {"armed": bool, "chat_id": text}.
+    Answers the new status, or {error, code}."""
+    from gjallarhorn_news_service import NewsSettingsError
+    try:
+        return jsonify(ctx.gjallarhorn_news_service.save_settings(request.get_json(silent=True)))
+    except NewsSettingsError as e:
+        return jsonify({'error': str(e), 'code': e.code}), (500 if e.code == 'save_failed' else 400)
 
 
 @bp.route('/api/huginn/gjallarhorn/news/check', methods=['POST'])

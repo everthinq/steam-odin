@@ -1,27 +1,33 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Boxes, RefreshCw } from 'lucide-react';
 import { readJson } from '../../utils/readJson';
 
 // Inventory readiness for bulk-buying cheap cases: free Storage Unit slots and
 // loose-inventory fill for the selected account. Needs a live Ratatoskr session
 // (else it reports the error the service passes through). GET /readiness?steamid=.
+// Every answer names its steamid: an answer for another account (the picker changed
+// while it loaded) is dropped, so one account's numbers never show under another's name.
 const ReadinessPanel = ({ steamid, accountName }) => {
     const [data, setData] = useState(null);
     const [loading, setLoading] = useState(false);
+    const current = useRef(steamid);
 
     const load = useCallback(() => {
         if (!steamid) return Promise.resolve();
         return fetch(`/api/huginn/gjallarhorn/readiness?steamid=${steamid}`)
-            .then((r) => (r.ok ? readJson(r) : null))
-            .then((d) => setData(d))
-            .catch(() => setData(null))
-            .finally(() => setLoading(false));
+            .then((r) => readJson(r))
+            .then((d) => { if (d && String(d.steamid) === String(current.current)) setData(d); })
+            .catch(() => { if (current.current === steamid) setData({ steamid, error: 'the readiness check could not be read' }); })
+            .finally(() => { if (current.current === steamid) setLoading(false); });
     }, [steamid]);
 
     // Manual refresh (event handler — spinner state is fine to set here).
     const refresh = () => { setLoading(true); load(); };
 
-    useEffect(() => { load(); }, [load]);
+    useEffect(() => {
+        current.current = steamid;
+        load();
+    }, [steamid, load]);
 
     if (!steamid) {
         return (
@@ -31,8 +37,10 @@ const ReadinessPanel = ({ steamid, accountName }) => {
         );
     }
 
-    const err = data && data.error;
-    const looseFree = data && data.looseItems != null ? data.looseCapacity - data.looseItems : null;
+    // Only this account's answer counts (an older one may still be in state for a moment).
+    const shown = data && String(data.steamid) === String(steamid) ? data : null;
+    const err = shown && shown.error;
+    const looseFree = shown ? shown.looseFree : null;
 
     return (
         <div className="rounded-xl border border-white/10 bg-odin-blue/30 px-4 py-3">
@@ -45,18 +53,18 @@ const ReadinessPanel = ({ steamid, accountName }) => {
             </div>
             {err ? (
                 <p className="text-xs text-amber-400/80">{err} — connect the account first (Confirmations → Connect).</p>
-            ) : !data ? (
+            ) : !shown ? (
                 <p className="text-xs text-slate-500">{loading ? 'Loading…' : '—'}</p>
             ) : (
                 <div className="flex flex-wrap gap-x-6 gap-y-1 text-xs">
                     <div>
                         <span className="text-slate-500">Storage free </span>
-                        <span className="tabular-nums text-emerald-400 font-semibold">{data.storageFree.toLocaleString()}</span>
-                        <span className="text-slate-600"> across {data.storageUnits.length} unit{data.storageUnits.length === 1 ? '' : 's'}</span>
+                        <span className="tabular-nums text-emerald-400 font-semibold">{shown.storageFree.toLocaleString()}</span>
+                        <span className="text-slate-600"> across {shown.storageUnits.length} unit{shown.storageUnits.length === 1 ? '' : 's'}</span>
                     </div>
                     <div>
                         <span className="text-slate-500">Loose inventory </span>
-                        <span className="tabular-nums text-slate-300">{data.looseItems == null ? '—' : `${data.looseItems.toLocaleString()} / ${data.looseCapacity.toLocaleString()}`}</span>
+                        <span className="tabular-nums text-slate-300">{shown.looseItems == null ? '—' : `${shown.looseItems.toLocaleString()} / ${shown.looseCapacity.toLocaleString()}`}</span>
                         {looseFree != null && <span className="text-slate-600"> ({looseFree.toLocaleString()} free)</span>}
                     </div>
                 </div>

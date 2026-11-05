@@ -83,3 +83,28 @@ def test_alerts_never_compare_with_old_snapshots(monkeypatch, tmp_path):
     service._container_cache['csfloat'] = (time.time() - 3 * 3600, {})
     sent = _run(monkeypatch, service)
     assert sent == []                                                       # CSFloat too old: no run
+
+
+def test_alert_status_never_answers_the_secrets(monkeypatch, tmp_path):
+    service = _service(monkeypatch, tmp_path, [])
+    status = service.case_alert_status({'telegram_bot_token': 'secret-token', 'notify_webhook_url': 'https://example.invalid/hook',
+                                        'telegram_chat_id': '1', 'case_alert_min_pct': 0, 'case_poll_interval_sec': 600})
+    assert 'secret-token' not in str(status) and 'example.invalid' not in str(status)
+    assert status['telegram_bot_token_set'] is True and status['webhook_set'] is True
+    assert status['buy_markets'] == [service._ALERT_MARKET_LABEL[key] for key in service._ALERT_BUY_MARKETS]
+
+
+def test_alert_settings_keep_a_blank_secret_and_remove_a_null_one():
+    clean = HuginnService.clean_case_alert_settings
+    assert clean({'telegram_bot_token': '  ', 'notify_webhook_url': None}) == {'notify_webhook_url': ''}
+    assert clean({'telegram_bot_token': ' new ', 'min_pct': '1.5', 'poll_interval_sec': 120}) == {
+        'telegram_bot_token': 'new', 'case_alert_min_pct': 1.5, 'case_poll_interval_sec': 120}
+
+
+def test_alert_settings_refuse_bad_numbers():
+    import pytest
+    for body, code in (({'min_pct': -1}, 'bad_min_pct'), ({'min_pct': 'x'}, 'bad_min_pct'),
+                       ({'poll_interval_sec': huginn_service.CASE_POLL_MINIMUM_SECONDS - 1}, 'bad_poll_interval')):
+        with pytest.raises(huginn_service.AlertSettingsError) as refused:
+            HuginnService.clean_case_alert_settings(body)
+        assert refused.value.code == code

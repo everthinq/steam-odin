@@ -330,7 +330,9 @@ class GjallarhornService:
     # ---- inventory readiness ----------------------------------------------
 
     def readiness(self, steamid):
-        """Free storage-unit slots + loose-inventory count for bulk-buying cheap cases."""
+        """Free storage-unit slots + loose-inventory count for bulk-buying cheap cases.
+        Answers the steamid it describes, so a page that switched accounts can drop an
+        older answer."""
         caskets = self.rat.get_caskets(steamid)
         inventory = self.rat.get_inventory(steamid)
         units = []
@@ -350,10 +352,12 @@ class GjallarhornService:
             })
         loose = len(inventory['items']) if isinstance(inventory, dict) and isinstance(inventory.get('items'), list) else None
         return {
+            'steamid': str(steamid),
             'storageUnits': units,
             'storageFree': free_total,
             'looseItems': loose,
             'looseCapacity': STORAGE_CAPACITY,
+            'looseFree': (max(0, STORAGE_CAPACITY - loose) if loose is not None else None),
             'error': (caskets.get('error') if isinstance(caskets, dict) else None),
         }
 

@@ -5,7 +5,9 @@ import { readJson } from '../../utils/readJson';
 // The instant-redeploy market whitelist: which markets do NOT lock your balance
 // for days after a sale, so proceeds can fund the freshly-limited case right away.
 // Filled in gradually (Ivan verifies each market by hand, then records it here).
-// Persisted to settings.json via POST /api/huginn/gjallarhorn/holds.
+// Persisted to settings.json via POST /api/huginn/gjallarhorn/holds, which cleans the rows
+// (blank or repeated markets dropped, hold days a whole number of 0 or more, notes cut to
+// 200 characters) and answers the saved list.
 const blankRow = () => ({ id: '', display: '', holdDays: 0, instantRedeploy: true, notes: '' });
 
 const MarketHoldEditor = ({ onSaved }) => {
@@ -15,6 +17,7 @@ const MarketHoldEditor = ({ onSaved }) => {
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState(null);
     const [count, setCount] = useState(0);
+    const [loadFailed, setLoadFailed] = useState(false);
     const ref = useRef(null);
 
     const loadHolds = () => fetch('/api/huginn/gjallarhorn/holds')
@@ -27,9 +30,21 @@ const MarketHoldEditor = ({ onSaved }) => {
     useEffect(() => {
         if (!open) return;
         fetch('/api/huginn/gjallarhorn/holds')
-            .then((r) => (r.ok ? readJson(r) : []))
-            .then((data) => { setError(null); setRows(Array.isArray(data) && data.length ? data.map((h) => ({ ...blankRow(), ...h })) : [blankRow()]); })
-            .catch(() => setRows([blankRow()]));
+            .then((r) => {
+                if (!r.ok) throw new Error('not read');
+                return readJson(r);
+            })
+            .then((data) => {
+                setError(null);
+                setLoadFailed(false);
+                setRows(Array.isArray(data) && data.length ? data.map((h) => ({ ...blankRow(), ...h })) : [blankRow()]);
+            })
+            .catch(() => {
+                // Never offer to save over a list that could not be read.
+                setRows([]);
+                setLoadFailed(true);
+                setError('The saved list could not be read. Close and open it again.');
+            });
         fetch('/api/huginn/markets')
             .then((r) => (r.ok ? readJson(r) : []))
             .then((data) => { if (Array.isArray(data)) setSuggestions(data.map((m) => m.display)); })
@@ -48,24 +63,15 @@ const MarketHoldEditor = ({ onSaved }) => {
     const save = async () => {
         setSaving(true);
         setError(null);
-        const holds = rows
-            .filter((r) => (r.display || '').trim())
-            .map((r) => ({
-                id: (r.id || r.display).trim(),
-                display: r.display.trim(),
-                holdDays: Number.isFinite(+r.holdDays) ? Math.max(0, parseInt(r.holdDays, 10) || 0) : 0,
-                instantRedeploy: !!r.instantRedeploy,
-                notes: (r.notes || '').slice(0, 200),
-            }));
         try {
             const res = await fetch('/api/huginn/gjallarhorn/holds', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ holds }),
+                body: JSON.stringify({ holds: rows }),   // the backend cleans every row (clean_holds)
             });
             const data = await readJson(res).catch(() => ({}));
             if (!res.ok) throw new Error(data.error || 'Save failed');
-            setCount(Array.isArray(data) ? data.length : holds.length);
+            setCount(data.length);
             await onSaved?.();
             setOpen(false);
         } catch (e) {
@@ -146,7 +152,7 @@ const MarketHoldEditor = ({ onSaved }) => {
                     {error && <div className="px-3 py-2 text-xs text-red-400">{error}</div>}
                     <div className="flex items-center justify-end gap-2 px-3 py-2.5 border-t border-white/10">
                         <button type="button" onClick={() => setOpen(false)} className="px-3 py-1.5 text-sm text-slate-400 hover:text-slate-200">Cancel</button>
-                        <button type="button" onClick={save} disabled={saving} className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-medium disabled:opacity-50">
+                        <button type="button" onClick={save} disabled={saving || loadFailed} className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-medium disabled:opacity-50">
                             {saving ? 'Saving…' : 'Save list'}
                         </button>
                     </div>

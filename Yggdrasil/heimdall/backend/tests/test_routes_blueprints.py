@@ -99,6 +99,7 @@ def test_huginn_blueprint_registers_all_routes():
                  '/api/huginn/gjallarhorn/news/status',
                  '/api/huginn/gjallarhorn/news/check',
                  '/api/huginn/gjallarhorn/news/test',
+                 '/api/huginn/gjallarhorn/news/settings', '/api/huginn/cases/alerts/settings',
                  '/api/huginn/gjallarhorn/reminders',
                  '/api/huginn/gjallarhorn/reminders/<reminder_id>',
                  '/api/huginn/arbitrage/cross-profile',
@@ -136,7 +137,8 @@ def test_huginn_blueprint_registers_all_routes():
     # Active profiles (GET+POST) replaced the Pulse feed switchboard (kept, download) on 2026-10-31.
     # +10 CS2 Store Arbitrage (4) and CS2 Store Boosts (6), moved from Ratatoskr on 2026-11-04;
     # +1 CS2 Store Arbitrage settings (checked), Phase 2 step 2.
-    assert _rule_count(bp, "/api/huginn") == 100
+    # +2 checked settings commands (news watcher, Case Arbitrage alerts), Phase 2 H6.
+    assert _rule_count(bp, "/api/huginn") == 102
 
 
 def test_register_blueprints_wires_onto_app():

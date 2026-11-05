@@ -155,6 +155,18 @@ def detect(contents):
     return hits
 
 
+# A Telegram chat id: a number (a group's starts with a minus sign) or a public @name.
+_CHAT_ID_RE = re.compile(r"^(-?\d{1,20}|@[A-Za-z0-9_]{5,32})$")
+
+
+class NewsSettingsError(ValueError):
+    """A news watcher setting was refused; `code` names why."""
+
+    def __init__(self, message, code):
+        super().__init__(message)
+        self.code = code
+
+
 class GjallarhornNewsService:
     """Background poller: fetch the CS2 update feed, detect container events, ring."""
 
@@ -364,6 +376,26 @@ class GjallarhornNewsService:
                 time.sleep(1)
 
     # -- status ------------------------------------------------------------
+    def save_settings(self, body):
+        """Change the news watcher's own settings: {"armed": bool, "chat_id": text}, each
+        optional. A blank chat id means the shared Case Arbitrage chat. Answers the new
+        status; raises NewsSettingsError (bad_request, bad_chat_id, save_failed)."""
+        if not isinstance(body, dict):
+            raise NewsSettingsError("a JSON object is required", "bad_request")
+        updates = {}
+        if "armed" in body:
+            updates["gjallarhorn_news_armed"] = bool(body["armed"])
+        if "chat_id" in body:
+            chat_id = str(body["chat_id"] or "").strip()
+            if chat_id and not _CHAT_ID_RE.match(chat_id):
+                raise NewsSettingsError(
+                    "a chat id is a number (for example -1001234567890) or a public @name",
+                    "bad_chat_id")
+            updates["gjallarhorn_chat_id"] = chat_id
+        if updates and not self.settings_manager.save_settings(updates):
+            raise NewsSettingsError("settings could not be saved", "save_failed")
+        return self.status()
+
     def status(self):
         settings = self.settings_manager.get_settings()
         history = list(settings.get("gjallarhorn_news_history") or [])

@@ -12,7 +12,7 @@ from ratatoskr_service import RatatoskrService
 from jobs import JobRegistry
 from storage_deposit import DepositService
 from storage_rename import RenameService
-from huginn_service import CASE_ALERTS_JOB, CASE_FULL_JOB, HuginnService
+from huginn_service import CASE_ALERTS_JOB, CASE_FULL_JOB, CASE_POLL_MINIMUM_SECONDS, HuginnService
 from notifications import notification_channel
 from pulse_views import apply_active_settings
 from draupnir_service import DraupnirService
@@ -167,7 +167,7 @@ huginn_service.pulse.declare_job(
     CASE_ALERTS_JOB, 'Case Arbitrage alerts',
     'after every keeper pass (from memory)',
     lambda: huginn_service.case_job_tables(alerts=True), active=_case_alerts_on,
-    period=lambda: max(60, int(settings_manager.get_settings().get('case_poll_interval_sec') or 600)))
+    period=lambda: max(CASE_POLL_MINIMUM_SECONDS, int(settings_manager.get_settings().get('case_poll_interval_sec') or 600)))
 huginn_service.pulse.declare_job(
     STORE_JOB, 'CS2 Store Arbitrage', 'every hour, and after the 08:00 Get all items',
     lambda: store_arbitrage_service.job_tables(settings_manager.get_settings()),

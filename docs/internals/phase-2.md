@@ -198,6 +198,14 @@ News watcher, Case alerts, Readiness); Andvari = 1, 2, 3, 10, 11, DealsTable and
   `MEGABYTES_PER_DOWNLOAD` / `MEGABYTES_PER_TABLE_IN_MEMORY` (`utils/pulseTraffic.js` and the page's
   15 MB are gone). The 1.4 lives only in `_SKINSWAP_TRADE_BONUS`: profiles answer `fromPageBonus`,
   `toPageBonus` and `skinswapBonus` (the page's SkinSwap market list is gone too).
-- 14 MarketHoldEditor re-clean; Gjallarhorn _PRICE_MARKETS copy; NewsWatcher raw settings + ignored failures; DealsTable 20 listings; CaseAlertsPanel reads whole settings incl. Telegram token.
+- 14 (H6) **DONE 2026-11-05** (DealsTable moved to the Andvari group): MarketHoldEditor sends its rows
+  as typed, `clean_holds` is the only cleaner, a failed save answers `save_failed`, and Save stays off
+  when the saved list could not be read. The Gjallarhorn price market copy was already gone (item 12,
+  `useValuationMarkets`). The news watcher saves through `POST /api/huginn/gjallarhorn/news/settings`
+  (chat id checked: a number or a public @name) and shows every failure in red. Case Arbitrage alerts
+  read `GET /api/huginn/cases/alerts` (secrets only as `telegram_bot_token_set` / `webhook_set`, plus
+  `buy_markets`, `poll_interval_sec`, `poll_interval_minimum_sec`) and save through
+  `POST /api/huginn/cases/alerts/settings`; the page never reads `/api/settings`. Readiness answers its
+  `steamid` and `looseFree`; the page drops an answer for another account.
 - Team Fortress 2: left alone as a whole feature (Ivan, 2026-11-04: not used for now); do not work on it.
-- BUGS: CardDeals no stale-answer guard (CaseArbitrage's fixed in H2); startScan unchecked; app-id regex grabs every 2-9 digit run (page + backend parse_app_ids, Buy games uses it); ReadinessPanel stale numbers.
+- BUGS: CardDeals no stale-answer guard (CaseArbitrage's fixed in H2); startScan unchecked; app-id regex grabs every 2-9 digit run (page + backend parse_app_ids, Buy games uses it); ReadinessPanel stale numbers (FIXED in H6).
