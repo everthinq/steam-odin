@@ -1406,7 +1406,8 @@ def test_andvari_without_its_own_bot_is_silent_and_never_uses_the_arbitrage_bot(
 def test_clean_config_takes_andvaris_own_bot_token():
     token = '1234567890:AAH' + 'x' * 32
     assert clean_config({'card_deals_bot_token': f' {token} '}) == {'card_deals_bot_token': token}
-    assert clean_config({'card_deals_bot_token': ''}) == {'card_deals_bot_token': ''}
+    assert clean_config({'card_deals_bot_token': ''}) == {}  # blank keeps the saved token
+    assert clean_config({'card_deals_bot_token': None}) == {'card_deals_bot_token': ''}  # null removes it
 
 
 def test_deals_held_back_without_a_bot_are_sent_once_a_bot_is_added(tmp_path):

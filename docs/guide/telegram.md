@@ -15,7 +15,7 @@ like `123456789:AA…`). To find a chat id, message your bot once and open
 | Team Fortress 2 new case, auto-stop | The shared bot | Team Fortress 2 → settings → **Telegram chat** (empty = the Huginn chat) |
 | **In-game store items that sell above the store price**: once a day after the morning refresh, and when an item newly turns profitable (each item at most once a day) | The shared bot (the Huginn chat) | Huginn → CS2 Store Arbitrage → **Telegram: daily post** (on by default) and **Send now** |
 | **Price boosts** of store items and of stickers inside store capsules: each new level (watch, boost, second wave, fading), once per boost | The shared bot (the Huginn chat), and a **phone ring** on a boost | Huginn → CS2 Store Boosts → **Alerts** (Telegram, ring, **Test message**, **Test ring**) |
-| **Andvari** deal alerts and card-sale summaries | **Andvari's own bot only** | Andvari → **Settings** → Andvari bot token + chat id, then **Test alert** |
+| **Andvari** deal alerts and card-sale summaries | **Andvari's own bot only** | Andvari → **Settings** → Andvari bot token + chat id, then **Test alert** (once saved, the token is never shown again: leave the field blank to keep it, **remove** to delete it) |
 
 Andvari never uses the Huginn bot: without its own bot it stays silent. Give
 it a separate bot so card news does not drown the arbitrage alerts.

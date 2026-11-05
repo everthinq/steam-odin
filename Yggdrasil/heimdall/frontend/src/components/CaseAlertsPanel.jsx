@@ -1,19 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { Bell, Send, RefreshCw, Check, AlertTriangle, Save } from 'lucide-react';
 import { readJson } from '../utils/readJson';
+import SecretRemove from './SecretRemove';
 
 // Config panel for Case Arbitrage price alerts (a buy market cheaper than CSFloat).
 // Reads GET /api/huginn/cases/alerts and saves through POST /api/huginn/cases/alerts/settings,
 // which checks every value. The Telegram bot token and the webhook are secrets: the backend
 // only says whether each is set; a blank field keeps the saved one, "remove" deletes it.
-// "remove" next to a saved secret: the next Save deletes it.
-const SecretRemove = ({ removing, onToggle }) => (
-    <button type="button" onClick={onToggle}
-        className={`ml-2 text-[10px] ${removing ? 'text-red-400' : 'text-slate-500 hover:text-red-400'}`}>
-        {removing ? 'will be removed — undo' : 'remove'}
-    </button>
-);
-
 const CaseAlertsPanel = () => {
     const [enabled, setEnabled] = useState(false);
     const [tgToken, setTgToken] = useState('');

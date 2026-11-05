@@ -13,7 +13,7 @@ before it: the local tag `checkpoint/before-phase-2` (never pushed).
 | 4 | Move the remaining page logic to the backend, tool by tool | **In progress** — see below |
 | 5 | One shape for plans, jobs and errors (`{error, code}` everywhere, one shared plan registry, one `CommandError` handler) | **Done**, last push 16483d5 — see the end |
 | 6 | Endpoint list + System health page | **Done** — 6a endpoint list, 6b health command, 6c the page, see the end |
-| 7 | `odin` command-line tool | In progress (7a System group, 7b every endpoint a command: done) — decided: Python with only built-in libraries, talks to localhost:5001, installed on PATH; dry runs only for purchases; first version has four groups: Accounts (code, confirmations, accounts), Ratatoskr (storage, store, autostore), Prices and portfolio (price, arbitrage, harvest, portfolio), System (status, logs, job, routes) |
+| 7 | `odin` command-line tool | In progress (7a, 7b, 7c done; 7d real purchases from the terminal next) — decided: Python with only built-in libraries, talks to localhost:5001, installed on PATH; dry runs only for purchases; first version has four groups: Accounts (code, confirmations, accounts), Ratatoskr (storage, store, autostore), Prices and portfolio (price, arbitrage, harvest, portfolio), System (status, logs, job, routes) |
 
 Working agreement for each bullet: build, review (rule 25), double-check live,
 then commit + push with a plain message.
@@ -309,4 +309,12 @@ Human guide: [docs/guide/command-line.md](../guide/command-line.md).
   unlocker executes) are always sent `dry_run=true`; secret answers (settings, Mímir credentials,
   password, export, Andvari config) print only to a terminal. `job` and `routes` became
   `odin jobs <id>` and `odin help`.
-- Next: friendlier output for the daily commands if needed (accounts, confirmations, storage).
+- Agreed with Ivan 2026-11-05: tokens masked by the backend (7c), real purchases from odin only
+  typed by a person at a terminal (7d), Mímir secrets terminal-only. Page buying unchanged.
+- 7c **DONE 2026-11-05**: no answer carries a secret setting (`settings.SECRET_SETTINGS`: Tradeon
+  token, CSFloat key, Telegram bot tokens, webhook) — `without_secrets` answers `<name>_set`, and
+  `secret_update` is the one save rule (text replaces, null removes, blank keeps), now shared by
+  `/api/settings`, Case alerts and Andvari's config (Andvari's blank token used to delete it; its
+  panel now has the same "remove" switch, `components/SecretRemove.jsx`). Live sweep: 81 GET routes,
+  no secret in any answer. Only Mímir's three routes stay `shows_secrets`.
+- Next: 7d real purchases from odin (person at a terminal types the total).

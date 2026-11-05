@@ -74,6 +74,7 @@ import urllib.parse
 import urllib.request
 from collections import Counter
 
+from settings import secret_update
 from notifications import NO_OWN_BOT, own_bot_settings, send_notification
 from loop_status import loops
 
@@ -593,8 +594,8 @@ def clean_config(body):
         out['card_deals_alert_min_return_percent'] = number('card_deals_alert_min_return_percent', 0, 100000, int)
     if 'card_deals_alert_min_profit' in body:
         out['card_deals_alert_min_profit'] = round(number('card_deals_alert_min_profit', 0, 1000), 2)
-    if 'card_deals_bot_token' in body:
-        token = str(body['card_deals_bot_token'] or '').strip()
+    changed, token = secret_update(body, 'card_deals_bot_token')
+    if changed:
         if token and not re.fullmatch(r'\d{5,20}:[A-Za-z0-9_-]{20,64}', token):
             raise ValueError('card_deals_bot_token must be a Telegram bot token (from @BotFather: 123456:ABC…)')
         out['card_deals_bot_token'] = token

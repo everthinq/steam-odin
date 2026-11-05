@@ -11,6 +11,7 @@ import urllib.error
 import urllib.parse
 from datetime import datetime, timezone, timedelta
 from commands import CommandError
+from settings import secret_update
 from jsonio import atomic_write_json
 from price_history import PriceHistory
 from pulse_feed import COUNT, FRESH, ON_DEMAND, PRICE, NotActive, PulseFeed, post_table
@@ -3227,12 +3228,9 @@ class HuginnService:
         if 'telegram_chat_id' in body:
             updates['telegram_chat_id'] = str(body['telegram_chat_id'] or '').strip()
         for key in ('telegram_bot_token', 'notify_webhook_url'):
-            if key not in body:
-                continue
-            if body[key] is None:
-                updates[key] = ''
-            elif str(body[key]).strip():
-                updates[key] = str(body[key]).strip()
+            changed, value = secret_update(body, key)
+            if changed:
+                updates[key] = value
         return updates
 
     def run_case_alerts(self, settings, force=False, refresh=False):

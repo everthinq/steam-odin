@@ -22,7 +22,8 @@ from notifications import notification_channel, send_notification
 import pulse_views
 from pulse_feed import ACTIVE_MINUTES, NotActive, give_memory_back
 from store_arbitrage_service import settings_changes
-from command_marks import command_verb, shows_secrets, spends_money
+from command_marks import command_verb, spends_money
+from settings import without_secrets
 
 bp = Blueprint('huginn', __name__)
 
@@ -1047,27 +1048,30 @@ def card_deals_status():
     return jsonify(ctx.card_deals_service.status())
 
 
-@bp.route('/api/huginn/card-deals/config', methods=['GET'])
-@shows_secrets
-def card_deals_config_get():
-    """Andvari settings (card deals and card selling)."""
+def _card_deals_config():
+    """Andvari's settings for an answer; its bot token only as card_deals_bot_token_set."""
     from card_deals_service import CONFIG_KEYS
     settings = ctx.settings_manager.get_settings()
-    return jsonify({key: settings.get(key) for key in CONFIG_KEYS})
+    return without_secrets({key: settings.get(key) for key in CONFIG_KEYS})
+
+
+@bp.route('/api/huginn/card-deals/config', methods=['GET'])
+def card_deals_config_get():
+    """Andvari settings (card deals and card selling); the bot token only as ..._set."""
+    return jsonify(_card_deals_config())
 
 
 @bp.route('/api/huginn/card-deals/config', methods=['POST'])
 def card_deals_config_set():
     """Update filters / schedule / alert thresholds (only the keys supplied)."""
-    from card_deals_service import CONFIG_KEYS, clean_config
+    from card_deals_service import clean_config
     try:
         clean = clean_config(request.get_json(silent=True) or {})
     except ValueError as e:
         return jsonify({'error': str(e), 'code': 'bad_value'}), 400
     if clean:
         ctx.settings_manager.save_settings(clean)
-    settings = ctx.settings_manager.get_settings()
-    return jsonify({key: settings.get(key) for key in CONFIG_KEYS})
+    return jsonify(_card_deals_config())
 
 
 @bp.route('/api/huginn/card-deals/alerts/test', methods=['POST'])

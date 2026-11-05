@@ -1,12 +1,14 @@
 import { useEffect, useState } from 'react';
 import { Save, Send, X } from 'lucide-react';
 import { failureMessage, readJson } from '../../utils/readJson';
+import SecretRemove from '../SecretRemove';
 
 // Andvari settings: which scopes to scan, the price/discount filters, the auto
 // scan schedule and the Telegram alert thresholds. Backed by
 // GET/POST /api/huginn/card-deals/config (validated server-side, saved to
 // settings.json). Filters apply to the cached scan immediately; a lower maximum
-// price than the last scan used triggers a fresh store scan next time.
+// price than the last scan used triggers a fresh store scan next time. The bot token is never
+// sent back (only card_deals_bot_token_set): a blank field keeps it, "remove" deletes it.
 const Field = ({ label, hint, children }) => (
     <label className="flex flex-col gap-1">
         <span className="text-[11px] uppercase tracking-wider text-slate-500">{label}</span>
@@ -147,9 +149,17 @@ const SettingsPanel = ({ onClose, onSaved }) => {
                             arbitrage bot. Without a bot token and chat id here, Andvari sends nothing.
                         </p>
                         <Field label="Andvari bot token" hint="A separate bot: create it with @BotFather, then send it /start from your Telegram.">
-                            <input type="password" autoComplete="off" className={inputClass} placeholder="123456:ABC…"
-                                value={draft.card_deals_bot_token ?? ''}
-                                onChange={(e) => set('card_deals_bot_token')(e.target.value)} />
+                            <span className="flex items-center">
+                                <input type="password" autoComplete="off" className={inputClass}
+                                    placeholder={draft.card_deals_bot_token_set ? 'saved — leave blank to keep it' : '123456:ABC…'}
+                                    disabled={draft.card_deals_bot_token === null}
+                                    value={draft.card_deals_bot_token ?? ''}
+                                    onChange={(e) => set('card_deals_bot_token')(e.target.value)} />
+                                {draft.card_deals_bot_token_set && (
+                                    <SecretRemove removing={draft.card_deals_bot_token === null}
+                                        onToggle={() => set('card_deals_bot_token')(draft.card_deals_bot_token === null ? '' : null)} />
+                                )}
+                            </span>
                         </Field>
                         <Field label="Chat id" hint="Your chat with that bot (the same number as your Huginn chat works).">
                             <input type="text" className={inputClass}

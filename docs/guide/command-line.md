@@ -53,5 +53,9 @@ odin <command words> <arguments> name=value name=value …
 
 - **Purchases run only as dry runs.** Buy Storage Units, Andvari's Buy games and the
   Market unlocker show what they would buy; buying for real is done on the page.
-- **Secrets stay on your screen.** Answers with passwords, tokens or emails (settings,
-  Mímir) are printed only in a real terminal, never into a file or another program.
+- **Tokens are never shown.** `odin settings` and Andvari's config say only whether each
+  token or key is set (`tradeon_token_set: true`). Change one with `odin settings set
+  tradeon_token=@file`; `tradeon_token=null` removes it.
+- **Mímir stays on your screen.** Its credentials list (emails, billing addresses), passwords
+  and export print only in a real terminal, never into a file or another program (so an AI
+  agent cannot read them).

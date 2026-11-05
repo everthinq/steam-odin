@@ -82,5 +82,5 @@ def test_money_and_secret_routes_are_marked():
     assert spends == {('/api/ratatoskr/storage-shop/plans/<plan_id>/execute', 'POST'),
                       ('/api/huginn/card-deals/buy/purchase-plans/<purchase_plan_id>/execute', 'POST'),
                       ('/api/mimir/market-access/plans/<plan_id>/execute', 'POST')}
-    assert {('/api/settings', 'GET'), ('/api/mimir/credentials/<rec_id>/password', 'POST'),
-            ('/api/mimir/export', 'POST')} <= secret
+    assert secret == {('/api/mimir/credentials', 'GET'), ('/api/mimir/credentials/<rec_id>/password', 'POST'),
+                      ('/api/mimir/export', 'POST')}

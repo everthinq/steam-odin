@@ -11,6 +11,32 @@ log = logging.getLogger(__name__)
 
 SETTINGS_FILE = 'settings.json'
 
+# Settings that are secrets: no answer ever carries them, only `<name>_set` (true or false).
+# A save replaces one with a non-empty text, removes it with null, and keeps it when the
+# value is blank or absent (`secret_update`), so no page or command needs to read it back.
+SECRET_SETTINGS = ('tradeon_token', 'csfloat_api_key', 'telegram_bot_token',
+                   'card_deals_bot_token', 'notify_webhook_url')
+
+
+def without_secrets(settings):
+    """A copy of *settings* for an answer: each secret replaced by `<name>_set`."""
+    public = {key: value for key, value in settings.items() if key not in SECRET_SETTINGS}
+    for key in SECRET_SETTINGS:
+        if key in settings:
+            public[f'{key}_set'] = bool(settings[key])
+    return public
+
+
+def secret_update(body, key):
+    """(True, new value) when *body* changes the secret *key*, else (False, None):
+    a non-empty text replaces it, null removes it (''), blank or absent keeps it."""
+    if key not in body:
+        return False, None
+    if body[key] is None:
+        return True, ''
+    text = str(body[key]).strip()
+    return (True, text) if text else (False, None)
+
 DEFAULT_SETTINGS = {
     "check_interval": 300,        # seconds
     "auto_check_enabled": False,
