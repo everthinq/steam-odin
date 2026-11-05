@@ -308,3 +308,43 @@ def test_a_stale_best_offer_is_not_listed_as_a_price_to_check():
     board = service.board('token', market_ids=['CsMoneyTrade'])
     assert board['summary']['to_check'] == 0
     assert all(row['best']['stale'] for row in board['rows'] if row['item_name'] == 'AK')
+
+
+def test_the_board_decides_what_the_page_marks():
+    """H3: profitable, counted, short of offers and the rules' numbers come from the backend."""
+    service, huginn = warmed(('CsMoneyTrade',))
+    huginn.listings['AWP'] = 10.0   # not used: CSMoney Trade pays balance, never checked against Buff
+    board = service.board('token', market_ids=['CsMoneyTrade'])
+    rows = rows_by_key(board)
+    assert board['trade_hold_days'] == HarvestService.TRADE_HOLD_DAYS
+    assert board['stale_after_seconds'] == 24 * 60 * 60
+    ak = rows[('everthinklol', 'AK')]
+    assert ak['profitable'] and ak['counted'] and not ak['short_of_offers']
+    assert not rows[('hidey_spidey', 'AK')]['profitable']
+    awp = rows[('everthinklol', 'AWP')]
+    assert not awp['profitable'] and not awp['short_of_offers']
+    case = rows[('everthinklol', 'Case')]
+    assert case['counted'] and not case['short_of_offers']
+    assert board['summary']['profitable'] == sum(1 for r in board['rows'] if r['counted'])
+
+
+def test_more_copies_than_offers_is_short_of_offers():
+    service, huginn = warmed(('CsMoneyTrade',))
+    huginn.autobuy['CsMoneyTrade']['AK']['count'] = 1
+    service._warm('token', ['CsMoneyTrade'])
+    rows = rows_by_key(service.board('token', market_ids=['CsMoneyTrade']))
+    assert rows[('everthinklol', 'AK')]['short_of_offers']        # holds 2, one offer
+    assert not rows[('hidey_spidey', 'AK')]['short_of_offers']     # holds 1
+
+
+def test_a_suspicious_profit_is_profitable_but_not_counted():
+    huginn = FakeHuginn()
+    huginn.listings = {'AK': 5.0}   # Buff163 lists AK at 5: Buff's 13 buy order is 2.6x that
+    huginn.autobuy = {'Buff': {'AK': {'price': 13.0, 'count': 5}}}
+    service = HarvestService(huginn, FakeDraupnir(), today=lambda: datetime.date(2026, 9, 29))
+    service._warm('token', ['Buff', HarvestService.REFERENCE])
+    board = service.board('token', market_ids=['Buff'])
+    ak = rows_by_key(board)[('everthinklol', 'AK')]
+    assert ak['best']['suspicious'] and ak['profitable'] and not ak['counted']
+    assert board['summary']['profitable'] == 0
+    assert board['summary']['profitable_not_counted'] == 1

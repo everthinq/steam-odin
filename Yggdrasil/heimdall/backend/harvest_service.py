@@ -18,7 +18,7 @@ import logging
 import threading
 import time
 
-from pulse_feed import NotActive, is_stale
+from pulse_feed import STALE_SECONDS, NotActive, is_stale
 
 logger = logging.getLogger(__name__)
 
@@ -231,6 +231,9 @@ class HarvestService:
             'summary': self._summary(rows, len(lots), unpriced),
             'reference_loaded': self.REFERENCE in indexes,
             'min_profit_pct': min_profit_pct,
+            # The page prints these rules; it never keeps its own copy.
+            'trade_hold_days': self.TRADE_HOLD_DAYS,
+            'stale_after_seconds': STALE_SECONDS,
         }
 
     def _display(self, market_id):
@@ -268,6 +271,7 @@ class HarvestService:
         offers.sort(key=lambda o: (not o['suspicious'], o['net']), reverse=True)
         best = offers[0]
         profit = best['net'] - cost
+        total_profit = round(profit * qty, 2)
         days = self._days_since(lot['last_buy_date'])
         return {
             'account': lot['account'], 'portfolio_id': lot['portfolio_id'],
@@ -278,7 +282,13 @@ class HarvestService:
             'profit': round(profit, 3),
             # A zero-cost lot (a drop or a gift) has no percentage: any sale is profit.
             'profit_pct': round(profit / cost * 100, 2) if cost > 0 else None,
-            'total_profit': round(profit * qty, 2),
+            'total_profit': total_profit,
+            # Sells above what it cost ("Profitable only"); counted in the totals
+            # only when the offer is not suspicious or stale (summary.profitable).
+            'profitable': total_profit > 0,
+            'counted': total_profit > 0 and not best['suspicious'],
+            # More copies held than the market buys at this price: the rest may sell lower.
+            'short_of_offers': best.get('count') is not None and qty > best['count'],
             'proceeds': round(best['net'] * qty, 2),
             'last_buy_date': lot['last_buy_date'],
             'days_since_buy': days,
@@ -294,7 +304,7 @@ class HarvestService:
     @staticmethod
     def _summary(rows, lots, unpriced):
         to_check = [r for r in rows if r['best']['suspicious'] and not r['best'].get('stale')]
-        winners = [r for r in rows if r['total_profit'] > 0 and not r['best']['suspicious']]
+        winners = [r for r in rows if r['counted']]
         cash = [r for r in winners if not r['best']['balance']]
         return {
             'lots': lots,
@@ -307,5 +317,8 @@ class HarvestService:
             'proceeds': round(sum(r['proceeds'] for r in winners), 2),
             'cost': round(sum(r['paid'] * r['qty'] for r in winners), 2),
             'to_check': len(to_check),
+            # Sell above cost but left out of the totals (an offer to check, or a stale price):
+            # "Profitable only" shows them, so the page can say why its count is higher.
+            'profitable_not_counted': sum(1 for r in rows if r['profitable'] and not r['counted']),
             'best_profit_pct': max((r['profit_pct'] for r in winners if r['profit_pct'] is not None), default=None),
         }

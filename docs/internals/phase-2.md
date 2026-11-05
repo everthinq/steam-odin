@@ -180,7 +180,11 @@ News watcher, Case alerts, Readiness); Andvari = 1, 2, 3, 10, 11, DealsTable and
   objects (`container_markets()`: key, label, short, slug, sellable, balance) from the one table
   `_CONTAINER_MARKET_DISPLAY` (`_CONTAINER_MARKETS` is derived from it); the page's `MARKETS` copy is gone,
   and a request counter drops any answer that is not the newest.
-- 8 Harvest: profitable-only differs from backend count; stale via frontend constant; hardcoded 8 days; offers count -> counted, short_of_offers, best.stale, stale_after_seconds.
+- 8 Harvest (H3) **DONE 2026-11-05**: each `/api/huginn/harvest` row answers `profitable` (sells above cost,
+  the "Profitable only" filter), `counted` (in the totals: profitable and the offer neither suspicious nor
+  stale) and `short_of_offers` (more copies held than offers at the best price); the board answers
+  `trade_hold_days` and `stale_after_seconds`, and `summary.profitable_not_counted` explains why "Profitable
+  only" can show more lots than the count. The page uses `best.stale`, never its own clock rule.
 - 9 CrossProfile chain price from first/last priced legs (wrong) -> backend buy_price, sell_net.
 - 10 CardDeals All counts, scan_running inferred.
 - 11 FarmingPanel actions per state -> actions list.

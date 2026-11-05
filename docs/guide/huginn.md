@@ -173,8 +173,14 @@ an autobuy market's instant offer.
   cheap stickers). Pick more markets to see it priced elsewhere.
 - **check** marks an offer that looks wrong (much above Buff163, or paid in
   site balance) — it is left out of the totals.
-- The clock icon marks lots bought less than 8 days ago (may still be trade
-  protected).
+- **Profitable only** shows every lot that sells above what you paid. The
+  count at the top counts only the ones in the totals; "+N not counted" are
+  profitable lots whose offer needs checking or whose price is stale (not
+  updated by its market for a day).
+- "only N offers at this price" means you hold more copies than the market
+  buys at that price: the rest may sell lower.
+- The clock icon marks lots bought recently (the number of days is shown under
+  the status bar): they may still be trade protected.
 - The **Filters** button works as on Arbitrage, with **Price** on what you
   paid or what the market pays now, **Accounts** from Draupnir and
   **Collections** from Get all items.

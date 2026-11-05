@@ -11,7 +11,7 @@ import BuffMarketLink from './BuffMarketLink';
 import LisSkinsMarketLink from './LisSkinsMarketLink';
 import CSFloatMarketLink from './CSFloatMarketLink';
 import { useColumnSort, sortRows } from './draupnir/columnSort';
-import { useNowSeconds, isStale, staleTip } from '../utils/priceAge';
+import { useNowSeconds, staleTip } from '../utils/priceAge';
 import { readJson } from '../utils/readJson';
 
 // Harvest tab (Huginn Arbitrage page): what you can sell RIGHT NOW for more than
@@ -168,7 +168,7 @@ const Harvest = ({ byHash }) => {
         const q = deferredQuery.trim().toLowerCase();
         const accounts = filters.accounts.length ? new Set(filters.accounts) : null;
         const cols = filters.collections.length ? new Set(filters.collections) : null;
-        const shown = allRows.filter((r) => (!profitableOnly || r.total_profit > 0)
+        const shown = allRows.filter((r) => (!profitableOnly || r.profitable)
             && (!q || r.item_name.toLowerCase().includes(q) || r.platform.toLowerCase().includes(q))
             && priceInRange(filters.priceSide === 'sell' ? r.best.net : r.paid, filters)
             && (!accounts || accounts.has(r.account))
@@ -224,6 +224,11 @@ const Harvest = ({ byHash }) => {
                     ) : summary && (
                         <span className="text-xs text-slate-400 tabular-nums">
                             <span className="text-amber-300">{summary.profitable} profitable lots</span>
+                            {summary.profitable_not_counted > 0 && (
+                                <span className="text-slate-500" title="They sell above what you paid, but the offer needs checking or its price is stale: shown under Profitable only, left out of the totals">
+                                    {' '}(+{summary.profitable_not_counted} not counted)
+                                </span>
+                            )}
                             {' · '}<span className="text-emerald-400 font-semibold">{money(summary.total_profit)}</span> if sold now
                             {' '}({money(summary.proceeds)} for what cost {money(summary.cost)})
                             {summary.to_check > 0 && <span className="text-red-300"> · {summary.to_check} to check</span>}
@@ -244,7 +249,7 @@ const Harvest = ({ byHash }) => {
                         <span><span className="text-sky-300/90">{sellMarket.display} pays {sellMarket.balance}</span>, not money: it only buys items there.</span>
                     )}
                     {sellMarket && !sellMarket.fee_known && <span>Its sell fee is not confirmed: prices are taken as-is.</span>}
-                    <span className="inline-flex items-center gap-1"><Clock size={11} className="text-orange-400" /> bought under 8 days ago: may still be trade-protected</span>
+                    <span className="inline-flex items-center gap-1"><Clock size={11} className="text-orange-400" /> bought under {data?.trade_hold_days ?? '…'} days ago: may still be trade-protected</span>
                 </p>
             </div>
 
@@ -337,7 +342,7 @@ const Harvest = ({ byHash }) => {
                                         </div>
                                         <div className="flex items-center gap-1.5 text-[11px] text-slate-500">
                                             {r.buff_listing != null && <span>Buff163 listing {money(r.buff_listing)}</span>}
-                                            {isStale(best.updated, now) && (
+                                            {best.stale && (
                                                 <Badge className="bg-slate-500/10 border-slate-400/30 text-slate-300/90" title={staleTip(best.updated, now)}>
                                                     stale price
                                                 </Badge>
@@ -348,7 +353,7 @@ const Harvest = ({ byHash }) => {
                                                     check
                                                 </Badge>
                                             )}
-                                            {best.count != null && r.qty > best.count && (
+                                            {r.short_of_offers && (
                                                 <span className="text-orange-400" title={`You hold ${r.qty} here but pulse sees ${best.count} offers at this price: the rest may sell lower`}>
                                                     only {best.count} offers at this price
                                                 </span>
