@@ -22,6 +22,7 @@ from notifications import notification_channel, send_notification
 import pulse_views
 from pulse_feed import ACTIVE_MINUTES, NotActive, give_memory_back
 from store_arbitrage_service import settings_changes
+from command_marks import command_verb, shows_secrets, spends_money
 
 bp = Blueprint('huginn', __name__)
 
@@ -362,6 +363,7 @@ def huginn_csfloat_connectivity():
     return jsonify(result)
 
 @bp.route('/api/huginn/csfloat/buy-orders', methods=['POST'])
+@command_verb('start')
 def huginn_csfloat_buy_orders_fetch():
     """Kick off a background CSFloat buy-order sweep over owned items."""
     ok, message, status, code = start_csfloat_sweep()
@@ -783,6 +785,7 @@ def gjallarhorn_reminders_list():
 
 
 @bp.route('/api/huginn/gjallarhorn/reminders', methods=['POST'])
+@command_verb('add')
 def gjallarhorn_reminders_add():
     """{item_name, unlock_at (ISO with offset), note} → one Telegram text at that time."""
     body = request.get_json(silent=True) or {}
@@ -1045,6 +1048,7 @@ def card_deals_status():
 
 
 @bp.route('/api/huginn/card-deals/config', methods=['GET'])
+@shows_secrets
 def card_deals_config_get():
     """Andvari settings (card deals and card selling)."""
     from card_deals_service import CONFIG_KEYS
@@ -1217,6 +1221,7 @@ def card_deals_buy_purchase_plan_get(purchase_plan_id):
 
 
 @bp.route('/api/huginn/card-deals/buy/purchase-plans/<purchase_plan_id>/execute', methods=['POST'])
+@spends_money
 def card_deals_buy_purchase_plan_execute(purchase_plan_id):
     """{"dry_run": bool}: anything but exactly false runs the dry run (repeatable); exactly false
     buys, once, only the accounts whose dry run of this purchase plan passed. Answers the job."""

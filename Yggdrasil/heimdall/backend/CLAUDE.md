@@ -136,6 +136,7 @@ They start once, in `start_background()`, only when the backend runs as `python 
 | `settings.py` | `settings.json` load with safe defaults; a corrupt file is copied aside and writes are refused until it loads |
 | `notifications.py` | Telegram / webhook sender; `own_bot_settings(settings, prefix)` for a feature's own bot (no fallback) |
 | `logging_setup.py` | Rotating log + console + `system_status.recent_errors`; level from `HEIMDALL_LOG_LEVEL` |
+| `command_marks.py` | Marks a route for the `odin` command-line tool, under its `@bp.route`: `@command_verb('add')` (last word of the command when the path does not say what a POST does), `@spends_money` (odin sends only dry runs), `@shows_secrets` (odin prints it only to a terminal). Every route is an odin command: `routes/system.py` `command_name` makes it from the path words + a verb (`delete`, `change`, `set` for a POST next to a GET); a test keeps names unique and pins the money and secret routes. **A new route that buys or answers secrets needs its mark** |
 | `system_status.py` | For the System health page: `recent_errors` (logging handler, the newest `RECENT_ERROR_LIMIT` (30) records at ERROR or above from anywhere in the backend, memory only) and `memory_use()` (process resident memory and peak from `/proc/self/status`, container total and limit from the control group; `None` when unknown, limit `None` when Docker sets none) |
 | `system_ops.py` | `trigger_restart()` (exit, Docker restarts) — currently unused |
 | `cases_containers.json` | Bundled container catalog (read-only) |

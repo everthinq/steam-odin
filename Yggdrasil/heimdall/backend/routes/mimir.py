@@ -25,6 +25,7 @@ from flask import Blueprint, jsonify, request
 
 from context import ctx
 from mimir_service import VaultUnreadableError
+from command_marks import command_verb, shows_secrets, spends_money
 
 logger = logging.getLogger(__name__)
 
@@ -63,6 +64,7 @@ def _decorate(records):
 
 
 @bp.route('/api/mimir/credentials', methods=['GET'])
+@shows_secrets
 def list_credentials():
     """Every Mímir credential."""
     return jsonify({
@@ -74,6 +76,7 @@ def list_credentials():
 
 
 @bp.route('/api/mimir/credentials/<rec_id>/password', methods=['POST'])
+@shows_secrets
 def get_credential_password(rec_id):
     """Return the password of one credential — the only route besides the
     export that sends a password to the browser."""
@@ -85,6 +88,7 @@ def get_credential_password(rec_id):
 
 
 @bp.route('/api/mimir/credentials', methods=['POST'])
+@command_verb('add')
 def create_credential():
     """Add one Mímir credential."""
     body = request.json or {}
@@ -176,6 +180,7 @@ def test_login(rec_id):
 
 
 @bp.route('/api/mimir/export', methods=['POST'])
+@shows_secrets
 def export_credentials():
     """Return the whole vault as importable ``login;password;email;comment`` text."""
     logger.info('[MIMIR] vault exported (%d credentials)', len(ctx.mimir_service.list()))
@@ -216,6 +221,7 @@ def market_access_plan(plan_id):
 
 
 @bp.route('/api/mimir/market-access/plans/<plan_id>/execute', methods=['POST'])
+@spends_money
 def market_access_execute_plan(plan_id):
     """Market unlocker, step 2: buy for real on the accounts that passed the plan's dry run
     ({dry_run: false}, nothing else buys). Once: again answers the same job."""

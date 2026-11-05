@@ -9,6 +9,7 @@ from flask import Blueprint, jsonify, request
 
 import confirmation_settings
 from context import ctx
+from command_marks import command_verb
 
 logger = logging.getLogger(__name__)
 
@@ -58,6 +59,7 @@ _RESPOND_STATUS = {'confirmation_not_found': 404, 'confirmations_unavailable': 5
 
 
 @bp.route('/api/accounts/<steamid>/confirmations/<cid>', methods=['POST'])
+@command_verb('answer')
 def act_on_confirmation(steamid, cid):
     """Approve or deny one confirmation: body {op: 'allow' | 'cancel'}. The
     backend finds the confirmation's key itself."""

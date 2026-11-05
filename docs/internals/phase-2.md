@@ -13,7 +13,7 @@ before it: the local tag `checkpoint/before-phase-2` (never pushed).
 | 4 | Move the remaining page logic to the backend, tool by tool | **In progress** — see below |
 | 5 | One shape for plans, jobs and errors (`{error, code}` everywhere, one shared plan registry, one `CommandError` handler) | **Done**, last push 16483d5 — see the end |
 | 6 | Endpoint list + System health page | **Done** — 6a endpoint list, 6b health command, 6c the page, see the end |
-| 7 | `odin` command-line tool | In progress (7a System group done) — decided: Python with only built-in libraries, talks to localhost:5001, installed on PATH; dry runs only for purchases; first version has four groups: Accounts (code, confirmations, accounts), Ratatoskr (storage, store, autostore), Prices and portfolio (price, arbitrage, harvest, portfolio), System (status, logs, job, routes) |
+| 7 | `odin` command-line tool | In progress (7a System group, 7b every endpoint a command: done) — decided: Python with only built-in libraries, talks to localhost:5001, installed on PATH; dry runs only for purchases; first version has four groups: Accounts (code, confirmations, accounts), Ratatoskr (storage, store, autostore), Prices and portfolio (price, arbitrage, harvest, portfolio), System (status, logs, job, routes) |
 
 Working agreement for each bullet: build, review (rule 25), double-check live,
 then commit + push with a plain message.
@@ -299,5 +299,14 @@ Human guide: [docs/guide/command-line.md](../guide/command-line.md).
 - 7a **DONE 2026-11-05**: the System group: `status` (the health command), `logs` (reads
   `backend/logs/heimdall.log` on the Mac directly: `-n`, `-f`, `--errors`, `--grep`), `job <id>`
   (`--wait`), `routes [text]`.
-- Next: 7b Accounts (code, confirmations, accounts), 7c Ratatoskr (storage, store dry runs only,
-  autostore), 7d Prices and portfolio (price, arbitrage, harvest, portfolio).
+- 7b **DONE 2026-11-05** (Ivan: everything must work from bash, without the frontend): instead of
+  hand-writing commands per group, every endpoint is a command. `GET /api/system/routes` now
+  answers each route's `commands` (method → name: path words after `/api` without parameters, plus
+  `delete` / `change` / `set` or the route's `@command_verb`), `arguments`, `description` (full
+  docstring), `spends_money` and `shows_secrets` (`command_marks.py`). odin reads that list:
+  `odin <words> <arguments> name=value…`, `odin help [words]`, `--wait` follows a job, account names
+  work where a SteamID64 is asked. Money routes (Buy Storage Units, Andvari Buy games, Market
+  unlocker executes) are always sent `dry_run=true`; secret answers (settings, Mímir credentials,
+  password, export, Andvari config) print only to a terminal. `job` and `routes` became
+  `odin jobs <id>` and `odin help`.
+- Next: friendlier output for the daily commands if needed (accounts, confirmations, storage).

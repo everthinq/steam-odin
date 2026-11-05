@@ -12,6 +12,7 @@ from context import ctx
 from huginn_service import DEFAULT_PRICE_MARKET
 from draupnir_service import PortfolioSaveError, pricing_status
 from validation import date_editable, normalize_datetime, validate_new_transaction, validate_portfolio_name, validate_transaction
+from command_marks import command_verb
 
 bp = Blueprint('draupnir', __name__)
 
@@ -58,6 +59,7 @@ def portfolios_list():
 
 
 @bp.route('/api/draupnir/portfolios', methods=['POST'])
+@command_verb('add')
 def portfolios_create():
     """Create a portfolio (name optional)."""
     body = request.get_json(silent=True) or {}
@@ -235,6 +237,7 @@ def portfolios_delete(pid):
 
 
 @bp.route('/api/draupnir/portfolios/<pid>/transactions', methods=['POST'])
+@command_verb('add')
 def portfolios_add_txn(pid):
     """Add a buy or sell transaction to a portfolio (checked by the backend)."""
     body = request.get_json(silent=True) or {}

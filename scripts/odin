@@ -1,32 +1,54 @@
 #!/usr/bin/env python3
-"""odin: the steam-odin backend from the terminal.
+"""odin: every steam-odin command from the terminal, no browser needed.
 
-Every command is one call to the backend's own API (http://127.0.0.1:5001 by default, or the
-ODIN_URL environment variable), the same commands the pages use: the backend decides, odin only
-sends and prints. Python's built-in libraries only, so it runs with any Python 3.9 or newer.
+The backend is the product and every page button is one backend command; odin runs the same
+commands. Their names come from the backend itself (GET /api/system/routes), so a new backend
+command is an odin command at once: the words of its path, then its arguments, then fields.
 
-    odin status            background loops, Ratatoskr, ASF, memory and the last errors
-    odin logs              the end of the backend's log file (logs/heimdall.log)
-    odin job <id>          one backend job: progress, error, result
-    odin routes [text]     every backend endpoint, or those whose path or summary has the text
+    odin help                          every command, grouped by tool
+    odin help ratatoskr                the Ratatoskr commands (any words narrow the list)
+    odin help ratatoskr deposit plan   one command: what it does, its arguments and fields
 
-Add --json to any command for the backend's raw answer. `odin <command> --help` for its options.
+    odin accounts                                       accounts with their Steam Guard codes
+    odin accounts confirmations <account>               an account's pending confirmations
+    odin ratatoskr storage <account>                    free places in its Storage Units
+    odin ratatoskr deposit plan steamid=<account> all_storable=true
+    odin ratatoskr plans execute <plan id> --wait       run that plan once and follow its job
+    odin jobs <job id> --wait                           follow any job until it finishes
+
+    odin status                        the System health page in text
+    odin logs [-f] [--errors]          the backend's log file
+
+Arguments are given in order after the command words; fields are name=value (true, false,
+numbers, [lists] and {objects} are read as JSON; name=@file reads a file's text). An account
+can be named by its account name wherever a SteamID64 is asked for (steamid, steamids).
+
+Safety, enforced here as well as in the backend:
+- a command that can spend money only ever runs as a dry run (dry_run=true); real purchases
+  are made on the page, after Ivan's word;
+- a command whose answer holds secrets (passwords, tokens, emails) prints only to a person at a
+  terminal, never into a pipe or a file.
+
+--json prints the backend's raw answer. ODIN_URL changes the backend (default http://127.0.0.1:5001).
 Install on the PATH with `make odin-command` (a link in ~/.local/bin).
 """
-import argparse
 import json
 import os
 import sys
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from collections import deque
 
 BACKEND_URL = os.environ.get('ODIN_URL', 'http://127.0.0.1:5001').rstrip('/')
-REQUEST_TIMEOUT_SECONDS = 30
+REQUEST_TIMEOUT_SECONDS = 120
 REPOSITORY = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 LOG_FILE = os.path.join(REPOSITORY, 'Yggdrasil', 'heimdall', 'backend', 'logs', 'heimdall.log')
 FOLLOW_POLL_SECONDS = 0.5
+JOB_POLL_SECONDS = 2.0
+CELL_WIDTH = 48
+ACCOUNT_FIELDS = ('steamid', 'steamids')
 
 
 class OdinError(Exception):
@@ -35,14 +57,18 @@ class OdinError(Exception):
 
 # ---------------------------------------------------------------------------- talking to the backend
 
-def call(method, path, body=None):
+def call(method, path, body=None, query=None):
     """One request to the backend; the parsed JSON answer. A refusal ({error, code}) raises OdinError."""
+    url = f'{BACKEND_URL}{path}'
+    if query:
+        url += '?' + urllib.parse.urlencode(query, doseq=True)
     data = None if body is None else json.dumps(body).encode()
-    request = urllib.request.Request(f'{BACKEND_URL}{path}', data=data, method=method,
-                                     headers={'Content-Type': 'application/json'} if data else {})
+    request = urllib.request.Request(url, data=data, method=method,
+                                     headers={'Content-Type': 'application/json'} if data is not None else {})
     try:
         with urllib.request.urlopen(request, timeout=REQUEST_TIMEOUT_SECONDS) as answer:
-            return json.loads(answer.read() or b'null')
+            raw = answer.read()
+            kind = answer.headers.get('Content-Type', '')
     except urllib.error.HTTPError as refusal:
         text = refusal.read().decode(errors='replace')
         try:
@@ -56,6 +82,9 @@ def call(method, path, body=None):
     except urllib.error.URLError as failure:
         raise OdinError(f'The backend at {BACKEND_URL} does not answer ({failure.reason}). '
                         'Is it running? (make raid)') from None
+    if 'json' not in kind:
+        return raw.decode(errors='replace')  # a download (a CSV, a backup): printed as it is
+    return json.loads(raw or b'null')
 
 
 # ---------------------------------------------------------------------------- printing
@@ -75,24 +104,243 @@ def age(at, now):
     return f'{seconds} seconds ago'
 
 
-def table(rows, headers):
+def cell(value):
+    text = value if isinstance(value, str) else json.dumps(value, ensure_ascii=False)
+    text = ' '.join(text.split())
+    return text if len(text) <= CELL_WIDTH else text[:CELL_WIDTH - 1] + '…'
+
+
+def table(rows, headers, indent=''):
     """Plain columns, as wide as the widest cell."""
-    rows = [[str(cell) for cell in row] for row in rows]
-    widths = [max(len(header), *(len(row[index]) for row in rows)) if rows else len(header)
-              for index, header in enumerate(headers)]
-    line = lambda cells: '  '.join(cell.ljust(width) for cell, width in zip(cells, widths)).rstrip()
+    rows = [[cell(value) for value in row] for row in rows]
+    widths = [max([len(header)] + [len(row[index]) for row in rows]) for index, header in enumerate(headers)]
+    line = lambda cells: indent + '  '.join(text.ljust(width) for text, width in zip(cells, widths)).rstrip()
     print(line(headers))
     print(line(['-' * width for width in widths]))
     for row in rows:
         print(line(row))
 
 
-# ---------------------------------------------------------------------------- System group
+def is_records(value):
+    return isinstance(value, list) and value and all(isinstance(item, dict) for item in value)
 
-def status(arguments):
+
+def show_records(records, indent=''):
+    headers = []
+    for record in records:
+        headers += [key for key, value in record.items()
+                    if key not in headers and not isinstance(value, (dict, list))]
+    if not headers:  # records made only of lists and objects: JSON is clearer
+        print(indent + json.dumps(records, indent=2, ensure_ascii=False).replace('\n', '\n' + indent))
+        return
+    table([[record.get(key, '') if record.get(key) is not None else '' for key in headers] for record in records],
+          headers, indent)
+
+
+def show(answer):
+    """A readable form of any answer: plain values as 'name: value', lists of records as tables,
+    anything deeper as indented JSON. --json prints everything exactly."""
+    if isinstance(answer, str):
+        sys.stdout.write(answer if answer.endswith('\n') else answer + '\n')
+    elif is_records(answer):
+        show_records(answer)
+    elif isinstance(answer, dict):
+        plain = {key: value for key, value in answer.items() if not isinstance(value, (dict, list))}
+        width = max((len(key) for key in plain), default=0)
+        for key, value in plain.items():
+            print(f'{key.ljust(width)}  {"" if value is None else value}')
+        for key, value in answer.items():
+            if key in plain:
+                continue
+            print(f'\n{key}:')
+            if is_records(value):
+                show_records(value, '  ')
+            elif value in ([], {}):
+                print('  (none)')
+            else:
+                print('  ' + json.dumps(value, indent=2, ensure_ascii=False).replace('\n', '\n  '))
+    else:
+        print(json.dumps(answer, indent=2, ensure_ascii=False))
+
+
+# ---------------------------------------------------------------------------- the backend's commands
+
+def command_list():
+    """[{words, method, path, arguments, summary, description, spends_money, shows_secrets}]."""
+    commands = []
+    for endpoint in call('GET', '/api/system/routes')['endpoints']:
+        for method, name in endpoint['commands'].items():
+            commands.append({'words': name.split(), 'method': method, 'path': endpoint['path'],
+                             'arguments': endpoint['arguments'], 'summary': endpoint['summary'],
+                             'description': endpoint.get('description') or endpoint['summary'],
+                             'spends_money': endpoint['spends_money'], 'shows_secrets': endpoint['shows_secrets']})
+    return commands
+
+
+def find_command(commands, tokens):
+    """The command the tokens name: the longest run of leading words that is a command, with as
+    many arguments as are given. Returns (command, positional values, field tokens)."""
+    words = []
+    for token in tokens:
+        if '=' in token:
+            break
+        words.append(token)
+    fields = tokens[len(words):]
+    for length in range(len(words), 0, -1):
+        named = [command for command in commands if command['words'] == words[:length]]
+        if not named:
+            continue
+        values = words[length:]
+        fitting = [command for command in named if len(command['arguments']) == len(values)]
+        if fitting:
+            return fitting[0], values, fields
+        wanted = ' or '.join(' '.join(f'<{name}>' for name in command['arguments']) or 'no arguments'
+                             for command in named)
+        raise OdinError(f"'{' '.join(words[:length])}' takes {wanted}; got {len(values)}. "
+                        f"See: odin help {' '.join(words[:length])}")
+    raise OdinError(f"No command '{' '.join(words)}'. See: odin help")
+
+
+def read_value(text):
+    if text.startswith('@'):
+        with open(os.path.expanduser(text[1:]), encoding='utf-8') as handle:
+            return handle.read()
+    try:
+        return json.loads(text)
+    except ValueError:
+        return text
+
+
+class Accounts:
+    """Account name -> SteamID64, read once when a command names an account."""
+
+    def __init__(self):
+        self._by_name = None
+
+    def steamid(self, value):
+        text = str(value)
+        if text.isdigit():
+            return text
+        if self._by_name is None:
+            self._by_name = {account['account_name'].lower(): account['steamid']
+                             for account in call('GET', '/api/accounts')['accounts']}
+        found = self._by_name.get(text.lower())
+        if not found:
+            raise OdinError(f"No account named '{text}'. See: odin accounts")
+        return str(found)
+
+
+def find_job(answer):
+    """The job an answer started (an answer that is a job, or holds one under 'job'), else None."""
+    for candidate in (answer, answer.get('job') if isinstance(answer, dict) else None):
+        if isinstance(candidate, dict) and {'id', 'kind', 'running'} <= candidate.keys():
+            return candidate
+    return None
+
+
+def follow(job, raw):
+    """Ask GET /api/jobs/<id> until the job ends; one progress line each time it changes."""
+    last = None
+    while True:
+        total = f"/{job['total']}" if job.get('total') else ''
+        line = (f"{job['kind']}: {'running' if job['running'] else 'finished'}, {job.get('done', 0)}{total} done"
+                + (f", {job['failed']} failed" if job.get('failed') else '')
+                + (f" — {job['phase']}" if job.get('phase') else ''))
+        if line != last and not raw:
+            print(line, file=sys.stderr)
+            last = line
+        if not job['running']:
+            return job
+        time.sleep(JOB_POLL_SECONDS)
+        job = call('GET', f"/api/jobs/{job['id']}")
+
+
+def run_command(tokens, raw, wait):
+    commands = command_list()
+    command, values, field_tokens = find_command(commands, tokens)
+    accounts = Accounts()
+    path = command['path']
+    for name, value in zip(command['arguments'], values):
+        if name in ACCOUNT_FIELDS:
+            value = accounts.steamid(value)
+        segment = next(part for part in path.split('/') if part.startswith('<') and part.rstrip('>').endswith(name))
+        path = path.replace(segment, urllib.parse.quote(str(value), safe=''), 1)
+
+    fields = {}
+    for token in field_tokens:
+        name, separator, text = token.partition('=')
+        if not separator or not name:
+            raise OdinError(f"'{token}' is not a field; write name=value")
+        fields[name] = read_value(text)
+    for name in ACCOUNT_FIELDS:
+        if isinstance(fields.get(name), list):
+            fields[name] = [accounts.steamid(value) for value in fields[name]]
+        elif name in fields:
+            fields[name] = accounts.steamid(fields[name])
+
+    if command['spends_money']:
+        if fields.get('dry_run') is False or str(fields.get('dry_run')).lower() == 'false':
+            raise OdinError('odin never buys for real: this command runs only as a dry run. '
+                            'A real purchase is made on the page, after Ivan says so.')
+        fields['dry_run'] = True
+    if command['shows_secrets'] and not sys.stdout.isatty():
+        raise OdinError('This answer holds secrets (passwords, tokens or emails), so odin prints it '
+                        'only to a person at a terminal, not into a pipe or a file.')
+
+    if command['method'] in ('GET', 'DELETE'):
+        query = {name: json.dumps(value) if isinstance(value, (bool, dict)) else value
+                 for name, value in fields.items()}
+        answer = call(command['method'], path, query=query)
+    else:
+        answer = call(command['method'], path, body=fields)
+
+    job = find_job(answer) if wait else None
+    if job:
+        answer = follow(job, raw)
+    if raw:
+        print(json.dumps(answer, indent=2, ensure_ascii=False))
+    else:
+        show(answer)
+
+
+def help_text(tokens):
+    commands = command_list()
+    matches = [command for command in commands if command['words'][:len(tokens)] == tokens] if tokens else commands
+    if not matches:
+        text = ' '.join(tokens).lower()
+        matches = [command for command in commands
+                   if text in ' '.join(command['words']) or text in command['summary'].lower()]
+    if not matches:
+        raise OdinError(f"No command matches '{' '.join(tokens)}'")
+    exact = [command for command in matches if command['words'] == tokens]
+    if exact:
+        for command in exact:
+            usage = ' '.join(command['words'] + [f'<{name}>' for name in command['arguments']])
+            print(f"odin {usage} [name=value …]\n  {command['method']} {command['path']}")
+            if command['spends_money']:
+                print('  Spends money: odin runs it only as a dry run.')
+            if command['shows_secrets']:
+                print('  Shows secrets: printed only to a terminal.')
+            print('\n  ' + command['description'].replace('\n', '\n  ') + '\n')
+        return
+    group = None
+    for command in sorted(matches, key=lambda command: command['words']):
+        if command['words'][0] != group:
+            group = command['words'][0]
+            print(f'\n{group}')
+        usage = ' '.join(command['words'] + [f'<{name}>' for name in command['arguments']])
+        marks = (' [dry run only]' if command['spends_money'] else '') + (' [secrets]' if command['shows_secrets'] else '')
+        print(f"  {usage.ljust(58)} {command['summary'][:90]}{marks}")
+    print('\nodin help <command words> for one command; odin status; odin logs')
+
+
+# ---------------------------------------------------------------------------- odin's own commands
+
+def status(raw, loops_too, error_count):
     health = call('GET', '/api/system/health')
-    if arguments.json:
-        return health
+    if raw:
+        print(json.dumps(health, indent=2, ensure_ascii=False))
+        return
     now = health['checked_at']
     loops = health['loops']
     stopped = [loop for loop in loops if not loop['running']]
@@ -104,7 +352,6 @@ def status(arguments):
     print(f"Memory: backend {megabytes(memory['process_bytes'])} (peak {megabytes(memory['process_peak_bytes'])}), "
           f"container {megabytes(memory['container_bytes'])}"
           + (f" of {megabytes(limit)}" if limit else ', no limit set'))
-
     ratatoskr = health['ratatoskr']
     if not ratatoskr['reachable']:
         print('Ratatoskr: not reachable' + (f" ({ratatoskr['error']})" if ratatoskr.get('error') else ''))
@@ -115,7 +362,6 @@ def status(arguments):
         print(f"Ratatoskr: answers in {ratatoskr['answer_ms']} ms, {len(sessions)} live session(s)"
               + (f" ({', '.join(session['account_name'] for session in sessions)})" if sessions else '')
               + (f" — {ratatoskr['error']}" if ratatoskr.get('error') else ''))
-
     asf = health['asf']
     if not asf['enabled']:
         print('ASF: switched off (no ASF_IPC_PASSWORD)')
@@ -124,139 +370,102 @@ def status(arguments):
     else:
         states = ', '.join(f'{count} {state}' for state, count in (asf.get('states') or {}).items())
         print(f"ASF: answers, {asf['accounts']} accounts" + (f' ({states})' if states else ''))
-
-    if arguments.loops:
+    if loops_too:
         print()
         table([[f"{loop['part_of']} → {loop['name']}" if loop.get('part_of') else loop['name'],
                 'running' if loop['running'] else 'STOPPED', loop['rounds'], age(loop['last_round_at'], now),
                 loop.get('last_error') or ''] for loop in loops],
               ['Loop', 'State', 'Rounds', 'Last round', 'Last error'])
-
     errors = health['errors']
     print(f"\nErrors logged since the backend started: {len(errors)}")
-    for entry in errors[:arguments.errors]:
+    for entry in errors[:error_count]:
         print(f"  {age(entry['at'], now)}  {entry['source']}  {entry['message']}")
-    if len(errors) > arguments.errors:
-        print(f'  … {len(errors) - arguments.errors} more (odin status --errors {len(errors)})')
-    return None
+    if len(errors) > error_count:
+        print(f'  … {len(errors) - error_count} more (odin status --errors {len(errors)})')
 
 
-def logs(arguments):
+def logs(lines, follow_on, errors_only, text):
     if not os.path.exists(LOG_FILE):
         raise OdinError(f'No log file at {LOG_FILE}')
-    wanted = (lambda line: ' ERROR ' in line or ' CRITICAL ' in line) if arguments.errors else (lambda line: True)
-    if arguments.grep:
-        text = arguments.grep.lower()
-        matches_level = wanted
-        wanted = lambda line: matches_level(line) and text in line.lower()
-    with open(LOG_FILE, encoding='utf-8', errors='replace') as handle:
-        for line in deque((line for line in handle if wanted(line)), maxlen=arguments.lines):
+
+    def wanted(line):
+        return ((not errors_only or ' ERROR ' in line or ' CRITICAL ' in line)
+                and (not text or text.lower() in line.lower()))
+
+    handle = open(LOG_FILE, encoding='utf-8', errors='replace')
+    try:
+        for line in deque((line for line in handle if wanted(line)), maxlen=lines):
             sys.stdout.write(line)
-        if not arguments.follow:
-            return None
-        try:
-            while True:
-                line = handle.readline()
-                if not line:
-                    if os.path.getsize(LOG_FILE) < handle.tell():  # the log was rotated
-                        handle.close()
-                        handle = open(LOG_FILE, encoding='utf-8', errors='replace')
-                    time.sleep(FOLLOW_POLL_SECONDS)
-                    continue
-                if wanted(line):
-                    sys.stdout.write(line)
-                    sys.stdout.flush()
-        except KeyboardInterrupt:
-            return None
-        finally:
-            handle.close()
-
-
-def job(arguments):
-    while True:
-        answer = call('GET', f'/api/jobs/{arguments.job_id}')
-        if arguments.json and not arguments.wait:
-            return answer
-        if not arguments.json:
-            total = f"/{answer['total']}" if answer.get('total') else ''
-            state = 'running' if answer['running'] else ('failed' if answer.get('error') else 'finished')
-            print(f"{answer['kind']} {answer['id']}: {state}, {answer.get('done', 0)}{total} done"
-                  + (f", {answer['failed']} failed" if answer.get('failed') else '')
-                  + (f" — {answer['phase']}" if answer.get('phase') else ''))
-        if not (arguments.wait and answer['running']):
-            break
-        time.sleep(arguments.every)
-    if arguments.json:
-        return answer
-    if answer.get('error'):
-        print(f"Error: {answer['error']}")
-    if answer.get('result') is not None:
-        print(json.dumps(answer['result'], indent=2, ensure_ascii=False))
-    return None
-
-
-def routes(arguments):
-    answer = call('GET', '/api/system/routes')
-    endpoints = answer['endpoints']
-    if arguments.text:
-        text = arguments.text.lower()
-        endpoints = [endpoint for endpoint in endpoints
-                     if text in endpoint['path'].lower() or text in (endpoint.get('summary') or '').lower()
-                     or text == endpoint['group']]
-    if arguments.json:
-        return {'count': len(endpoints), 'endpoints': endpoints}
-    table([[','.join(endpoint['methods']), endpoint['path'], endpoint.get('summary') or ''] for endpoint in endpoints],
-          ['Method', 'Path', 'What it does'])
-    print(f'\n{len(endpoints)} of {answer["count"]} endpoints')
-    return None
+        while follow_on:
+            line = handle.readline()
+            if not line:
+                if os.path.getsize(LOG_FILE) < handle.tell():  # the log was rotated
+                    handle.close()
+                    handle = open(LOG_FILE, encoding='utf-8', errors='replace')
+                time.sleep(FOLLOW_POLL_SECONDS)
+            elif wanted(line):
+                sys.stdout.write(line)
+                sys.stdout.flush()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        handle.close()
 
 
 # ---------------------------------------------------------------------------- the command line
 
-def parser():
-    top = argparse.ArgumentParser(prog='odin', description=__doc__.split('\n\n')[0],
-                                  formatter_class=argparse.RawDescriptionHelpFormatter,
-                                  epilog=f'Backend: {BACKEND_URL} (set ODIN_URL to change it)')
-    commands = top.add_subparsers(dest='command', metavar='command')
+def take_flag(tokens, *names):
+    found = any(name in tokens for name in names)
+    return found, [token for token in tokens if token not in names]
 
-    def command(name, function, help_text):
-        sub = commands.add_parser(name, help=help_text, description=help_text)
-        sub.add_argument('--json', action='store_true', help="print the backend's raw answer")
-        sub.set_defaults(function=function)
-        return sub
 
-    sub = command('status', status, 'System: background loops, Ratatoskr, ASF, memory and the last errors')
-    sub.add_argument('--loops', action='store_true', help='also list every background loop')
-    sub.add_argument('--errors', type=int, default=5, metavar='N', help='how many of the last errors to show (5)')
+def take_option(tokens, name, default, kind=int):
+    if name not in tokens:
+        return default, tokens
+    index = tokens.index(name)
+    if index + 1 >= len(tokens):
+        raise OdinError(f'{name} needs a value')
+    try:
+        return kind(tokens[index + 1]), tokens[:index] + tokens[index + 2:]
+    except ValueError:
+        raise OdinError(f'{name} needs a number') from None
 
-    sub = command('logs', logs, "System: the end of the backend's log file")
-    sub.add_argument('-n', '--lines', type=int, default=50, metavar='N', help='how many lines (50)')
-    sub.add_argument('-f', '--follow', action='store_true', help='keep printing new lines (Ctrl+C stops)')
-    sub.add_argument('--errors', action='store_true', help='only lines at level ERROR or CRITICAL')
-    sub.add_argument('--grep', metavar='TEXT', help='only lines with this text (any case)')
 
-    sub = command('job', job, 'System: one backend job (GET /api/jobs/<id>)')
-    sub.add_argument('job_id')
-    sub.add_argument('--wait', action='store_true', help='follow the job until it finishes')
-    sub.add_argument('--every', type=float, default=2.0, metavar='SECONDS', help='how often --wait asks (2)')
-
-    sub = command('routes', routes, 'System: every backend endpoint, or those matching a text or group')
-    sub.add_argument('text', nargs='?', help='part of a path or summary, or a group name (accounts, huginn, …)')
-    return top
+def refuse_leftovers(tokens):
+    if tokens:
+        raise OdinError(f"Unknown option: {' '.join(tokens)}. See: odin --help")
 
 
 def main(argv=None):
-    arguments = parser().parse_args(argv)
-    if not getattr(arguments, 'function', None):
-        parser().print_help()
-        return 2
+    tokens = list(sys.argv[1:] if argv is None else argv)
     try:
-        answer = arguments.function(arguments)
+        if not tokens or tokens[0] in ('-h', '--help'):
+            print(__doc__.strip())
+            return 0
+        raw, tokens = take_flag(tokens, '--json')
+        wait, tokens = take_flag(tokens, '--wait')
+        first, rest = tokens[0], tokens[1:]
+        if first == 'help':
+            help_text(rest)
+        elif first == 'status':
+            loops_too, rest = take_flag(rest, '--loops')
+            error_count, rest = take_option(rest, '--errors', 5)
+            refuse_leftovers(rest)
+            status(raw, loops_too, error_count)
+        elif first == 'logs':
+            follow_on, rest = take_flag(rest, '-f', '--follow')
+            errors_only, rest = take_flag(rest, '--errors')
+            lines, rest = take_option(rest, '-n', 50)
+            text, rest = take_option(rest, '--grep', None, str)
+            refuse_leftovers(rest)
+            logs(lines, follow_on, errors_only, text)
+        else:
+            run_command(tokens, raw, wait)
     except OdinError as failure:
         print(f'odin: {failure}', file=sys.stderr)
         return 1
-    if answer is not None:
-        print(json.dumps(answer, indent=2, ensure_ascii=False))
+    except BrokenPipeError:  # odin … | head
+        return 0
     return 0
 
 

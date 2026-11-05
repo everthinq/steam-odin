@@ -68,7 +68,9 @@ not a separate deployable):
   the page only displays, sorts, filters and sends instructions. Each button is
   one backend command with the same name and parameters, so it could be typed
   in bash: `scripts/odin` is that command-line tool (`make odin-command` links it into
-  `~/.local/bin`; Python built-ins only, every command one API call, `--json` for the raw answer). Commands that act
+  `~/.local/bin`; Python built-ins only). Its commands come from the backend's route list, so
+  every endpoint is a command at once (`odin help`); money routes run only as dry runs, secret
+  answers print only to a terminal (`command_marks.py`). Commands that act
   answer a plan first and act on "execute plan <id>" once; long work is a job
   (`GET /api/jobs/<id>`); errors are `{error, code}`. Ratatoskr's moves are the
   first feature built this way ([storage-units.md](docs/internals/storage-units.md)).
@@ -234,6 +236,11 @@ in the agent's private memory, not in this file.
 6. **Behaviour-preserving changes** unless asked otherwise; this is
    production data for a real trader. When touching backups or portfolios,
    verify the data is preserved before deleting anything.
+29. **Answer Ivan's questions, even inside a task.** When he asks "…, right?" or any
+    question, answer it first, plainly. If it matches what he said before, say "yes" and go
+    on with the work; if it does not match something he said or decided earlier, name the
+    earlier statement, explain the difference and talk it through before acting
+    (Ivan, 2026-11-05: nobody remembers everything, the point is to stay aligned).
 7. **Report honestly.** Failed tests, skipped steps and unverified claims are
    said plainly. A trade or flip is "safe" only after checking where the money
    lands and when it can be spent; otherwise say it is unverified.

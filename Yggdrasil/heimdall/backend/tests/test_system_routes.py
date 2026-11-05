@@ -36,7 +36,8 @@ def test_new_route_appears_by_itself_and_missing_docstring_is_empty():
 
     entry = next(e for e in endpoint_list(app) if e['path'] == '/api/example')
     assert entry == {'path': '/api/example', 'methods': ['POST'], 'group': 'app',
-                     'name': 'example', 'summary': ''}
+                     'name': 'example', 'summary': '', 'description': '', 'commands': {'POST': 'example'},
+                     'arguments': [], 'spends_money': False, 'shows_secrets': False}
 
 
 def test_every_blueprint_route_has_a_summary():
@@ -45,3 +46,41 @@ def test_every_blueprint_route_has_a_summary():
     has a docstring too.)"""
     missing = [e['name'] for e in endpoint_list(_app()) if not e['summary']]
     assert missing == []
+
+
+def _commands():
+    return {(entry['commands'][method], len(entry['arguments'])): (method, entry)
+            for entry in endpoint_list(_app()) for method in entry['methods']}
+
+
+def test_odin_command_names_come_from_the_path_and_method():
+    commands = _commands()
+    method, entry = commands[('ratatoskr plans execute', 1)]
+    assert (method, entry['path'], entry['arguments']) == ('POST', '/api/ratatoskr/plans/<plan_id>/execute', ['plan_id'])
+    assert commands[('settings', 0)][0] == 'GET'
+    assert commands[('settings set', 0)][0] == 'POST'          # a POST next to a GET
+    assert commands[('draupnir portfolios', 0)][0] == 'GET'    # the list ...
+    assert commands[('draupnir portfolios', 1)][0] == 'GET'    # ... and one portfolio
+    assert commands[('draupnir portfolios add', 0)][0] == 'POST'  # @command_verb
+    assert commands[('draupnir portfolios change', 1)][0] == 'PATCH'
+    assert commands[('draupnir portfolios delete', 1)][0] == 'DELETE'
+    assert commands[('accounts confirmations answer', 2)][0] == 'POST'
+
+
+def test_every_odin_command_is_unique():
+    """Two routes with the same command words and argument count would be one command."""
+    pairs = [(entry['commands'][method], len(entry['arguments']))
+             for entry in endpoint_list(_app()) for method in entry['methods']]
+    assert len(pairs) == len(set(pairs))
+
+
+def test_money_and_secret_routes_are_marked():
+    marked = {(entry['path'], method): (entry['spends_money'], entry['shows_secrets'])
+              for entry in endpoint_list(_app()) for method in entry['methods']}
+    spends = {key for key, (money, _) in marked.items() if money}
+    secret = {key for key, (_, shows) in marked.items() if shows}
+    assert spends == {('/api/ratatoskr/storage-shop/plans/<plan_id>/execute', 'POST'),
+                      ('/api/huginn/card-deals/buy/purchase-plans/<purchase_plan_id>/execute', 'POST'),
+                      ('/api/mimir/market-access/plans/<plan_id>/execute', 'POST')}
+    assert {('/api/settings', 'GET'), ('/api/mimir/credentials/<rec_id>/password', 'POST'),
+            ('/api/mimir/export', 'POST')} <= secret

@@ -7,6 +7,7 @@ from flask import Blueprint, jsonify, request
 
 from context import ctx
 from storage_deposit import storage_block
+from command_marks import spends_money
 
 bp = Blueprint('ratatoskr', __name__)
 
@@ -295,6 +296,7 @@ def storage_shop_plan_view(plan_id):
 
 
 @bp.route('/api/ratatoskr/storage-shop/plans/<plan_id>/execute', methods=['POST'])
+@spends_money
 def storage_shop_execute(plan_id):
     """{"dry_run": bool (only false buys; missing means a dry run), "item": the entry the page
     shows (optional; must be the plan's)}: buys the plan's payable lines once and answers the

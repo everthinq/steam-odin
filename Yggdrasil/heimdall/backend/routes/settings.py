@@ -7,11 +7,13 @@ from flask import Blueprint, jsonify, request
 
 import confirmation_settings
 from context import ctx
+from command_marks import shows_secrets
 
 bp = Blueprint('settings', __name__)
 
 
 @bp.route('/api/settings', methods=['GET'])
+@shows_secrets
 def get_settings():
     """Get global application settings."""
     return jsonify(ctx.settings_manager.get_settings())

@@ -1,29 +1,57 @@
 # The `odin` command-line tool
 
-`odin` runs the app's commands from the terminal. Each command is one call to the
-backend (http://127.0.0.1:5001), the same call a page's button makes, so the
-terminal and the pages always agree. It only works while the app runs (`make raid`).
+`odin` runs every app command from the terminal, no browser needed. The app's
+backend does all the work, and each page button is one backend command; `odin`
+sends the same commands. So the terminal and the pages always agree, and a new
+feature is an `odin` command as soon as the backend has it. The app must be
+running (`make raid`).
 
 ## Install once
 
 ```bash
 make odin-command      # links ~/.local/bin/odin to scripts/odin
-odin --help
+odin help
 ```
 
 It is a link, so a `git pull` updates it too. If `odin` is not found, add
 `~/.local/bin` to your PATH. It needs only Python 3 (no packages).
 
-## Commands
+## How a command is written
 
-| Command | What it shows |
-|---------|---------------|
-| `odin status` | The same as the System health page: background loops, Ratatoskr, ASF, memory and the last errors. `--loops` lists every loop, `--errors N` shows more errors |
-| `odin logs` | The end of the backend's log file. `-n 200` for more lines, `-f` to keep watching (Ctrl+C stops), `--errors` only errors, `--grep text` only lines with that text |
-| `odin job <id>` | One backend job (a long task such as a move or a purchase): its progress, error and result. `--wait` follows it until it finishes |
-| `odin routes [text]` | Every backend endpoint with one line on what it does; `odin routes ratatoskr` or `odin routes confirm` narrows the list |
+```
+odin <command words> <arguments> name=value name=value …
+```
 
-Add `--json` to any command to see the backend's raw answer.
+- **Command words** name the tool and the action: `odin ratatoskr storage`,
+  `odin huginn gjallarhorn reminders`. `odin help` lists all of them;
+  `odin help ratatoskr` the Ratatoskr ones; `odin help ratatoskr deposit plan`
+  explains one command and its fields.
+- **Arguments** follow in order, for example an account: `odin ratatoskr storage everthinklol`.
+  An account can be given by its account name or its SteamID64.
+- **Fields** are `name=value`. `true`, `false`, numbers, `[lists]` are understood;
+  `name=@file.txt` reads the value from a file (use that for passwords, so they
+  stay out of the shell history).
+- `--wait` follows a long task (a job) until it ends; `--json` prints the raw answer.
 
-More commands (accounts and confirmations, Ratatoskr, prices and the portfolio)
-come next. Purchases will only ever be dry runs from the terminal.
+## Everyday examples
+
+| What | Command |
+|------|---------|
+| Accounts and their Steam Guard codes | `odin accounts` |
+| Pending confirmations of one account | `odin accounts confirmations everthinklol` |
+| Accept one | `odin accounts confirmations answer everthinklol <id> op=allow` |
+| Check every account now | `odin confirmations check-all --wait` |
+| Free places in the Storage Units | `odin ratatoskr storage everthinklol` |
+| Store everything storable: plan, then run it | `odin ratatoskr deposit plan steamid=everthinklol all_storable=true`, then `odin ratatoskr plans execute <plan id> --wait` |
+| Resell reminders | `odin huginn gjallarhorn reminders` |
+| Portfolios | `odin draupnir portfolios` |
+| How the app is doing | `odin status` (`--loops` for every loop) |
+| The log file | `odin logs` (`-f` keep watching, `--errors`, `--grep text`, `-n 200`) |
+| One task's progress | `odin jobs <id> --wait` |
+
+## Safety
+
+- **Purchases run only as dry runs.** Buy Storage Units, Andvari's Buy games and the
+  Market unlocker show what they would buy; buying for real is done on the page.
+- **Secrets stay on your screen.** Answers with passwords, tokens or emails (settings,
+  Mímir) are printed only in a real terminal, never into a file or another program.
