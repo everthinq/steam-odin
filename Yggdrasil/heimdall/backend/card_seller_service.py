@@ -29,6 +29,7 @@ from jsonio import atomic_write_json, read_json
 from market_seller import HOW_BUY_ORDER, MarketSeller, RateLimited
 from notifications import own_bot_settings, send_notification
 from store_purchase_service import CURRENCY_CODES, parse_app_ids
+from loop_status import loops
 
 log = logging.getLogger(__name__)
 
@@ -356,12 +357,13 @@ class CardSellerService:
             self._stop.wait(60)
             while not self._stop.is_set():
                 try:
-                    self._enabled_at(self._settings())
-                    self.step()
+                    with loops.round('Andvari card selling'):
+                        self._enabled_at(self._settings())
+                        self.step()
                 except Exception as e:
                     log.warning('[ANDVARI-SELL] loop error: %s', e)
                 self._stop.wait(LOOP_SECONDS)
-        threading.Thread(target=loop, daemon=True, name='andvari-card-sell').start()
+        loops.start('Andvari card selling', loop)
 
     def stop(self):
         self._stop.set()

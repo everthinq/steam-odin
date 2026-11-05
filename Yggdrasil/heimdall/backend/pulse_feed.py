@@ -74,6 +74,7 @@ from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 
 from packed_rows import FLOAT, INT, PackedEntries, PackedRows
+from loop_status import loops
 
 logger = logging.getLogger(__name__)
 
@@ -941,13 +942,14 @@ class PulseFeed:
                     last = time.time()
                     continue
                 try:
-                    token = token_provider()
-                    if token and (self._active or self._once or self._once_wanted):
-                        self.keep_fresh_once(token)
+                    with loops.round('Pulse feed keeper'):
+                        token = token_provider()
+                        if token and (self._active or self._once or self._once_wanted):
+                            self.keep_fresh_once(token)
                 except Exception as error:      # never let the thread die
                     logger.warning('[PULSE] keeper: %s', error)
                 last = time.time()
-        threading.Thread(target=loop, name='pulse-keeper', daemon=True).start()
+        loops.start('Pulse feed keeper', loop)
 
     # ---- slaves that want every table --------------------------------------------------------
 

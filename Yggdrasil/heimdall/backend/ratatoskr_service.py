@@ -1,6 +1,7 @@
 import logging
 import requests
 import os
+import time
 
 logger = logging.getLogger(__name__)
 
@@ -89,6 +90,40 @@ class RatatoskrService:
             return {"status": "disconnected"}
         except requests.exceptions.RequestException:
              return {"status": "disconnected", "error": "Ratatoskr unreachable"}
+
+    def health(self):
+        """Can the backend use Ratatoskr? Read only (``GET /sessions`` never counts as activity):
+        {reachable, secret_accepted, answer_ms, error, idle_timeout_ms, sessions: [{steam_id,
+        account_name, game_coordinator, idle_seconds}]}."""
+        answer = {'reachable': False, 'secret_accepted': None, 'answer_ms': None, 'error': None,
+                  'idle_timeout_ms': None, 'sessions': []}
+        started = time.monotonic()
+        try:
+            response = requests.get(f"{self.base_url}/sessions", headers=_HEADERS, timeout=5)
+        except requests.exceptions.RequestException as error:
+            answer['error'] = f'Ratatoskr does not answer: {type(error).__name__}'
+            return answer
+        answer.update(reachable=True, answer_ms=round((time.monotonic() - started) * 1000))
+        if response.status_code == 401:
+            answer.update(secret_accepted=False,
+                          error='Ratatoskr refuses the shared secret (RATATOSKR_SECRET in the root .env)')
+            return answer
+        answer['secret_accepted'] = True
+        if response.status_code == 404:
+            answer['error'] = 'Ratatoskr runs older code: restart it (docker restart steam-odin-ratatoskr-1)'
+            return answer
+        if not response.ok:
+            answer['error'] = f'Ratatoskr answered HTTP {response.status_code}'
+            return answer
+        data = response.json()
+        answer['idle_timeout_ms'] = data.get('idleTimeoutMs')
+        answer['sessions'] = [{
+            'steam_id': session.get('steamID'),
+            'account_name': session.get('accountName'),
+            'game_coordinator': bool(session.get('gameCoordinator')),
+            'idle_seconds': session.get('idleSeconds'),
+        } for session in data.get('sessions') or []]
+        return answer
 
     def disconnect(self, steam_id):
         """End the Ratatoskr GC session for a Steam account."""

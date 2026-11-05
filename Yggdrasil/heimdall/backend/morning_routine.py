@@ -26,6 +26,7 @@ import threading
 import time
 
 from jsonio import atomic_write_json, read_json
+from loop_status import loops
 
 logger = logging.getLogger(__name__)
 
@@ -154,11 +155,12 @@ class MorningRoutine:
         def loop():
             while True:
                 try:
-                    self.tick()
+                    with loops.round('Morning routine'):
+                        self.tick()
                 except Exception as e:
                     logger.error(f'[MORNING] tick failed: {e}')
                 self._sleep(self.TICK_SECONDS)
-        threading.Thread(target=loop, name='morning-routine', daemon=True).start()
+        loops.start('Morning routine', loop)
 
     def status(self):
         now = self._now()

@@ -71,6 +71,7 @@ read-only. Container port 3000, **not published** on the Mac (Docker network onl
 | `POST /login` | Log in + connect to the Game Coordinator |
 | `GET /health` | `{status, sessions}` — the only endpoint without the secret (Docker health check) |
 | `GET /status/:steamid` | 200 connected / 503 `gc_lost` / 404 disconnected (also keep-alive) |
+| `GET /sessions` | Every live session: `steamID`, `accountName`, `gameCoordinator`, `idleSeconds`, plus `idleTimeoutMs`. Read only: unlike `/status` it does not count as activity (the backend's System health check) |
 | `POST /disconnect/:steamid` | Log off |
 | `GET /inventory/:steamid` | Converted inventory |
 | `GET /caskets/:steamid` | Storage Units (definition 1201) |

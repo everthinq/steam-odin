@@ -75,6 +75,7 @@ import urllib.request
 from collections import Counter
 
 from notifications import NO_OWN_BOT, own_bot_settings, send_notification
+from loop_status import loops
 
 logger = logging.getLogger(__name__)
 
@@ -701,19 +702,20 @@ class CardDealsService:
             self._sleep(_BACKGROUND_FIRST_DELAY_SECONDS)
             while True:
                 try:
-                    settings = self.settings_manager.get_settings()
-                    if settings.get('card_deals_auto_scan_enabled'):
-                        interval = max(1, int(settings.get('card_deals_scan_interval_hours') or 12)) * 3600
-                        last = (self._state.get('last_scan') or {}).get('finished_at') or 0
-                        if time.time() - last >= interval and not self.status()['running']:
-                            try:
-                                self.start_scan()
-                            except JobRunning:
-                                pass             # started in between: that scan counts
+                    with loops.round('Andvari card deals scan'):
+                        settings = self.settings_manager.get_settings()
+                        if settings.get('card_deals_auto_scan_enabled'):
+                            interval = max(1, int(settings.get('card_deals_scan_interval_hours') or 12)) * 3600
+                            last = (self._state.get('last_scan') or {}).get('finished_at') or 0
+                            if time.time() - last >= interval and not self.status()['running']:
+                                try:
+                                    self.start_scan()
+                                except JobRunning:
+                                    pass             # started in between: that scan counts
                 except Exception as e:
                     logger.error('[CARD DEALS] background loop error: %s', e)
                 self._sleep(_BACKGROUND_TICK_SECONDS)
-        threading.Thread(target=loop, daemon=True).start()
+        loops.start('Andvari card deals scan', loop)
 
     def deals(self, settings, scope=SCOPE_SALE, include_unprofitable=False):
         """Ranked deals for one scope from the cached scan data, filtered by the

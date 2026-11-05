@@ -55,6 +55,7 @@ from notifications import notification_channel, send_notification, telegram_visi
 from storage_shop_service import GAME_STORE_CURRENCIES
 from store_catalogue_service import CANNOT_TRADE, CATEGORY_KEYS, CATEGORY_PASSES, STORE_COPIES_CANNOT_TRADE
 from store_purchase_service import to_usd
+from loop_status import loops
 
 log = logging.getLogger(__name__)
 
@@ -985,21 +986,22 @@ class StoreArbitrageService:
             time.sleep(WATCH_FIRST_WAIT)
             while True:
                 try:
-                    settings = settings_provider() or {}
-                    token = settings.get('tradeon_token', '')
-                    if token and self.catalogue.status().get('items'):
-                        pairs = self._sides(self.clean_markets(None, settings), settings)
-                        self._queue_warm(token, pairs, job=STORE_JOB)
-                        if self.wait_idle(pairs):
-                            with self.huginn.pulse.job(STORE_JOB):     # its board re-queues as the job
-                                self.send_alerts(settings_provider() or {}, daily=False)
-                        else:
-                            log.warning('[STORE-ARBITRAGE] hourly check: prices still loading after %s s, no post this hour',
-                                        WARM_WAIT_SECONDS)
+                    with loops.round('CS2 Store Arbitrage hourly check'):
+                        settings = settings_provider() or {}
+                        token = settings.get('tradeon_token', '')
+                        if token and self.catalogue.status().get('items'):
+                            pairs = self._sides(self.clean_markets(None, settings), settings)
+                            self._queue_warm(token, pairs, job=STORE_JOB)
+                            if self.wait_idle(pairs):
+                                with self.huginn.pulse.job(STORE_JOB):     # its board re-queues as the job
+                                    self.send_alerts(settings_provider() or {}, daily=False)
+                            else:
+                                log.warning('[STORE-ARBITRAGE] hourly check: prices still loading after %s s, no post this hour',
+                                            WARM_WAIT_SECONDS)
                 except Exception:
                     log.exception('[STORE-ARBITRAGE] watcher tick failed')
                 time.sleep(WATCH_INTERVAL)
-        threading.Thread(target=loop, daemon=True, name='store-arbitrage-watch').start()
+        loops.start('CS2 Store Arbitrage hourly check', loop)
 
     # ---- the daily refresh (morning routine) -------------------------------------------------
 

@@ -38,6 +38,7 @@ import re
 import threading
 import time
 from datetime import datetime, timezone, timedelta
+from loop_status import loops
 
 logger = logging.getLogger(__name__)
 
@@ -293,8 +294,7 @@ class BackupService:
         if self._thread and self._thread.is_alive():
             return
         self._stop.clear()
-        self._thread = threading.Thread(target=self._loop, daemon=True)
-        self._thread.start()
+        self._thread = loops.start('Draupnir backups', self._loop)
         logger.info('[DRAUPNIR-BACKUP] Started daily portfolio backup loop.')
 
     def stop(self):
@@ -304,6 +304,7 @@ class BackupService:
         # Capture the state at boot, then thin old history once.
         self.snapshot('boot')
         self._prune()
+        loops.beat('Draupnir backups')
         while not self._stop.is_set():
             # Wake roughly hourly; take the day's snapshot when the UTC date rolls
             # over. Cheap, resilient to restarts, and no clock math to get wrong.
@@ -316,3 +317,4 @@ class BackupService:
             if today != last_day:
                 self.snapshot('daily')
                 self._prune()
+            loops.beat('Draupnir backups')

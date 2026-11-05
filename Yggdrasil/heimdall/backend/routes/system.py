@@ -1,12 +1,16 @@
-"""System: what the backend offers and how it is doing.
+"""System: what the backend offers and how it is doing (the System health page reads it).
 
 The endpoint list is read from Flask's own route table at request time, so it can
 never drift from the code: a new route appears here by itself, with the first line
 of its docstring as the summary.
 """
 import inspect
+import time
 
 from flask import Blueprint, current_app, jsonify
+
+from context import ctx
+from loop_status import loops
 
 bp = Blueprint('system', __name__)
 
@@ -43,3 +47,14 @@ def list_routes():
     """Every backend endpoint: path, methods, group and the first line of its docstring."""
     endpoints = endpoint_list(current_app)
     return jsonify({'count': len(endpoints), 'endpoints': endpoints})
+
+
+@bp.route('/api/system/health', methods=['GET'])
+def system_health():
+    """Background loops (running, last round, last error), and whether the backend can use Ratatoskr and ASF."""
+    return jsonify({
+        'checked_at': time.time(),
+        'loops': loops.snapshot(),
+        'ratatoskr': ctx.ratatoskr_service.health(),
+        'asf': ctx.asf_service.health(),
+    })

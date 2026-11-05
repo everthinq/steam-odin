@@ -8,7 +8,9 @@ import auto_store
 import confirmation_settings
 import notifications
 from commands import CommandError
+from loop_status import loops
 
+LOOP_NAME = 'Scheduler'   # its thread, on the System health page (loop_status.py)
 logger = logging.getLogger(__name__)
 
 # An item the Game Coordinator refused is not offered again for this long (the trade
@@ -63,7 +65,8 @@ class ConfirmationScheduler:
         if self.thread and self.thread.is_alive():
             return
         self.stop_event.clear()
-        self.thread = threading.Thread(target=self._run_loop, daemon=True)
+        self.thread = threading.Thread(target=self._run_loop, name=LOOP_NAME, daemon=True)
+        loops.watch(LOOP_NAME, self.thread)
         self.thread.start()
         logger.info("[SCHEDULER] Started background confirmation checker.")
 
@@ -117,21 +120,26 @@ class ConfirmationScheduler:
                     and not self.steam_service._mobileconf_cooldown_remaining()):
                 self._last_keepalive = time.time()
                 try:
-                    self._keepalive_sessions()
+                    with loops.round('Session keep-alive', part_of=LOOP_NAME):
+                        self._keepalive_sessions()
                 except Exception as e:
                     logger.error(f"[KEEPALIVE] sweep error: {e}")
 
             if self._confirm_polling_on(settings):
                 try:
-                    self._check_all_accounts(settings)
+                    with loops.round('Confirmation check', part_of=LOOP_NAME):
+                        self._check_all_accounts(settings)
                 except Exception as e:
                     logger.error(f"[SCHEDULER] Error in check loop: {e}")
 
             if self._auto_store_on(settings):
                 try:
-                    self._auto_store_sweep(settings)
+                    with loops.round('Auto-Store sweep', part_of=LOOP_NAME):
+                        self._auto_store_sweep(settings)
                 except Exception as e:
                     logger.error(f"[SCHEDULER] Error in auto-store sweep: {e}")
+
+            loops.beat(LOOP_NAME)
 
             # Sleep for the configured interval, checking stop_event frequently
             interval = confirmation_settings.loop_interval(settings)

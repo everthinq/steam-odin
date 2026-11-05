@@ -18,6 +18,7 @@ from datetime import datetime, timezone
 from commands import CommandError
 from jsonio import atomic_write_json, read_json
 from notifications import send_notification
+from loop_status import loops
 
 log = logging.getLogger(__name__)
 
@@ -114,13 +115,13 @@ class ResellReminderService:
     def start(self):
         if self._thread is not None:
             return
-        self._thread = threading.Thread(target=self._loop, name='gjallarhorn-reminders', daemon=True)
-        self._thread.start()
+        self._thread = loops.start('Gjallarhorn resell reminders', self._loop)
 
     def _loop(self):
         while True:
             try:
-                self.check_once()
+                with loops.round('Gjallarhorn resell reminders'):
+                    self.check_once()
             except Exception as e:
                 log.warning('[GJALLARHORN-REMINDER] check failed: %s', e)
             time.sleep(CHECK_SECONDS)

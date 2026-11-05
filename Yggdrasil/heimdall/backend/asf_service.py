@@ -64,6 +64,7 @@ import time
 import requests
 
 from jsonio import atomic_write_json, read_json
+from loop_status import loops
 
 logger = logging.getLogger(__name__)
 
@@ -1028,11 +1029,24 @@ class AsfService:
             self._sleep(FIRST_TICK_DELAY_SECONDS)
             while True:
                 try:
-                    self.tick()
+                    with loops.round('ASF'):
+                        self.tick()
                 except Exception as e:
                     logger.error('[ASF] loop error: %s', e)
                 self._sleep(TICK_SECONDS)
-        threading.Thread(target=loop, daemon=True).start()
+        loops.start('ASF', loop)
+
+    def health(self):
+        """Can the backend use ASF? {enabled, reachable, error, checked_at, accounts, states:
+        {state: count}} from one fresh local call (``status``); never contains a secret."""
+        status = self.status()
+        states = {}
+        for row in status['accounts']:
+            states[row['state']] = states.get(row['state'], 0) + 1
+        return {'enabled': status['enabled'], 'reachable': status['reachable'],
+                'error': status.get('error') or status.get('message'),
+                'checked_at': status.get('checked_at'),
+                'accounts': len(status['accounts']), 'states': states}
 
     def status(self):
         """Per-account farming view for the UI. Never contains a secret."""

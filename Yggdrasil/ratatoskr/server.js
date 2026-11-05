@@ -511,6 +511,21 @@ app.get('/status/:steamid', (req, res) => {
     res.status(404).json({ status: 'disconnected', error: 'No active session found' });
 });
 
+// Every live session, for the System health page. Read only: unlike /status it does not
+// count as activity, so looking never keeps an idle session alive.
+app.get('/sessions', (req, res) => {
+    const now = Date.now();
+    res.json({
+        idleTimeoutMs: getSessionIdleTimeoutMs(),
+        sessions: Object.entries(sessions).map(([steamID, session]) => ({
+            steamID,
+            accountName: session.accountName || null,
+            gameCoordinator: Boolean(session.csgo && session.csgo.haveGCSession),
+            idleSeconds: session.lastActivity ? Math.round((now - session.lastActivity) / 1000) : null,
+        })),
+    });
+});
+
 app.post('/disconnect/:steamid', (req, res) => {
     const steamID = req.params.steamid;
     if (disconnectSession(steamID)) {

@@ -67,6 +67,7 @@ from jsonio import atomic_write_bytes, atomic_write_json, read_json
 from notifications import notification_channel, send_notification
 from pulse_feed import FRESH, ON_DEMAND, NotActive, is_stale
 from store_arbitrage_service import TRADE_HOLD_DAYS, split_items
+from loop_status import loops
 
 log = logging.getLogger(__name__)
 
@@ -886,7 +887,8 @@ class StoreBoostService:
         time.sleep(READER_FIRST_WAIT)
         while True:
             try:
-                wait = self._read_step()
+                with loops.round('CS2 Store Boosts Steam reader'):
+                    wait = self._read_step()
             except Exception:
                 log.exception('[STORE-BOOSTS] reader step failed')
                 wait = 60
@@ -1298,24 +1300,25 @@ class StoreBoostService:
             time.sleep(WATCH_FIRST_WAIT)
             while True:
                 try:
-                    settings = settings_provider() or {}
-                    token = settings.get('tradeon_token', '')
-                    if settings.get('store_boost_enabled', True) and token and self.catalogue.status().get('items'):
-                        with self._lock:
-                            busy = self._check['running']
+                    with loops.round('CS2 Store Boosts hourly check'):
+                        settings = settings_provider() or {}
+                        token = settings.get('tradeon_token', '')
+                        if settings.get('store_boost_enabled', True) and token and self.catalogue.status().get('items'):
+                            with self._lock:
+                                busy = self._check['running']
+                                if not busy:
+                                    self._check.update(running=True, started_at=self._clock(), error=None)
                             if not busy:
-                                self._check.update(running=True, started_at=self._clock(), error=None)
-                        if not busy:
-                            try:
-                                self._pulse_check(token)
-                            finally:
-                                with self._lock:
-                                    self._check['running'] = False
+                                try:
+                                    self._pulse_check(token)
+                                finally:
+                                    with self._lock:
+                                        self._check['running'] = False
                 except Exception:
                     log.exception('[STORE-BOOSTS] hourly check failed')
                 time.sleep(WATCH_INTERVAL)
-        threading.Thread(target=watch, daemon=True, name='store-boosts-watch').start()
-        threading.Thread(target=self._read_loop, daemon=True, name='store-boosts-steam').start()
+        loops.start('CS2 Store Boosts hourly check', watch)
+        loops.start('CS2 Store Boosts Steam reader', self._read_loop)
 
     def set_settings_provider(self, settings_provider):
         self._settings_provider = settings_provider

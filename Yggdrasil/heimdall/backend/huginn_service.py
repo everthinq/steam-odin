@@ -17,6 +17,7 @@ from pulse_feed import COUNT, FRESH, ON_DEMAND, PRICE, NotActive, PulseFeed, pos
 from ratatoskr_service import items_moving
 from notifications import (TELEGRAM_MESSAGE_LIMIT, delete_notification, edit_notification,
                            notification_channel, send_notification, telegram_visible_length)
+from loop_status import loops
 
 logger = logging.getLogger(__name__)  # 'log' is used locally for the auction log
 
@@ -1088,17 +1089,17 @@ class HuginnService:
         if getattr(self, '_auction_tracker_started', False):
             return
         self._auction_tracker_started = True
-        threading.Thread(target=self._auction_tracker_loop,
-                         args=(settings_provider, interval), daemon=True).start()
+        loops.start('LOOT.Farm auction tracker', self._auction_tracker_loop, settings_provider, interval)
         logger.info(f'[HUGINN] auction tracker started (every {interval}s)')
 
     def _auction_tracker_loop(self, settings_provider, interval):
         while True:
             try:
-                settings = settings_provider() if callable(settings_provider) else (settings_provider or {})
-                token = (settings or {}).get('tradeon_token') or ''
-                res = self.record_auction_snapshot(token)
-                logger.info(f"[HUGINN] auction snapshot: active={res['active']} tracked={res['tracked']} cleared+{res['newly_cleared']}")
+                with loops.round('LOOT.Farm auction tracker'):
+                    settings = settings_provider() if callable(settings_provider) else (settings_provider or {})
+                    token = (settings or {}).get('tradeon_token') or ''
+                    res = self.record_auction_snapshot(token)
+                    logger.info(f"[HUGINN] auction snapshot: active={res['active']} tracked={res['tracked']} cleared+{res['newly_cleared']}")
             except Exception as e:
                 logger.error(f'[HUGINN] auction tracker error: {e}')
             time.sleep(interval)
@@ -2874,8 +2875,7 @@ class HuginnService:
         self._container_refresh_started = True
         self._sweep_stale_temporary_files()
         self._load_container_snapshots()
-        threading.Thread(target=self._container_refresh_loop,
-                         args=(settings_provider, default_interval), daemon=True).start()
+        loops.start('Case Arbitrage refresh', self._container_refresh_loop, settings_provider, default_interval)
         logger.info(f'[HUGINN] container refresh loop started (poll default {default_interval}s)')
 
     @staticmethod
@@ -2991,45 +2991,46 @@ class HuginnService:
         while True:
             interval = default_interval
             try:
-                settings = settings_provider() if callable(settings_provider) else (settings_provider or {})
-                settings = settings or {}
-                token = settings.get('tradeon_token') or ''
-                try:
-                    interval = max(CASE_POLL_MINIMUM_SECONDS, int(settings.get('case_poll_interval_sec') or default_interval))
-                except (TypeError, ValueError):
-                    interval = default_interval
-                alerts_on = bool(settings.get('case_alerts_enabled')) and notification_channel(settings) is not None
-                if token:
-                    now = time.time()
-                    full = (now - last_full) >= self._CONTAINER_FULL_REFRESH_SEC
-                    if full:
-                        # Fresh tables: the alert run below compares them with each other.
-                        with self.pulse.job(CASE_FULL_JOB):
-                            self._refresh_markets(token, self._CONTAINER_MARKETS, max_age=ON_DEMAND)
-                            try:
-                                self.cases_prices(token, None)   # daily history (own once/day guard)
-                            except Exception as e:
-                                logger.error(f'[HUGINN] history record failed: {e}')
-                        last_full = now
-                        self._save_container_snapshots(last_full)
-                        logger.info('[HUGINN] full container refresh from pulse')
-                    elif alerts_on:
-                        # Fresh tables for every alert poll; everything else reads them from the feed.
-                        with self.pulse.job(CASE_ALERTS_JOB):
-                            self._refresh_markets(token, self._ALERT_MARKETS, parallel=True, max_age=ON_DEMAND)
-                    if alerts_on:
-                        try:
+                with loops.round('Case Arbitrage refresh'):
+                    settings = settings_provider() if callable(settings_provider) else (settings_provider or {})
+                    settings = settings or {}
+                    token = settings.get('tradeon_token') or ''
+                    try:
+                        interval = max(CASE_POLL_MINIMUM_SECONDS, int(settings.get('case_poll_interval_sec') or default_interval))
+                    except (TypeError, ValueError):
+                        interval = default_interval
+                    alerts_on = bool(settings.get('case_alerts_enabled')) and notification_channel(settings) is not None
+                    if token:
+                        now = time.time()
+                        full = (now - last_full) >= self._CONTAINER_FULL_REFRESH_SEC
+                        if full:
+                            # Fresh tables: the alert run below compares them with each other.
+                            with self.pulse.job(CASE_FULL_JOB):
+                                self._refresh_markets(token, self._CONTAINER_MARKETS, max_age=ON_DEMAND)
+                                try:
+                                    self.cases_prices(token, None)   # daily history (own once/day guard)
+                                except Exception as e:
+                                    logger.error(f'[HUGINN] history record failed: {e}')
+                            last_full = now
+                            self._save_container_snapshots(last_full)
+                            logger.info('[HUGINN] full container refresh from pulse')
+                        elif alerts_on:
+                            # Fresh tables for every alert poll; everything else reads them from the feed.
                             with self.pulse.job(CASE_ALERTS_JOB):
-                                res = self.run_case_alerts(settings)
-                            if res.get('new'):
-                                logger.info(f"[HUGINN] case alerts: {res['new']} new, sent={res.get('sent')}")
-                            if res.get('send_error'):
-                                logger.warning(f"[HUGINN] case alert send failed (retried next poll): "
-                                               f"{res['send_error']}")
-                        except Exception as e:
-                            logger.error(f'[HUGINN] case alerts failed: {e}')
-                else:
-                    logger.info('[HUGINN] container refresh skipped — no tradeon_token yet')
+                                self._refresh_markets(token, self._ALERT_MARKETS, parallel=True, max_age=ON_DEMAND)
+                        if alerts_on:
+                            try:
+                                with self.pulse.job(CASE_ALERTS_JOB):
+                                    res = self.run_case_alerts(settings)
+                                if res.get('new'):
+                                    logger.info(f"[HUGINN] case alerts: {res['new']} new, sent={res.get('sent')}")
+                                if res.get('send_error'):
+                                    logger.warning(f"[HUGINN] case alert send failed (retried next poll): "
+                                                   f"{res['send_error']}")
+                            except Exception as e:
+                                logger.error(f'[HUGINN] case alerts failed: {e}')
+                    else:
+                        logger.info('[HUGINN] container refresh skipped — no tradeon_token yet')
             except Exception as e:
                 logger.error(f'[HUGINN] container refresh loop error: {e}')
             self._wait_for_case_wake(interval)

@@ -41,6 +41,7 @@ import urllib.request
 
 from commands import CommandError
 from notifications import send_notification
+from loop_status import loops
 
 log = logging.getLogger(__name__)
 
@@ -348,8 +349,7 @@ class GjallarhornNewsService:
         if self.thread and self.thread.is_alive():
             return
         self.stop_event.clear()
-        self.thread = threading.Thread(target=self._run_loop, daemon=True)
-        self.thread.start()
+        self.thread = loops.start('Gjallarhorn news watcher', self._run_loop)
         log.info("[GJALLARHORN-NEWS] watcher started")
 
     def stop(self):
@@ -358,7 +358,8 @@ class GjallarhornNewsService:
     def _run_loop(self):
         while not self.stop_event.is_set():
             try:
-                self.check_once()
+                with loops.round('Gjallarhorn news watcher'):
+                    self.check_once()
             except Exception as e:  # never let the watcher thread die
                 log.warning("[GJALLARHORN-NEWS] poll error: %s", e)
             settings = self.settings_manager.get_settings()
