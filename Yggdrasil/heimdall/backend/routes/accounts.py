@@ -113,10 +113,7 @@ def get_confirmation_settings():
 def save_confirmation_settings():
     """Save only the confirmation settings. A value outside the limits is refused
     ({error, code}), never changed silently."""
-    try:
-        changes = confirmation_settings.clean(request.get_json(silent=True))
-    except confirmation_settings.SettingsError as e:
-        return jsonify({"error": str(e), "code": e.code}), 400
+    changes = confirmation_settings.clean(request.get_json(silent=True))
     if not ctx.settings_manager.save_settings(changes):
         return jsonify({"error": "The settings could not be saved.", "code": "save_failed"}), 500
     return jsonify(confirmation_settings.view(ctx.settings_manager.get_settings()))

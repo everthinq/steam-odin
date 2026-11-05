@@ -24,6 +24,7 @@ import time
 
 import requests
 
+from commands import CommandError
 from jsonio import atomic_write_json, read_json
 from market_seller import HOW_BUY_ORDER, MarketSeller, RateLimited
 from notifications import own_bot_settings, send_notification
@@ -129,12 +130,6 @@ def purchase_returns(purchases, statistics):
     return rows
 
 
-class SellingConfigError(ValueError):
-    """A refused card auto-sell setting; ``code`` names why."""
-
-    def __init__(self, message, code):
-        super().__init__(message)
-        self.code = code
 
 
 class CardSellerService:
@@ -375,10 +370,10 @@ class CardSellerService:
         """Change card auto-sell: {"enabled": bool, "foil": bool, "apps": "app ids or store
         links" (or a list)}, each optional. Text that names no app id is refused (an empty
         list means every game). "Also cards held before" is its own command
-        (``set_include_held``). Answers the new status; raises SellingConfigError
+        (``set_include_held``). Answers the new status; raises CommandError
         (bad_request, bad_apps, save_failed)."""
         if not isinstance(body, dict):
-            raise SellingConfigError('a JSON object is required', 'bad_request')
+            raise CommandError('bad_request', 'a JSON object is required')
         updates = {}
         for key, setting in (('enabled', 'card_auto_sell_enabled'), ('foil', 'card_auto_sell_foil')):
             if key in body:
@@ -388,8 +383,8 @@ class CardSellerService:
             text = ' '.join(str(value) for value in raw) if isinstance(raw, list) else str(raw or '')
             apps = parse_app_ids(text)
             if text.strip() and not apps:
-                raise SellingConfigError('No app id found: type app ids (like 745740) or paste store links. '
-                                         'Leave it empty for every game.', 'bad_apps')
+                raise CommandError('bad_apps', 'No app id found: type app ids (like 745740) or paste store links. '
+                                         'Leave it empty for every game.')
             updates['card_auto_sell_apps'] = apps
         self._save_settings(updates)
         return self.status()
@@ -397,17 +392,17 @@ class CardSellerService:
     def set_include_held(self, on, confirmed=False):
         """Also sell cards the accounts held before auto-sell was switched on (rule 16:
         existing holdings only with an explicit opt-in). Switching it on needs
-        ``confirmed``; without it raises SellingConfigError ``confirm_needed`` whose
+        ``confirmed``; without it raises CommandError ``confirm_needed`` whose
         message says what it does. Switching it off never needs it."""
         if on and not confirmed:
-            raise SellingConfigError('This also lists every trading card the accounts held before auto-sell '
-                                     'was switched on, not only new drops. Sell them too?', 'confirm_needed')
+            raise CommandError('confirm_needed', 'This also lists every trading card the accounts held before auto-sell '
+                                     'was switched on, not only new drops. Sell them too?', 409)
         self._save_settings({'card_auto_sell_include_held': bool(on)})
         return self.status()
 
     def _save_settings(self, updates):
         if updates and not self.settings_manager.save_settings(updates):
-            raise SellingConfigError('settings could not be saved', 'save_failed')
+            raise CommandError('save_failed', 'settings could not be saved', 500)
 
     def status(self, purchases=None):
         """Switches, inventory reads, listings with their ``result`` and ``currency_code``,

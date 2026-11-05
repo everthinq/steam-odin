@@ -237,6 +237,11 @@ News watcher, Case alerts, Readiness); Andvari = 1, 2, 3, 10, 11, DealsTable and
   copy in `gjallarhorn_reminders.py`); `error_handlers.install` answers it as `{error, code}` with its
   status for every route, so the three `_command` helpers (Mímir, Draupnir, Ratatoskr) and Huginn's
   `_purchase_command` are gone: a route returns its answer only.
-- Next: the other refusal classes with a `code` (`SettingsError`, `AlertSettingsError`,
-  `NewsSettingsError`, `SellingConfigError`) become `CommandError`; errors still without a `code`
-  (mostly `routes/huginn.py`); one shared plan registry; `self._job` mirroring the registry job.
+- 5b **DONE 2026-11-05**: the four other refusal classes with a code (`SettingsError`,
+  `AlertSettingsError`, `NewsSettingsError`, `SellingConfigError`) are `CommandError` now, with the same
+  codes and statuses (`confirm_needed` 409, `save_failed` 500, the rest 400); their routes no longer
+  catch them (`_selling_command` is gone).
+- Next, 5c: about 130 error answers still have no `code` (38 `str(e)` answers with 500 after a crash,
+  which the app-wide handler already answers as `unexpected_error`; 27 copies of "tradeon_token not set
+  in settings"; missing-field and not-found answers). Then one shared plan registry, then `self._job`
+  mirroring the registry job.

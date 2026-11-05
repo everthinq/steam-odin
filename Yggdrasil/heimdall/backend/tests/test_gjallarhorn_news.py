@@ -1,5 +1,6 @@
 """Gjallarhorn news watcher: the detector, and the rules that keep the phone
 from ringing twice for one post (no network: the feed and the alerts are fakes)."""
+from commands import CommandError  # noqa: E402
 import threading
 
 import pytest
@@ -192,12 +193,12 @@ def test_settings_arm_and_set_the_chat():
 
 @pytest.mark.parametrize('chat_id', ['hello', '12a', '@abc'])
 def test_settings_refuse_a_chat_id_that_is_not_one(chat_id):
-    with pytest.raises(gjallarhorn_news_service.NewsSettingsError) as refused:
+    with pytest.raises(CommandError) as refused:
         make_service(SavingSettings(), []).save_settings({'chat_id': chat_id})
     assert refused.value.code == 'bad_chat_id'
 
 
 def test_settings_say_when_they_were_not_saved():
-    with pytest.raises(gjallarhorn_news_service.NewsSettingsError) as refused:
+    with pytest.raises(CommandError) as refused:
         make_service(SavingSettings(saves=False), []).save_settings({'armed': True})
     assert refused.value.code == 'save_failed'

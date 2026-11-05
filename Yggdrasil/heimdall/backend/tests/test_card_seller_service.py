@@ -2,6 +2,7 @@
 lowest listing in the wallet currency (or higher, patiently, when the price
 history shows buyers pay more), never undercutting our own listing, and the
 statistics per account and game."""
+from commands import CommandError  # noqa: E402
 import json
 import time
 
@@ -504,17 +505,17 @@ def test_save_config_parses_apps_and_refuses_text_without_one(world):
     status = service.save_config({'enabled': False, 'apps': 'store.steampowered.com/app/745740/Reflex_2077/, 400740'})
     assert status['enabled'] is False and status['apps'] == [745740, 400740]
     assert service.save_config({'apps': ''})['apps'] == []
-    with pytest.raises(card_seller_service.SellingConfigError) as refused:
+    with pytest.raises(CommandError) as refused:
         service.save_config({'apps': 'Reflex'})
     assert refused.value.code == 'bad_apps' and settings.values['card_auto_sell_apps'] == []
-    with pytest.raises(card_seller_service.SellingConfigError) as refused:
+    with pytest.raises(CommandError) as refused:
         service.save_config(['enabled'])
     assert refused.value.code == 'bad_request'
 
 
 def test_include_held_needs_confirmation_only_to_switch_on(world):
     service, _, _, settings = world
-    with pytest.raises(card_seller_service.SellingConfigError) as refused:
+    with pytest.raises(CommandError) as refused:
         service.set_include_held(True)
     assert refused.value.code == 'confirm_needed' and not settings.values.get('card_auto_sell_include_held')
     assert service.set_include_held(True, confirmed=True)['include_held'] is True

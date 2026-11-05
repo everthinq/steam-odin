@@ -1,5 +1,6 @@
 """Case Arbitrage Telegram board: every buy market cheaper than CSFloat is listed,
 and the board always fits one Telegram message."""
+from commands import CommandError  # noqa: E402
 import time
 
 import huginn_service
@@ -105,6 +106,6 @@ def test_alert_settings_refuse_bad_numbers():
     import pytest
     for body, code in (({'min_pct': -1}, 'bad_min_pct'), ({'min_pct': 'x'}, 'bad_min_pct'),
                        ({'poll_interval_sec': huginn_service.CASE_POLL_MINIMUM_SECONDS - 1}, 'bad_poll_interval')):
-        with pytest.raises(huginn_service.AlertSettingsError) as refused:
+        with pytest.raises(CommandError) as refused:
             HuginnService.clean_case_alert_settings(body)
         assert refused.value.code == code

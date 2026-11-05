@@ -39,6 +39,7 @@ import threading
 import time
 import urllib.request
 
+from commands import CommandError
 from notifications import send_notification
 
 log = logging.getLogger(__name__)
@@ -159,12 +160,6 @@ def detect(contents):
 _CHAT_ID_RE = re.compile(r"^(-?\d{1,20}|@[A-Za-z0-9_]{5,32})$")
 
 
-class NewsSettingsError(ValueError):
-    """A news watcher setting was refused; `code` names why."""
-
-    def __init__(self, message, code):
-        super().__init__(message)
-        self.code = code
 
 
 class GjallarhornNewsService:
@@ -379,21 +374,19 @@ class GjallarhornNewsService:
     def save_settings(self, body):
         """Change the news watcher's own settings: {"armed": bool, "chat_id": text}, each
         optional. A blank chat id means the shared Case Arbitrage chat. Answers the new
-        status; raises NewsSettingsError (bad_request, bad_chat_id, save_failed)."""
+        status; raises CommandError (bad_request, bad_chat_id, save_failed)."""
         if not isinstance(body, dict):
-            raise NewsSettingsError("a JSON object is required", "bad_request")
+            raise CommandError("bad_request", "a JSON object is required")
         updates = {}
         if "armed" in body:
             updates["gjallarhorn_news_armed"] = bool(body["armed"])
         if "chat_id" in body:
             chat_id = str(body["chat_id"] or "").strip()
             if chat_id and not _CHAT_ID_RE.match(chat_id):
-                raise NewsSettingsError(
-                    "a chat id is a number (for example -1001234567890) or a public @name",
-                    "bad_chat_id")
+                raise CommandError("bad_chat_id", "a chat id is a number (for example -1001234567890) or a public @name")
             updates["gjallarhorn_chat_id"] = chat_id
         if updates and not self.settings_manager.save_settings(updates):
-            raise NewsSettingsError("settings could not be saved", "save_failed")
+            raise CommandError("save_failed", "settings could not be saved", 500)
         return self.status()
 
     def status(self):

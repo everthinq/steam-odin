@@ -10,6 +10,7 @@ import urllib.request
 import urllib.error
 import urllib.parse
 from datetime import datetime, timezone, timedelta
+from commands import CommandError
 from jsonio import atomic_write_json
 from price_history import PriceHistory
 from pulse_feed import COUNT, FRESH, ON_DEMAND, PRICE, NotActive, PulseFeed, post_table
@@ -59,12 +60,6 @@ _STALE_TEMPORARY_FILE_AGE_SEC = 60 * 60
 CASE_POLL_MINIMUM_SECONDS = 60
 
 
-class AlertSettingsError(ValueError):
-    """A Case Arbitrage alert setting was refused; `code` names why."""
-
-    def __init__(self, message, code):
-        super().__init__(message)
-        self.code = code
 
 # A background warm (portfolio valuation map, container snapshot) that failed is
 # not retried for this long; requests in that window get status 'error' so the
@@ -3206,9 +3201,9 @@ class HuginnService:
 
         Every key is optional. The two secrets (telegram_bot_token, notify_webhook_url)
         are replaced by a non-empty text, removed by null, and kept when blank or absent,
-        so the page never needs to read them back. Raises AlertSettingsError."""
+        so the page never needs to read them back. Raises CommandError."""
         if not isinstance(body, dict):
-            raise AlertSettingsError('a JSON object is required', 'bad_request')
+            raise CommandError('bad_request', 'a JSON object is required')
         updates = {}
         if 'enabled' in body:
             updates['case_alerts_enabled'] = bool(body['enabled'])
@@ -3218,7 +3213,7 @@ class HuginnService:
             except (TypeError, ValueError):
                 min_pct = -1
             if not min_pct >= 0:
-                raise AlertSettingsError('the alert percentage must be 0 or more', 'bad_min_pct')
+                raise CommandError('bad_min_pct', 'the alert percentage must be 0 or more')
             updates['case_alert_min_pct'] = min_pct
         if 'poll_interval_sec' in body:
             try:
@@ -3226,9 +3221,7 @@ class HuginnService:
             except (TypeError, ValueError):
                 seconds = 0
             if seconds < CASE_POLL_MINIMUM_SECONDS:
-                raise AlertSettingsError(
-                    f'the check interval must be at least {CASE_POLL_MINIMUM_SECONDS} seconds',
-                    'bad_poll_interval')
+                raise CommandError('bad_poll_interval', f'the check interval must be at least {CASE_POLL_MINIMUM_SECONDS} seconds')
             updates['case_poll_interval_sec'] = seconds
         if 'telegram_chat_id' in body:
             updates['telegram_chat_id'] = str(body['telegram_chat_id'] or '').strip()

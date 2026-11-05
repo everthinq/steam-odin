@@ -14,7 +14,6 @@ from datetime import datetime
 
 from flask import Blueprint, g, jsonify, request
 
-from card_seller_service import SellingConfigError
 from context import ctx
 from huginn_service import DEFAULT_PRICE_MARKET
 from huginn_service import load_csfloat_keys, load_csfloat_proxy, classify_proxy_error, detect_public_ip
@@ -298,11 +297,7 @@ def huginn_cases_alerts_settings():
     telegram_bot_token, notify_webhook_url}, each optional. The token and the webhook are
     replaced by a non-empty text, removed by null and kept when blank. Answers the new status
     (secrets only as "set" flags), or {error, code}."""
-    from huginn_service import AlertSettingsError
-    try:
-        updates = ctx.huginn_service.clean_case_alert_settings(request.get_json(silent=True))
-    except AlertSettingsError as e:
-        return jsonify({'error': str(e), 'code': e.code}), 400
+    updates = ctx.huginn_service.clean_case_alert_settings(request.get_json(silent=True))
     if updates and not ctx.settings_manager.save_settings(updates):
         return jsonify({'error': 'settings could not be saved', 'code': 'save_failed'}), 500
     return jsonify(ctx.huginn_service.case_alert_status(ctx.settings_manager.get_settings()))
@@ -799,11 +794,7 @@ def gjallarhorn_news_status():
 def gjallarhorn_news_settings():
     """Arm or disarm the news watcher and set its own chat: {"armed": bool, "chat_id": text}.
     Answers the new status, or {error, code}."""
-    from gjallarhorn_news_service import NewsSettingsError
-    try:
-        return jsonify(ctx.gjallarhorn_news_service.save_settings(request.get_json(silent=True)))
-    except NewsSettingsError as e:
-        return jsonify({'error': str(e), 'code': e.code}), (500 if e.code == 'save_failed' else 400)
+    return jsonify(ctx.gjallarhorn_news_service.save_settings(request.get_json(silent=True)))
 
 
 @bp.route('/api/huginn/gjallarhorn/news/check', methods=['POST'])
@@ -1320,19 +1311,11 @@ def card_selling_status():
     return jsonify(ctx.card_seller_service.status(ctx.store_purchase_service.statistics()))
 
 
-def _selling_command(run):
-    try:
-        return jsonify(run()), 200
-    except SellingConfigError as e:
-        return jsonify({'error': str(e), 'code': e.code}), (409 if e.code == 'confirm_needed' else
-                                                            500 if e.code == 'save_failed' else 400)
-
-
 @bp.route('/api/huginn/card-deals/selling/config', methods=['POST'])
 def card_selling_config():
     """{"enabled": bool, "foil": bool, "apps": "app ids or store links"}, each optional."""
     body = request.get_json(silent=True)
-    return _selling_command(lambda: ctx.card_seller_service.save_config(body))
+    return jsonify(ctx.card_seller_service.save_config(body))
 
 
 @bp.route('/api/huginn/card-deals/selling/include-held', methods=['POST'])
@@ -1340,8 +1323,7 @@ def card_selling_include_held():
     """{"on": bool, "confirmed": bool}: also sell cards held before auto-sell was switched
     on. Switching it on without "confirmed" answers 409 ``confirm_needed`` with the question."""
     body = request.get_json(silent=True) or {}
-    return _selling_command(lambda: ctx.card_seller_service.set_include_held(bool(body.get('on')),
-                                                                             bool(body.get('confirmed'))))
+    return jsonify(ctx.card_seller_service.set_include_held(bool(body.get('on')), bool(body.get('confirmed'))))
 
 
 # --- Andvari "Buy games" ----------------------------------------------------------------

@@ -90,7 +90,7 @@ They start once, in `start_background()`, only when the backend runs as `python 
 | File | Responsibility |
 |------|----------------|
 | `app.py` | Composition root, `ctx` wiring, background thread start, JSON error handlers, `GET /health` |
-| `commands.py`, `error_handlers.py` | `CommandError(code, message, status)`: the one shape of a refused command, raised by any service; `error_handlers.install(app)` answers it as `{error, code}` with its status for every route (no route catches it; a test app installs the handlers too), Flask's own request errors keep their status with a `code`, a crash answers 500 `unexpected_error` |
+| `commands.py`, `error_handlers.py` | `CommandError(code, message, status)`: the one shape of a refused command, raised by any service (the confirmation, Case Arbitrage alert, news watcher and card selling settings too); `error_handlers.install(app)` answers it as `{error, code}` with its status for every route (no route catches it; a test app installs the handlers too), Flask's own request errors keep their status with a `code`, a crash answers 500 `unexpected_error` |
 | `context.py` | The `ctx` singleton holder (empty until `app.py` fills it) |
 | `request_guard.py` | CORS only for `localhost:3000` / `127.0.0.1:3000`; 403 for a foreign `Host` (DNS rebinding) or a cross-origin write; extra hosts via `HEIMDALL_ALLOWED_HOSTS` |
 | `routes/` | Flask blueprints by domain: `accounts`, `settings`, `draupnir`, `ratatoskr`, `huginn`, `mimir`, `jobs` (`GET /api/jobs/<id>`). Each reads `ctx` at request time. About 140 routes; `tests/test_routes_blueprints.py` counts them per blueprint |

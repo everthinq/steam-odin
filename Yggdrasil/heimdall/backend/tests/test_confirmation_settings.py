@@ -1,4 +1,5 @@
 """Global Confirmations settings: limits refused not changed, Check All Now as a job."""
+from commands import CommandError  # noqa: E402
 import threading
 
 import pytest
@@ -9,7 +10,7 @@ from scheduler import ConfirmationScheduler
 
 
 def test_interval_below_the_minimum_is_refused_not_raised():
-    with pytest.raises(cs.SettingsError) as error:
+    with pytest.raises(CommandError) as error:
         cs.clean({'check_interval': cs.CHECK_INTERVAL_MIN_SECONDS - 1})
     assert error.value.code == 'interval_out_of_range'
 
@@ -28,7 +29,7 @@ def test_interval_inside_the_limits_and_switches_are_kept():
     (None, 'bad_body'),
 ])
 def test_bad_values_are_refused(body, code):
-    with pytest.raises(cs.SettingsError) as error:
+    with pytest.raises(CommandError) as error:
         cs.clean(body)
     assert error.value.code == code
 

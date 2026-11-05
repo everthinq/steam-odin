@@ -5,6 +5,7 @@ settings window both read them here), and the explanation the window shows.
 A value outside the limits is refused with {error, code}; nothing is changed
 silently.
 """
+from commands import CommandError
 
 CHECK_INTERVAL_MIN_SECONDS = 10
 CHECK_INTERVAL_MAX_SECONDS = 3600
@@ -14,10 +15,6 @@ SWITCH_KEYS = ('auto_check_enabled', 'auto_confirm_market', 'auto_confirm_trades
 KEYS = ('check_interval',) + SWITCH_KEYS
 
 
-class SettingsError(ValueError):
-    def __init__(self, message, code):
-        super().__init__(message)
-        self.code = code
 
 
 def polling_on(settings):
@@ -53,26 +50,25 @@ def view(settings):
 
 
 def clean(body):
-    """Only the confirmation keys, checked. Raises SettingsError on a bad value."""
+    """Only the confirmation keys, checked. Raises CommandError on a bad value."""
     if not isinstance(body, dict):
-        raise SettingsError('Send the settings as a JSON object.', 'bad_body')
+        raise CommandError('bad_body', 'Send the settings as a JSON object.')
     cleaned = {}
     if 'check_interval' in body:
         value = body['check_interval']
         if isinstance(value, bool) or not isinstance(value, int):
-            raise SettingsError('The check interval must be a whole number of seconds.', 'bad_interval')
+            raise CommandError('bad_interval', 'The check interval must be a whole number of seconds.')
         if not CHECK_INTERVAL_MIN_SECONDS <= value <= CHECK_INTERVAL_MAX_SECONDS:
-            raise SettingsError(
-                f'The check interval must be between {CHECK_INTERVAL_MIN_SECONDS} and '
-                f'{CHECK_INTERVAL_MAX_SECONDS} seconds.', 'interval_out_of_range')
+            raise CommandError('interval_out_of_range', f'The check interval must be between {CHECK_INTERVAL_MIN_SECONDS} and '
+                f'{CHECK_INTERVAL_MAX_SECONDS} seconds.')
         cleaned['check_interval'] = value
     for key in SWITCH_KEYS:
         if key in body:
             if not isinstance(body[key], bool):
-                raise SettingsError(f'{key} must be true or false.', 'bad_switch')
+                raise CommandError('bad_switch', f'{key} must be true or false.')
             cleaned[key] = body[key]
     if not cleaned:
-        raise SettingsError('Nothing to save.', 'nothing_to_save')
+        raise CommandError('nothing_to_save', 'Nothing to save.')
     return cleaned
 
 

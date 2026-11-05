@@ -27,10 +27,7 @@ def update_settings():
     confirmation_keys = {key: value for key, value in request.json.items()
                          if key in confirmation_settings.KEYS}
     if confirmation_keys:
-        try:
-            confirmation_settings.clean(confirmation_keys)
-        except confirmation_settings.SettingsError as e:
-            return jsonify({"error": str(e), "code": e.code}), 400
+        confirmation_settings.clean(confirmation_keys)
 
     success = ctx.settings_manager.save_settings(request.json)
     if success:
