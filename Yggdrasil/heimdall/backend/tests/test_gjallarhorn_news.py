@@ -18,7 +18,8 @@ class FakeSettings:
     """The SettingsManager surface the watcher uses, in memory."""
 
     def __init__(self, **values):
-        self.settings = {'gjallarhorn_news_armed': True, 'gjallarhorn_news_history': [], **values}
+        self.settings = {'gjallarhorn_news_armed': True, 'gjallarhorn_news_ring_enabled': True,
+                         'gjallarhorn_news_history': [], **values}
 
     def get_settings(self):
         return dict(self.settings)
@@ -106,6 +107,14 @@ def test_new_post_alerts_once(texts):
     assert len(texts) == 1 and len(caller.rings) == 1
 
 
+def test_ring_off_texts_only(texts):
+    settings = FakeSettings(gjallarhorn_news_last_seen_date=1_000, gjallarhorn_news_last_gid='4001',
+                            gjallarhorn_news_ring_enabled=False)
+    caller = FakeCaller()
+    assert len(make_service(settings, [KILOWATT], caller).check_once()['events']) == 1
+    assert len(texts) == 1 and caller.rings == []
+
+
 def test_check_now_reports_an_alerted_post_but_never_rings_again(texts):
     settings = FakeSettings(gjallarhorn_news_last_seen_date=2_000, gjallarhorn_news_last_gid='5001',
                             gjallarhorn_news_history=[{'gid': '5001', 'title': 'Counter-Strike 2 Update'}])
@@ -186,8 +195,8 @@ class SavingSettings(FakeSettings):
 
 def test_settings_arm_and_set_the_chat():
     settings = SavingSettings(gjallarhorn_news_armed=False)
-    status = make_service(settings, []).save_settings({'armed': True, 'chat_id': ' -1001234567890 '})
-    assert status['armed'] is True
+    status = make_service(settings, []).save_settings({'armed': True, 'ring': False, 'chat_id': ' -1001234567890 '})
+    assert status['armed'] is True and status['ring'] is False
     assert status['chat_id'] == '-1001234567890'
 
 

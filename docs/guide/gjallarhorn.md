@@ -2,7 +2,7 @@
 
 When Valve removes a case or collection from the active drop pool, its price
 usually jumps within hours. Gjallarhorn helps you act fast: it tells you the
-moment the news is out (Telegram message **and a phone call**), shows which of
+moment the news is out (a Telegram message, plus a phone call when **Ring** is on), shows which of
 your holdings to sell, and how much of the newly limited item your capital buys.
 
 **Gjallarhorn never buys or sells.** It is a cockpit; you act on the markets.
@@ -14,9 +14,11 @@ Open it from the Dashboard tile **Gjallarhorn** (also /huginn/gjallarhorn).
 
 Every 10 minutes it reads the official Counter-Strike 2 news and looks for an
 update that adds or removes a case, capsule, collection or souvenir package.
-When it finds one, it sends a Telegram message and rings your phone.
+When it finds one, it sends a Telegram message, and rings your phone only when **Ring** is on.
 
 - **Armed / Disarmed** switches the alarm.
+- **Ring on / Ring off (text only)** chooses whether an alarm also rings your phone. It is off
+  by default: the alarm only texts. "Ring not set up" means the phone call is not configured.
 - **Check now** reads the news immediately.
 - **Test detection**: paste an update text to see what it would detect — no
   alarm is sent.

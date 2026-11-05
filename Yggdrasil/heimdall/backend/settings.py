@@ -90,6 +90,7 @@ DEFAULT_SETTINGS = {
     # (a supply-shock "limiting" event). Map-pool changes are ignored on purpose.
     "gjallarhorn_news_armed": True,        # False = watch but never ring/alert
     "gjallarhorn_news_poll_minutes": 10,   # how often to poll the feed (floor 2 min)
+    "gjallarhorn_news_ring_enabled": False,  # True = also ring the phone; False = text only (Ivan, 2026-11-05)
     # Dedicated Telegram chat for Gjallarhorn alerts, so they land in their OWN
     # conversation instead of mixing with the Case Arbitrage board. Uses the same
     # telegram_bot_token; if empty, falls back to the shared telegram_chat_id.

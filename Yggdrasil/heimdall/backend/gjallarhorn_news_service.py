@@ -313,7 +313,7 @@ class GjallarhornNewsService:
             send_notification(alert_settings, text)
         except Exception as e:
             log.warning("[GJALLARHORN-NEWS] text alert failed: %s", e)
-        if self.telegram_caller is not None:
+        if self.telegram_caller is not None and settings.get("gjallarhorn_news_ring_enabled"):
             try:
                 # Pass the WHY as the message so it lands in the same chat as the
                 # wake-up call; the caller sends it before it starts ringing.
@@ -372,7 +372,7 @@ class GjallarhornNewsService:
 
     # -- status ------------------------------------------------------------
     def save_settings(self, body):
-        """Change the news watcher's own settings: {"armed": bool, "chat_id": text}, each
+        """Change the news watcher's own settings: {"armed": bool, "ring": bool, "chat_id": text}, each
         optional. A blank chat id means the shared Case Arbitrage chat. Answers the new
         status; raises CommandError (bad_request, bad_chat_id, save_failed)."""
         if not isinstance(body, dict):
@@ -380,6 +380,8 @@ class GjallarhornNewsService:
         updates = {}
         if "armed" in body:
             updates["gjallarhorn_news_armed"] = bool(body["armed"])
+        if "ring" in body:
+            updates["gjallarhorn_news_ring_enabled"] = bool(body["ring"])
         if "chat_id" in body:
             chat_id = str(body["chat_id"] or "").strip()
             if chat_id and not _CHAT_ID_RE.match(chat_id):
@@ -401,6 +403,7 @@ class GjallarhornNewsService:
             "last_run": self._last_run,
             "last_error": self._last_error,
             "running": bool(self.thread and self.thread.is_alive()),
+            "ring": bool(settings.get("gjallarhorn_news_ring_enabled")),
             "can_ring": bool(self.telegram_caller and self.telegram_caller.status().get("configured")),
             "recent": history[-10:][::-1],
         }

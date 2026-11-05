@@ -55,6 +55,7 @@ const NewsWatcher = () => {
     };
 
     const toggleArmed = () => { if (status) saveSettings({ armed: !status.armed }, setSaving); };
+    const toggleRing = () => { if (status) saveSettings({ ring: !status.ring }, setSaving); };
     const saveChat = () => saveSettings({ chat_id: chatId || '' }, setSavingChat);
 
     const checkNow = () => {
@@ -97,7 +98,7 @@ const NewsWatcher = () => {
             <div className="flex items-center gap-2 mb-3">
                 <Newspaper size={14} className="text-amber-500/70" />
                 <span className="text-xs font-semibold text-slate-300">News watcher</span>
-                <InfoTip text="Watches the official Counter-Strike 2 update feed. Rings your phone + sends a Telegram message the moment Valve ADDS or REMOVES a case, collection, capsule or souvenir — the exact minute an item gets limited and starts to pump. Map-pool changes are ignored. Routine bug-fix patches stay silent." />
+                <InfoTip text="Watches the official Counter-Strike 2 update feed. Sends a Telegram message (and rings your phone when Ring is on) the moment Valve ADDS or REMOVES a case, collection, capsule or souvenir — the exact minute an item gets limited and starts to pump. Map-pool changes are ignored. Routine bug-fix patches stay silent." />
                 <button
                     type="button"
                     onClick={load}
@@ -119,7 +120,7 @@ const NewsWatcher = () => {
                             ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/25'
                             : 'bg-slate-500/10 border-white/10 text-slate-400 hover:bg-slate-500/20'
                     }`}
-                    title={armed ? 'Armed — will ring on a limiting event. Click to disarm.' : 'Disarmed — watching but silent. Click to arm.'}
+                    title={armed ? 'Armed — will alert on a limiting event. Click to disarm.' : 'Disarmed — watching but silent. Click to arm.'}
                 >
                     {armed ? <Bell size={12} /> : <BellOff size={12} />}
                     {armed ? 'Armed' : 'Disarmed'}
@@ -135,10 +136,22 @@ const NewsWatcher = () => {
                     Check now
                 </button>
                 {status && (
-                    <span className={`inline-flex items-center gap-1 text-[11px] ${status.can_ring ? 'text-slate-500' : 'text-amber-400/80'}`}>
+                    <button
+                        type="button"
+                        onClick={toggleRing}
+                        disabled={saving || !status.can_ring}
+                        className={`inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] border transition ${
+                            !status.can_ring
+                                ? 'border-white/10 text-amber-400/80'
+                                : status.ring
+                                    ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/25'
+                                    : 'border-white/10 text-slate-400 hover:bg-slate-500/20'
+                        }`}
+                        title={!status.can_ring ? 'The phone call is not set up' : status.ring ? 'Texts and rings your phone. Click to text only.' : 'Texts only, never rings. Click to also ring your phone.'}
+                    >
                         <PhoneCall size={11} />
-                        {status.can_ring ? 'Ring ready' : 'Ring not set up'}
-                    </span>
+                        {!status.can_ring ? 'Ring not set up' : status.ring ? 'Ring on' : 'Ring off (text only)'}
+                    </button>
                 )}
                 {status && !status.running && (
                     <span className="text-[11px] text-amber-400/80">watcher not running</span>
