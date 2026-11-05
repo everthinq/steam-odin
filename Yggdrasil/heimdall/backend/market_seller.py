@@ -127,6 +127,10 @@ def target_price(target, wallet, floor=0):
     return buyer_pays_for(receives, wallet), receives
 
 
+
+# The "how" of a price set at the highest buy order (the card sells at once).
+HOW_BUY_ORDER = 'at the highest buy order (sells at once)'
+
 class RateLimited(RuntimeError):
     """Steam answered HTTP 429."""
 
@@ -267,7 +271,7 @@ class MarketSeller:
         target = lowest if ours else lowest - 1
         how = 'matched our own listing' if ours else 'one under the lowest listing'
         if highest_bid and target <= highest_bid:
-            target, how = highest_bid, 'at the highest buy order (sells at once)'
+            target, how = highest_bid, HOW_BUY_ORDER
         summary = self.sale_history(appid, name, currency, cookies)
         if summary and summary['ceiling'] <= MAXIMUM_CEILING_OVER_LOWEST * lowest:
             patient = patient_target(sell_orders, summary['ceiling'], summary['per_day'] * QUEUE_DAYS, recent_own)

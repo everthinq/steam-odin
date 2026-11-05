@@ -155,7 +155,8 @@ path prefix — add your page there. No catch-all route, no Settings page.
   Ratatoskr sidebar. `NewsWatcher.jsx` passes `text=` to `InfoTip`, which reads
   `tip`, so those hints are empty.
 - No confirmation before: Confirmations Approve/Deny, Transfer Move, Team
-  Fortress 2 Play / Sell now, card auto-sell checkboxes (they save at once).
+  Fortress 2 Play / Sell now, card auto-sell checkboxes (they save at once;
+  "Also cards held before" asks first through the backend's `confirm_needed`).
 
 ## Ratatoskr Transfer: tradable now vs trade hold
 

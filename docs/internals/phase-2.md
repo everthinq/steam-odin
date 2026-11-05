@@ -165,6 +165,10 @@ Accounts, Draupnir and Mímir, then Huginn and Andvari.
 - 1 MONEY Andvari Buy games: freshness by browser clock (BuyPanel 59-60, hardcoded 30 min), default selection, totals summed in page, single /buy/run with selection (no plan id), only window.confirm, no ref double-click guard -> purchase-plan + plans/<id>/execute job. OPEN QUESTION to Ivan: require a passed dry run of the same plan before a real buy?
 - 2 Auto-sell settings (SellingPanel 38-83, TeamFortress 93-116) via raw /api/settings, app ids parsed in page, "also cards held before" saves on tick w/o confirm (rule 16) -> selling/config + team-fortress/config with clean_config; include-held as separate confirmed command.
 - 3 card selling return computed in page from two endpoints, own currency map, "buy order" text search -> return_on_purchases + listed code.
+- 2 + 3 (A1) **DONE 2026-11-05** (card selling only; Team Fortress 2 is parked): `POST /api/huginn/card-deals/selling/config`
+  and `…/selling/include-held` (asks first, `confirm_needed`); the page no longer copies `parse_app_ids`,
+  has no currency map (ISO codes from `CURRENCY_CODES`) and reads `returns` and each sale's `result`.
+  Next: A2 = 1, 10, 11, DealsTable, CardDeals stale answers, startScan (the app-id bug was fixed in bullet 4).
 Split into Huginn first (H1 to H6), then Andvari (Ivan, 2026-11-05). H1 = items 4 and 5, H2 = 7 and
 the CaseArbitrage bug, H3 = 8, H4 = 9 and the CrossProfile bugs, H5 = 12 and 13, H6 = 14 (Gjallarhorn,
 News watcher, Case alerts, Readiness); Andvari = 1, 2, 3, 10, 11, DealsTable and the app-id bug.

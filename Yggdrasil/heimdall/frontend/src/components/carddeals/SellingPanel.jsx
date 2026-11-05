@@ -1,18 +1,20 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { readJson } from '../../utils/readJson';
 
-// Andvari card auto-sell. Backend: /api/huginn/card-deals/selling (status) and
-// /api/settings (the switches). Cards are listed at the highest price that still
-// sells (from the price history), at least one cent under the lowest Market listing
-// and never below the highest buy order, in each account's wallet currency.
+// Andvari card auto-sell. Backend: GET /api/huginn/card-deals/selling (status, totals and the
+// Buy games returns), POST …/selling/config (switches, app ids parsed by the backend) and
+// POST …/selling/include-held (asks first: it also sells cards held before). Amounts arrive in
+// minor units per ISO currency code.
 
-const CURRENCIES = { 1: ['$', ''], 3: ['', ' €'], 9: ['', ' kr'], 17: ['', ' TL'], 29: ['HK$ ', ''] };
-const amount = (minorUnits, currency) => {
-    const [before, after] = CURRENCIES[currency] || ['', ` (currency ${currency})`];
-    return `${before}${(minorUnits / 100).toFixed(2)}${after}`;
+const amount = (minorUnits, code) => {
+    try {
+        return new Intl.NumberFormat(undefined, { style: 'currency', currency: code }).format(minorUnits / 100);
+    } catch {
+        return `${(minorUnits / 100).toFixed(2)} ${code}`;
+    }
 };
-const amounts = (byCurrency) => Object.entries(byCurrency || {})
-    .map(([currency, value]) => amount(value, Number(currency))).join(' + ') || '—';
+const amounts = (byCode) => Object.entries(byCode || {}).map(([code, value]) => amount(value, code)).join(' + ') || '—';
+const RESULT_TEXT = { listed: 'Listed', buy_order: 'Listed at the buy order' };
 
 const ago = (epochSeconds) => {
     if (!epochSeconds) return 'never';
@@ -23,55 +25,40 @@ const ago = (epochSeconds) => {
     return hours < 48 ? `${hours} h ago` : `${Math.round(hours / 24)} days ago`;
 };
 
-// The rule of the backend's store_purchase_service.parse_app_ids: in a store link only the number
-// after "/app/" (never "2077" in a name or "13" in "?snr=1_7_15__13"); otherwise only a token that is
-// itself a number of 2 to 9 digits. Tokens are split on white space, commas and semicolons.
-const appIdsFrom = (text) => {
-    const found = [];
-    (text || '').split(/[\s,;]+/).forEach((raw) => {
-        const token = raw.replace(/^[()[\]{}<>"'.]+|[()[\]{}<>"'.]+$/g, '');
-        const link = token.match(/\/app\/(\d{1,9})(?!\d)/);
-        const value = link ? link[1] : (/^\d{2,9}$/.test(token) ? token : null);
-        const id = value ? Number(value) : 0;
-        if (id && !found.includes(id)) found.push(id);
-    });
-    return found;
-};
-
 const SellingPanel = ({ selling, onSaved }) => {
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState(null);
     const [appsText, setAppsText] = useState(null);
-    const [purchases, setPurchases] = useState(null);   // Buy games statistics, to set against the card sales
-    useEffect(() => {
-        fetch('/api/huginn/card-deals/buy').then((r) => (r.ok ? readJson(r) : null))
-            .then((d) => setPurchases(d?.statistics || null)).catch(() => {});
-    }, []);
 
     if (!selling) return <div className="text-xs text-slate-500 px-3 py-2">Loading card selling…</div>;
 
-    const save = (changes) => {
+    const send = (path, body) => {
         setBusy(true);
         setError(null);
-        fetch('/api/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(changes) })
+        return fetch(`/api/huginn/card-deals/selling/${path}`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+        })
             .then(readJson)
-            .then((d) => { if (d.error) setError(d.error); })
-            .catch((e) => setError(String(e)))
-            .finally(() => { setBusy(false); onSaved(); });
+            .then((d) => d)
+            .catch((e) => ({ error: String(e) }))
+            .finally(() => setBusy(false));
     };
-    // App ids or store links ("store.steampowered.com/app/745740/Reflex/"), the backend's rule
-    // (store_purchase_service.parse_app_ids). Text that gives no app id is refused: saving []
-    // would mean every game.
-    const saveApps = () => {
-        const text = (appsText || '').trim();
-        const apps = appIdsFrom(text);
-        if (text && !apps.length) {
-            setError('No app id found: type app ids (like 745740) or paste store links. Leave it empty for every game.');
-            return;
+    const save = (changes) => send('config', changes).then((d) => {
+        if (d.error) setError(d.error);
+        else setAppsText(null);
+        onSaved();
+    });
+    // Also selling cards held before asks first; the backend's question is shown as is.
+    const setIncludeHeld = (on) => send('include-held', { on }).then((d) => {
+        if (d.code === 'confirm_needed') {
+            if (!window.confirm(d.error)) return null;
+            return send('include-held', { on, confirmed: true });
         }
-        save({ card_auto_sell_apps: apps });
-        setAppsText(null);
-    };
+        return d;
+    }).then((d) => {
+        if (d?.error) setError(d.error);
+        onSaved();
+    });
     const stats = selling.statistics || { accounts: {}, games: {}, listed: 0, failed: 0 };
 
     return (
@@ -80,7 +67,7 @@ const SellingPanel = ({ selling, onSaved }) => {
             <div className="flex flex-wrap items-start gap-x-6 gap-y-2">
                 <label className="flex items-start gap-2 text-sm text-slate-200 cursor-pointer">
                     <input type="checkbox" className="mt-1 accent-amber-500" disabled={busy} checked={selling.enabled}
-                        onChange={(e) => save({ card_auto_sell_enabled: e.target.checked })} />
+                        onChange={(e) => save({ enabled: e.target.checked })} />
                     <span>
                         Sell dropped cards automatically
                         <span className="block text-xs text-slate-500">
@@ -91,12 +78,12 @@ const SellingPanel = ({ selling, onSaved }) => {
                 </label>
                 <label className="flex items-start gap-2 text-slate-300 cursor-pointer">
                     <input type="checkbox" className="mt-0.5 accent-amber-500" disabled={busy} checked={selling.include_held}
-                        onChange={(e) => save({ card_auto_sell_include_held: e.target.checked })} />
+                        onChange={(e) => setIncludeHeld(e.target.checked)} />
                     <span>Also cards held before it was switched on<span className="block text-slate-500">Off: only new drops are sold</span></span>
                 </label>
                 <label className="flex items-start gap-2 text-slate-300 cursor-pointer">
                     <input type="checkbox" className="mt-0.5 accent-amber-500" disabled={busy} checked={selling.foil}
-                        onChange={(e) => save({ card_auto_sell_foil: e.target.checked })} />
+                        onChange={(e) => save({ foil: e.target.checked })} />
                     <span>Foil cards too</span>
                 </label>
                 <div className="text-slate-300">
@@ -106,7 +93,7 @@ const SellingPanel = ({ selling, onSaved }) => {
                             onChange={(e) => setAppsText(e.target.value)}
                             className="w-56 bg-black/30 border border-white/10 rounded px-2 py-1" />
                         {appsText !== null && (
-                            <button type="button" disabled={busy} onClick={saveApps}
+                            <button type="button" disabled={busy} onClick={() => save({ apps: appsText || '' })}
                                 className="px-2 py-1 rounded bg-amber-600 hover:bg-amber-500 text-white disabled:opacity-50">Save</button>
                         )}
                     </div>
@@ -155,7 +142,7 @@ const SellingPanel = ({ selling, onSaved }) => {
                 </div>
             </div>
 
-            {purchases?.purchases > 0 && (
+            {selling.returns?.length > 0 && (
                 <div>
                     <p className="text-[10px] uppercase tracking-wider text-slate-500 mb-1">Bought with “Buy games” vs. cards listed so far</p>
                     <table className="w-full">
@@ -163,26 +150,18 @@ const SellingPanel = ({ selling, onSaved }) => {
                             <tr><th>Game</th><th className="text-right">Copies bought</th><th className="text-right">Spent</th><th className="text-right">Cards listed</th><th className="text-right">You receive</th><th className="text-right">So far</th></tr>
                         </thead>
                         <tbody>
-                            {Object.entries(purchases.games).map(([name, bought]) => {
-                                const listed = (stats.apps || {})[String(bought.app_id)] || { listed: 0, receives: {} };
-                                const spentUsd = bought.spent.USD;
-                                const receivedUsd = listed.receives['1'] || 0;
-                                const onlyDollars = Object.keys(bought.spent).every((c) => c === 'USD')
-                                    && Object.keys(listed.receives).every((c) => c === '1');
-                                const net = onlyDollars ? receivedUsd - (spentUsd || 0) : null;
-                                return (
-                                    <tr key={name} className="border-t border-white/5">
-                                        <td className="py-0.5 text-slate-300">{name}</td>
-                                        <td className="text-right tabular-nums">{bought.copies}</td>
-                                        <td className="text-right tabular-nums text-amber-200">{Object.entries(bought.spent).map(([c, v]) => (c === 'USD' ? `$${(v / 100).toFixed(2)}` : `${(v / 100).toFixed(2)} ${c}`)).join(' + ')}</td>
-                                        <td className="text-right tabular-nums">{listed.listed}</td>
-                                        <td className="text-right tabular-nums text-emerald-300">{amounts(listed.receives)}</td>
-                                        <td className={`text-right tabular-nums ${net == null ? 'text-slate-500' : net >= 0 ? 'text-emerald-300' : 'text-amber-300'}`}>
-                                            {net == null ? 'mixed currencies' : `${net >= 0 ? '+' : '−'}$${(Math.abs(net) / 100).toFixed(2)}`}
-                                        </td>
-                                    </tr>
-                                );
-                            })}
+                            {selling.returns.map((row) => (
+                                <tr key={row.game} className="border-t border-white/5">
+                                    <td className="py-0.5 text-slate-300">{row.game}</td>
+                                    <td className="text-right tabular-nums">{row.copies}</td>
+                                    <td className="text-right tabular-nums text-amber-200">{amounts(row.spent)}</td>
+                                    <td className="text-right tabular-nums">{row.listed}</td>
+                                    <td className="text-right tabular-nums text-emerald-300">{amounts(row.receives)}</td>
+                                    <td className={`text-right tabular-nums ${row.net == null ? 'text-slate-500' : row.net >= 0 ? 'text-emerald-300' : 'text-amber-300'}`}>
+                                        {row.net == null ? 'mixed currencies' : `${row.net >= 0 ? '+' : '−'}${amount(Math.abs(row.net), row.net_currency)}`}
+                                    </td>
+                                </tr>
+                            ))}
                         </tbody>
                     </table>
                     <p className="text-slate-500 mt-1">“You receive” counts listed cards (after Steam’s fees); a listing earns once someone buys it.</p>
@@ -203,9 +182,9 @@ const SellingPanel = ({ selling, onSaved }) => {
                                         <td className="py-0.5 text-slate-400">{ago(s.at)}</td>
                                         <td className="text-slate-300">{s.account_name}</td>
                                         <td className="text-slate-200">{s.card}{s.foil ? ' (foil)' : ''}</td>
-                                        <td className="text-right tabular-nums">{amount(s.buyer_pays, s.currency)}</td>
-                                        <td className="text-right tabular-nums text-emerald-300">{amount(s.receives, s.currency)}</td>
-                                        <td className={`pl-3 ${s.ok ? 'text-emerald-300' : 'text-red-400'}`} title={s.how || ''}>{s.ok ? (s.how?.includes('buy order') ? 'Listed at the buy order' : 'Listed') : s.error}</td>
+                                        <td className="text-right tabular-nums">{amount(s.buyer_pays, s.currency_code)}</td>
+                                        <td className="text-right tabular-nums text-emerald-300">{amount(s.receives, s.currency_code)}</td>
+                                        <td className={`pl-3 ${s.ok ? 'text-emerald-300' : 'text-red-400'}`} title={s.how || ''}>{RESULT_TEXT[s.result] || s.error}</td>
                                     </tr>
                                 ))}
                             </tbody>

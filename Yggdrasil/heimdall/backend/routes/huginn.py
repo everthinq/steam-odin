@@ -14,6 +14,7 @@ from datetime import datetime
 
 from flask import Blueprint, g, jsonify, request
 
+from card_seller_service import SellingConfigError
 from context import ctx
 from huginn_service import DEFAULT_PRICE_MARKET
 from huginn_service import load_csfloat_keys, load_csfloat_proxy, classify_proxy_error, detect_public_ip
@@ -1314,8 +1315,33 @@ def team_fortress_sell_now():
 
 @bp.route('/api/huginn/card-deals/selling', methods=['GET'])
 def card_selling_status():
-    """Card auto-sell: switch, per-account inventory reads, listings and their totals."""
-    return jsonify(ctx.card_seller_service.status())
+    """Card auto-sell: switches, per-account inventory reads, listings and their totals, and
+    ``returns``: each game bought with Buy games against its cards listed so far."""
+    return jsonify(ctx.card_seller_service.status(ctx.store_purchase_service.statistics()))
+
+
+def _selling_command(run):
+    try:
+        return jsonify(run()), 200
+    except SellingConfigError as e:
+        return jsonify({'error': str(e), 'code': e.code}), (409 if e.code == 'confirm_needed' else
+                                                            500 if e.code == 'save_failed' else 400)
+
+
+@bp.route('/api/huginn/card-deals/selling/config', methods=['POST'])
+def card_selling_config():
+    """{"enabled": bool, "foil": bool, "apps": "app ids or store links"}, each optional."""
+    body = request.get_json(silent=True)
+    return _selling_command(lambda: ctx.card_seller_service.save_config(body))
+
+
+@bp.route('/api/huginn/card-deals/selling/include-held', methods=['POST'])
+def card_selling_include_held():
+    """{"on": bool, "confirmed": bool}: also sell cards held before auto-sell was switched
+    on. Switching it on without "confirmed" answers 409 ``confirm_needed`` with the question."""
+    body = request.get_json(silent=True) or {}
+    return _selling_command(lambda: ctx.card_seller_service.set_include_held(bool(body.get('on')),
+                                                                             bool(body.get('confirmed'))))
 
 
 # --- Andvari "Buy games" ----------------------------------------------------------------

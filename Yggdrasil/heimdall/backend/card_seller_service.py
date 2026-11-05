@@ -25,8 +25,9 @@ import time
 import requests
 
 from jsonio import atomic_write_json, read_json
-from market_seller import MarketSeller, RateLimited
+from market_seller import HOW_BUY_ORDER, MarketSeller, RateLimited
 from notifications import own_bot_settings, send_notification
+from store_purchase_service import CURRENCY_CODES, parse_app_ids
 
 log = logging.getLogger(__name__)
 
@@ -84,6 +85,56 @@ def sales_statistics(sales):
     return {'accounts': accounts, 'games': games, 'apps': apps,
             'listed': sum(1 for sale in sales if sale.get('ok')),
             'failed': sum(1 for sale in sales if not sale.get('ok'))}
+
+
+def currency_code(currency):
+    """The ISO code of a Steam wallet currency number (``1`` -> ``USD``)."""
+    try:
+        return CURRENCY_CODES.get(int(currency)) or f'currency {currency}'
+    except (TypeError, ValueError):
+        return f'currency {currency}'
+
+
+def _by_code(by_number):
+    """{Steam currency number: minor units} -> {ISO code: minor units}."""
+    result = {}
+    for currency, value in (by_number or {}).items():
+        code = currency_code(currency)
+        result[code] = result.get(code, 0) + int(value or 0)
+    return result
+
+
+def sale_result(sale):
+    """``refused``, ``buy_order`` (listed at the highest buy order, sells at once) or ``listed``."""
+    if not sale.get('ok'):
+        return 'refused'
+    return 'buy_order' if sale.get('how') == HOW_BUY_ORDER else 'listed'
+
+
+def purchase_returns(purchases, statistics):
+    """Each game bought with "Buy games" set against its cards listed so far: copies,
+    spent and receives per ISO currency, and ``net`` (receives minus spent, minor units)
+    with its ``net_currency`` when both are in that one currency, else ``net`` None."""
+    rows = []
+    for name, bought in ((purchases or {}).get('games') or {}).items():
+        listed = (statistics.get('apps') or {}).get(str(bought.get('app_id'))) or {'listed': 0, 'receives': {}}
+        spent = {code: int(value or 0) for code, value in (bought.get('spent') or {}).items()}
+        receives = _by_code(listed.get('receives'))
+        codes = set(spent) | set(receives)
+        net_currency = codes.pop() if len(codes) == 1 else None
+        rows.append({'game': name, 'app_id': bought.get('app_id'), 'copies': bought.get('copies', 0),
+                     'spent': spent, 'listed': listed.get('listed', 0), 'receives': receives,
+                     'net': (receives.get(net_currency, 0) - spent.get(net_currency, 0)) if net_currency else None,
+                     'net_currency': net_currency})
+    return rows
+
+
+class SellingConfigError(ValueError):
+    """A refused card auto-sell setting; ``code`` names why."""
+
+    def __init__(self, message, code):
+        super().__init__(message)
+        self.code = code
 
 
 class CardSellerService:
@@ -320,10 +371,55 @@ class CardSellerService:
     def stop(self):
         self._stop.set()
 
-    def status(self):
+    def save_config(self, body):
+        """Change card auto-sell: {"enabled": bool, "foil": bool, "apps": "app ids or store
+        links" (or a list)}, each optional. Text that names no app id is refused (an empty
+        list means every game). "Also cards held before" is its own command
+        (``set_include_held``). Answers the new status; raises SellingConfigError
+        (bad_request, bad_apps, save_failed)."""
+        if not isinstance(body, dict):
+            raise SellingConfigError('a JSON object is required', 'bad_request')
+        updates = {}
+        for key, setting in (('enabled', 'card_auto_sell_enabled'), ('foil', 'card_auto_sell_foil')):
+            if key in body:
+                updates[setting] = bool(body[key])
+        if 'apps' in body:
+            raw = body['apps']
+            text = ' '.join(str(value) for value in raw) if isinstance(raw, list) else str(raw or '')
+            apps = parse_app_ids(text)
+            if text.strip() and not apps:
+                raise SellingConfigError('No app id found: type app ids (like 745740) or paste store links. '
+                                         'Leave it empty for every game.', 'bad_apps')
+            updates['card_auto_sell_apps'] = apps
+        self._save_settings(updates)
+        return self.status()
+
+    def set_include_held(self, on, confirmed=False):
+        """Also sell cards the accounts held before auto-sell was switched on (rule 16:
+        existing holdings only with an explicit opt-in). Switching it on needs
+        ``confirmed``; without it raises SellingConfigError ``confirm_needed`` whose
+        message says what it does. Switching it off never needs it."""
+        if on and not confirmed:
+            raise SellingConfigError('This also lists every trading card the accounts held before auto-sell '
+                                     'was switched on, not only new drops. Sell them too?', 'confirm_needed')
+        self._save_settings({'card_auto_sell_include_held': bool(on)})
+        return self.status()
+
+    def _save_settings(self, updates):
+        if updates and not self.settings_manager.save_settings(updates):
+            raise SellingConfigError('settings could not be saved', 'save_failed')
+
+    def status(self, purchases=None):
+        """Switches, inventory reads, listings with their ``result`` and ``currency_code``,
+        totals per account and per game (per ISO currency), and with ``purchases`` (the
+        Buy games statistics) the ``returns`` per game bought."""
         settings = self._settings()
         with self._lock:
             state = json.loads(json.dumps(self._state))
+        statistics = sales_statistics(state['sales'])
+        shown = {**statistics, **{table: {key: {**entry, 'receives': _by_code(entry['receives'])}
+                                          for key, entry in statistics[table].items()}
+                                  for table in ('accounts', 'games', 'apps')}}
         return {
             'enabled': bool(settings.get('card_auto_sell_enabled')),
             'enabled_at': state['enabled_at'],
@@ -333,6 +429,8 @@ class CardSellerService:
             'rate_limited_until': state['cooldown_until'] if state['cooldown_until'] > time.time() else None,
             'unconfirmed': {steamid: len(entry.get('names') or []) for steamid, entry in state['unconfirmed'].items()},
             'inventories': state['inventories'],
-            'statistics': sales_statistics(state['sales']),
-            'sales': state['sales'][-100:][::-1],
+            'statistics': shown,
+            'returns': purchase_returns(purchases, statistics) if purchases is not None else None,
+            'sales': [{**sale, 'result': sale_result(sale), 'currency_code': currency_code(sale.get('currency'))}
+                      for sale in state['sales'][-100:][::-1]],
         }

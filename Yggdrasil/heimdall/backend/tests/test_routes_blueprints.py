@@ -138,7 +138,7 @@ def test_huginn_blueprint_registers_all_routes():
     # +10 CS2 Store Arbitrage (4) and CS2 Store Boosts (6), moved from Ratatoskr on 2026-11-04;
     # +1 CS2 Store Arbitrage settings (checked), Phase 2 step 2.
     # +2 checked settings commands (news watcher, Case Arbitrage alerts), Phase 2 H6.
-    assert _rule_count(bp, "/api/huginn") == 102
+    assert _rule_count(bp, "/api/huginn") == 104
 
 
 def test_register_blueprints_wires_onto_app():

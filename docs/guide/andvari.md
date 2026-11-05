@@ -96,11 +96,13 @@ a price was chosen.
 
 | Option | Effect |
 |--------|--------|
-| Also cards held before it was switched on | Sell older cards too (off by default) |
+| Also cards held before it was switched on | Sell older cards too (off by default; asks first) |
 | Foil cards too | Include foil cards |
 | Only these games | Limit to these app ids |
 
-The checkboxes **save at once**. The panel shows sales per account and game,
+The checkboxes **save at once**, except "Also cards held before", which asks
+first. App ids or store links are checked by Heimdall: text with no app id is
+refused in red. The panel shows sales per account and game,
 and "bought with Buy games vs cards listed" so you can see whether a game paid
 for itself.
 

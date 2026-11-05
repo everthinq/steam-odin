@@ -943,6 +943,12 @@ class StorePurchaseService:
 
     # ---- status --------------------------------------------------------------------------------
 
+    def statistics(self):
+        """What was really bought, per account and per game (``purchase_statistics``)."""
+        with self._lock:
+            history = json.loads(json.dumps(self._history))
+        return purchase_statistics(history)
+
     def status(self):
         """The last plan (with ``fresh``, ``expires_at``, ``expires_in_seconds`` on this
         clock and its ``default_selection``), the newest purchase plan made from it, the

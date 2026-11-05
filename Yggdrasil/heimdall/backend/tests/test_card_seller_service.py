@@ -57,6 +57,10 @@ class FakeSettings:
     def get_settings(self):
         return dict(self.values)
 
+    def save_settings(self, updates):
+        self.values.update(updates)
+        return True
+
 
 class FakeResponse:
     def __init__(self, payload=None, status=200, text=''):
@@ -237,7 +241,7 @@ def test_statistics_in_status(world):
     stats = service.status()['statistics']
     assert stats['listed'] == 2 and stats['accounts']['alpha']['listed'] == 2
     assert set(stats['games']) == {'app_745740', 'app_400740'}
-    assert stats['apps']['745740'] == {'listed': 1, 'receives': {'1': 17}}
+    assert stats['apps']['745740'] == {'listed': 1, 'receives': {'USD': 17}}
 
 
 def test_cards_listed_before_a_stop_are_confirmed_on_a_later_pass(world):
@@ -493,3 +497,50 @@ def test_a_ceiling_far_above_the_lowest_listing_is_not_trusted(world):
     service, http = patient_world(world, [(20, 3)], (1, 0.41, 100))    # over twice the $0.20 lowest listing
     service.sell_account('1', 'alpha')
     assert service.status()['sales'][0]['buyer_pays'] == 19
+
+
+def test_save_config_parses_apps_and_refuses_text_without_one(world):
+    service, _, _, settings = world
+    status = service.save_config({'enabled': False, 'apps': 'store.steampowered.com/app/745740/Reflex_2077/, 400740'})
+    assert status['enabled'] is False and status['apps'] == [745740, 400740]
+    assert service.save_config({'apps': ''})['apps'] == []
+    with pytest.raises(card_seller_service.SellingConfigError) as refused:
+        service.save_config({'apps': 'Reflex'})
+    assert refused.value.code == 'bad_apps' and settings.values['card_auto_sell_apps'] == []
+    with pytest.raises(card_seller_service.SellingConfigError) as refused:
+        service.save_config(['enabled'])
+    assert refused.value.code == 'bad_request'
+
+
+def test_include_held_needs_confirmation_only_to_switch_on(world):
+    service, _, _, settings = world
+    with pytest.raises(card_seller_service.SellingConfigError) as refused:
+        service.set_include_held(True)
+    assert refused.value.code == 'confirm_needed' and not settings.values.get('card_auto_sell_include_held')
+    assert service.set_include_held(True, confirmed=True)['include_held'] is True
+    assert service.set_include_held(False)['include_held'] is False
+
+
+def test_returns_and_sale_results_in_status(world):
+    service, http, _, settings = world
+    settings.values['card_auto_sell_include_held'] = True
+    http.pages['1'] = [page(card('100', 'A'))]
+    service.sell_account('1', 'alpha')
+    purchases = {'games': {'Reflex': {'app_id': 745740, 'copies': 2, 'spent': {'USD': 40}},
+                           'Other': {'app_id': 1, 'copies': 1, 'spent': {'EUR': 30}}}}
+    status = service.status(purchases)
+    reflex, other = status['returns']
+    assert reflex == {'game': 'Reflex', 'app_id': 745740, 'copies': 2, 'spent': {'USD': 40}, 'listed': 1,
+                      'receives': {'USD': 17}, 'net': -23, 'net_currency': 'USD'}
+    assert other['listed'] == 0 and other['net'] == -30 and other['net_currency'] == 'EUR'
+    sale = status['sales'][0]
+    assert sale['currency_code'] == 'USD' and sale['result'] in ('listed', 'buy_order')
+    assert service.status()['returns'] is None
+
+
+def test_sale_result_and_currency_code():
+    from market_seller import HOW_BUY_ORDER
+    assert card_seller_service.sale_result({'ok': False}) == 'refused'
+    assert card_seller_service.sale_result({'ok': True, 'how': HOW_BUY_ORDER}) == 'buy_order'
+    assert card_seller_service.sale_result({'ok': True, 'how': 'one under the lowest listing'}) == 'listed'
+    assert card_seller_service.currency_code(3) == 'EUR' and card_seller_service.currency_code(None) == 'currency None'
