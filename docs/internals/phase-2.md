@@ -12,7 +12,7 @@ before it: the local tag `checkpoint/before-phase-2` (never pushed).
 | 3 | Health checks for every container | **Done**, pushed 31dc36e |
 | 4 | Move the remaining page logic to the backend, tool by tool | **In progress** — see below |
 | 5 | One shape for plans, jobs and errors (`{error, code}` everywhere, one shared plan registry, one `CommandError` handler) | **Done**, last push 16483d5 — see the end |
-| 6 | Endpoint list + System health page | **In progress** — 6a endpoint list and 6b health command done, see the end |
+| 6 | Endpoint list + System health page | **Done** — 6a endpoint list, 6b health command, 6c the page, see the end |
 | 7 | `odin` command-line tool | Not started — decided: Python with only built-in libraries, talks to localhost:5001, installed on PATH; dry runs only for purchases; first version has four groups: Accounts (code, confirmations, accounts), Ratatoskr (storage, store, autostore), Prices and portfolio (price, arbitrage, harvest, portfolio), System (status, logs, job, routes) |
 
 Working agreement for each bullet: build, review (rule 25), double-check live,
@@ -281,6 +281,10 @@ News watcher, Case alerts, Readiness); Andvari = 1, 2, 3, 10, 11, DealsTable and
   loop (`loop_status.py`: running, rounds, last round, last error; 14 loops, Team Fortress 2's left
   alone), whether the backend can use Ratatoskr (reachable, secret accepted, answer time, live sessions
   with their Game Coordinator state, from Ratatoskr's new read-only `GET /sessions`) and ASF
-  (reachable, bots per state). Agreed with Ivan 2026-11-05: loops + Ratatoskr + ASF; last errors and
-  memory use still to decide.
-- 6c: the System health page itself (frontend). Not started.
+  (reachable, bots per state). Agreed with Ivan 2026-11-05: loops + Ratatoskr + ASF, then the last
+  errors and memory use too.
+- 6c **DONE 2026-11-05**: the health command also answers the newest 30 errors logged at level ERROR
+  or above (`system_status.recent_errors`, a handler on the root logger: every loop, route and
+  service, memory only) and the memory use (`system_status.memory_use`: the process's resident
+  memory and peak from `/proc/self/status`, the container's from its control group). The page
+  `/system` (`pages/SystemHealth.jsx`, a Dashboard tile) shows it all, read only, every 10 seconds.

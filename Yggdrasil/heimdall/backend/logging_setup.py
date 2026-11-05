@@ -13,6 +13,8 @@ import logging
 import os
 from logging.handlers import RotatingFileHandler
 
+from system_status import recent_errors
+
 _CONFIGURED = False
 _FORMAT = '%(asctime)s %(levelname)-7s %(name)s: %(message)s'
 
@@ -40,6 +42,9 @@ def setup_logging(level=None, log_dir=None):
     console = logging.StreamHandler()
     console.setFormatter(fmt)
     root.addHandler(console)
+
+    # The newest errors, in memory, for the System health page (system_status.py).
+    root.addHandler(recent_errors)
 
     _CONFIGURED = True
     return root

@@ -91,3 +91,42 @@ def test_route_answers_loops_ratatoskr_and_asf(monkeypatch):
     answer = app.test_client().get('/api/system/health').get_json()
     assert answer['ratatoskr'] == {'reachable': True} and answer['asf'] == {'reachable': False}
     assert isinstance(answer['loops'], list) and answer['checked_at'] > 0
+    assert isinstance(answer['errors'], list) and 'process_bytes' in answer['memory']
+
+
+def test_recent_errors_keep_the_newest_errors_with_their_exception():
+    import logging
+
+    from system_status import RecentErrors
+    handler = RecentErrors(limit=2)
+    log = logging.getLogger('test.recent_errors')
+    log.addHandler(handler)
+    try:
+        log.warning('only a warning')
+        log.error('first %s', 'failure')
+        try:
+            raise KeyError('price')
+        except KeyError:
+            log.exception('second failure')
+        log.error('third failure')
+    finally:
+        log.removeHandler(handler)
+    messages = [row['message'] for row in handler.newest_first()]
+    assert messages == ['third failure', "second failure (KeyError: 'price')"]
+    assert handler.newest_first()[0]['source'] == 'test.recent_errors'
+
+
+def test_memory_use_reads_the_process_and_the_container(monkeypatch, tmp_path):
+    import system_status
+    status = tmp_path / 'status'
+    status.write_text('Name:\tpython\nVmHWM:\t  600000 kB\nVmRSS:\t  500000 kB\n')
+    current, limit = tmp_path / 'current', tmp_path / 'max'
+    current.write_text('558993408\n')
+    limit.write_text('max\n')
+    monkeypatch.setattr(system_status, 'PROCESS_STATUS_FILE', str(status))
+    monkeypatch.setattr(system_status, 'CONTAINER_MEMORY_FILES',
+                        {'container_bytes': str(current), 'container_limit_bytes': str(limit)})
+    assert system_status.memory_use() == {'process_bytes': 512000000, 'process_peak_bytes': 614400000,
+                                          'container_bytes': 558993408, 'container_limit_bytes': None}
+    monkeypatch.setattr(system_status, 'PROCESS_STATUS_FILE', str(tmp_path / 'missing'))
+    assert system_status.memory_use()['process_bytes'] is None

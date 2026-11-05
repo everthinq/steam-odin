@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { Plus, RefreshCw, Search, Trash2, Settings, Eye, EyeOff, TrendingUp, Coins, KeyRound, Siren, Layers, Swords, Archive, Tags } from 'lucide-react';
+import { Plus, RefreshCw, Search, Trash2, Settings, Eye, EyeOff, TrendingUp, Coins, KeyRound, Siren, Layers, Swords, Archive, Tags, Activity } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import AccountCard from '../components/AccountCard';
 import GlobalConfirmationsModal from '../components/GlobalConfirmationsModal';
@@ -338,6 +338,18 @@ const Dashboard = () => {
                             <div>
                                 <p className="text-sm font-semibold text-cyan-100 font-serif">Mímir</p>
                                 <p className="text-xs text-slate-500">The Keeper — Credential vault</p>
+                            </div>
+                        </Link>
+                        <Link
+                            to="/system"
+                            className="inline-flex items-center gap-3 px-4 py-3 bg-odin-blue/40 border border-sky-500/20 rounded-xl hover:bg-odin-blue/60 hover:border-sky-500/40 transition-all"
+                        >
+                            <div className="p-2 bg-sky-900/30 rounded-lg border border-sky-600/30">
+                                <Activity size={18} className="text-sky-400" />
+                            </div>
+                            <div>
+                                <p className="text-sm font-semibold text-sky-100 font-serif">System health</p>
+                                <p className="text-xs text-slate-500">Background loops, Ratatoskr, ASF, errors, memory</p>
                             </div>
                         </Link>
                     </div>

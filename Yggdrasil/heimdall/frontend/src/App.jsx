@@ -23,6 +23,7 @@ const HuginnPulseFeed = lazy(() => import('./pages/huginn/PulseFeed'));
 const DraupnirPortfolios = lazy(() => import('./pages/draupnir/Portfolios'));
 const DraupnirPortfolio = lazy(() => import('./pages/draupnir/Portfolio'));
 const MimirVault = lazy(() => import('./pages/mimir/Vault'));
+const SystemHealth = lazy(() => import('./pages/SystemHealth'));
 
 // Sets the browser tab title to the tool that is open right now.
 function TitleManager() {
@@ -41,6 +42,7 @@ function TitleManager() {
     else if (pathname.startsWith('/huginn')) title = 'Huginn';
     else if (pathname.startsWith('/draupnir')) title = 'Draupnir';
     else if (pathname.startsWith('/mimir')) title = 'Mímir';
+    else if (pathname.startsWith('/system')) title = 'System health';
     else if (pathname.startsWith('/add-account')) title = 'Add account';
     else if (pathname.includes('/confirmations')) title = 'Confirmations';
     document.title = title;
@@ -93,6 +95,7 @@ function App() {
 
           {/* Mímir Routes (credential vault) */}
           <Route path="/mimir" element={<MimirVault />} />
+          <Route path="/system" element={<SystemHealth />} />
 
           {/* Ratatoskr Routes */}
           <Route path="/buy-storage-units" element={<RatatoskrStorageShop />} />

@@ -11,6 +11,7 @@ from flask import Blueprint, current_app, jsonify
 
 from context import ctx
 from loop_status import loops
+from system_status import memory_use, recent_errors
 
 bp = Blueprint('system', __name__)
 
@@ -51,10 +52,12 @@ def list_routes():
 
 @bp.route('/api/system/health', methods=['GET'])
 def system_health():
-    """Background loops (running, last round, last error), and whether the backend can use Ratatoskr and ASF."""
+    """Background loops, Ratatoskr and ASF, the last errors logged and the backend's memory use."""
     return jsonify({
         'checked_at': time.time(),
         'loops': loops.snapshot(),
         'ratatoskr': ctx.ratatoskr_service.health(),
         'asf': ctx.asf_service.health(),
+        'errors': recent_errors.newest_first(),
+        'memory': memory_use(),
     })

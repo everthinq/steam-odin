@@ -1,6 +1,10 @@
 # Troubleshooting
 
-First look: `make saga` (all logs), or the backend's own log
+First look: the **System health** page (Dashboard → System health, or
+http://localhost:3000/system). It shows whether every background loop runs and when it last
+ran, whether the backend can use Ratatoskr and ASF (and Ratatoskr's live sessions), the last
+errors the backend logged since it started, and how much memory it uses. It only reads; it
+refreshes every 10 seconds. For more: `make saga` (all logs), or the backend's own log
 `Yggdrasil/heimdall/backend/logs/heimdall.log`. `docker ps -a` shows which
 containers are running.
 
@@ -42,7 +46,7 @@ Prices, weekly sales and today's price history are kept packed (about a quarter 
 memory they took before November 2026).
 If the Mac still lags, lower Docker Desktop's memory (Settings → Resources): all four
 containers together stay around 1.5 GB, so 3 GB is enough on an 8 GB Mac. `docker stats`
-shows what each container uses.
+shows what each container uses; the System health page shows the backend's own memory and its peak since it started.
 
 ## Prices do not load (Huginn, Draupnir)
 
