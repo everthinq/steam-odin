@@ -241,7 +241,10 @@ News watcher, Case alerts, Readiness); Andvari = 1, 2, 3, 10, 11, DealsTable and
   `AlertSettingsError`, `NewsSettingsError`, `SellingConfigError`) are `CommandError` now, with the same
   codes and statuses (`confirm_needed` 409, `save_failed` 500, the rest 400); their routes no longer
   catch them (`_selling_command` is gone).
-- Next, 5c: about 130 error answers still have no `code` (38 `str(e)` answers with 500 after a crash,
-  which the app-wide handler already answers as `unexpected_error`; 27 copies of "tradeon_token not set
-  in settings"; missing-field and not-found answers). Then one shared plan registry, then `self._job`
+- 5c step 1 **DONE 2026-11-05** (Huginn routes): the 27 copies of the Tradeon token check are one
+  `_tradeon_token(settings)` that refuses with code `tradeon_token_missing`; the 38 `except Exception`
+  blocks answering `str(e)` with 500 are gone, so a crash reaches the app-wide handler (logged, code
+  `unexpected_error`).
+- Next, 5c step 2: the other answers without a `code` (missing fields, not found, `str(e)` with 400,
+  404, 409, 502), about 70 in the other route files. Then one shared plan registry, then `self._job`
   mirroring the registry job.

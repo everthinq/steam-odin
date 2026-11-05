@@ -208,3 +208,10 @@ def test_targets_still_listed_when_pricing_fails(client, fake_ctx):
 def test_the_whole_list_replace_route_is_gone(client, fake_ctx):
     fake_ctx(settings_manager=SavingSettingsManager())
     assert client.post('/api/huginn/gjallarhorn/targets', json={'targets': []}).status_code == 405
+
+
+def test_pulse_reads_without_a_tradeon_token_are_refused_with_a_code(client, fake_ctx):
+    fake_ctx(settings_manager=FakeSettingsManager({'tradeon_token': ''}))
+    response = client.get('/api/huginn/price-dips')
+    assert response.status_code == 400
+    assert response.get_json() == {'error': 'tradeon_token not set in settings', 'code': 'tradeon_token_missing'}
