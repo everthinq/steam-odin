@@ -257,8 +257,9 @@ def load_csfloat_proxy():
 class CSFloatKeyManager:
     """Rotates CSFloat API keys and benches ones that get rate-limited.
 
-    A key that trips a rate limit is put on cooldown for 10 min × its strike count
-    (10, 20, 30, … min for repeat offences), then auto-returns to the rotation. A
+    A key that trips a rate limit is benched until CSFloat's own Retry-After time, or
+    for _CSFLOAT_LIMIT_WAIT_SECONDS when it gives none, then returns to the rotation
+    (each bench counts a strike, for the log). A
     clean call after its cooldown expired forgives the strikes. State is persisted
     to cache/ so it survives restarts and can be shown in the UI."""
 

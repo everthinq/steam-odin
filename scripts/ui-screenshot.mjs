@@ -4,7 +4,7 @@
 // to click a real Pay / Buy / Sell / Approve button.
 //
 //   node scripts/ui-screenshot.mjs <url> <out.png> ["<JavaScript run in the page>"] [height]
-//   node scripts/ui-screenshot.mjs http://localhost:3000/store-catalogue/boosts /tmp/boosts.png \
+//   node scripts/ui-screenshot.mjs 'http://localhost:3000/huginn?view=store-boosts' /tmp/boosts.png \
 //     "(() => { document.querySelector('[aria-expanded]').click(); return 'clicked'; })()" 1900
 //
 // The script's answer is printed; the page gets 6 seconds to load and 4 more after the script.

@@ -459,7 +459,7 @@ const CaseArbitrage = ({ byHash }) => {
                     {error ? (
                         <span className="text-red-400 flex items-center gap-1"><AlertTriangle size={12} /> {error}</span>
                     ) : noToken ? (
-                        <span className="text-amber-400 flex items-center gap-1"><AlertTriangle size={12} /> Set tradeon_token in Settings to load prices.</span>
+                        <span className="text-amber-400 flex items-center gap-1"><AlertTriangle size={12} /> Set tradeon_token (backend/settings.json) to load prices.</span>
                     ) : (
                         <span className="text-amber-400 flex items-center gap-1"><RefreshCw size={12} className="animate-spin" /> Reading the active profiles' prices — refreshes automatically…</span>
                     )}

@@ -98,7 +98,7 @@ const NewsWatcher = () => {
             <div className="flex items-center gap-2 mb-3">
                 <Newspaper size={14} className="text-amber-500/70" />
                 <span className="text-xs font-semibold text-slate-300">News watcher</span>
-                <InfoTip text="Watches the official Counter-Strike 2 update feed. Sends a Telegram message (and rings your phone when Ring is on) the moment Valve ADDS or REMOVES a case, collection, capsule or souvenir — the exact minute an item gets limited and starts to pump. Map-pool changes are ignored. Routine bug-fix patches stay silent." />
+                <InfoTip tip="Watches the official Counter-Strike 2 update feed. Sends a Telegram message (and rings your phone when Ring is on) the moment Valve ADDS or REMOVES a case, collection, capsule or souvenir — the exact minute an item gets limited and starts to pump. Map-pool changes are ignored. Routine bug-fix patches stay silent." />
                 <button
                     type="button"
                     onClick={load}
@@ -167,7 +167,7 @@ const NewsWatcher = () => {
             <div className="flex flex-wrap items-center gap-2 mb-3">
                 <span className="text-[11px] text-slate-500 inline-flex items-center gap-1">
                     Alert chat id
-                    <InfoTip text="Telegram chat id that Gjallarhorn alerts are sent to (same bot as Case Arbitrage, but a separate conversation so they never mix). Leave blank to fall back to the shared Case-Arbitrage chat." />
+                    <InfoTip tip="Telegram chat id that Gjallarhorn alerts are sent to (same bot as Case Arbitrage, but a separate conversation so they never mix). Leave blank to fall back to the shared Case-Arbitrage chat." />
                 </span>
                 <input
                     type="text"
@@ -227,7 +227,7 @@ const NewsWatcher = () => {
             <div>
                 <p className="text-[10px] uppercase tracking-wider text-slate-500 mb-1">
                     Test detection
-                    <InfoTip text="Paste any update post (or a single line) to see exactly what would trigger a ring. No alert is sent — this is just a dry run." />
+                    <InfoTip tip="Paste any update post (or a single line) to see exactly what would trigger a ring. No alert is sent — this is just a dry run." />
                 </p>
                 <textarea
                     value={testText}

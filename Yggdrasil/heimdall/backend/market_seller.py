@@ -1,6 +1,7 @@
 """Listing items on the Steam Community Market for an account, in its wallet currency.
 
-Shared by Andvari's card auto-sell (``card_seller_service.py``). One
+Used by Andvari's card auto-sell (``card_seller_service.py``) only; the Team Fortress 2
+seller has its own and shares just ``community_pacer``. One
 ``MarketSeller`` paces every steamcommunity.com call it makes, reads each item's
 order book in the account's wallet currency (lowest listing + highest buy order),
 remembers each wallet currency's fee rules (``g_rgWalletInfo``: the minimum fee

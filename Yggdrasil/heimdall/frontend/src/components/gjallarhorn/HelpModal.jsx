@@ -77,7 +77,7 @@ const HelpModal = ({ onClose }) => {
                         <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500">Good to know</h3>
                         <ul className="text-sm text-slate-300 leading-relaxed list-disc pl-5 space-y-1">
                             <li>Steam can hold your money for a few days if you sell something at an <span className="text-amber-200">unusually high</span> price, or if the account is new. Selling normal items at the normal price is usually instant.</li>
-                            <li><span className="text-slate-200">Tradable</span> and <span className="text-slate-200">Space</span> only work when the account is connected (Confirmations → Connect).</li>
+                            <li><span className="text-slate-200">Tradable</span> and <span className="text-slate-200">Space</span> only work when the account is connected (Connect, in the Ratatoskr sidebar).</li>
                             <li>This page tells you what to do — it does <span className="text-amber-200">not</span> buy or sell for you. You do that yourself on each site.</li>
                         </ul>
                     </section>

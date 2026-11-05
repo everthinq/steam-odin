@@ -3,7 +3,7 @@ import react from '@vitejs/plugin-react'
 
 // Why the proxy could not reach the backend, for the error the page shows.
 const PROXY_FAILURES = {
-  ECONNRESET: 'The backend dropped the connection in the middle of this request. It usually restarted (it reloads whenever a backend file changes) or crashed',
+  ECONNRESET: 'The backend dropped the connection in the middle of this request. It usually restarted (make reload, or Docker after a crash) or crashed',
   ECONNREFUSED: 'The backend is not accepting connections. It is starting up or stopped',
   ENOTFOUND: 'The backend container is not running',
   EAI_AGAIN: 'The backend container is not running',
