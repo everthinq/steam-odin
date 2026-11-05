@@ -162,6 +162,15 @@ def bot_view(bot):
     }
 
 
+# The buttons each farming state offers (the page shows exactly these).
+STATE_ACTIONS = {
+    'off': ['farm-now'], 'stopped': ['farm-now'], 'not_added': ['farm-now'],
+    'needs_attention': ['retry-login'],
+    'farming': ['pause'], 'waiting': ['pause'],
+    'paused': ['resume'], 'paused_for_ratatoskr': ['resume'],
+}
+
+
 def farming_state(view, paused_for_ratatoskr, attempts, queued=False):
     """One word for the account's farming state (the UI colours by it)."""
     if view is None:
@@ -1042,8 +1051,9 @@ class AsfService:
         for name, account in sorted(self._cached_accounts().items(), key=lambda item: item[0].lower()):
             view = bot_view(bots[name]) if name in bots else None
             tries = attempts.get(name) or {}
-            row = {'steamid': account['steamid'], 'account_name': name,
-                   'state': farming_state(view, name in paused, tries, name in queued),
+            state = farming_state(view, name in paused, tries, name in queued)
+            row = {'steamid': account['steamid'], 'account_name': name, 'state': state,
+                   'actions': STATE_ACTIONS.get(state, []),
                    'login_attempts': tries.get('count', 0), 'last_error': tries.get('last_error')}
             if view:
                 row.update(view)

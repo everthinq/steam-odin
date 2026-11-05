@@ -192,6 +192,8 @@ _SALES_MINIMUM_UNITS = 3
 # taking this share of the card's sales (other sellers list too).
 _ABSORB_DAYS = 7
 _ABSORB_SHARE = 0.5
+# A set whose scarcest card has fewer listings than this is marked "few listings".
+FEW_LISTINGS = 20
 # deals() setting key used internally: value cards ignoring the sale history
 # (the optimistic side), so shortlists never lose a game before it is checked.
 _IGNORE_SALES = '_ignore_card_sales'
@@ -201,6 +203,11 @@ _ALERT_MAX_LINES = 15
 _UNPROFITABLE_ROW_LIMIT = 400
 _BACKGROUND_FIRST_DELAY_SECONDS = 300  # let boot + session keep-alive settle first
 _BACKGROUND_TICK_SECONDS = 300
+
+
+class JobRunning(Exception):
+    """A scan or buy-order check is already running (code ``already_running``)."""
+    code = 'already_running'
 
 
 class RateLimited(Exception):
@@ -677,9 +684,11 @@ class CardDealsService:
         return self._start_job('buy_orders', self._buy_order_check_safely)
 
     def _start_job(self, kind, target, args=(), include_full_price=None):
+        """Start the job and answer its status, or raise JobRunning when one already runs."""
         with self._lock:
             if self._job['running']:
-                return dict(self._job)
+                running = 'buy-order check' if self._job.get('kind') == 'buy_orders' else 'scan'
+                raise JobRunning(f'A {running} is already running; wait for it to finish.')
             self._job = {**self._idle_job(), 'running': True, 'kind': kind, 'phase': 'starting',
                          'started_at': time.time(), 'include_full_price': include_full_price}
         threading.Thread(target=target, args=args, daemon=True).start()
@@ -697,7 +706,10 @@ class CardDealsService:
                         interval = max(1, int(settings.get('card_deals_scan_interval_hours') or 12)) * 3600
                         last = (self._state.get('last_scan') or {}).get('finished_at') or 0
                         if time.time() - last >= interval and not self.status()['running']:
-                            self.start_scan()
+                            try:
+                                self.start_scan()
+                            except JobRunning:
+                                pass             # started in between: that scan counts
                 except Exception as e:
                     logger.error('[CARD DEALS] background loop error: %s', e)
                 self._sleep(_BACKGROUND_TICK_SECONDS)
@@ -722,6 +734,11 @@ class CardDealsService:
                 'scanned_at': discovery.get('fetched_at'),
                 'discovery_country': discovery.get('country'),
             }
+        scope_counts[SCOPE_ALL] = {
+            'games': len(every_row),
+            'profitable': sum(1 for r in every_row if r['is_deal']),
+            'awaiting_buy_orders': sum(1 for r in every_row if r['awaiting_buy_orders']),
+        }
         return {
             'scope': scope,
             'deals': rows[:_UNPROFITABLE_ROW_LIMIT] if include_unprofitable else profitable,
@@ -1688,6 +1705,7 @@ class CardDealsService:
             'verified_at': (verified or {}).get('fetched_at') if verified_cards else None,
             'cheapest_card_price': _dollars(cheapest_card),
             'fewest_listings': fewest_listings,
+            'few_listings': fewest_listings is not None and fewest_listings < FEW_LISTINGS,
             'capped_cards': capped_count,
             'sales_checked': sales_checked,
             'slowest_card_sales_per_day': slowest_per_day,

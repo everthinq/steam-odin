@@ -267,6 +267,8 @@ def test_idle_bot_switches_off_after_asf_checked(world, monkeypatch):
     assert config['SteamUserPermissions'] == {} and config['SteamLogin'] == 'alpha'
     assert service.status()['accounts'][0]['state'] == 'off'
     assert service.status()['accounts'][1]['state'] == 'farming'     # bravo keeps farming
+    assert service.status()['accounts'][0]['actions'] == ['farm-now']
+    assert service.status()['accounts'][1]['actions'] == ['pause']
 
 
 ALPHA = '76561198000000001'

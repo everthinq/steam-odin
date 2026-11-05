@@ -287,7 +287,7 @@ const DealsTable = ({ rows, emptyText }) => {
                                         <span className="text-slate-400">{r.owners.length}</span>
                                     </td>
                                     <td className={`px-3 py-2 text-right tabular-nums ${signClass(r.total_profit_all_accounts)}`}>{signed(r.total_profit_all_accounts)}</td>
-                                    <td className={`px-3 py-2 text-right tabular-nums ${r.fewest_listings != null && r.fewest_listings < 20 ? 'text-amber-400' : 'text-slate-400'}`}>
+                                    <td className={`px-3 py-2 text-right tabular-nums ${r.few_listings ? 'text-amber-400' : 'text-slate-400'}`}>
                                         <div>{r.fewest_listings == null ? '—' : r.fewest_listings.toLocaleString()}</div>
                                         {r.slowest_card_sales_per_day != null && (
                                             <div className={`text-[10px] ${r.thin_market ? 'text-amber-400' : 'opacity-70'}`}>{r.slowest_card_sales_per_day} sold/day</div>

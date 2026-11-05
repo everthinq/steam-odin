@@ -85,6 +85,7 @@ const CardDeals = () => {
     const [tab, setTab] = useState(() => (window.location.hash === '#buy' ? 'buy' : 'deals'));
     const [selling, setSelling] = useState(null);
     const pollRef = useRef(null);
+    const dealsRequest = useRef(0);                    // only the newest deals answer is shown
 
     // ASF card farming status: refreshed every 30 seconds (cheap: Heimdall answers
     // from its last ASF poll).
@@ -126,16 +127,18 @@ const CardDeals = () => {
 
     const fetchDeals = useCallback(() => {
         if (!valuation) return Promise.resolve();
+        const request = ++dealsRequest.current;
         const params = new URLSearchParams({ scope, valuation });
         if (showLosing) params.set('include_unprofitable', '1');
         return fetch(`/api/huginn/card-deals?${params.toString()}`)
             .then((r) => readJson(r).then((d) => ({ ok: r.ok, d })))
             .then(({ ok, d }) => {
+                if (request !== dealsRequest.current) return;
                 if (!ok || d.error) { setError(d.error || 'Could not load deals.'); return; }
                 setError(null);
                 setData(d);
             })
-            .catch((error) => setError(failureMessage(error)));
+            .catch((error) => { if (request === dealsRequest.current) setError(failureMessage(error)); });
     }, [scope, showLosing, valuation]);
 
     useEffect(() => { fetchDeals(); }, [fetchDeals]);
@@ -160,26 +163,20 @@ const CardDeals = () => {
         return () => clearTimeout(pollRef.current);
     }, [data, fetchDeals]);
 
-    const startScan = (includeFullPrice) => {
-        fetch('/api/huginn/card-deals/scan', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ include_full_price: includeFullPrice }),
+    // Scan and buy-order check: the backend refuses while a job runs (already_running).
+    const startJob = (path, body, failure) => {
+        fetch(`/api/huginn/card-deals/${path}`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
         })
-            .then(() => fetchDeals())
-            .catch(() => setError('Could not start the scan.'));
-    };
-
-    const checkBuyOrders = () => {
-        fetch('/api/huginn/card-deals/buy-orders', { method: 'POST' })
-            .then((r) => readJson(r).then((job) => ({ ok: r.ok, job })))
-            .then(({ ok, job }) => {
-                if (!ok) setError('Could not start the buy-order check.');
-                else if (job.kind !== 'buy_orders') setError('A scan is already running; it checks buy orders too.');
-                else setError(null);
+            .then((r) => readJson(r).then((d) => ({ ok: r.ok, d })))
+            .then(({ ok, d }) => {
+                setError(ok ? null : d.error || failure);
                 fetchDeals();
             })
-            .catch(() => setError('Could not start the buy-order check.'));
+            .catch(() => setError(failure));
     };
+    const startScan = (includeFullPrice) => startJob('scan', { include_full_price: includeFullPrice }, 'Could not start the scan.');
+    const checkBuyOrders = () => startJob('buy-orders', {}, 'Could not start the buy-order check.');
     const jobName = (kind) => (kind === 'buy_orders' ? 'buy-order check' : 'scan');
 
     const job = data?.job;
@@ -370,12 +367,7 @@ const CardDeals = () => {
                 <div className="shrink-0 flex items-center gap-3 flex-wrap">
                     <div className="flex rounded-lg border border-white/10 overflow-hidden">
                         {SCOPES.map((s) => {
-                            const counts = s.id === 'all'
-                                ? {
-                                    profitable: (scopeCounts.sale?.profitable || 0) + (scopeCounts.full?.profitable || 0),
-                                    awaiting_buy_orders: (scopeCounts.sale?.awaiting_buy_orders || 0) + (scopeCounts.full?.awaiting_buy_orders || 0),
-                                }
-                                : scopeCounts[s.id];
+                            const counts = scopeCounts[s.id];
                             return (
                                 <button key={s.id} type="button" onClick={() => setScope(s.id)}
                                     className={`px-3 py-1.5 text-xs font-medium transition-colors ${scope === s.id ? 'bg-amber-500/20 text-amber-200' : 'text-slate-400 hover:text-slate-200 hover:bg-white/5'}`}>

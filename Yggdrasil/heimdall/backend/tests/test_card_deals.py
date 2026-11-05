@@ -846,10 +846,12 @@ def test_cached_data_is_reused_unless_forced(tmp_path):
     assert web.calls_to(deals_module.STORE_SEARCH_URL)[-1][1]['maxprice'] == 5
 
 
-def test_second_scan_request_while_running_is_ignored(tmp_path):
+def test_second_scan_request_while_running_is_refused(tmp_path):
     service, _ = make_service(tmp_path)
     service._job['running'] = True
-    status = service.start_scan()
+    with pytest.raises(deals_module.JobRunning, match='scan is already running'):
+        service.start_scan()
+    status = service.status()
     assert status['running'] is True and status['phase'] is None       # untouched, no new thread
 
 
@@ -1334,7 +1336,21 @@ def test_job_kind_tells_a_scan_from_a_buy_order_check(tmp_path):
     service, _ = make_service(tmp_path)
     service._start_job('buy_orders', lambda: None)
     assert service.status()['kind'] == 'buy_orders'
-    assert service.start_scan()['kind'] == 'buy_orders'     # still running: the scan is not started
+    with pytest.raises(deals_module.JobRunning, match='buy-order check is already running'):
+        service.start_scan()                                 # still running: the scan is not started
+    assert service.status()['kind'] == 'buy_orders'
+
+
+def test_all_scope_counts_both_scopes_and_few_listings_is_marked(tmp_path):
+    service, _ = make_service(tmp_path, settings=instant_settings())
+    run_scan(service)
+    answer = service.deals(instant_settings().get_settings(), include_unprofitable=True)
+    counts = answer['summary']['scopes']
+    for key in ('games', 'profitable', 'awaiting_buy_orders'):
+        assert counts['all'][key] == counts['sale'][key] + counts['full'][key]
+    for row in answer['deals']:
+        expected = row['fewest_listings'] is not None and row['fewest_listings'] < deals_module.FEW_LISTINGS
+        assert row['few_listings'] is expected
 
 
 def test_partly_checked_set_shows_the_known_bids(tmp_path):

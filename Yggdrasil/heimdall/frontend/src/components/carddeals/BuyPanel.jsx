@@ -202,7 +202,7 @@ const BuyPanel = () => {
                         <span>Checked {ago(plan.created_at)} · maximum ${plan.max_usd_per_game} per game · planned {plan.totals.copies} copies on {plan.totals.accounts} accounts ≈ ${plan.totals.usd.toFixed(2)}{plan.totals.profit ? ` · Andvari profit ≈ $${plan.totals.profit.toFixed(2)}` : ''}</span>
                         {planFresh
                             ? <span>buying possible for {Math.ceil(plan.expires_in_seconds / 60)} more min</span>
-                            : <span className="text-amber-300">Older than 30 minutes: check again before buying</span>}
+                            : <span className="text-amber-300">Older than {Math.round((state.plan_time_to_live_seconds || 0) / 60)} minutes: check again before buying</span>}
                         <div className="ml-auto flex items-center gap-2">
                             <label className="flex items-center gap-1.5 text-slate-300 cursor-pointer" title="Anything already in an account's cart is removed before buying and listed in the purchase log; off = such an account is skipped. The dry run empties the cart too (nothing is paid); off = an account with a full cart fails it.">
                                 <input type="checkbox" className="accent-amber-500" checked={purchasePlan ? purchasePlan.empty_cart : emptyCart} onChange={(e) => changeEmptyCart(e.target.checked)} />

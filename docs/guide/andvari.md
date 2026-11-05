@@ -12,7 +12,8 @@ Open it from the Dashboard tile **Andvari** (also /huginn/card-deals).
 
 - **Scan on sale** / **Scan sale + full price** looks up games and their card
   prices for every account (runs in the background; it also runs by itself
-  every 12 hours). **Check buy orders** refreshes only the card prices.
+  every 12 hours). **Check buy orders** refreshes only the card prices. Only one
+  of them runs at a time: pressing another while one runs shows a red message.
 - The table: game, regional price, how many cards drop, what the cards net
   after fees, the worst case, the profit, the best account, and how many
   accounts can buy it. Open a row to see who can buy it, who owns it, and each
@@ -72,6 +73,8 @@ stays on until it is back, so a network outage never leaves drops unfarmed.
 | ⚡ Farm now | Look for drops now (after buying a game) |
 | ↺ Retry login | After "Needs you": try the login again |
 | ⏸ Pause / ▶ Resume | Hold or release this account's bot |
+
+Each account shows only the buttons its state allows; Heimdall decides which.
 
 ASF is paused automatically while Ratatoskr uses the account (Steam allows one
 game session per account). **ASF UI** opens ASF's own screen; `make

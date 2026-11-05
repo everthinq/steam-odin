@@ -196,6 +196,13 @@ News watcher, Case alerts, Readiness); Andvari = 1, 2, 3, 10, 11, DealsTable and
   `status: failed` with `error` and is not retried for `_RETRY_AFTER_FAILURE`, so polling stops.
 - 10 CardDeals All counts, scan_running inferred.
 - 11 FarmingPanel actions per state -> actions list.
+- 1 + 10 + 11 + DealsTable + the CardDeals bugs (A2) **DONE 2026-11-05**: `summary.scopes.all` from the backend
+  (the page's sum is gone); a scan or buy-order check while one runs answers 409 `already_running` with
+  the running job's name and the page shows it (the guess from `job.kind` is gone); each farming account
+  answers `actions` (`asf_service.STATE_ACTIONS`) and the page draws only those, `max_running` read, not
+  20; each deal row answers `few_listings` (`FEW_LISTINGS`); Buy games reads the plan life from
+  `plan_time_to_live_seconds`; a request counter drops old deals answers. Andvari done; next the
+  memory work (reminder 11).
 - 12 + 13 (H5) **DONE 2026-11-05**: `/api/huginn/active` answers `estimated_megabytes_per_day`
   (and per `preview`), counting only the active hours (`active_minutes_a_day`) plus the daily
   reference; the feed's `status()` answers `downloaded_megabytes` and `megabytes_in_memory` from

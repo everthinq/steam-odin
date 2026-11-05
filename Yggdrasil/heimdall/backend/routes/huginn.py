@@ -1185,8 +1185,17 @@ def card_deals_scan():
     include_full_price = body.get('include_full_price')
     if include_full_price is not None:
         include_full_price = bool(include_full_price)
-    return jsonify(ctx.card_deals_service.start_scan(
+    return _card_deals_job(lambda: ctx.card_deals_service.start_scan(
         force=bool(body.get('force', True)), include_full_price=include_full_price))
+
+
+def _card_deals_job(start):
+    """Start a card deals job: its status, or 409 {error, code: already_running}."""
+    from card_deals_service import JobRunning
+    try:
+        return jsonify(start())
+    except JobRunning as e:
+        return jsonify({'error': str(e), 'code': e.code}), 409
 
 
 @bp.route('/api/huginn/card-deals/buy-orders', methods=['POST'])
@@ -1194,7 +1203,7 @@ def card_deals_buy_orders():
     """Check card prices only (Market check of unchecked shortlisted games, then
     buy orders; no store, regional-price or account requests) for the games
     already scanned, in the background."""
-    return jsonify(ctx.card_deals_service.start_buy_order_check())
+    return _card_deals_job(ctx.card_deals_service.start_buy_order_check)
 
 
 @bp.route('/api/huginn/card-deals/status', methods=['GET'])
@@ -1249,15 +1258,15 @@ def card_farming_action(steamid, action):
     handlers = {'pause': ctx.asf_service.pause, 'resume': ctx.asf_service.resume,
                 'retry-login': ctx.asf_service.retry_login, 'farm-now': ctx.asf_service.farm_now}
     if action not in handlers:
-        return jsonify({'error': 'unknown action'}), 404
+        return jsonify({'error': 'unknown action', 'code': 'unknown_action'}), 404
     if not ctx.asf_service.enabled:
-        return jsonify({'error': 'ASF is not set up'}), 409
+        return jsonify({'error': 'ASF is not set up', 'code': 'not_set_up'}), 409
     try:
         return jsonify(handlers[action](steamid))
     except UnknownAccount as e:
-        return jsonify({'error': str(e)}), 404
+        return jsonify({'error': str(e), 'code': 'unknown_account'}), 404
     except AsfError as e:
-        return jsonify({'error': str(e)}), 502
+        return jsonify({'error': str(e), 'code': 'asf_error'}), 502
 
 
 # --- Team Fortress 2 case drops (release watcher, ASF play mode, auto-sell) ---------

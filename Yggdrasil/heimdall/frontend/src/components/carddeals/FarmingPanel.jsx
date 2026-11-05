@@ -17,6 +17,14 @@ const STATES = {
     not_added: { label: 'Not added yet', tone: 'text-slate-500' },
 };
 
+// The look of each action; which actions an account offers comes from the backend (`actions`).
+const ACTIONS = {
+    'farm-now': { Icon: Zap, title: 'Farm now: switch this account\'s bot on so ASF checks for cards (it switches off again if there is nothing)', tone: 'text-amber-300/80 hover:text-amber-200' },
+    'retry-login': { Icon: RotateCcw, title: 'Try logging in again', tone: 'text-slate-400 hover:text-white' },
+    pause: { Icon: Pause, title: 'Pause farming on this account', tone: 'text-slate-400 hover:text-white' },
+    resume: { Icon: Play, title: 'Resume farming on this account', tone: 'text-slate-400 hover:text-white' },
+};
+
 const duration = (seconds) => {
     if (!seconds) return '';
     const hours = Math.floor(seconds / 3600);
@@ -42,8 +50,8 @@ const FarmingPanel = ({ farming, onAction, busy }) => {
                 <p className="text-red-400 mb-2">All bots switched off: {farming.global_config_unsafe}</p>
             )}
             <p className="text-slate-500 mb-2">
-                {farming.totals?.running ?? 0} of {farming.totals?.max_running ?? 20} bots running. A bot runs only
-                while its account has cards to farm (ASF’s FAQ recommends at most 10; set to 20). Bought a game? Press
+                {farming.totals?.running ?? 0} of {farming.totals?.max_running ?? '?'} bots running. A bot runs only
+                while its account has cards to farm (ASF’s FAQ recommends at most 10; set to {farming.totals?.max_running ?? '?'}). Bought a game? Press
                 <Zap size={11} className="inline mx-1 text-amber-300" />on that account so ASF checks it now.
             </p>
             <div className="max-h-64 overflow-auto custom-scrollbar grid gap-1.5 sm:grid-cols-2 lg:grid-cols-3">
@@ -66,34 +74,18 @@ const FarmingPanel = ({ farming, onAction, busy }) => {
                                 {attention && <p className="text-red-400/90 truncate" title={attention}>{attention}</p>}
                             </div>
                             <div className="flex gap-1 shrink-0">
-                                {['off', 'stopped', 'not_added'].includes(a.state) && (
-                                    <button type="button" disabled={busy} title="Farm now: switch this account's bot on so ASF checks for cards (it switches off again if there is nothing)"
-                                        onClick={() => onAction(a.steamid, 'farm-now')}
-                                        className="p-1 rounded hover:bg-white/10 text-amber-300/80 hover:text-amber-200 disabled:opacity-40">
-                                        <Zap size={12} />
-                                    </button>
-                                )}
-                                {a.state === 'needs_attention' && (
-                                    <button type="button" disabled={busy} title="Try logging in again"
-                                        onClick={() => onAction(a.steamid, 'retry-login')}
-                                        className="p-1 rounded hover:bg-white/10 text-slate-400 hover:text-white disabled:opacity-40">
-                                        <RotateCcw size={12} />
-                                    </button>
-                                )}
-                                {['farming', 'waiting'].includes(a.state) && (
-                                    <button type="button" disabled={busy} title="Pause farming on this account"
-                                        onClick={() => onAction(a.steamid, 'pause')}
-                                        className="p-1 rounded hover:bg-white/10 text-slate-400 hover:text-white disabled:opacity-40">
-                                        <Pause size={12} />
-                                    </button>
-                                )}
-                                {['paused', 'paused_for_ratatoskr'].includes(a.state) && (
-                                    <button type="button" disabled={busy} title="Resume farming on this account"
-                                        onClick={() => onAction(a.steamid, 'resume')}
-                                        className="p-1 rounded hover:bg-white/10 text-slate-400 hover:text-white disabled:opacity-40">
-                                        <Play size={12} />
-                                    </button>
-                                )}
+                                {(a.actions || []).map((action) => {
+                                    const button = ACTIONS[action];
+                                    if (!button) return null;
+                                    const { Icon } = button;
+                                    return (
+                                        <button key={action} type="button" disabled={busy} title={button.title}
+                                            onClick={() => onAction(a.steamid, action)}
+                                            className={`p-1 rounded hover:bg-white/10 disabled:opacity-40 ${button.tone}`}>
+                                            <Icon size={12} />
+                                        </button>
+                                    );
+                                })}
                             </div>
                         </div>
                     );
