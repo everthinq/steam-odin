@@ -1,0 +1,264 @@
+#!/usr/bin/env python3
+"""odin: the steam-odin backend from the terminal.
+
+Every command is one call to the backend's own API (http://127.0.0.1:5001 by default, or the
+ODIN_URL environment variable), the same commands the pages use: the backend decides, odin only
+sends and prints. Python's built-in libraries only, so it runs with any Python 3.9 or newer.
+
+    odin status            background loops, Ratatoskr, ASF, memory and the last errors
+    odin logs              the end of the backend's log file (logs/heimdall.log)
+    odin job <id>          one backend job: progress, error, result
+    odin routes [text]     every backend endpoint, or those whose path or summary has the text
+
+Add --json to any command for the backend's raw answer. `odin <command> --help` for its options.
+Install on the PATH with `make odin-command` (a link in ~/.local/bin).
+"""
+import argparse
+import json
+import os
+import sys
+import time
+import urllib.error
+import urllib.request
+from collections import deque
+
+BACKEND_URL = os.environ.get('ODIN_URL', 'http://127.0.0.1:5001').rstrip('/')
+REQUEST_TIMEOUT_SECONDS = 30
+REPOSITORY = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
+LOG_FILE = os.path.join(REPOSITORY, 'Yggdrasil', 'heimdall', 'backend', 'logs', 'heimdall.log')
+FOLLOW_POLL_SECONDS = 0.5
+
+
+class OdinError(Exception):
+    """A failure to print as one line and exit 1 (no traceback)."""
+
+
+# ---------------------------------------------------------------------------- talking to the backend
+
+def call(method, path, body=None):
+    """One request to the backend; the parsed JSON answer. A refusal ({error, code}) raises OdinError."""
+    data = None if body is None else json.dumps(body).encode()
+    request = urllib.request.Request(f'{BACKEND_URL}{path}', data=data, method=method,
+                                     headers={'Content-Type': 'application/json'} if data else {})
+    try:
+        with urllib.request.urlopen(request, timeout=REQUEST_TIMEOUT_SECONDS) as answer:
+            return json.loads(answer.read() or b'null')
+    except urllib.error.HTTPError as refusal:
+        text = refusal.read().decode(errors='replace')
+        try:
+            parsed = json.loads(text)
+        except ValueError:
+            parsed = None
+        if isinstance(parsed, dict) and parsed.get('error'):
+            code = f" [{parsed['code']}]" if parsed.get('code') else ''
+            raise OdinError(f"{parsed['error']}{code} (HTTP {refusal.code})") from None
+        raise OdinError(f'HTTP {refusal.code} from {path}: {text[:200]}') from None
+    except urllib.error.URLError as failure:
+        raise OdinError(f'The backend at {BACKEND_URL} does not answer ({failure.reason}). '
+                        'Is it running? (make raid)') from None
+
+
+# ---------------------------------------------------------------------------- printing
+
+def megabytes(number):
+    return '—' if number is None else f'{round(number / 1048576):,} MB'
+
+
+def age(at, now):
+    if not at:
+        return 'never'
+    seconds = max(0, int(now - at))
+    for size, unit in ((86400, 'day'), (3600, 'hour'), (60, 'minute')):
+        if seconds >= size:
+            count = seconds // size
+            return f"{count} {unit}{'s' if count != 1 else ''} ago"
+    return f'{seconds} seconds ago'
+
+
+def table(rows, headers):
+    """Plain columns, as wide as the widest cell."""
+    rows = [[str(cell) for cell in row] for row in rows]
+    widths = [max(len(header), *(len(row[index]) for row in rows)) if rows else len(header)
+              for index, header in enumerate(headers)]
+    line = lambda cells: '  '.join(cell.ljust(width) for cell, width in zip(cells, widths)).rstrip()
+    print(line(headers))
+    print(line(['-' * width for width in widths]))
+    for row in rows:
+        print(line(row))
+
+
+# ---------------------------------------------------------------------------- System group
+
+def status(arguments):
+    health = call('GET', '/api/system/health')
+    if arguments.json:
+        return health
+    now = health['checked_at']
+    loops = health['loops']
+    stopped = [loop for loop in loops if not loop['running']]
+    memory = health['memory']
+    print(f"Checked {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(now))}")
+    print(f"Background loops: {len(loops) - len(stopped)} of {len(loops)} running"
+          + (f" (stopped: {', '.join(loop['name'] for loop in stopped)})" if stopped else ''))
+    limit = memory['container_limit_bytes']
+    print(f"Memory: backend {megabytes(memory['process_bytes'])} (peak {megabytes(memory['process_peak_bytes'])}), "
+          f"container {megabytes(memory['container_bytes'])}"
+          + (f" of {megabytes(limit)}" if limit else ', no limit set'))
+
+    ratatoskr = health['ratatoskr']
+    if not ratatoskr['reachable']:
+        print('Ratatoskr: not reachable' + (f" ({ratatoskr['error']})" if ratatoskr.get('error') else ''))
+    elif ratatoskr.get('secret_accepted') is False:
+        print('Ratatoskr: secret refused')
+    else:
+        sessions = ratatoskr.get('sessions') or []
+        print(f"Ratatoskr: answers in {ratatoskr['answer_ms']} ms, {len(sessions)} live session(s)"
+              + (f" ({', '.join(session['account_name'] for session in sessions)})" if sessions else '')
+              + (f" — {ratatoskr['error']}" if ratatoskr.get('error') else ''))
+
+    asf = health['asf']
+    if not asf['enabled']:
+        print('ASF: switched off (no ASF_IPC_PASSWORD)')
+    elif not asf['reachable']:
+        print('ASF: not reachable' + (f" ({asf['error']})" if asf.get('error') else ''))
+    else:
+        states = ', '.join(f'{count} {state}' for state, count in (asf.get('states') or {}).items())
+        print(f"ASF: answers, {asf['accounts']} accounts" + (f' ({states})' if states else ''))
+
+    if arguments.loops:
+        print()
+        table([[f"{loop['part_of']} → {loop['name']}" if loop.get('part_of') else loop['name'],
+                'running' if loop['running'] else 'STOPPED', loop['rounds'], age(loop['last_round_at'], now),
+                loop.get('last_error') or ''] for loop in loops],
+              ['Loop', 'State', 'Rounds', 'Last round', 'Last error'])
+
+    errors = health['errors']
+    print(f"\nErrors logged since the backend started: {len(errors)}")
+    for entry in errors[:arguments.errors]:
+        print(f"  {age(entry['at'], now)}  {entry['source']}  {entry['message']}")
+    if len(errors) > arguments.errors:
+        print(f'  … {len(errors) - arguments.errors} more (odin status --errors {len(errors)})')
+    return None
+
+
+def logs(arguments):
+    if not os.path.exists(LOG_FILE):
+        raise OdinError(f'No log file at {LOG_FILE}')
+    wanted = (lambda line: ' ERROR ' in line or ' CRITICAL ' in line) if arguments.errors else (lambda line: True)
+    if arguments.grep:
+        text = arguments.grep.lower()
+        matches_level = wanted
+        wanted = lambda line: matches_level(line) and text in line.lower()
+    with open(LOG_FILE, encoding='utf-8', errors='replace') as handle:
+        for line in deque((line for line in handle if wanted(line)), maxlen=arguments.lines):
+            sys.stdout.write(line)
+        if not arguments.follow:
+            return None
+        try:
+            while True:
+                line = handle.readline()
+                if not line:
+                    if os.path.getsize(LOG_FILE) < handle.tell():  # the log was rotated
+                        handle.close()
+                        handle = open(LOG_FILE, encoding='utf-8', errors='replace')
+                    time.sleep(FOLLOW_POLL_SECONDS)
+                    continue
+                if wanted(line):
+                    sys.stdout.write(line)
+                    sys.stdout.flush()
+        except KeyboardInterrupt:
+            return None
+        finally:
+            handle.close()
+
+
+def job(arguments):
+    while True:
+        answer = call('GET', f'/api/jobs/{arguments.job_id}')
+        if arguments.json and not arguments.wait:
+            return answer
+        if not arguments.json:
+            total = f"/{answer['total']}" if answer.get('total') else ''
+            state = 'running' if answer['running'] else ('failed' if answer.get('error') else 'finished')
+            print(f"{answer['kind']} {answer['id']}: {state}, {answer.get('done', 0)}{total} done"
+                  + (f", {answer['failed']} failed" if answer.get('failed') else '')
+                  + (f" — {answer['phase']}" if answer.get('phase') else ''))
+        if not (arguments.wait and answer['running']):
+            break
+        time.sleep(arguments.every)
+    if arguments.json:
+        return answer
+    if answer.get('error'):
+        print(f"Error: {answer['error']}")
+    if answer.get('result') is not None:
+        print(json.dumps(answer['result'], indent=2, ensure_ascii=False))
+    return None
+
+
+def routes(arguments):
+    answer = call('GET', '/api/system/routes')
+    endpoints = answer['endpoints']
+    if arguments.text:
+        text = arguments.text.lower()
+        endpoints = [endpoint for endpoint in endpoints
+                     if text in endpoint['path'].lower() or text in (endpoint.get('summary') or '').lower()
+                     or text == endpoint['group']]
+    if arguments.json:
+        return {'count': len(endpoints), 'endpoints': endpoints}
+    table([[','.join(endpoint['methods']), endpoint['path'], endpoint.get('summary') or ''] for endpoint in endpoints],
+          ['Method', 'Path', 'What it does'])
+    print(f'\n{len(endpoints)} of {answer["count"]} endpoints')
+    return None
+
+
+# ---------------------------------------------------------------------------- the command line
+
+def parser():
+    top = argparse.ArgumentParser(prog='odin', description=__doc__.split('\n\n')[0],
+                                  formatter_class=argparse.RawDescriptionHelpFormatter,
+                                  epilog=f'Backend: {BACKEND_URL} (set ODIN_URL to change it)')
+    commands = top.add_subparsers(dest='command', metavar='command')
+
+    def command(name, function, help_text):
+        sub = commands.add_parser(name, help=help_text, description=help_text)
+        sub.add_argument('--json', action='store_true', help="print the backend's raw answer")
+        sub.set_defaults(function=function)
+        return sub
+
+    sub = command('status', status, 'System: background loops, Ratatoskr, ASF, memory and the last errors')
+    sub.add_argument('--loops', action='store_true', help='also list every background loop')
+    sub.add_argument('--errors', type=int, default=5, metavar='N', help='how many of the last errors to show (5)')
+
+    sub = command('logs', logs, "System: the end of the backend's log file")
+    sub.add_argument('-n', '--lines', type=int, default=50, metavar='N', help='how many lines (50)')
+    sub.add_argument('-f', '--follow', action='store_true', help='keep printing new lines (Ctrl+C stops)')
+    sub.add_argument('--errors', action='store_true', help='only lines at level ERROR or CRITICAL')
+    sub.add_argument('--grep', metavar='TEXT', help='only lines with this text (any case)')
+
+    sub = command('job', job, 'System: one backend job (GET /api/jobs/<id>)')
+    sub.add_argument('job_id')
+    sub.add_argument('--wait', action='store_true', help='follow the job until it finishes')
+    sub.add_argument('--every', type=float, default=2.0, metavar='SECONDS', help='how often --wait asks (2)')
+
+    sub = command('routes', routes, 'System: every backend endpoint, or those matching a text or group')
+    sub.add_argument('text', nargs='?', help='part of a path or summary, or a group name (accounts, huginn, …)')
+    return top
+
+
+def main(argv=None):
+    arguments = parser().parse_args(argv)
+    if not getattr(arguments, 'function', None):
+        parser().print_help()
+        return 2
+    try:
+        answer = arguments.function(arguments)
+    except OdinError as failure:
+        print(f'odin: {failure}', file=sys.stderr)
+        return 1
+    if answer is not None:
+        print(json.dumps(answer, indent=2, ensure_ascii=False))
+    return 0
+
+
+if __name__ == '__main__':
+    sys.exit(main())

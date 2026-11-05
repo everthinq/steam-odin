@@ -13,7 +13,7 @@ before it: the local tag `checkpoint/before-phase-2` (never pushed).
 | 4 | Move the remaining page logic to the backend, tool by tool | **In progress** — see below |
 | 5 | One shape for plans, jobs and errors (`{error, code}` everywhere, one shared plan registry, one `CommandError` handler) | **Done**, last push 16483d5 — see the end |
 | 6 | Endpoint list + System health page | **Done** — 6a endpoint list, 6b health command, 6c the page, see the end |
-| 7 | `odin` command-line tool | Not started — decided: Python with only built-in libraries, talks to localhost:5001, installed on PATH; dry runs only for purchases; first version has four groups: Accounts (code, confirmations, accounts), Ratatoskr (storage, store, autostore), Prices and portfolio (price, arbitrage, harvest, portfolio), System (status, logs, job, routes) |
+| 7 | `odin` command-line tool | In progress (7a System group done) — decided: Python with only built-in libraries, talks to localhost:5001, installed on PATH; dry runs only for purchases; first version has four groups: Accounts (code, confirmations, accounts), Ratatoskr (storage, store, autostore), Prices and portfolio (price, arbitrage, harvest, portfolio), System (status, logs, job, routes) |
 
 Working agreement for each bullet: build, review (rule 25), double-check live,
 then commit + push with a plain message.
@@ -288,3 +288,16 @@ News watcher, Case alerts, Readiness); Andvari = 1, 2, 3, 10, 11, DealsTable and
   service, memory only) and the memory use (`system_status.memory_use`: the process's resident
   memory and peak from `/proc/self/status`, the container's from its control group). The page
   `/system` (`pages/SystemHealth.jsx`, a Dashboard tile) shows it all, read only, every 10 seconds.
+
+## Bullet 7 — the `odin` command-line tool
+
+`scripts/odin`: one Python file, built-in libraries only, every command one call to the backend
+(`ODIN_URL`, default http://127.0.0.1:5001); a refusal `{error, code}` prints as one line and
+exits 1; `--json` prints the raw answer. `make odin-command` links it into `~/.local/bin`.
+Human guide: [docs/guide/command-line.md](../guide/command-line.md).
+
+- 7a **DONE 2026-11-05**: the System group: `status` (the health command), `logs` (reads
+  `backend/logs/heimdall.log` on the Mac directly: `-n`, `-f`, `--errors`, `--grep`), `job <id>`
+  (`--wait`), `routes [text]`.
+- Next: 7b Accounts (code, confirmations, accounts), 7c Ratatoskr (storage, store dry runs only,
+  autostore), 7d Prices and portfolio (price, arbitrage, harvest, portfolio).

@@ -1,6 +1,6 @@
 # Troubleshooting
 
-First look: the **System health** page (Dashboard → System health, or
+First look: the **System health** page (in a terminal: `odin status`; Dashboard → System health, or
 http://localhost:3000/system). It shows whether every background loop runs and when it last
 ran, whether the backend can use Ratatoskr and ASF (and Ratatoskr's live sessions), the last
 errors the backend logged since it started, and how much memory it uses. It only reads; it

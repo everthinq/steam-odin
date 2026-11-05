@@ -29,7 +29,8 @@ written for the person running the app, not for programmers (they start at
 | **Mímir** | Encrypted vault for account logins, passwords and emails | [mimir.md](mimir.md) |
 | **Ratatoskr** | Move items in and out of Storage Units; buy Storage Units on many accounts; Store Catalogue of every in-game store item with its price, and which ones resell above it | [ratatoskr.md](ratatoskr.md) |
 
-Plus: [Telegram alerts and phone rings](telegram.md) and
+Plus: [Telegram alerts and phone rings](telegram.md),
+[the `odin` command-line tool](command-line.md) and
 [Troubleshooting](troubleshooting.md).
 
 ## Words used in this guide

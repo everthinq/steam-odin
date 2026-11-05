@@ -4,7 +4,7 @@
 # Use 'make help' (or just 'make') to hear the songs of the commands.
 
 .PHONY: help odin forge raid bifrost sleep ragnarok helheim saga
-.PHONY: all build up dev down clean prune logs reload heimdall ratatoskr huginn asf-setup asf asf-password ratatoskr-secret
+.PHONY: all build up dev down clean prune logs reload heimdall ratatoskr huginn asf-setup asf asf-password ratatoskr-secret odin-command
 
 # Default: Speak the wisdom
 help:
@@ -24,6 +24,7 @@ help:
 	@echo "  \033[0;32masf\033[0m                Start ArchiSteamFarm and reconnect Heimdall to it"
 	@echo "  \033[0;32masf-password\033[0m       Copy the ASF UI password to the clipboard (never printed)"
 	@echo "  \033[0;32mratatoskr-secret\033[0m   One-time: the secret only the backend may call Ratatoskr with (root .env)"
+	@echo "  \033[0;32modin-command\033[0m       One-time: put the odin command-line tool on the PATH (~/.local/bin/odin)"
 	@echo ""
 
 # ------------------------------------------------------------------------------
@@ -98,6 +99,10 @@ asf-setup:
 asf:
 	docker compose up -d asf
 	docker compose up -d heimdall-backend
+
+# The odin command-line tool (scripts/odin): a link, so a git pull updates it too.
+odin-command:
+	@mkdir -p $(HOME)/.local/bin && ln -sf "$(CURDIR)/scripts/odin" $(HOME)/.local/bin/odin && echo "Linked ~/.local/bin/odin; try: odin status (put ~/.local/bin on the PATH if odin is not found)"
 
 asf-password:
 	@grep '^ASF_IPC_PASSWORD=' .env | cut -d= -f2- | tr -d '\n' | pbcopy && echo "ASF UI password copied to the clipboard (open http://localhost:1242)"

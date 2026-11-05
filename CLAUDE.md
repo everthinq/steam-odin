@@ -32,7 +32,7 @@ Yggdrasil/                      The World Tree — holds the deployable realms
 docs/guide/                     User guide for humans: setup, every screen, Telegram, troubleshooting
 docs/internals/                 Deep dives on single features (protocols, live findings)
 docs/steam-trading/             Trading knowledge base + glossary + baselines (local only, gitignored)
-scripts/                        Host-side helpers (ASF setup, portfolio backup launchd job, ui-screenshot.mjs)
+scripts/                        Host-side helpers (the `odin` command-line tool, ASF setup, portfolio backup launchd job, ui-screenshot.mjs)
 ```
 
 **Tools that live *inside* Heimdall** (each is frontend pages + backend service,
@@ -67,7 +67,8 @@ not a separate deployable):
   what order — and every action with more than one step lives in the backend;
   the page only displays, sorts, filters and sends instructions. Each button is
   one backend command with the same name and parameters, so it could be typed
-  in bash (a command-line tool over the same API is planned). Commands that act
+  in bash: `scripts/odin` is that command-line tool (`make odin-command` links it into
+  `~/.local/bin`; Python built-ins only, every command one API call, `--json` for the raw answer). Commands that act
   answer a plan first and act on "execute plan <id>" once; long work is a job
   (`GET /api/jobs/<id>`); errors are `{error, code}`. Ratatoskr's moves are the
   first feature built this way ([storage-units.md](docs/internals/storage-units.md)).
