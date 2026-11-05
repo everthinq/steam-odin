@@ -10,6 +10,14 @@ How the pieces fit together, for a human reading the code for the first time.
 This is a personal, open-source Steam-trading toolset. Everything is named after
 Norse figures, but the naming is decoration — the code hierarchy is the truth.
 
+**The backend is the product; the frontend is a screen on top of it.** Every
+decision and every action lives in the backend, and every action is one
+command you can also type in bash with `scripts/odin` (see
+[the command-line guide](docs/guide/command-line.md)). The web pages only
+display, sort and filter what the backend answers, and send it instructions.
+This was Phase 2 of the project, finished on 2026-11-05
+([docs/internals/phase-2.md](docs/internals/phase-2.md)).
+
 ---
 
 ## 1. The realms (topology)
@@ -249,6 +257,8 @@ React 19 + Vite + react-router-dom 7, single-page app.
   links, Tradeon short links, transfer view math).
 - The frontend only ever calls the backend REST API; it has no direct knowledge
   of Steam or Ratatoskr.
+- It holds no rules of its own: it displays, sorts and filters what the backend
+  answers. Everything it can do, `odin` can do from bash without it.
 
 ## 7. Operational model
 

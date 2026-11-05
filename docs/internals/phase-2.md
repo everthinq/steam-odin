@@ -3,6 +3,12 @@
 Status page for the Phase 2 architecture work (started 2026-11-01). Save point
 before it: the local tag `checkpoint/before-phase-2` (never pushed).
 
+**DONE 2026-11-05 — all seven bullets.** The core app is now the backend: every
+decision and every action lives there, and every action is a command that can be
+called from bash (`scripts/odin`). The frontend is only the display: a graphical
+screen that shows, sorts and filters what the backend answers. Still open: Ivan's
+hands-on test of the three money flows in the real app (none was tried yet).
+
 ## The seven bullets
 
 | # | Bullet | State |

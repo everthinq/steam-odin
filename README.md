@@ -8,6 +8,10 @@ with price guards, and alerts you by Telegram and phone call when something
 important happens. It runs in Docker on your own computer at
 http://localhost:3000.
 
+The backend does all the work; the web pages are only a screen on top of it.
+Everything can also be done from bash with the `odin` command-line tool
+([guide](docs/guide/command-line.md)).
+
 Everything is named after Norse figures. The names are flavour; the folder
 layout is the truth.
 
