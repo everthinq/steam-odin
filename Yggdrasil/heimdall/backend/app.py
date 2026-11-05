@@ -285,6 +285,7 @@ error_handlers.install(app)
 
 @app.route('/health', methods=['GET'])
 def health_check():
+    """Container health check: the backend answers and the confirmation scheduler runs."""
     settings = settings_manager.get_settings()
     return jsonify({
         "status": "healthy",

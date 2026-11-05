@@ -64,6 +64,7 @@ def _decorate(records):
 
 @bp.route('/api/mimir/credentials', methods=['GET'])
 def list_credentials():
+    """Every Mímir credential."""
     return jsonify({
         'credentials': _decorate(ctx.mimir_service.list()),
         # Non-null when credentials.vault exists but could not be decrypted:
@@ -85,6 +86,7 @@ def get_credential_password(rec_id):
 
 @bp.route('/api/mimir/credentials', methods=['POST'])
 def create_credential():
+    """Add one Mímir credential."""
     body = request.json or {}
     try:
         rec = ctx.mimir_service.add(
@@ -101,6 +103,7 @@ def create_credential():
 
 @bp.route('/api/mimir/credentials/<rec_id>', methods=['PUT'])
 def update_credential(rec_id):
+    """Change one Mímir credential."""
     body = request.json or {}
     try:
         rec = ctx.mimir_service.update(rec_id, body)
@@ -113,6 +116,7 @@ def update_credential(rec_id):
 
 @bp.route('/api/mimir/credentials/<rec_id>', methods=['DELETE'])
 def delete_credential(rec_id):
+    """Delete one Mímir credential."""
     if not ctx.mimir_service.delete(rec_id):
         return jsonify({'error': 'credential not found', 'code': 'credential_not_found'}), 404
     return jsonify({'success': True})
@@ -120,6 +124,7 @@ def delete_credential(rec_id):
 
 @bp.route('/api/mimir/import', methods=['POST'])
 def import_credentials():
+    """Import Mímir credentials from pasted text."""
     body = request.json or {}
     text = body.get('text', '')
     if not text.strip():

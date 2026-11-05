@@ -47,6 +47,7 @@ def _pricing_fields(prices, status, market):
 
 @bp.route('/api/draupnir/portfolios', methods=['GET'])
 def portfolios_list():
+    """Every portfolio with its totals, valued at the chosen market."""
     market = _valuation_market()
     prices, status = _portfolio_prices(market)
     return jsonify({
@@ -58,6 +59,7 @@ def portfolios_list():
 
 @bp.route('/api/draupnir/portfolios', methods=['POST'])
 def portfolios_create():
+    """Create a portfolio (name optional)."""
     body = request.get_json(silent=True) or {}
     errors = validate_portfolio_name(body.get('name'), required=False)
     if errors:
@@ -200,6 +202,7 @@ def portfolios_item_search():
 
 @bp.route('/api/draupnir/portfolios/<pid>', methods=['GET'])
 def portfolios_get(pid):
+    """One portfolio with its holdings and transactions, valued at the chosen market."""
     market = _valuation_market()
     prices, status = _portfolio_prices(market)
     data = ctx.draupnir_service.get_portfolio(pid, prices)
@@ -212,6 +215,7 @@ def portfolios_get(pid):
 
 @bp.route('/api/draupnir/portfolios/<pid>', methods=['PATCH'])
 def portfolios_rename(pid):
+    """Rename one portfolio."""
     body = request.get_json(silent=True) or {}
     errors = validate_portfolio_name(body.get('name'), required=True)
     if errors:
@@ -224,6 +228,7 @@ def portfolios_rename(pid):
 
 @bp.route('/api/draupnir/portfolios/<pid>', methods=['DELETE'])
 def portfolios_delete(pid):
+    """Delete one portfolio."""
     if not ctx.draupnir_service.delete_portfolio(pid):
         return jsonify({'error': 'portfolio not found', 'code': 'portfolio_not_found'}), 404
     return jsonify({'ok': True})
@@ -231,6 +236,7 @@ def portfolios_delete(pid):
 
 @bp.route('/api/draupnir/portfolios/<pid>/transactions', methods=['POST'])
 def portfolios_add_txn(pid):
+    """Add a buy or sell transaction to a portfolio (checked by the backend)."""
     body = request.get_json(silent=True) or {}
     refusal = _transaction_refusal(body, validate_new_transaction(body))
     if refusal:
@@ -243,6 +249,7 @@ def portfolios_add_txn(pid):
 
 @bp.route('/api/draupnir/portfolios/<pid>/transactions/<tid>', methods=['PATCH'])
 def portfolios_update_txn(pid, tid):
+    """Change fields of one transaction (checked by the backend)."""
     body = request.get_json(silent=True) or {}
     refusal = _transaction_refusal(body, validate_transaction(body, partial=True))
     if refusal:
@@ -255,6 +262,7 @@ def portfolios_update_txn(pid, tid):
 
 @bp.route('/api/draupnir/portfolios/<pid>/transactions/<tid>', methods=['DELETE'])
 def portfolios_delete_txn(pid, tid):
+    """Delete one transaction."""
     result = ctx.draupnir_service.delete_transaction(pid, tid)
     if not result:
         return jsonify({'error': 'not found', 'code': 'transaction_not_found'}), 404
@@ -265,6 +273,7 @@ def portfolios_delete_txn(pid, tid):
 
 @bp.route('/api/draupnir/portfolios/backups', methods=['GET'])
 def portfolios_backups_list():
+    """The portfolio backups and their statistics."""
     return jsonify({
         'backups': ctx.draupnir_backup.list_backups(),
         'stats': ctx.draupnir_backup.stats(),
@@ -280,6 +289,7 @@ def portfolios_backups_snapshot():
 
 @bp.route('/api/draupnir/portfolios/backups/<name>/download', methods=['GET'])
 def portfolios_backup_download(name):
+    """Download one portfolio backup."""
     data = ctx.draupnir_backup.read_backup(name)
     if data is None:
         return jsonify({'error': 'backup not found', 'code': 'backup_not_found'}), 404

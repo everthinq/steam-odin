@@ -791,6 +791,7 @@ def gjallarhorn_reminders_add():
 
 @bp.route('/api/huginn/gjallarhorn/reminders/<reminder_id>', methods=['DELETE'])
 def gjallarhorn_reminders_remove(reminder_id):
+    """Remove one Gjallarhorn resell reminder."""
     ctx.gjallarhorn_reminders.remove(reminder_id)
     return jsonify({'ok': True})
 
@@ -1045,6 +1046,7 @@ def card_deals_status():
 
 @bp.route('/api/huginn/card-deals/config', methods=['GET'])
 def card_deals_config_get():
+    """Andvari settings (card deals and card selling)."""
     from card_deals_service import CONFIG_KEYS
     settings = ctx.settings_manager.get_settings()
     return jsonify({key: settings.get(key) for key in CONFIG_KEYS})
@@ -1210,6 +1212,7 @@ def card_deals_buy_purchase_plan():
 
 @bp.route('/api/huginn/card-deals/buy/purchase-plans/<purchase_plan_id>', methods=['GET'])
 def card_deals_buy_purchase_plan_get(purchase_plan_id):
+    """Andvari Buy games: one purchase plan."""
     return jsonify(ctx.store_purchase_service.get_purchase_plan(purchase_plan_id))
 
 

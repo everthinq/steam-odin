@@ -12,7 +12,7 @@ before it: the local tag `checkpoint/before-phase-2` (never pushed).
 | 3 | Health checks for every container | **Done**, pushed 31dc36e |
 | 4 | Move the remaining page logic to the backend, tool by tool | **In progress** — see below |
 | 5 | One shape for plans, jobs and errors (`{error, code}` everywhere, one shared plan registry, one `CommandError` handler) | **Done**, last push 16483d5 — see the end |
-| 6 | Endpoint list + System health page | Not started |
+| 6 | Endpoint list + System health page | **In progress** — 6a endpoint list done, see the end |
 | 7 | `odin` command-line tool | Not started — decided: Python with only built-in libraries, talks to localhost:5001, installed on PATH; dry runs only for purchases; first version has four groups: Accounts (code, confirmations, accounts), Ratatoskr (storage, store, autostore), Prices and portfolio (price, arbitrage, harvest, portfolio), System (status, logs, job, routes) |
 
 Working agreement for each bullet: build, review (rule 25), double-check live,
@@ -269,3 +269,12 @@ News watcher, Case alerts, Readiness); Andvari = 1, 2, 3, 10, 11, DealsTable and
   page's view of each purchase (`purchase_outcome`), not the whole saved entry. The Andvari page's
   copy of `parse_app_ids` was already gone (A1, 2c69626: the backend reads the ids). Bullet 5 is
   done. Next: bullet 6.
+
+## Bullet 6 — endpoint list + System health page
+
+- 6a **DONE 2026-11-05**: `GET /api/system/routes` (`routes/system.py`) lists every endpoint
+  (path, methods, group, name, summary) straight from Flask's route table, so it never drifts
+  from the code. The summary is the first line of the route's docstring; the 19 routes without
+  one got one, and a test keeps every route described. 189 endpoints. The `odin routes` command
+  (bullet 7) will read it.
+- 6b: the System health page. Not started.
