@@ -183,7 +183,8 @@ an autobuy market's instant offer.
 
 Cases, capsules and souvenir packages across nine markets: the cheapest market
 for each, the best flip after fees, liquidity and a 7-day trend. **Hot** marks
-flips above your threshold.
+flips above your threshold. The page shows only the newest answer, so switching
+categories quickly never brings back an older list.
 
 **Alerts** sends a Telegram message (or a Discord/Slack webhook) when a
 container is cheaper than CSFloat by your percentage; **Send test** checks the

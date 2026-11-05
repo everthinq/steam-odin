@@ -176,7 +176,10 @@ News watcher, Case alerts, Readiness); Andvari = 1, 2, 3, 10, 11, DealsTable and
   profile's `ready` and `warming` and each table's `downloaded_at`; `X-Pulse-Tables` adds each
   table's download time on the same clock, so "Newer prices ready" compares server times only.
 - 6 FIXED 2026-11-04: Gjallarhorn Target basket sends one `targets/add` or `targets/remove` per item (the whole-list POST is gone); GET always answers the names, with `pricing_error` when prices fail; only the newest answer is applied.
-- 7 CaseArbitrage hardcoded MARKETS -> markets list from /api/huginn/cases.
+- 7 + the CaseArbitrage stale-answer bug (H2) **DONE 2026-11-05**: `/api/huginn/cases` answers `markets` as
+  objects (`container_markets()`: key, label, short, slug, sellable, balance) from the one table
+  `_CONTAINER_MARKET_DISPLAY` (`_CONTAINER_MARKETS` is derived from it); the page's `MARKETS` copy is gone,
+  and a request counter drops any answer that is not the newest.
 - 8 Harvest: profitable-only differs from backend count; stale via frontend constant; hardcoded 8 days; offers count -> counted, short_of_offers, best.stale, stale_after_seconds.
 - 9 CrossProfile chain price from first/last priced legs (wrong) -> backend buy_price, sell_net.
 - 10 CardDeals All counts, scan_running inferred.
@@ -185,4 +188,4 @@ News watcher, Case alerts, Readiness); Andvari = 1, 2, 3, 10, 11, DealsTable and
 - 13 SkinSwap 1.4 ratio copy.
 - 14 MarketHoldEditor re-clean; Gjallarhorn _PRICE_MARKETS copy; NewsWatcher raw settings + ignored failures; DealsTable 20 listings; CaseAlertsPanel reads whole settings incl. Telegram token.
 - Team Fortress 2: left alone as a whole feature (Ivan, 2026-11-04: not used for now); do not work on it.
-- BUGS: CaseArbitrage + CardDeals no stale-answer guard; startScan unchecked; app-id regex grabs every 2-9 digit run (page + backend parse_app_ids, Buy games uses it); CrossProfile save fails silently, warm polling uncapped; ReadinessPanel stale numbers.
+- BUGS: CardDeals no stale-answer guard (CaseArbitrage's fixed in H2); startScan unchecked; app-id regex grabs every 2-9 digit run (page + backend parse_app_ids, Buy games uses it); CrossProfile save fails silently, warm polling uncapped; ReadinessPanel stale numbers.

@@ -2383,11 +2383,21 @@ class HuginnService:
 
     # ---- Container price tracker ("Case Arbitrage") ------------------------
 
-    # Markets a container is compared across (all shown as prices). 'tradeon' is the
-    # TradeOnMarket lowest listing (the firstMarket side of every pulse row) — a
-    # buy-only source here.
-    _CONTAINER_MARKETS = ('steam', 'buff', 'csfloat', 'lisskins', 'dmarket', 'tradeon',
-                          'csmoney_market', 'csmoney_trade', 'skinswap')
+    # Markets a container is compared across (all shown as prices), in the page's column order,
+    # each with (label, short chip code, Tradeon short-link slug). 'tradeon' is the TradeOnMarket
+    # lowest listing (the firstMarket side of every pulse row), a buy-only source here.
+    _CONTAINER_MARKET_DISPLAY = {
+        'tradeon': ('Tradeon', 'TO', 'TradeOnMarket'),
+        'steam': ('Steam', 'Steam', 'Steam'),
+        'buff': ('Buff', 'Buff', 'Buff'),
+        'csfloat': ('CSFloat', 'CF', 'CsFloat'),
+        'lisskins': ('LisSkins', 'LIS', 'LisSkins'),
+        'dmarket': ('DMarket', 'DM', 'Dmarket'),
+        'csmoney_market': ('CS.MONEY Market', 'CMM', 'CsMoneyMarket'),
+        'csmoney_trade': ('CS.MONEY Trade', 'CMT', 'CsMoneyTrade'),
+        'skinswap': ('SkinSwap (Market)', 'SS', 'SkinSwapMarket'),
+    }
+    _CONTAINER_MARKETS = tuple(_CONTAINER_MARKET_DISPLAY)
     # Buy-only price sources read from the generic pulse market table (their cheapest
     # listing). CS.MONEY Trade prices in its own trade balance; SkinSwap (Market) in
     # real dollars (its Market balance).
@@ -2411,6 +2421,18 @@ class HuginnService:
     # bottom-call check) keeps the markets it was built from, so a newly added,
     # cheaper source (CS.MONEY Market, 2026-09-30) never shows up as a price drop.
     _CONTAINER_HISTORY_MARKETS = frozenset({'steam', 'buff', 'csfloat', 'lisskins', 'tradeon'})
+    # Markets that price in their own trade balance, not cash.
+    _CONTAINER_BALANCE_MARKETS = frozenset({'csmoney_trade'})
+
+    def container_markets(self):
+        """Every Case Arbitrage market as the page shows it, in column order: key, label, short
+        code, link slug, whether flips cash out there (sellable) and whether it prices in a trade
+        balance."""
+        return [{'key': key, 'label': label, 'short': short, 'slug': slug,
+                 'sellable': key in self._CONTAINER_SELL_MARKETS,
+                 'balance': key in self._CONTAINER_BALANCE_MARKETS}
+                for key in self._CONTAINER_MARKETS
+                for label, short, slug in [self._CONTAINER_MARKET_DISPLAY[key]]]
 
     @staticmethod
     def _best_container_flip(buy_market, buy_price, prices, sell_fees):
@@ -2812,7 +2834,7 @@ class HuginnService:
         return {
             'containers': rows,
             'status': status,
-            'markets': list(self._CONTAINER_MARKETS),
+            'markets': self.container_markets(),
             'sell_markets': list(self._CONTAINER_SELL_MARKETS),
             'sell_fees': self._container_sell_fees(),
             'hot_threshold_pct': round(thresh, 2) if thresh is not None else None,

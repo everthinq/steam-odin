@@ -411,3 +411,17 @@ def test_fixed_arbitrage_pairs_use_the_edited_sell_fee(monkeypatch):
     service.fetch_lisskins_dmarket('token', edited)
     service.fetch_lisskins_csfloat('token')          # no settings: the registry default
     assert seen == [0.03, 0.15, 0.02, 0.03, 0.01, 0.02]
+
+
+def test_case_arbitrage_markets_come_from_the_backend():
+    """The Case Arbitrage page has no market list of its own: every compared market, in column
+    order, with its label, chip, link slug, whether flips cash out there and whether it prices
+    in a trade balance."""
+    service = _service()
+    markets = service.container_markets()
+    assert [m['key'] for m in markets] == list(service._CONTAINER_MARKETS)
+    by_key = {m['key']: m for m in markets}
+    assert {k for k, m in by_key.items() if m['sellable']} == set(service._CONTAINER_SELL_MARKETS)
+    assert {k for k, m in by_key.items() if m['balance']} == {'csmoney_trade'}
+    assert by_key['tradeon'] == {'key': 'tradeon', 'label': 'Tradeon', 'short': 'TO',
+                                 'slug': 'TradeOnMarket', 'sellable': False, 'balance': False}

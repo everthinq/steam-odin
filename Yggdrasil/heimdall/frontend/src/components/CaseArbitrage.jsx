@@ -15,21 +15,6 @@ const PAGE_SIZE = 150;
 const WARM_POLL_MS = 4000;
 const MAX_WARM_POLLS = 30;
 
-// market key (backend) -> display label, short chip code, pulse short-link slug.
-// `sellable` marks markets you can realistically cash out on (drives flip/profit).
-const MARKETS = [
-    { key: 'tradeon', label: 'Tradeon', short: 'TO', slug: 'TradeOnMarket', sellable: false },
-    { key: 'steam', label: 'Steam', short: 'Steam', slug: 'Steam', sellable: true },
-    { key: 'buff', label: 'Buff', short: 'Buff', slug: 'Buff', sellable: true },
-    { key: 'csfloat', label: 'CSFloat', short: 'CF', slug: 'CsFloat', sellable: true },
-    { key: 'lisskins', label: 'LisSkins', short: 'LIS', slug: 'LisSkins', sellable: false },
-    { key: 'dmarket', label: 'DMarket', short: 'DM', slug: 'Dmarket', sellable: false },
-    { key: 'csmoney_market', label: 'CS.MONEY Market', short: 'CMM', slug: 'CsMoneyMarket', sellable: false },
-    // Trade site: prices are in its own trade balance, not cash.
-    { key: 'csmoney_trade', label: 'CS.MONEY Trade', short: 'CMT', slug: 'CsMoneyTrade', sellable: false, balance: true },
-    // SkinSwap's Market balance is real dollars (its Trade page shows the same balance 1.4x higher).
-    { key: 'skinswap', label: 'SkinSwap (Market)', short: 'SS', slug: 'SkinSwapMarket', sellable: false },
-];
 // Filters (price / account / collection), as on the Arbitrage tab. "Buy" is the
 // cheapest price across markets, "Sell" what the best flip's sell market pays
 // after its fee. Accounts and collections come from the inventory scan: only
@@ -40,8 +25,6 @@ const PRICE_SIDES = [
     ['sell', 'Sell price', "What the best flip's sell market pays, after its fee", 'Sell'],
 ];
 
-const MARKET_BY_KEY = Object.fromEntries(MARKETS.map(m => [m.key, m]));
-const marketLabel = (key) => MARKET_BY_KEY[key]?.label || key || '';
 
 const CATEGORIES = [
     { slug: 'case', label: 'Cases' },
@@ -96,7 +79,7 @@ const Trend = ({ pct, points }) => {
     );
 };
 
-const Flip = ({ flip }) => {
+const Flip = ({ flip, marketLabel }) => {
     if (!flip) return <span className="text-slate-600 text-sm">—</span>;
     const good = flip.profit > 0;
     return (
@@ -159,25 +142,37 @@ const CaseArbitrage = ({ byHash }) => {
     const [expanded, setExpanded] = useState({});
     const deferredSearch = useDeferredValue(search);
     const retryRef = useRef(null);
+    // Only the newest request may change the page: a slow answer for an earlier category
+    // choice (or an earlier warm poll) is dropped when it arrives late.
+    const requestRef = useRef(0);
+    // The markets, their labels and which ones flips cash out on all come from the backend.
+    const markets = useMemo(() => data?.markets || [], [data]);
+    const marketLabel = useMemo(() => {
+        const byKey = Object.fromEntries(markets.map(m => [m.key, m.label]));
+        return (key) => byKey[key] || key || '';
+    }, [markets]);
 
     const fetchCases = async (cats, warmPoll = 0) => {
+        const request = ++requestRef.current;
+        const isLatest = () => request === requestRef.current;
+        clearTimeout(retryRef.current);
         setLoading(true);
         setError(null);
         try {
             const qs = cats.length ? `?types=${cats.join(',')}` : '';
             const r = await fetch(`/api/huginn/cases${qs}`);
             const d = await readJson(r);
+            if (!isLatest()) return;
             if (!r.ok) throw new Error(d.error || 'Fetch failed');
             setData(d);
             const warming = Object.values(d.status || {}).some(s => s === 'refreshing');
-            clearTimeout(retryRef.current);
             if (warming && warmPoll < MAX_WARM_POLLS) {
                 retryRef.current = setTimeout(() => fetchCases(cats, warmPoll + 1), WARM_POLL_MS);
             }
         } catch (err) {
-            setError(err.message);
+            if (isLatest()) setError(err.message);
         } finally {
-            setLoading(false);
+            if (isLatest()) setLoading(false);
         }
     };
 
@@ -268,7 +263,7 @@ const CaseArbitrage = ({ byHash }) => {
     const warming = Object.values(data?.status || {}).some(s => s === 'refreshing');
     const noToken = Object.values(data?.status || {}).some(s => s === 'no_token');
     // Markets no active Huginn profile keeps: only Huginn Arbitrage downloads prices (master-slave).
-    const inactive = MARKETS.filter(m => data?.status?.[m.key] === 'inactive').map(m => m.label);
+    const inactive = markets.filter(m => data?.status?.[m.key] === 'inactive').map(m => m.label);
 
     // ---- row renderers -------------------------------------------------
 
@@ -281,7 +276,7 @@ const CaseArbitrage = ({ byHash }) => {
 
             {/* wrapping price chips */}
             <div className="flex flex-wrap gap-1.5">
-                {MARKETS.map(m => {
+                {markets.map(m => {
                     const p = r.prices?.[m.key];
                     if (p == null) return null;
                     const isCheap = r.cheapest_market === m.key;
@@ -308,7 +303,7 @@ const CaseArbitrage = ({ byHash }) => {
             <span className="text-sm text-right tabular-nums text-slate-400" title={r.total_listings != null ? `${r.total_listings} total across markets` : ''}>
                 {compact(r.liquidity)}
             </span>
-            <Flip flip={r.flip} />
+            <Flip flip={r.flip} marketLabel={marketLabel} />
             <Trend pct={r.trend_pct} points={r.sparkline} />
         </div>
     );
@@ -346,7 +341,7 @@ const CaseArbitrage = ({ byHash }) => {
                 </div>
                 {open && (
                     <div className="px-4 pb-3 pl-14 flex flex-wrap gap-x-5 gap-y-1.5 bg-black/10">
-                        {MARKETS.map(m => {
+                        {markets.map(m => {
                             const p = r.prices?.[m.key];
                             const cnt = r.counts?.[m.key];
                             const isCheap = r.cheapest_market === m.key && p != null;
