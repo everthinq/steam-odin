@@ -579,7 +579,7 @@ def test_a_job_that_cannot_start_leaves_the_service_unlocked(tmp_path):
     except RuntimeError:
         pass
     service.jobs.create = original
-    assert service._plans == {}
+    assert len(service._plans) == 0
     assert service._job_lock.acquire(blocking=False)
     service._job_lock.release()
 

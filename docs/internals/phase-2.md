@@ -255,6 +255,8 @@ News watcher, Case alerts, Readiness); Andvari = 1, 2, 3, 10, 11, DealsTable and
   moves (`storage_deposit.py`, cleanup keeps a plan that ran for an hour), Rename Storage Unit, Remove All
   accounts and the Draupnir CSV import. Same lifetimes, checks and codes; ids are now 32 hex characters
   everywhere.
-- Next: 5d step 2, the three money flows (Market unlocker, Buy Storage Units, Buy games) on `PlanStore`
-  (needs a review: plans without an expiry until their dry run ends, Buy Storage Units saves its plans to
-  disk), then `self._job` mirroring the registry job.
+- 5d step 2 **DONE 2026-11-05** (reviewed: money checks untouched): the Market unlocker and Buy games
+  keep their plans in `PlanStore` too (lifetime None: the unlocker's plan expires when its dry run ends, a
+  purchase plan with the plan it was made from; cleanup never drops a plan whose job runs). Buy Storage
+  Units stays as it is: one current plan saved to disk with the ids of replaced ones, not a store of many.
+- Next: `self._job` mirroring the registry job.

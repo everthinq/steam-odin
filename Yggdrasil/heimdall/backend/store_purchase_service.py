@@ -48,13 +48,13 @@ import logging
 import re
 import threading
 import time
-import uuid
 
 import requests
 
 from jobs import JobRegistry
 from jsonio import atomic_write_json, read_json
 from commands import CommandError
+from plans import PlanStore
 
 log = logging.getLogger(__name__)
 
@@ -260,7 +260,8 @@ class StorePurchaseService:
                  state_path=STATE_PATH, http=None, sleep=time.sleep, jobs=None):
         self.steam = steam_service
         self.jobs = jobs or JobRegistry()
-        self._purchase_plans = {}        # purchase plan id -> purchase plan (memory only, like Transfer's)
+        # Purchase plans (memory only, like Transfer's); each expires with the plan it was made from.
+        self._purchase_plans = PlanStore(None, forget=self._forget_purchase_plan)
         self.card_deals = card_deals_service
         self.asf = asf_service
         self.settings_provider = settings_provider
@@ -568,20 +569,20 @@ class StorePurchaseService:
                                'nothing in the selection can be bought: '
                                + '; '.join(f'{item["account_name"] or item["steamid"]}: {item["reason"]}'
                                            for item in refused))
-        purchase_plan = {'id': uuid.uuid4().hex, 'created_at': now, 'plan_created_at': plan['created_at'],
-                         'expires_at': plan['created_at'] + PLAN_TIME_TO_LIVE_SECONDS,
-                         'orders': orders, 'refused': refused, 'empty_cart': bool(empty_cart),
-                         'dry_run_state': 'not run', 'dry_run_job_id': None, 'dry_run_results': None,
-                         'dry_run_error': None, 'job_id': None, 'purchase_results': None}
-        for order in orders:
-            order['purchase_plan_id'] = purchase_plan['id']
         with self._lock:
-            for old_id in [key for key, old in self._purchase_plans.items()
-                           if old['created_at'] < now - PURCHASE_PLAN_KEEP_SECONDS
-                           and not self._running(old)]:
-                del self._purchase_plans[old_id]
-            self._purchase_plans[purchase_plan['id']] = purchase_plan
+            purchase_plan = self._purchase_plans.add({
+                'plan_created_at': plan['created_at'],
+                'expires_at': plan['created_at'] + PLAN_TIME_TO_LIVE_SECONDS,
+                'orders': orders, 'refused': refused, 'empty_cart': bool(empty_cart),
+                'dry_run_state': 'not run', 'dry_run_job_id': None, 'dry_run_results': None,
+                'dry_run_error': None, 'job_id': None, 'purchase_results': None})
+            for order in orders:
+                order['purchase_plan_id'] = purchase_plan['id']
             return self.describe_purchase_plan(purchase_plan)
+
+    def _forget_purchase_plan(self, purchase_plan, now):
+        """Dropped at the next new purchase plan: older than `PURCHASE_PLAN_KEEP_SECONDS` and no job running."""
+        return purchase_plan['created_at'] < now - PURCHASE_PLAN_KEEP_SECONDS and not self._running(purchase_plan)
 
     def _running(self, purchase_plan):
         return any((self.jobs.get(job_id) or {}).get('running')

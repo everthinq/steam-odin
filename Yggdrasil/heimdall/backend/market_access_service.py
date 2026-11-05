@@ -59,7 +59,6 @@ import logging
 import re
 import threading
 import time
-import uuid
 from urllib.parse import unquote
 
 import requests
@@ -68,6 +67,7 @@ import community_pacer
 from jobs import JobRegistry
 from jsonio import atomic_write_json, read_json
 from commands import CommandError
+from plans import PlanStore
 from storage_shop_service import WHOLE_UNIT_CURRENCIES, approval_form
 from store_purchase_service import CURRENCY_CODES, to_usd
 
@@ -385,7 +385,8 @@ class MarketAccessService:
         self.steam = steam_service
         self.card_deals = card_deals_service
         self.jobs = jobs or JobRegistry()
-        self._plans = {}                 # plan id -> Market unlocker plan (memory only, like Transfer's)
+        # Market unlocker plans (memory only, like Transfer's); expires_at is set when the dry run ends.
+        self._plans = PlanStore(None, forget=self._forget_plan)
         self.state_path = state_path
         self._http = http or requests.Session()
         self._sleep = sleep
@@ -530,27 +531,20 @@ class MarketAccessService:
         accounts = [account for account in self._all_accounts() if account[0] in wanted]
         if not accounts:
             raise CommandError('no_accounts', 'Choose at least one known account')
-        now = time.time()
-        plan = {'id': uuid.uuid4().hex, 'created_at': now, 'accounts': accounts, 'state': 'dry run',
-                'results': None, 'error': None, 'finished_at': None, 'expires_at': None,
-                'dry_run_job_id': None, 'job_id': None}
         with self._lock:
-            for plan_id in [key for key, old in self._plans.items()
-                            if not self._job_running(old)
-                            and ((old['expires_at'] and old['expires_at'] < now and not old['job_id'])
-                                 or old['created_at'] < now - PLAN_KEEP_SECONDS)]:
-                del self._plans[plan_id]
-            self._plans[plan['id']] = plan
+            plan = self._plans.add({'accounts': accounts, 'state': 'dry run', 'results': None, 'error': None,
+                                    'finished_at': None, 'expires_at': None, 'dry_run_job_id': None,
+                                    'job_id': None})
             try:
                 started = self._start('unlock', accounts,
                                       lambda steamid, name: self._unlock(steamid, name, True, plan['id']),
                                       dry_run=True, on_finish=lambda error: self._finish_dry_run_safely(plan, error),
                                       job_fields={'plan_id': plan['id']})
             except BaseException:
-                del self._plans[plan['id']]  # the dry run never started: no plan
+                self._plans.remove(plan['id'])  # the dry run never started: no plan
                 raise
             if not started['started']:
-                del self._plans[plan['id']]
+                self._plans.remove(plan['id'])
                 raise CommandError('busy', started['error'], 409)
             plan['dry_run_job_id'] = started['job_id']
             # An older plan for any of these accounts can no longer be bought: two plans
@@ -561,6 +555,13 @@ class MarketAccessService:
                         and mine & {steamid for steamid, _ in old['accounts']}):
                     old['state'] = 'replaced'
             return self.describe_plan(plan)
+
+    def _forget_plan(self, plan, now):
+        """Dropped at the next new plan: an expired plan that never ran, or any plan older than
+        `PLAN_KEEP_SECONDS`; never while its dry run or purchase job still runs."""
+        return not self._job_running(plan) and (
+            (plan['expires_at'] and plan['expires_at'] < now and not plan['job_id'])
+            or plan['created_at'] < now - PLAN_KEEP_SECONDS)
 
     def _job_running(self, plan):
         """True while the plan's dry run or purchase job still runs."""
