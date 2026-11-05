@@ -79,6 +79,11 @@ TABLE_URL = 'https://api-pulse.tradeon.space/api/table/counter-strike/TradeOnMar
 FRESH = 10 * 60                 # background reads (boards, Case Arbitrage refresh, warmers)
 ON_DEMAND = 60                  # a button the user pressed (Fetch live data, Refresh)
 KEEP_SECONDS = FRESH            # a table older than this is dropped (nobody asks for older)
+# One table on the wire, gzipped (~42-59 MB of JSON), measured 2026-10-30, and one table in
+# memory in the compact form: every traffic and memory estimate on the pages uses these two.
+MEGABYTES_PER_DOWNLOAD = 5
+MEGABYTES_PER_TABLE_IN_MEMORY = 15
+
 # Each download peaks at ~200 MB (raw bytes, text, parsed rows), so two at most (the Case
 # Arbitrage alert poll's 7 markets arrive in four waves). In the app each
 # download runs in its own short-lived process (download_in_separate_processes), so that peak is
@@ -1004,9 +1009,12 @@ class PulseFeed:
             reads = sum(counts['reads'] for counts in self._counts.values())
             from_memory = sum(counts['from_memory'] for counts in self._counts.values())
             keeper = self._keeper_view(inside, resumes_at)
+            in_memory = sum(1 for table in tables if table['items'] is not None)
             return {'since': self._started, 'now': now, 'downloads': downloads, 'reads': reads,
                     'served_from_memory': from_memory,
-                    'tables_in_memory': sum(1 for table in tables if table['items'] is not None),
+                    'tables_in_memory': in_memory,
+                    'megabytes_in_memory': in_memory * MEGABYTES_PER_TABLE_IN_MEMORY,
+                    'downloaded_megabytes': downloads * MEGABYTES_PER_DOWNLOAD,
                     'active_tables': len(self._active), 'keeper': keeper,
                     'lookups': dict(self._lookups), 'jobs': jobs,
                     'weekly_sales_items': len(self._sales), 'weekly_sales_at': self._sales_at,

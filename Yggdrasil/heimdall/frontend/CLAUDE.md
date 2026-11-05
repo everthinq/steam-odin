@@ -108,9 +108,14 @@ path prefix — add your page there. No catch-all route, no Settings page.
   (registry `pagePriceLabel`); with a row's `pagePrice`, `PriceCell` shows the price
   as the Trade page does and "$x real" in grey under it (profit stays real dollars). `ProfilePicker.jsx` splits each group into
   "⚡ Sell instantly · buy orders" (toSub `autobuy`) and "List for sale"; while searching, groups whose buy market (Harvest: account) matches come first (`rankGroups`). Any
-  SkinSwap profile shows `SkinSwapBalanceNote.jsx` (deposits: Trade = Market × 1.4;
-  sale money stays on Trade; Trade → real dollars calculator; "worth it" check:
-  money out ÷ Trade page price ≥ 1/1.4; estimate chip). Keep anything estimated visibly marked.
+  profile whose `skinswapBonus` is set shows `SkinSwapBalanceNote.jsx` with that
+  bonus (deposits: Trade = Market × bonus; sale money stays on Trade; Trade → real
+  dollars calculator; "worth it" check: money out ÷ Trade page price ≥ 1/bonus;
+  estimate chip). `fromPageBonus`/`toPageBonus` give the divider `PriceCell`, the
+  filters and the Profit header name; the page never writes 1.4 itself. Traffic
+  estimates are the backend's `estimated_megabytes_per_day` (`/api/huginn/active`
+  and its `preview`; active hours counted) and the Pulse feed page's
+  `downloaded_megabytes` / `megabytes_in_memory`. Keep anything estimated visibly marked.
 - **Styling:** Tailwind utility classes inline, dark slate palette
   (`bg-slate-950/85`, `border-white/10`, `text-slate-400`), `tabular-nums` for
   numbers, section labels `text-[10px] font-bold tracking-widest uppercase`.

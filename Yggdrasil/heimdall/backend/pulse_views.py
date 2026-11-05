@@ -20,7 +20,8 @@ from concurrent.futures import ThreadPoolExecutor
 
 from huginn_service import _AUTOBUY_VIA_CSFLOAT_SWEEP, _ESTIMATED_SELL, _MARKET_BY_ID
 from price_history import BASES as STATISTICS_BASES, STATISTICS_MARKETS  # noqa: F401  (re-exported)
-from pulse_feed import ACTIVE_MINUTES, FRESH, MAX_ACTIVE_TABLES, REFERENCE_TABLES, STALE_SECONDS, NotActive
+from pulse_feed import (ACTIVE_MINUTES, FRESH, MAX_ACTIVE_TABLES, MEGABYTES_PER_DOWNLOAD, REFERENCE_TABLES,
+                        STALE_SECONDS, NotActive)
 
 
 def _parallel(calls):
@@ -317,6 +318,9 @@ def arbitrage_profiles(huginn, settings=None):
             'fromPriceNote': buy['priceNote'], 'toPriceNote': sell['priceNote'],
             # Rows carry `pagePrice` as this market's own page shows it (SkinSwap Trade page).
             'fromPageLabel': buy['pagePriceLabel'], 'toPageLabel': sell['pagePriceLabel'],
+            'fromPageBonus': buy['pagePriceBonus'], 'toPageBonus': sell['pagePriceBonus'],
+            # SkinSwap's Trade bonus when either end is a SkinSwap market (the page's balance note).
+            'skinswapBonus': buy['skinswapBonus'] or sell['skinswapBonus'],
             'fromReliability': buy['reliability'].get('listings'),
             'toReliability': sell['reliability'].get(sell_side), 'toReliabilitySide': sell_side,
             # Sells into CSFloat's buy orders, which come from the CSFloat sweep (its panel shows).
@@ -412,6 +416,26 @@ def apply_active_settings(huginn, settings):
     return tables
 
 
+def active_minutes_a_day(hours):
+    """Minutes a day the keeper downloads in: the active hours (over midnight when the end is
+    before the start; equal or unreadable: all day), or all day when they are off."""
+    if not hours.get('enabled'):
+        return 24 * 60
+    try:
+        start, end = parse_clock(hours['start']), parse_clock(hours['end'])
+    except ValueError:
+        return 24 * 60
+    return (end - start) % (24 * 60) or 24 * 60
+
+
+def estimated_megabytes_per_day(tables, minutes, hours, reference=()):
+    """Traffic a day of *tables* active tables every *minutes* inside the active hours, plus the
+    reference tables (each once per its interval)."""
+    downloads = tables * active_minutes_a_day(hours) / minutes
+    downloads += sum(24 * 60 * 60 / every for every in reference)
+    return round(downloads * MEGABYTES_PER_DOWNLOAD)
+
+
 def _table_view(key, ages, now):
     age, downloading = ages.get(key, (None, False))
     return {'market': key[0], 'price_type': key[1], 'label': table_label(*key),
@@ -436,10 +460,12 @@ def active_status(huginn, settings, preview=None):
     profiles, tables = parse_active_profiles_leniently(saved_profiles(settings))
     keys = set(tables) | set(REFERENCE_TABLES)
     ages = huginn.pulse.ages(keys)
-    now, minutes = huginn.pulse.now(), saved_minutes(settings)
+    now, minutes, hours = huginn.pulse.now(), saved_minutes(settings), saved_hours(settings)
     out = {
         'minutes': minutes, 'choices': list(ACTIVE_MINUTES), 'max_tables': MAX_ACTIVE_TABLES,
-        'tables_used': len(tables), 'hours': saved_hours(settings), 'keeper': huginn.pulse.keeper_status(),
+        'tables_used': len(tables), 'hours': hours, 'keeper': huginn.pulse.keeper_status(),
+        'estimated_megabytes_per_day': estimated_megabytes_per_day(len(tables), minutes, hours,
+                                                                   REFERENCE_TABLES.values()),
         'profiles': {key: _profile_view(key, keys_of, ages, now, minutes) for key, keys_of in profiles.items()},
         'reference': [{**_table_view(key, ages, now), 'every_seconds': every,
                        'note': 'off-Steam price reference, read once a day'}
@@ -455,7 +481,8 @@ def active_status(huginn, settings, preview=None):
             out['preview'] = {'key': preview, 'error': str(error)}
         else:
             adds = sum(1 for key in wanted if key not in tables)
-            out['preview'] = {'key': preview, 'tables': [list(key) for key in wanted], 'adds': adds}
+            out['preview'] = {'key': preview, 'tables': [list(key) for key in wanted], 'adds': adds,
+                              'estimated_megabytes_per_day': estimated_megabytes_per_day(adds, minutes, hours)}
             if preview not in profiles and len(tables) + adds > MAX_ACTIVE_TABLES:
                 out['preview']['error'] = (f"it needs {adds} more pulse table{'s' if adds != 1 else ''} and "
                                            f'{len(tables)} of {MAX_ACTIVE_TABLES} are in use. Switch another profile off first.')

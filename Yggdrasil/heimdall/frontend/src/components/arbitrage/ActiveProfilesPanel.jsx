@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { AlertTriangle, ChevronDown, Moon, Pin, X } from 'lucide-react';
 import { formatAge, useNowSeconds } from '../../utils/priceAge';
-import { MB_PER_DOWNLOAD } from '../../utils/pulseTraffic';
 
 // The Active profiles panel on Huginn Arbitrage: the profiles Ivan trades on are the only ones whose
 // pulse tables are downloaded (backend pulse_feed.py, the keeper); every other page reads from them.
@@ -66,8 +65,8 @@ const ActiveProfilesPanel = ({ status, profileIdOf, onOpen, onChange, busy }) =>
     });
     const profiles = Object.entries(status.profiles || {});
     const intervalSeconds = status.minutes * 60;
-    const downloadsPerDay = status.tables_used * (1440 / status.minutes) + (status.reference?.length || 0);
-    const gigabytes = (downloadsPerDay * MB_PER_DOWNLOAD) / 1024;
+    // The backend's estimate counts only the active hours, plus the daily reference.
+    const gigabytes = status.estimated_megabytes_per_day / 1024;
     const state = keeperState(status.keeper, now);
     const saveHours = (next) => {
         setDraft(null);

@@ -7,10 +7,9 @@ import { ArrowRight, ChevronDown, ExternalLink, Info } from 'lucide-react';
 // but on 2026-10-10 a skin sold on the Trade page gave Trade balance and
 // nothing on Market (most likely escrow under Steam's 7-day trade protection; not
 // confirmed). So Huginn shows SkinSwap (Trade) prices as the Trade page does, with
-// the real-dollar value (divided by 1.4) under each (huginn_service.py,
-// _MARKET_PRICE_SCALE, 'pagePrice'). The open/closed state is remembered per browser.
+// the real-dollar value (divided by `bonus`, the profile's fromPageBonus or toPageBonus from the
+// backend, huginn_service.py _SKINSWAP_TRADE_BONUS) under each. The open/closed state is remembered per browser.
 
-const TRADE_BONUS = 1.4;
 const OPEN_KEY = 'huginn.skinswapNoteOpen';
 const LINKS = [
     { label: 'Trade page', href: 'https://skinswap.com/trade' },
@@ -44,20 +43,21 @@ const MoneyInput = ({ label, value, onChange }) => (
 
 // `estimated`: the picked profile uses SkinSwap (Trade)'s min, which pulse does not
 // have; Huginn estimates it (huginn_service.py, _SKINSWAP_TRADE_ASK_MARKUP).
-const SkinSwapBalanceNote = ({ estimated = false }) => {
+const SkinSwapBalanceNote = ({ bonus, estimated = false }) => {
     const [open, setOpen] = useState(readOpen);
     const [trade, setTrade] = useState('14.00');
     const [pagePrice, setPagePrice] = useState('38.52');
     const [cashOut, setCashOut] = useState('30.00');
 
     const tradeValue = money(trade);
-    const real = tradeValue == null ? '—' : (tradeValue / TRADE_BONUS).toFixed(2);
+    const real = tradeValue == null ? '—' : (tradeValue / bonus).toFixed(2);
     const price = money(pagePrice);
     const out = money(cashOut);
-    // A Trade dollar is worth 1 / 1.4 of a real dollar, so spending it pays off
+    // A Trade dollar is worth 1 / bonus of a real dollar, so spending it pays off
     // when the cash you get back is at least that share of the Trade page price.
     const share = price && out != null ? out / price : null;
-    const worthIt = share != null && share >= 1 / TRADE_BONUS;
+    const worthIt = share != null && share >= 1 / bonus;
+    const bonusPercent = Math.round((bonus - 1) * 100);
 
     const toggle = () => {
         const next = !open;
@@ -98,12 +98,12 @@ const SkinSwapBalanceNote = ({ estimated = false }) => {
 
                     <p className="text-xs text-slate-400">
                         SkinSwap (Trade) prices are shown as on the <b className="text-slate-300">Trade page</b> (Trade dollars). The grey
-                        value under each is real dollars (divided by 1.4, SkinSwap&apos;s 40% bonus), and every profit uses it.
+                        value under each is real dollars (divided by {bonus}, SkinSwap&apos;s {bonusPercent}% bonus), and every profit uses it.
                     </p>
 
                     <ol className="space-y-1.5 text-slate-300 list-decimal pl-5 marker:text-sky-400/70">
                         <li>
-                            <b>Money you deposit</b> is one balance: the Trade page shows it 1.4 times higher than the Market page.
+                            <b>Money you deposit</b> is one balance: the Trade page shows it {bonus} times higher than the Market page.
                         </li>
                         <li>
                             <b>Money from selling a skin on the Trade page stays on Trade.</b> Tested on 2026-10-10: the sale showed on the
@@ -112,7 +112,7 @@ const SkinSwapBalanceNote = ({ estimated = false }) => {
                         </li>
                         <li>
                             <b>To get Trade balance back out,</b> buy on the Trade page and sell to a market that pays money. It pays off
-                            when what you get after fees is at least 0.714 of the Trade page price (1 divided by 1.4). Steam,
+                            when what you get after fees is at least {(1 / bonus).toFixed(3)} of the Trade page price (1 divided by {bonus}). Steam,
                             LOOT.Farm, TradeIt (Trade) and CSMoney (Trade) pay in their own balance, not money.
                         </li>
                     </ol>
@@ -136,7 +136,7 @@ const SkinSwapBalanceNote = ({ estimated = false }) => {
                                 ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-300'
                                 : 'bg-red-500/10 border-red-500/20 text-red-300'}`}>
                                 {share.toFixed(3)} of the price · {worthIt ? 'worth it' : 'you lose money'}
-                                {' '}({worthIt ? '+' : ''}{((share * TRADE_BONUS - 1) * 100).toFixed(1)}% on real dollars)
+                                {' '}({worthIt ? '+' : ''}{((share * bonus - 1) * 100).toFixed(1)}% on real dollars)
                             </span>
                         )}
                     </div>

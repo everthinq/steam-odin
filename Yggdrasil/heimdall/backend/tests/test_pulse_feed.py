@@ -180,6 +180,7 @@ def test_status_counts_downloads_and_reads():
         feed.table('token', 'Buff', 'Sell')
     status = feed.status()
     assert (status['downloads'], status['reads'], status['served_from_memory']) == (1, 4, 3)
+    assert status['downloaded_megabytes'] == pulse_feed.MEGABYTES_PER_DOWNLOAD
     table = status['tables'][0]
     assert (table['market'], table['price_type'], table['items'], table['downloading']) == ('Buff', 'Sell', 1, False)
 

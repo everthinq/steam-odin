@@ -484,9 +484,14 @@ def market_reliability(market_id):
 _SKINSWAP_TRADE_BONUS = 1.4
 _MARKET_PRICE_SCALE = {'SkinSwapTrade': 1 / _SKINSWAP_TRADE_BONUS}
 _MARKET_PAGE_LABEL = {'SkinSwapTrade': 'Trade page'}
+# How many page dollars make one real dollar, for the pages that show a bonus balance (1.4).
+_MARKET_PAGE_BONUS = {'SkinSwapTrade': _SKINSWAP_TRADE_BONUS}
+# The markets whose profiles show SkinSwap's balance note (its two balances, the Trade bonus).
+_SKINSWAP_BALANCE_MARKETS = {'SkinSwapMarket', 'SkinSwapTrade'}
 _MARKET_PRICE_NOTE = {
     'SkinSwapTrade': ("Prices are shown as on SkinSwap's Trade page (Trade dollars), with the real-dollar value "
-                      "under each (divided by 1.4, its 40% bonus); profit uses the real-dollar value. "
+                      f"under each (divided by {_SKINSWAP_TRADE_BONUS:g}, its {round((_SKINSWAP_TRADE_BONUS - 1) * 100)}% bonus); "
+                      "profit uses the real-dollar value. "
                       "Money from selling a skin on the Trade page stays on Trade (tested 2026-10-10). "
                       "Its min (what the Trade page asks) is an ESTIMATE, not real data: what Trade pays, "
                       "plus the markup we measured on 11 items (about 1.6 times under $1, 1.19 times from $5). "
@@ -1450,6 +1455,10 @@ class HuginnService:
                 'reliability': market_reliability(m['id']),
                 # Rows carry 'pagePrice', the price as this page shows it (SkinSwap Trade).
                 'pagePriceLabel': _MARKET_PAGE_LABEL.get(m['id']),
+                # Page dollars to one real dollar on that page (SkinSwap Trade's 1.4), or None.
+                'pagePriceBonus': _MARKET_PAGE_BONUS.get(m['id']),
+                # A SkinSwap market: its profiles show the two-balance note with this bonus.
+                'skinswapBonus': _SKINSWAP_TRADE_BONUS if m['id'] in _SKINSWAP_BALANCE_MARKETS else None,
                 # Its lowest listing is an estimate, not pulse data (SkinSwap Trade).
                 'listingsEstimated': m['buy_type'] == _ESTIMATED_SELL,
                 'fee': overrides.get(m['id'], m['fee']),

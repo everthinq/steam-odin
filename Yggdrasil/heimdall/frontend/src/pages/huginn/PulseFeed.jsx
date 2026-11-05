@@ -3,14 +3,12 @@ import { Link } from 'react-router-dom';
 import { LayoutDashboard, Radio, RefreshCw, AlertTriangle, Boxes, Bell, Store, Clock, Pin, Moon, Download, BookOpen } from 'lucide-react';
 import { readJson } from '../../utils/readJson';
 import { formatAge } from '../../utils/priceAge';
-import { MB_PER_DOWNLOAD } from '../../utils/pulseTraffic';
 
 // Huginn → Pulse feed: a read-only monitor of the master pulse feed (backend pulse_feed.py), the
 // one place Heimdall downloads Tradeon pulse price tables. Only Huginn Arbitrage downloads (the
 // active profiles, kept fresh by the keeper; the Buff163 reference once a day; "Fetch live data";
 // "Check live" for one item); every other page is a slave that reads these tables from memory.
 // The active profiles are chosen on Huginn → Arbitrage. GET /api/huginn/pulse, every 5 seconds.
-const MB_IN_MEMORY = 15;        // one table in the feed's compact form
 const keyOf = (market, priceType) => `${market}:${priceType}`;
 const JOB_LOOK = {
     'case-arbitrage-hourly': { short: 'Case', Icon: Boxes },
@@ -126,9 +124,9 @@ const PulseFeed = () => {
                         <Stat label="Keeper" value={keeperText} sub={keeperSub}
                             tone={keeper?.behind ? 'text-amber-300' : keeper?.paused ? 'text-indigo-200' : 'text-slate-100'} />
                         <Stat label="Downloaded since start" value={status ? status.downloads.toLocaleString() : '—'}
-                            sub={status ? `≈ ${((status.downloads * MB_PER_DOWNLOAD) / 1024).toFixed(1)} GB · ${status.lookups.count} single-item checks` : null} />
+                            sub={status ? `≈ ${(status.downloaded_megabytes / 1024).toFixed(1)} GB · ${status.lookups.count} single-item checks` : null} />
                         <Stat label="Read from memory" value={memoryShare == null ? '—' : `${memoryShare}%`}
-                            sub={status ? `${status.reads.toLocaleString()} reads · ${status.tables_in_memory} tables, about ${status.tables_in_memory * MB_IN_MEMORY} MB` : null} />
+                            sub={status ? `${status.reads.toLocaleString()} reads · ${status.tables_in_memory} tables, about ${status.megabytes_in_memory} MB` : null} />
                     </div>
 
                     {keeper?.sleep && (

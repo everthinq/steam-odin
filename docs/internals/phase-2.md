@@ -192,8 +192,12 @@ News watcher, Case alerts, Readiness); Andvari = 1, 2, 3, 10, 11, DealsTable and
   `status: failed` with `error` and is not retried for `_RETRY_AFTER_FAILURE`, so polling stops.
 - 10 CardDeals All counts, scan_running inferred.
 - 11 FarmingPanel actions per state -> actions list.
-- 12 traffic estimates ignore active hours -> estimated_megabytes_per_day.
-- 13 SkinSwap 1.4 ratio copy.
+- 12 + 13 (H5) **DONE 2026-11-05**: `/api/huginn/active` answers `estimated_megabytes_per_day`
+  (and per `preview`), counting only the active hours (`active_minutes_a_day`) plus the daily
+  reference; the feed's `status()` answers `downloaded_megabytes` and `megabytes_in_memory` from
+  `MEGABYTES_PER_DOWNLOAD` / `MEGABYTES_PER_TABLE_IN_MEMORY` (`utils/pulseTraffic.js` and the page's
+  15 MB are gone). The 1.4 lives only in `_SKINSWAP_TRADE_BONUS`: profiles answer `fromPageBonus`,
+  `toPageBonus` and `skinswapBonus` (the page's SkinSwap market list is gone too).
 - 14 MarketHoldEditor re-clean; Gjallarhorn _PRICE_MARKETS copy; NewsWatcher raw settings + ignored failures; DealsTable 20 listings; CaseAlertsPanel reads whole settings incl. Telegram token.
 - Team Fortress 2: left alone as a whole feature (Ivan, 2026-11-04: not used for now); do not work on it.
 - BUGS: CardDeals no stale-answer guard (CaseArbitrage's fixed in H2); startScan unchecked; app-id regex grabs every 2-9 digit run (page + backend parse_app_ids, Buy games uses it); ReadinessPanel stale numbers.

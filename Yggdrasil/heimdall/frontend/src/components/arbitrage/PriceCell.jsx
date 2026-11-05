@@ -7,14 +7,15 @@ const ESTIMATE_TIP = 'Estimated, not real data: what SkinSwap Trade pays, plus t
 // short-link for the item; otherwise it's plain text. An `estimated` price gets
 // an amber "≈" and a tooltip saying so. With `pagePrice` (SkinSwap Trade) the
 // price is shown as that market's own page shows it (`pageLabel`), and `price`,
-// the real-dollar value every profit uses, goes in grey under it. With `updated`
+// the real-dollar value every profit uses, goes in grey under it
+// (`pageBonus`: page dollars to one real dollar, from the backend). With `updated`
 // (the market's own update time, epoch seconds) and `now` (utils/priceAge
 // useNowSeconds), a price older than a day is greyed out with a tooltip. From Arbitrage.jsx.
-const PriceCell = ({ market, itemName, price, className, estimated = false, pagePrice, pageLabel, updated, now }) => {
+const PriceCell = ({ market, itemName, price, className, estimated = false, pagePrice, pageLabel, pageBonus, updated, now }) => {
     const onPage = pagePrice != null && pageLabel;
     const stale = isStale(updated, now);
     const pageTip = onPage
-        ? `$${pagePrice.toFixed(2)} as the ${pageLabel} shows it (Trade dollars); $${price?.toFixed(2)} in real dollars (divided by 1.4), which profit uses.`
+        ? `$${pagePrice.toFixed(2)} as the ${pageLabel} shows it (Trade dollars); $${price?.toFixed(2)} in real dollars (divided by ${pageBonus}), which profit uses.`
         : '';
     const tip = [stale ? staleTip(updated, now) : '', estimated ? ESTIMATE_TIP : '', pageTip].filter(Boolean).join(' ');
     const shown = onPage ? pagePrice : price;

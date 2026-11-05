@@ -1,11 +1,11 @@
 // "Active" for one Arbitrage profile: a profile you trade on. Only the active profiles' pulse tables
 // are downloaded (in the background, every few minutes, backend pulse_feed.py), and every other page
 // of Heimdall reads its prices from them. An active profile opens at once from memory. From Arbitrage.jsx.
-import { MB_PER_DOWNLOAD } from '../../utils/pulseTraffic';
 
 const ActiveSwitch = ({ on, busy, minutes, warming, preview, onToggle }) => {
     const adds = preview?.adds ?? null;
-    const gigabytes = adds ? (adds * (1440 / minutes) * MB_PER_DOWNLOAD) / 1024 : 0;
+    // The backend's estimate: the added tables every interval inside the active hours.
+    const gigabytes = (preview?.estimated_megabytes_per_day || 0) / 1024;
     const traffic = adds == null ? '' : adds === 0
         ? ' Its tables are already active for another profile, so it costs no extra traffic.'
         : ` That is ${adds} more table${adds === 1 ? '' : 's'}, about ${gigabytes.toFixed(1)} GB a day.`;

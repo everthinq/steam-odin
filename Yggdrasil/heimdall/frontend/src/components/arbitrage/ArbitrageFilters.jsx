@@ -89,7 +89,7 @@ const CheckList = ({ options, selected, onChange, placeholder, emptyHint, countT
     );
 };
 
-const PriceSection = ({ filters, onChange, realDollarsNote, priceSides }) => {
+const PriceSection = ({ filters, onChange, pageBonus, priceSides }) => {
     const set = (patch) => onChange({ ...filters, ...patch });
     const min = parsePrice(filters.minPrice);
     const max = parsePrice(filters.maxPrice);
@@ -151,7 +151,7 @@ const PriceSection = ({ filters, onChange, realDollarsNote, priceSides }) => {
             </div>
             <div className="flex items-center justify-between">
                 <p className="text-[10px] text-slate-500 leading-snug pr-2">
-                    {realDollarsNote ? 'In real dollars (SkinSwap Trade page prices divided by 1.4).' : 'US dollars, both ends included.'}
+                    {pageBonus ? `In real dollars (SkinSwap Trade page prices divided by ${pageBonus}).` : 'US dollars, both ends included.'}
                 </p>
                 <button
                     type="button"
@@ -169,7 +169,7 @@ const PriceSection = ({ filters, onChange, realDollarsNote, priceSides }) => {
 const DEFAULT_SCAN_HINT = 'Press "Get all items" on the Arbitrage tab first: accounts and collections come from the inventory scan.';
 
 const ArbitrageFilters = ({
-    filters, onChange, accountOptions, collectionOptions, hasScan, realDollarsNote,
+    filters, onChange, accountOptions, collectionOptions, hasScan, pageBonus,
     priceSides = DEFAULT_PRICE_SIDES,
     countTitle = 'Deals of this profile it holds',
     scanHint = DEFAULT_SCAN_HINT,
@@ -227,7 +227,7 @@ const ArbitrageFilters = ({
                             </button>
                         ))}
                     </div>
-                    {tab === 'price' && <PriceSection filters={filters} onChange={onChange} realDollarsNote={realDollarsNote} priceSides={priceSides} />}
+                    {tab === 'price' && <PriceSection filters={filters} onChange={onChange} pageBonus={pageBonus} priceSides={priceSides} />}
                     {tab === 'accounts' && (
                         <CheckList
                             key="accounts"

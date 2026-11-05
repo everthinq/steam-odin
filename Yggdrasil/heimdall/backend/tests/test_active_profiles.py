@@ -227,3 +227,36 @@ def test_active_profiles_say_warming_then_ready(client):
     profile = client.get('/api/huginn/active').get_json()['profiles']['LisSkins:Steam:autobuy']
     assert profile['warming'] is False and profile['ready'] is True
     assert all(table['downloaded_at'] is not None for table in profile['tables'])
+
+
+@pytest.mark.parametrize('hours, minutes_a_day', [
+    ({'enabled': False, 'start': '08:00', 'end': '01:00'}, 1440),
+    ({'enabled': True, 'start': '08:00', 'end': '01:00'}, 17 * 60),          # over midnight
+    ({'enabled': True, 'start': '09:00', 'end': '17:30'}, 8 * 60 + 30),
+    ({'enabled': True, 'start': '08:00', 'end': '08:00'}, 1440),             # equal: all day
+    ({'enabled': True, 'start': 'soon', 'end': '08:00'}, 1440),              # unreadable: all day
+])
+def test_active_hours_set_the_minutes_a_day(hours, minutes_a_day):
+    assert pulse_views.active_minutes_a_day(hours) == minutes_a_day
+
+
+def test_traffic_estimates_count_only_the_active_hours(client):
+    client.post('/api/huginn/active', json={'add': 'LisSkins:Steam:autobuy', 'minutes': 5})
+    per_download = pulse_feed.MEGABYTES_PER_DOWNLOAD
+    status = client.get('/api/huginn/active?preview=LisSkins:CsMoneyTrade:autobuy').get_json()
+    # Two tables every 5 minutes all day, plus Buff163 once a day.
+    assert status['estimated_megabytes_per_day'] == (2 * 288 + 1) * per_download
+    assert status['preview']['estimated_megabytes_per_day'] == 288 * per_download
+    client.post('/api/huginn/active', json={'hours': {'enabled': True, 'start': '08:00', 'end': '20:00'}})
+    half = client.get('/api/huginn/active?preview=LisSkins:CsMoneyTrade:autobuy').get_json()
+    assert half['estimated_megabytes_per_day'] == (2 * 144 + 1) * per_download
+    assert half['preview']['estimated_megabytes_per_day'] == 144 * per_download
+
+
+def test_profiles_say_how_many_page_dollars_make_a_real_dollar(client):
+    by_key = {profile['key']: profile for profile in client.get('/api/huginn/profiles').get_json()}
+    skinswap = next(profile for key, profile in by_key.items() if key.startswith('SkinSwapTrade:'))
+    assert skinswap['fromPageBonus'] == 1.4 and skinswap['fromPageLabel'] == 'Trade page'
+    assert by_key['LisSkins:Steam:autobuy']['fromPageBonus'] is None
+    assert skinswap['skinswapBonus'] == 1.4 and by_key['LisSkins:Steam:autobuy']['skinswapBonus'] is None
+    assert by_key['SkinSwapMarket:Steam:autobuy']['skinswapBonus'] == 1.4

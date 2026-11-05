@@ -32,9 +32,6 @@ import { failureMessage, readJson, readJsonOrThrow } from '../../utils/readJson'
 // what matters; "Load more" reveals the rest on demand.
 const PAGE_SIZE = 150;
 
-// SkinSwap's two sides; picking either shows the shared-balance card.
-const SKINSWAP_MARKETS = new Set(['SkinSwapMarket', 'SkinSwapTrade']);
-
 // Price / account / collection filters, remembered per browser (useStoredFilters).
 const FILTERS_KEY = 'huginn.arbitrageFilters';
 
@@ -238,6 +235,8 @@ const HuginnArbitrage = () => {
     };
 
     const activeProfile = allProfiles.find(p => p.id === profileId) ?? allProfiles[0] ?? null;
+    // Page dollars to one real dollar on either end (SkinSwap Trade's bonus), from the backend.
+    const pageBonus = activeProfile?.fromPageBonus || activeProfile?.toPageBonus || null;
 
     // Load a profile's deals: fresh (Fetch live data: every table under a minute old) or, for a
     // active profile, from the backend's memory (*fromMemory*: the keeper's copy, up to its interval).
@@ -459,7 +458,7 @@ const HuginnArbitrage = () => {
             if (inventoryOnly && !owned) return false;
             if (hideUnstable && item.secondMarket?.overstockInfo?.limit === 0) return false;
             if (priced) {
-                // Real dollars (SkinSwap Trade page prices are divided by 1.4), as profit is.
+                // Real dollars (SkinSwap Trade page prices are divided by its page bonus), as profit is.
                 const price = item[side]?.price;
                 if (price == null || (min !== null && price < min) || (max !== null && price > max)) return false;
             }
@@ -657,8 +656,8 @@ const HuginnArbitrage = () => {
                     onOpen={id => { if (id) setProfileId(id); }} onChange={changeActive} />
 
                 {/* SkinSwap's one balance, two views — only for SkinSwap profiles */}
-                {(SKINSWAP_MARKETS.has(activeProfile.buyMarket) || SKINSWAP_MARKETS.has(activeProfile.sellMarket)) && (
-                    <SkinSwapBalanceNote estimated={!!(activeProfile.fromEstimated || activeProfile.toEstimated)} />
+                {activeProfile.skinswapBonus && (
+                    <SkinSwapBalanceNote bonus={activeProfile.skinswapBonus} estimated={!!(activeProfile.fromEstimated || activeProfile.toEstimated)} />
                 )}
 
                 {/* CSFloat buy-order sweep — only for "=> CSFloat (autobuy)" profiles */}
@@ -794,7 +793,7 @@ const HuginnArbitrage = () => {
                                 collectionOptions={collectionOptions}
                                 hasScan={!!byHash}
                                 scanHint='Press "Get all items" first: accounts and collections come from the inventory scan.'
-                                realDollarsNote={!!(filters.priceSide === 'sell' ? activeProfile.toPageLabel : activeProfile.fromPageLabel)}
+                                pageBonus={filters.priceSide === 'sell' ? activeProfile.toPageBonus : activeProfile.fromPageBonus}
                             />
                             <span className="text-sm text-slate-500 shrink-0">
                                 showing {Math.min(visibleCount, filteredResults.length)} of {filteredResults.length}
@@ -808,7 +807,7 @@ const HuginnArbitrage = () => {
                             <span className="text-right">Buy</span>
                             <span className="text-right">Sell</span>
                             <span className="text-right">Overstock</span>
-                            <span className="text-right" title={(activeProfile.fromPageLabel || activeProfile.toPageLabel) ? 'In real dollars: SkinSwap Trade page prices divided by 1.4 (the grey value under each price)' : undefined}>Profit</span>
+                            <span className="text-right" title={pageBonus ? `In real dollars: SkinSwap Trade page prices divided by ${pageBonus} (the grey value under each price)` : undefined}>Profit</span>
                             <span className="text-right">Profit %</span>
                             <span className="text-center" title="Check this row on pulse right now (about a second)">Live</span>
                             <span>Accounts</span>
@@ -876,10 +875,10 @@ const HuginnArbitrage = () => {
                                         </div>
 
                                         <span className="text-base text-right font-bold text-amber-400 tabular-nums">{owned ? owned.count : <span className="text-slate-600">—</span>}</span>
-                                        <PriceCell market={activeProfile.buyMarket} itemName={mhn} price={buySide?.price} estimated={!!buySide?.estimated} pagePrice={buySide?.pagePrice} pageLabel={activeProfile.fromPageLabel} updated={buySide?.offersUpdateTime} now={now} className={`text-base text-right tabular-nums ${fresh ? 'text-emerald-200' : 'text-slate-300'}`} />
+                                        <PriceCell market={activeProfile.buyMarket} itemName={mhn} price={buySide?.price} estimated={!!buySide?.estimated} pagePrice={buySide?.pagePrice} pageLabel={activeProfile.fromPageLabel} pageBonus={activeProfile.fromPageBonus} updated={buySide?.offersUpdateTime} now={now} className={`text-base text-right tabular-nums ${fresh ? 'text-emerald-200' : 'text-slate-300'}`} />
                                         {activeProfile.sellMarket === 'LootFarm'
                                             ? <LootfarmSellCell itemName={mhn} price={item.secondMarket?.price} rate={item.secondMarket?.rate} />
-                                            : <PriceCell market={activeProfile.sellMarket} itemName={mhn} price={sellSide?.price} estimated={!!sellSide?.estimated} pagePrice={sellSide?.pagePrice} pageLabel={activeProfile.toPageLabel} updated={sellSide?.offersUpdateTime} now={now} className={`text-base text-right tabular-nums ${fresh ? 'text-emerald-200' : 'text-slate-300'}`} />}
+                                            : <PriceCell market={activeProfile.sellMarket} itemName={mhn} price={sellSide?.price} estimated={!!sellSide?.estimated} pagePrice={sellSide?.pagePrice} pageLabel={activeProfile.toPageLabel} pageBonus={activeProfile.toPageBonus} updated={sellSide?.offersUpdateTime} now={now} className={`text-base text-right tabular-nums ${fresh ? 'text-emerald-200' : 'text-slate-300'}`} />}
                                         <OverstockCell info={item.secondMarket?.overstockInfo} className="text-sm text-right tabular-nums" />
                                         <span className={`text-base text-right tabular-nums ${(profit ?? 0) <= 0 ? 'text-red-400' : 'text-emerald-400'}`}>${profit?.toFixed(2)}</span>
                                         <span className={`text-base text-right font-semibold tabular-nums ${(profitPercent ?? 0) <= 0 ? 'text-red-400' : 'text-emerald-400'}`}>{profitPercent?.toFixed(0)}%</span>

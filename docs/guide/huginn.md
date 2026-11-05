@@ -74,6 +74,9 @@ Case Arbitrage and its alerts, Harvest, Cross-Profile, Price dips, Store
 Catalogue, CS2 Store Boosts, Gjallarhorn and Draupnir, reads those tables from
 memory and never downloads; a market no active profile uses shows as **not
 active** there (the other tabs say which markets are covered).
+The panel's "GB a day" and the Active switch's tooltip estimate the traffic
+counting only your active hours (when they are on), so a shorter day shows a
+smaller number.
 
 The **Active profiles** panel under the profile picker lists them with each
 table's age, opens one on a click, makes one inactive (×), and sets:
@@ -116,7 +119,8 @@ Results are kept until you reload the page.
 ### SkinSwap: Market, Trade and one balance
 
 SkinSwap has a Market page (real dollars) and a Trade page (Trade dollars,
-shown 1.4 times higher: its 40% bonus).
+shown 1.4 times higher: its 40% bonus). The 1.4 lives in one place in the
+backend; every price, filter and the SkinSwap card read it from there.
 
 - **Money you deposit** is one balance: the Trade page shows it 1.4 times higher
   than the Market page.
