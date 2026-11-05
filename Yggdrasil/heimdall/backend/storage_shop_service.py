@@ -503,14 +503,19 @@ def plan_lines(rows, wanted):
     return lines
 
 
+def totals_by_currency(lines):
+    """{currency: minor units} that *lines* (each with `currency` and `total`) cost together."""
+    by_currency = {}
+    for line in lines:
+        by_currency[line['currency']] = by_currency.get(line['currency'], 0) + line['total']
+    return by_currency
+
+
 def order_totals(lines):
     """What the payable lines cost: units, per currency (minor units) and about how much in US dollars."""
     payable = [line for line in lines if line['payable']]
-    by_currency = {}
-    for line in payable:
-        by_currency[line['currency']] = by_currency.get(line['currency'], 0) + line['total']
     return {'units': sum(line['quantity'] for line in payable), 'accounts_payable': len(payable),
-            'skipped': len(lines) - len(payable), 'totals_by_currency': by_currency,
+            'skipped': len(lines) - len(payable), 'totals_by_currency': totals_by_currency(payable),
             'usd_total': round(sum((line.get('usd_per_unit') or 0) * line['quantity'] for line in payable), 2)}
 
 
@@ -1460,11 +1465,8 @@ class StorageShopService:
                           'total': row['unit_price'] * quantity if row['unit_price'] else None,
                           'usd_estimate': round((row['usd_per_unit'] or list_price) * quantity, 2)})
         complete = all(line['total'] is not None for line in lines)
-        by_currency = {}
-        for line in lines if complete else []:
-            by_currency[line['currency']] = by_currency.get(line['currency'], 0) + line['total']
         return {'lines': lines, 'units': sum(line['quantity'] for line in lines), 'complete': complete,
-                'totals_by_currency': by_currency,
+                'totals_by_currency': totals_by_currency(lines) if complete else {},
                 'usd_estimate': round(sum(line['usd_estimate'] for line in lines), 2)}
 
     def job_status(self):
@@ -1514,7 +1516,7 @@ class StorageShopService:
             plan = self.describe_plan(plan_id) if plan_id else None
         except CommandError:        # replaced (and forgotten) since the copy above
             plan = None
-        history = [{**entry, **purchase_outcome(entry)} for entry in state['history'][-100:][::-1]]
+        history = [purchase_outcome(entry) for entry in state['history'][-100:][::-1]]
         return {'job': state['job'], 'plan': plan,
                 'history': history,
                 # Approved but not delivered: "Deliver again" is offered for each (can_deliver_again).

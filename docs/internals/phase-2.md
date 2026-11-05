@@ -264,6 +264,8 @@ News watcher, Case alerts, Readiness); Andvari = 1, 2, 3, 10, 11, DealsTable and
   unlocker each kept beside the registry job: one busy lock, one view for `status()` (same fields as
   before), the fields each copies to the registry. The next job may start as soon as the registry job
   reads finished.
-- Next (5e, the leftovers named under bullet 4): Buy Storage Units' `quote` repeats the totals of
-  `order_totals`; its status sends whole purchase-log entries; the Andvari page copies `parse_app_ids`
-  (SellingPanel). Then bullet 6.
+- 5e **DONE 2026-11-05** (the leftovers named under bullet 4): Buy Storage Units' `quote` and
+  `order_totals` add up the currencies with one helper (`totals_by_currency`); its status sends the
+  page's view of each purchase (`purchase_outcome`), not the whole saved entry. The Andvari page's
+  copy of `parse_app_ids` was already gone (A1, 2c69626: the backend reads the ids). Bullet 5 is
+  done. Next: bullet 6.

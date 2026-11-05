@@ -751,6 +751,8 @@ def test_deliver_again_is_a_job_with_its_order_and_outcome(tmp_path):
     entry = service._buy_account(_order(service), dry_run=False)
     status = service.status()
     assert status['history'][0]['can_deliver_again'] and len(status['unclear_purchases']) == 1
+    # The purchase log sends the page's view of each purchase, not the whole saved entry.
+    assert 'transaction_id' in entry and 'transaction_id' not in status['history'][0]
     ratatoskr.finalize_result = 1
     job = service.start_deliver_again(entry['at'])
     assert job['orders'][0]['quantity'] == 2 and job['steps'] == [{'key': 'delivering', 'label': 'Delivering'}]
