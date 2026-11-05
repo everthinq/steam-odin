@@ -51,8 +51,14 @@ odin <command words> <arguments> name=value name=value …
 
 ## Safety
 
-- **Purchases run only as dry runs.** Buy Storage Units, Andvari's Buy games and the
-  Market unlocker show what they would buy; buying for real is done on the page.
+- **Purchases run as dry runs, unless you add `--real` yourself.** Buy Storage Units, Andvari's
+  Buy games and the Market unlocker: make the plan and run its dry run as usual, then
+  `odin ratatoskr storage-shop plans execute <plan id> --real` (the same for the other two).
+  odin shows what each account buys and the total in US dollars, and buys only after you type
+  that total (`buy` when a price is unknown); anything else cancels. It works only in a real
+  terminal, never in a pipe or a script, so an AI agent cannot start it by accident. As on the
+  page, only the accounts whose dry run of that plan passed are bought, once. Buying on the page
+  works exactly as before.
 - **Tokens are never shown.** `odin settings` and Andvari's config say only whether each
   token or key is set (`tradeon_token_set: true`). Change one with `odin settings set
   tradeon_token=@file`; `tradeon_token=null` removes it.

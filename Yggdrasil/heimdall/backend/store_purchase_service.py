@@ -54,7 +54,7 @@ import requests
 from jobs import JobRegistry, JobSlot
 from jsonio import atomic_write_json, read_json
 from commands import CommandError
-from plans import PlanStore
+from plans import PlanStore, real_purchase
 
 log = logging.getLogger(__name__)
 
@@ -627,6 +627,9 @@ class StorePurchaseService:
                 # What a real purchase would buy: the accounts whose dry run passed.
                 'buy': {'copies': sum(len(line['games']) for line in passed), 'accounts': len(passed),
                         'total_usd': round(sum(line['usd'] for line in passed), 2)},
+                'real_purchase': real_purchase(
+                    {'account_name': line['account_name'], 'buys': ', '.join(game['name'] for game in line['games']),
+                     'usd': line['usd']} for line in passed),
                 'executable': (state == 'done' and bool(passed) and not expired and not replaced
                                and not purchase_plan['job_id']),
                 'job_id': purchase_plan['job_id'],

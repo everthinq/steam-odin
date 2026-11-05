@@ -62,6 +62,7 @@ import requests
 import community_pacer
 from jobs import JobRegistry, JobSlot
 from jsonio import atomic_write_json, read_json
+from plans import real_purchase
 from ratatoskr_service import items_moving
 from commands import CommandError
 from store_purchase_service import CURRENCY_CODES, to_usd
@@ -975,7 +976,7 @@ class StorageShopService:
                     'units_text': None, 'created_at': None, 'expires_at': None, 'check_job_id': None,
                     'job_id': old_job_id, 'can_test': False, 'executable': False,
                     'dry_run': {'state': 'not_run', 'job_id': None, 'error': None, 'passed_lines': [], 'failed_lines': []},
-                    'to_pay': {**empty, 'units_text': None}}
+                    'to_pay': {**empty, 'units_text': None}, 'real_purchase': real_purchase([])}
         state = self._plan_state(plan)
         if state == 'failed':       # the check itself failed: every wanted account says why
             names = {steamid: name for steamid, name, _ in self._accounts()}
@@ -1004,6 +1005,10 @@ class StorageShopService:
                 'expires_at': _iso(self._plan_deadline(plan)) if plan.get('created_at') else None,
                 'check_job_id': plan.get('check_job_id'), 'job_id': plan.get('job_id'),
                 'dry_run': dry_run, 'to_pay': {**pay, 'units_text': units_text(pay['units'], entry, name)},
+                'real_purchase': real_purchase(
+                    {'account_name': line['account_name'], 'buys': units_text(line['quantity'], entry, name),
+                     'usd': round(line['usd_per_unit'] * line['quantity'], 2) if line['usd_per_unit'] is not None else None}
+                    for line in to_buy if line['payable']),
                 'can_test': open_plan and totals['units'] > 0 and dry_run['state'] != 'running',
                 'executable': open_plan and dry_run['state'] == 'passed' and pay['units'] > 0}
 

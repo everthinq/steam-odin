@@ -398,6 +398,8 @@ def test_unlock_dry_run_claims_the_game_and_cancels(tmp_path):
     assert [data['approved'] for data in http.posts('approvetxnsubmit')] == ['0']
     assert not [call for call in http.calls if call[1].startswith('https://store.steampowered.com/buyitem/1723420/finalize/')]
     assert plan['state'] == 'ready' and plan['executable'] and plan['passed'] == 1 and plan['expires_at']
+    assert plan['real_purchase'] == {'lines': [{'account_name': 'alpha', 'buys': 'Zombie Hunter: Editor Pack',
+                                                'usd': 0.01}], 'usd_total': 0.01}
     assert plan['accounts'] == [{'steamid': '1', 'account_name': 'alpha', 'passed': True, 'reason': None,
                                  'usd': 0.01, 'total': 1, 'currency': 'USD', 'claimed_game': True,
                                  'max_usd': UNLOCK_MAX_USD}]

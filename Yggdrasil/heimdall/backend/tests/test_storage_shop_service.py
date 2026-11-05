@@ -615,6 +615,8 @@ def test_only_the_lines_whose_dry_run_passed_are_bought(tmp_path):
     assert [line['steamid'] for line in plan['dry_run']['passed_lines']] == [STEAMID]
     assert [line['steamid'] for line in plan['dry_run']['failed_lines']] == [OTHER]
     assert (plan['units'], plan['to_pay']['units'], plan['to_pay']['totals_by_currency']) == (4, 2, {'USD': 398})
+    assert [line['account_name'] for line in plan['real_purchase']['lines']] == [plan['dry_run']['passed_lines'][0]['account_name']]
+    assert plan['real_purchase']['usd_total'] == plan['to_pay']['usd_total']
     job = _wait(service, service.execute_plan(plan_id, dry_run=False)['id'])
     assert [order['steamid'] for order in job['orders']] == [STEAMID]
     assert job['result']['paid_units'] == 2 and len(http.posts) == 1

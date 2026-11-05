@@ -67,7 +67,7 @@ import community_pacer
 from jobs import JobRegistry, JobSlot
 from jsonio import atomic_write_json, read_json
 from commands import CommandError
-from plans import PlanStore
+from plans import PlanStore, real_purchase
 from storage_shop_service import WHOLE_UNIT_CURRENCIES, approval_form
 from store_purchase_service import CURRENCY_CODES, to_usd
 
@@ -627,6 +627,9 @@ class MarketAccessService:
                 'expires_at': self._iso(plan['expires_at']),
                 'expired': expired,
                 'executable': self._buyable(plan),
+                'real_purchase': real_purchase(
+                    {'account_name': result['account_name'], 'buys': f'{UNLOCK_GAME_NAME}: {UNLOCK_ITEM_NAME}',
+                     'usd': result['usd']} for result in passed),
                 'dry_run_job_id': plan['dry_run_job_id'],
                 'job_id': plan['job_id'],
             }

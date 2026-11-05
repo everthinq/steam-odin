@@ -6,7 +6,9 @@ route's ``@bp.route`` line:
 
 - ``@command_verb('add')``: the last word of the command, when the path alone does not say
   what a POST does (adding to a list, saving settings, answering a confirmation).
-- ``@spends_money``: the route can buy for real. odin only ever sends it a dry run.
+- ``@spends_money``: the route can buy for real. odin sends it a dry run, or, with ``--real``
+  typed by a person at a terminal, reads the plan (the path without ``/execute``; its
+  ``real_purchase`` from ``plans.real_purchase``), shows it and buys only after the total is typed.
 - ``@shows_secrets``: the answer holds passwords, tokens, emails or billing addresses. odin
   prints it only to a person at a terminal, never into a pipe or a file (an agent's shell).
 """

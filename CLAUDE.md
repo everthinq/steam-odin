@@ -69,7 +69,7 @@ not a separate deployable):
   one backend command with the same name and parameters, so it could be typed
   in bash: `scripts/odin` is that command-line tool (`make odin-command` links it into
   `~/.local/bin`; Python built-ins only). Its commands come from the backend's route list, so
-  every endpoint is a command at once (`odin help`); money routes run only as dry runs, secret
+  every endpoint is a command at once (`odin help`); money routes run as dry runs unless a person at a terminal adds `--real` and types the total, secret
   answers print only to a terminal (`command_marks.py`). Commands that act
   answer a plan first and act on "execute plan <id>" once; long work is a job
   (`GET /api/jobs/<id>`); errors are `{error, code}`. Ratatoskr's moves are the

@@ -349,6 +349,9 @@ def test_dry_run_pays_nothing_and_cleans_up(world):
     assert made['lines'][0]['dry_run'] == {'passed': True, 'paid': False, 'may_be_paid': False, 'charged': 45,
                                            'reason': None}
     assert made['buy'] == {'copies': 1, 'accounts': 1, 'total_usd': 0.45}
+    assert made['real_purchase'] == {'lines': [{'account_name': made['lines'][0]['account_name'],
+                                                'buys': made['lines'][0]['games'][0]['name'], 'usd': 0.45}],
+                                     'usd_total': 0.45}
     job = service.jobs.get(made['dry_run']['job_id'])
     assert job['kind'] == 'andvari-dry run' and job['dry_run'] and job['result']['passed'] == 1
 

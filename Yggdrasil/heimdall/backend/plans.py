@@ -70,3 +70,12 @@ class PlanStore:
 
     def __len__(self):
         return len(self._plans)
+
+
+def real_purchase(lines):
+    """What executing a money plan for real would buy, in one shape for every command that spends
+    money (odin shows it and asks for the total before it buys). *lines*: [{account_name, buys,
+    usd}] for the accounts whose dry run passed. `usd_total` is None when a price is unknown."""
+    lines = [dict(line) for line in lines]
+    known = all(line['usd'] is not None for line in lines)
+    return {'lines': lines, 'usd_total': round(sum(line['usd'] for line in lines), 2) if known else None}

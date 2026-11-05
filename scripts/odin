@@ -14,6 +14,7 @@ command is an odin command at once: the words of its path, then its arguments, t
     odin ratatoskr storage <account>                    free places in its Storage Units
     odin ratatoskr deposit plan steamid=<account> all_storable=true
     odin ratatoskr plans execute <plan id> --wait       run that plan once and follow its job
+    odin ratatoskr storage-shop plans execute <plan id> --real   buy for real (typed total)
     odin jobs <job id> --wait                           follow any job until it finishes
 
     odin status                        the System health page in text
@@ -24,8 +25,11 @@ numbers, [lists] and {objects} are read as JSON; name=@file reads a file's text)
 can be named by its account name wherever a SteamID64 is asked for (steamid, steamids).
 
 Safety, enforced here as well as in the backend:
-- a command that can spend money only ever runs as a dry run (dry_run=true); real purchases
-  are made on the page, after Ivan's word;
+- a command that can spend money runs as a dry run (dry_run=true), unless --real is added.
+  --real works only for a person typing at a terminal (never in a pipe, a script or an agent's
+  shell): odin reads the plan, shows what it buys per account and the total in US dollars, and
+  buys only after the person types that total. The backend still buys only what passed this
+  plan's own dry run;
 - a command whose answer holds secrets (passwords, tokens, emails) prints only to a person at a
   terminal, never into a pipe or a file.
 
@@ -255,7 +259,39 @@ def follow(job, raw):
         job = call('GET', f"/api/jobs/{job['id']}")
 
 
-def run_command(tokens, raw, wait):
+def confirm_real_purchase(path):
+    """Read the plan an execute command would buy (the same path without /execute), show what it
+    buys and its total, and return only when the person typed that total (or 'buy' when a price
+    is unknown). OdinError otherwise: not a terminal, not a plan command, not ready, or cancelled."""
+    if not (sys.stdin.isatty() and sys.stdout.isatty()):
+        raise OdinError('--real buys only for a person typing at a terminal, never in a pipe, a script '
+                        "or an agent's shell. Run it yourself in a terminal.")
+    if not path.endswith('/execute'):
+        raise OdinError('--real works on a plan\'s execute command (… plans execute <plan id>)')
+    plan = call('GET', path[:-len('/execute')])
+    purchase = plan.get('real_purchase') if isinstance(plan, dict) else None
+    if purchase is None:
+        raise OdinError('This plan does not say what a real purchase would buy, so odin will not buy it.')
+    if not plan.get('executable'):
+        raise OdinError('This plan cannot be bought now: its dry run must pass first, and it must not be '
+                        'expired, replaced or already bought. Run the dry run (the same command without '
+                        '--real), then try again.')
+    table([[line['account_name'], line['buys'], '?' if line['usd'] is None else f"${line['usd']:.2f}"]
+           for line in purchase['lines']], ['account', 'buys', 'US dollars'])
+    total = purchase['usd_total']
+    expected = 'buy' if total is None else f'{total:.2f}'
+    shown = 'unknown (a price is missing)' if total is None else f'${expected}'
+    count = len(purchase['lines'])
+    print(f"\n{count} account{'' if count == 1 else 's'}, total {shown}. This spends real money.")
+    try:
+        typed = input(f"Type {expected} to buy, anything else cancels: ").strip().lstrip('$')
+    except EOFError:
+        typed = ''
+    if typed != expected:
+        raise OdinError('Cancelled: nothing was bought.')
+
+
+def run_command(tokens, raw, wait, real=False):
     commands = command_list()
     command, values, field_tokens = find_command(commands, tokens)
     accounts = Accounts()
@@ -278,11 +314,16 @@ def run_command(tokens, raw, wait):
         elif name in fields:
             fields[name] = accounts.steamid(fields[name])
 
+    if real and not command['spends_money']:
+        raise OdinError('--real is only for a command that spends money (see odin help)')
     if command['spends_money']:
-        if fields.get('dry_run') is False or str(fields.get('dry_run')).lower() == 'false':
-            raise OdinError('odin never buys for real: this command runs only as a dry run. '
-                            'A real purchase is made on the page, after Ivan says so.')
-        fields['dry_run'] = True
+        if 'dry_run' in fields and (real or fields['dry_run'] is not True):
+            raise OdinError('odin buys for real only with --real (no dry_run field): it then shows the plan '
+                            'and asks for the total.')
+        if real:
+            confirm_real_purchase(path)
+            wait = True
+        fields['dry_run'] = not real
     if command['shows_secrets'] and not sys.stdout.isatty():
         raise OdinError('This answer holds secrets (passwords, tokens or emails), so odin prints it '
                         'only to a person at a terminal, not into a pipe or a file.')
@@ -318,7 +359,7 @@ def help_text(tokens):
             usage = ' '.join(command['words'] + [f'<{name}>' for name in command['arguments']])
             print(f"odin {usage} [name=value …]\n  {command['method']} {command['path']}")
             if command['spends_money']:
-                print('  Spends money: odin runs it only as a dry run.')
+                print('  Spends money: odin runs a dry run; --real buys, typed by a person at a terminal.')
             if command['shows_secrets']:
                 print('  Shows secrets: printed only to a terminal.')
             print('\n  ' + command['description'].replace('\n', '\n  ') + '\n')
@@ -329,7 +370,7 @@ def help_text(tokens):
             group = command['words'][0]
             print(f'\n{group}')
         usage = ' '.join(command['words'] + [f'<{name}>' for name in command['arguments']])
-        marks = (' [dry run only]' if command['spends_money'] else '') + (' [secrets]' if command['shows_secrets'] else '')
+        marks = (' [spends money: --real]' if command['spends_money'] else '') + (' [secrets]' if command['shows_secrets'] else '')
         print(f"  {usage.ljust(58)} {command['summary'][:90]}{marks}")
     print('\nodin help <command words> for one command; odin status; odin logs')
 
@@ -444,6 +485,7 @@ def main(argv=None):
             return 0
         raw, tokens = take_flag(tokens, '--json')
         wait, tokens = take_flag(tokens, '--wait')
+        real, tokens = take_flag(tokens, '--real')
         first, rest = tokens[0], tokens[1:]
         if first == 'help':
             help_text(rest)
@@ -460,7 +502,7 @@ def main(argv=None):
             refuse_leftovers(rest)
             logs(lines, follow_on, errors_only, text)
         else:
-            run_command(tokens, raw, wait)
+            run_command(tokens, raw, wait, real)
     except OdinError as failure:
         print(f'odin: {failure}', file=sys.stderr)
         return 1

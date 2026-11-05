@@ -39,3 +39,12 @@ def test_forget_decides_the_cleanup():
 
 def test_unknown_plan_is_none():
     assert PlanStore(600).get('nope') is None
+
+
+def test_real_purchase_totals_the_lines_and_says_when_a_price_is_unknown():
+    from plans import real_purchase
+    lines = [{'account_name': 'alpha', 'buys': '1 Storage Unit', 'usd': 1.99},
+             {'account_name': 'bravo', 'buys': '2 Storage Units', 'usd': 3.98}]
+    assert real_purchase(lines) == {'lines': lines, 'usd_total': 5.97}
+    assert real_purchase(lines + [{'account_name': 'charlie', 'buys': 'x', 'usd': None}])['usd_total'] is None
+    assert real_purchase([]) == {'lines': [], 'usd_total': 0}
