@@ -10,7 +10,7 @@ before it: the local tag `checkpoint/before-phase-2` (never pushed).
 | 1 | Security fixes: dry run fails closed, Andvari plan time required, Mímir passwords only over POST; errors keep their real status | **Done**, pushed dc8f926 |
 | 2 | No auto-reloader: one process, `make reload`, loops start once from `python app.py`, clean stop on SIGTERM | **Done**, pushed 76ee0eb |
 | 3 | Health checks for every container | **Done**, pushed 31dc36e |
-| 4 | Move the remaining page logic to the backend, tool by tool | **In progress** — see below |
+| 4 | Move the remaining page logic to the backend, tool by tool | **Done** — the three money flows and every backlog item below (Team Fortress 2 parked) |
 | 5 | One shape for plans, jobs and errors (`{error, code}` everywhere, one shared plan registry, one `CommandError` handler) | **Done**, last push 16483d5 — see the end |
 | 6 | Endpoint list + System health page | **Done** — 6a endpoint list, 6b health command, 6c the page, see the end |
 | 7 | `odin` command-line tool | Done (7a, 7b, 7c, 7d) — decided: Python with only built-in libraries, talks to localhost:5001, installed on PATH; purchases are dry runs unless a person at a terminal adds `--real` and types the total; first version has four groups: Accounts (code, confirmations, accounts), Ratatoskr (storage, store, autostore), Prices and portfolio (price, arbitrage, harvest, portfolio), System (status, logs, job, routes) |
