@@ -60,7 +60,7 @@ from html.parser import HTMLParser
 import requests
 
 import community_pacer
-from jobs import JobRegistry
+from jobs import JobRegistry, JobSlot
 from jsonio import atomic_write_json, read_json
 from ratatoskr_service import items_moving
 from commands import CommandError
@@ -553,7 +553,6 @@ class StorageShopService:
         self._http = http or requests.Session()
         self._sleep = sleep
         self._lock = threading.RLock()
-        self._job_lock = threading.Lock()
         self._last_call = {'steam': 0.0, 'community': 0.0}
         # Called with (decoded sheet, version, read at) every time the price sheet is read.
         self.on_price_sheet = None
@@ -586,9 +585,10 @@ class StorageShopService:
                 entry['error'] = ('interrupted by a backend restart'
                                   + (' after the approval was sent — it MAY BE PAID: check the account'
                                      if entry.get('payment_attempted') else ' before approving'))
-        self._job = {'id': None, 'running': False, 'kind': None, 'done': 0, 'total': 0, 'phase': None,
-                     'error': None, 'started_at': None, 'finished_at': None, 'dry_run': False,
-                     'account': None, 'step': None}
+        # The one running job: in status() (the Store Catalogue reads it too) and in the registry.
+        self._job = JobSlot(self.jobs, {'running': False, 'kind': None, 'done': 0, 'total': 0, 'phase': None,
+                                        'error': None, 'started_at': None, 'finished_at': None,
+                                        'dry_run': False, 'account': None, 'step': None}, id_key='id')
 
     # ---- plumbing ------------------------------------------------------------------------------
 
@@ -689,25 +689,17 @@ class StorageShopService:
         self._set_job(account=str(steamid), step=step)
 
     def _set_job(self, **fields):
-        """The running job's progress: kept here (``status()``, the Store Catalogue) and in the
-        shared job registry (``GET /api/jobs/<id>``)."""
-        with self._lock:
-            self._job.update(fields)
-            job_id = self._job.get('id')
-        if job_id:
-            self.jobs.update(job_id, **fields)
+        """The running job's progress, in ``status()`` and at ``GET /api/jobs/<id>``."""
+        self._job.set(**fields)
 
     def _start(self, kind, target, args, dry_run=False, fields=None):
         """Run *target* as this service's one job (a plan, purchase, delivery or price sheet read;
         never two at once). *fields* are extra job fields (the orders, the steps …)."""
-        if not self._job_lock.acquire(blocking=False):
-            return {'started': False, 'code': 'busy', 'error': f'a {self._job.get("kind")} is already running'}
         extra = {'dry_run': dry_run, 'account': None, 'step': None, **(fields or {})}
-        job = self.jobs.create(f'storage_shop_{kind.replace(" ", "_")}', {**extra, 'phase': 'starting'})
-        with self._lock:
-            self._job = {'id': job['id'], 'running': True, 'kind': kind, 'done': 0, 'total': 0, 'phase': 'starting',
-                         'error': None, 'started_at': time.time(), 'finished_at': None, **extra}
-            started_at = self._job['started_at']
+        job = self._job.start(kind, f'storage_shop_{kind.replace(" ", "_")}', {**extra, 'phase': 'starting'}, **extra)
+        if job is None:
+            return {'started': False, 'code': 'busy', 'error': f'a {self._job.kind} is already running'}
+        started_at = self._job.view()['started_at']
 
         def run():
             try:
@@ -716,12 +708,10 @@ class StorageShopService:
                 log.exception('[STORAGE-SHOP] %s failed', kind)
                 self._set_job(error=str(e))
             finally:
-                with self._lock:
-                    self._job.update(running=False, phase=None, finished_at=time.time(), account=None, step=None)
-                    final = dict(self._job)
-                self.jobs.finish(job['id'], result=final.get('result'), error=final.get('error'),
-                                 phase=None, account=None, step=None)
-                self._job_lock.release()
+                self._job.mark_finished(phase=None, account=None, step=None)
+                final = self._job.view()
+                self._job.release(result=final.get('result'), error=final.get('error'),
+                                  phase=None, account=None, step=None)
         threading.Thread(target=run, daemon=True, name=f'storage-shop-{kind}').start()
         return {'started': True, 'started_at': started_at, 'kind': kind, 'job_id': job['id']}
 
@@ -1478,8 +1468,7 @@ class StorageShopService:
                 'usd_estimate': round(sum(line['usd_estimate'] for line in lines), 2)}
 
     def job_status(self):
-        with self._lock:
-            return dict(self._job)
+        return self._job.view()
 
     def sheet_entries(self):
         """{entry: {ISO currency: minor units}} of the last price sheet read (a copy; no Steam call)."""
@@ -1516,7 +1505,7 @@ class StorageShopService:
     def status(self, item=STORAGE_UNIT_ENTRY):
         """The page's state for buying *item* (a price sheet entry; default the Storage Unit)."""
         with self._lock:
-            state = json.loads(json.dumps({'job': self._job, 'plan': self._plan, 'history': self._history,
+            state = json.loads(json.dumps({'job': self._job.view(), 'plan': self._plan, 'history': self._history,
                                            'known': self._known}))
         prices, fetched_at = self._cached_prices(item)
         accounts = self.accounts_view(state['known'], prices, self._rates())

@@ -259,4 +259,11 @@ News watcher, Case alerts, Readiness); Andvari = 1, 2, 3, 10, 11, DealsTable and
   keep their plans in `PlanStore` too (lifetime None: the unlocker's plan expires when its dry run ends, a
   purchase plan with the plan it was made from; cleanup never drops a plan whose job runs). Buy Storage
   Units stays as it is: one current plan saved to disk with the ids of replaced ones, not a store of many.
-- Next: `self._job` mirroring the registry job.
+- 5d step 3 **DONE 2026-11-05** (reviewed: the busy check before a purchase unchanged): `jobs.py`
+  `JobSlot` replaces the `self._job` copy and lock that Buy Storage Units, Andvari Buy games and the Market
+  unlocker each kept beside the registry job: one busy lock, one view for `status()` (same fields as
+  before), the fields each copies to the registry. The next job may start as soon as the registry job
+  reads finished.
+- Next (5e, the leftovers named under bullet 4): Buy Storage Units' `quote` repeats the totals of
+  `order_totals`; its status sends whole purchase-log entries; the Andvari page copies `parse_app_ids`
+  (SellingPanel). Then bullet 6.

@@ -51,7 +51,7 @@ import time
 
 import requests
 
-from jobs import JobRegistry
+from jobs import JobRegistry, JobSlot
 from jsonio import atomic_write_json, read_json
 from commands import CommandError
 from plans import PlanStore
@@ -269,7 +269,6 @@ class StorePurchaseService:
         self._http = http or requests.Session()
         self._sleep = sleep
         self._lock = threading.RLock()
-        self._job_lock = threading.Lock()
         self._last_call = {'store': 0.0, 'community': 0.0}
         self._prices = {}                # {(app_id, country): (game, fetched_at)}
         saved = read_json(state_path, default={}) or {}
@@ -296,8 +295,10 @@ class StorePurchaseService:
                 entry['error'] = ('interrupted by a backend restart'
                                   + (' after paying started — it MAY BE PAID: check the account'
                                      if entry.get('payment_attempted') else ' before paying'))
-        self._job = {'running': False, 'kind': None, 'done': 0, 'total': 0, 'phase': None,
-                     'error': None, 'started_at': None, 'finished_at': None, 'dry_run': False, 'job_id': None}
+        # The one running job: in status() and in the registry (progress only: done, total, phase).
+        self._job = JobSlot(self.jobs, {'running': False, 'kind': None, 'done': 0, 'total': 0, 'phase': None,
+                                        'error': None, 'started_at': None, 'finished_at': None,
+                                        'dry_run': False}, mirror=('done', 'total', 'phase'))
 
     # ---- plumbing ------------------------------------------------------------------------------
 
@@ -362,23 +363,16 @@ class StorePurchaseService:
         return sorted(rows, key=lambda row: row[1].lower())
 
     def _set_job(self, **fields):
-        with self._lock:
-            self._job.update(fields)
-            job_id = self._job.get('job_id')
-        progress = {key: fields[key] for key in ('done', 'total', 'phase') if key in fields}
-        if job_id and progress:
-            self.jobs.update(job_id, **progress)
+        self._job.set(**fields)
 
     def _start(self, kind, target, args, dry_run=False, job_fields=None, on_finish=None):
         """One job at a time (an account check, a dry run or a purchase), followed in
         ``status()['job']`` and at ``GET /api/jobs/<job_id>``. *on_finish(value, error)*
         gets what *target* answered and gives the job's result; it runs before the job
         reads as finished."""
-        if not self._job_lock.acquire(blocking=False):
-            return {'started': False, 'error': f'a {self._job.get("kind")} is already running'}
-        job = self.jobs.create(f'andvari-{kind}', {'dry_run': dry_run, **(job_fields or {})})
-        self._set_job(running=True, kind=kind, done=0, total=0, phase='starting', error=None,
-                      started_at=time.time(), finished_at=None, dry_run=dry_run, job_id=job['id'])
+        job = self._job.start(kind, f'andvari-{kind}', {'dry_run': dry_run, **(job_fields or {})}, dry_run=dry_run)
+        if job is None:
+            return {'started': False, 'error': f'a {self._job.kind} is already running'}
 
         def run():
             value, error, result = None, None, None
@@ -394,9 +388,8 @@ class StorePurchaseService:
                         result = on_finish(value, error)
                     except Exception:
                         log.exception('[ANDVARI-BUY] %s: could not record the outcome', kind)
-                self._set_job(running=False, phase=None, finished_at=time.time())
-                self._job_lock.release()
-                self.jobs.finish(job['id'], result=result, error=error, phase=None)
+                self._job.mark_finished(phase=None)
+                self._job.release(result=result, error=error, phase=None)
         threading.Thread(target=run, daemon=True, name=f'andvari-{kind}').start()
         return {'started': True, 'job_id': job['id']}
 
@@ -955,7 +948,7 @@ class StorePurchaseService:
         clock and its ``default_selection``), the newest purchase plan made from it, the
         running job, the purchase history and its statistics."""
         with self._lock:
-            state = json.loads(json.dumps({'job': self._job, 'plan': self._plan, 'history': self._history}))
+            state = json.loads(json.dumps({'job': self._job.view(), 'plan': self._plan, 'history': self._history}))
             current = [purchase_plan for purchase_plan in self._purchase_plans.values()
                        if self._plan and abs(purchase_plan['plan_created_at'] - self._plan['created_at']) <= 1e-6]
             newest = max(current, key=lambda purchase_plan: purchase_plan['created_at']) if current else None

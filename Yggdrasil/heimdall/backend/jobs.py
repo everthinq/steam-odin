@@ -59,3 +59,71 @@ class JobRegistry:
         picked = [j for j in jobs
                   if (kind is None or j['kind'] == kind) and (steamid is None or j.get('steamid') == str(steamid))]
         return [{k: v for k, v in j.items() if not k.startswith('_')} for j in picked[:limit]]
+
+
+class JobSlot:
+    """One job at a time for one service (a check, a dry run, a purchase), kept in two shapes:
+
+    - the shared registry job (`GET /api/jobs/<id>`), which every command answers;
+    - the service's own view in its `status()`: the service's own `kind` ("plan", "unlock",
+      "price sheet"), times in epoch seconds, and fields such as `account` and `step` that
+      its page reads.
+
+    `set` changes the view and copies to the registry the fields named in `mirror` (None:
+    every field). A second `start` while a job runs answers None (the service is busy).
+    """
+
+    def __init__(self, jobs, idle, id_key='job_id', mirror=None):
+        self.jobs = jobs
+        self._idle = dict(idle, **{id_key: None})
+        self._id_key = id_key
+        self._mirror = mirror
+        self._lock = threading.Lock()
+        self._busy = threading.Lock()
+        self._view = dict(self._idle)
+
+    def start(self, kind, registry_kind, registry_fields=None, **view_fields):
+        """Make the registry job and the fresh view; None when a job already runs."""
+        if not self._busy.acquire(blocking=False):
+            return None
+        try:
+            job = self.jobs.create(registry_kind, registry_fields)
+        except BaseException:
+            self._busy.release()     # never leave the service busy when the job could not start
+            raise
+        with self._lock:
+            self._view = {**self._idle, 'running': True, 'kind': kind, 'phase': 'starting',
+                          'started_at': time.time(), 'finished_at': None, self._id_key: job['id'],
+                          **view_fields}
+        return job
+
+    def set(self, **fields):
+        with self._lock:
+            self._view.update(fields)
+            job_id = self._view.get(self._id_key)
+        mirrored = fields if self._mirror is None else {key: fields[key] for key in self._mirror if key in fields}
+        if job_id and mirrored:
+            self.jobs.update(job_id, **mirrored)
+
+    def mark_finished(self, **view_fields):
+        """The view reads as finished; the service may still save before `release`."""
+        with self._lock:
+            self._view.update(running=False, finished_at=time.time(), **view_fields)
+
+    def release(self, result=None, error=None, **registry_fields):
+        """Let the next job start, then finish the registry job (a page that sees it finished
+        can start the next one at once)."""
+        with self._lock:
+            job_id = self._view.get(self._id_key)
+        self._busy.release()
+        if job_id:
+            self.jobs.finish(job_id, result=result, error=error, **registry_fields)
+
+    def view(self):
+        with self._lock:
+            return dict(self._view)
+
+    @property
+    def kind(self):
+        with self._lock:
+            return self._view.get('kind')

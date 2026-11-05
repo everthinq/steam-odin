@@ -580,8 +580,8 @@ def test_a_job_that_cannot_start_leaves_the_service_unlocked(tmp_path):
         pass
     service.jobs.create = original
     assert len(service._plans) == 0
-    assert service._job_lock.acquire(blocking=False)
-    service._job_lock.release()
+    assert service._job._busy.acquire(blocking=False)
+    service._job._busy.release()
 
 
 def test_a_malformed_saved_allowed_at_does_not_break_the_headline():

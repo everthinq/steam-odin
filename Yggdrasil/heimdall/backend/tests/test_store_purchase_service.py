@@ -400,7 +400,7 @@ def test_a_dry_run_while_one_runs_answers_it_and_another_job_is_busy(world):
     service, web, _ = world
     plan(service)
     made = make_purchase_plan(service, [{'steamid': '1', 'app_ids': [REFLEX]}])
-    service._job_lock.acquire()                              # an account check (or a purchase) is running
+    service._job._busy.acquire()                              # an account check (or a purchase) is running
     try:
         refused('busy', service.execute_purchase_plan, made['purchase_plan_id'], dry_run=True)
         assert service.get_purchase_plan(made['purchase_plan_id'])['dry_run']['state'] == 'not run'
@@ -409,7 +409,7 @@ def test_a_dry_run_while_one_runs_answers_it_and_another_job_is_busy(world):
         assert service.execute_purchase_plan(made['purchase_plan_id'], dry_run=True)['id'] == running['id']
         refused('dry_run_required', service.execute_purchase_plan, made['purchase_plan_id'], dry_run=False)
     finally:
-        service._job_lock.release()
+        service._job._busy.release()
     assert web.transactions == {}
 
 

@@ -64,7 +64,7 @@ from urllib.parse import unquote
 import requests
 
 import community_pacer
-from jobs import JobRegistry
+from jobs import JobRegistry, JobSlot
 from jsonio import atomic_write_json, read_json
 from commands import CommandError
 from plans import PlanStore
@@ -392,7 +392,6 @@ class MarketAccessService:
         self._sleep = sleep
         self._today = today
         self._lock = threading.RLock()
-        self._job_lock = threading.Lock()
         self._last_store_call = 0.0
         saved = read_json(state_path, default={}) or {}
         self._accounts = dict(saved.get('accounts') or {})
@@ -403,22 +402,23 @@ class MarketAccessService:
                 entry['error'] = ('interrupted by a backend restart'
                                   + (' after approving — it MAY BE PAID: check the account'
                                      if entry.get('approved') else ' before approving'))
-        self._job = {'running': False, 'kind': None, 'done': 0, 'total': 0, 'current': None, 'error': None,
-                     'started_at': None, 'finished_at': saved.get('finished_at'), 'dry_run': False,
-                     'job_id': None}
+        # The one running job: in status() and in the registry, which gets its own progress
+        # (done counts only the accounts that passed there).
+        self._job = JobSlot(self.jobs, {'running': False, 'kind': None, 'done': 0, 'total': 0, 'current': None,
+                                        'error': None, 'started_at': None, 'finished_at': saved.get('finished_at'),
+                                        'dry_run': False}, mirror=())
 
     def _save(self):
         with self._lock:
             snapshot = json.loads(json.dumps({'accounts': self._accounts, 'unlocks': self._unlocks[-UNLOCK_HISTORY_CAP:],
-                                              'finished_at': self._job.get('finished_at')}))
+                                              'finished_at': self._job.view().get('finished_at')}))
         try:
             atomic_write_json(self.state_path, snapshot)
         except Exception as e:
             log.error('[MARKET-ACCESS] could not save %s: %s', self.state_path, e)
 
     def _set_job(self, **fields):
-        with self._lock:
-            self._job.update(fields)
+        self._job.set(**fields)
 
     def status(self):
         """Every account's result plus what the pages print (``headline``, ``advice``,
@@ -426,7 +426,7 @@ class MarketAccessService:
         red, soonest first; ``not_checked``), the last unlocker run per account
         (``last_unlocks``) and the running job."""
         with self._lock:
-            state = json.loads(json.dumps({'job': self._job, 'accounts': self._accounts,
+            state = json.loads(json.dumps({'job': self._job.view(), 'accounts': self._accounts,
                                            'unlocks': self._unlocks[-50:][::-1]}))
             last_unlocks = {}
             for entry in reversed(self._unlocks):          # newest first
@@ -468,17 +468,12 @@ class MarketAccessService:
         answers False for an account that failed). Followed in ``status()['job']`` and at
         ``GET /api/jobs/<job_id>``; *on_finish(error)* gives the job's result and runs
         before the job reads as finished."""
-        if not self._job_lock.acquire(blocking=False):
-            return {'started': False, 'error': f'a market access {self._job.get("kind") or "job"} is already running'}
-        started_at = time.time()
-        try:
-            job = self.jobs.create(f'market-access-{kind}', {'total': len(accounts), 'dry_run': dry_run,
-                                                            **(job_fields or {})})
-            self._set_job(running=True, kind=kind, done=0, total=len(accounts), current=None, error=None,
-                          started_at=started_at, finished_at=None, dry_run=dry_run, job_id=job['id'])
-        except BaseException:
-            self._job_lock.release()     # never leave the service locked when the job could not start
-            raise
+        job = self._job.start(kind, f'market-access-{kind}', {'total': len(accounts), 'dry_run': dry_run,
+                                                              **(job_fields or {})},
+                              total=len(accounts), current=None, phase=None, dry_run=dry_run)
+        if job is None:
+            return {'started': False, 'error': f'a market access {self._job.kind or "job"} is already running'}
+        started_at = self._job.view()['started_at']
 
         def run():
             error, result, passed, failed = None, None, 0, 0
@@ -490,7 +485,7 @@ class MarketAccessService:
                         failed += 1
                     else:
                         passed += 1
-                    self._set_job(done=self._job['done'] + 1)
+                    self._set_job(done=self._job.view()['done'] + 1)
                     self.jobs.update(job['id'], done=passed, failed=failed)
             except Exception as e:
                 log.exception('[MARKET-ACCESS] %s failed', kind)
@@ -504,17 +499,15 @@ class MarketAccessService:
                     except Exception:
                         log.exception('[MARKET-ACCESS] %s: could not finish the plan', kind)
                 try:
-                    self._set_job(running=False, current=None, finished_at=time.time())
+                    self._job.mark_finished(current=None)
                     self._save()
                 finally:
-                    self._job_lock.release()
-                    self.jobs.finish(job['id'], result=result, error=error, phase=None)
+                    self._job.release(result=result, error=error, phase=None)
         try:
             threading.Thread(target=run, daemon=True, name=f'market-access-{kind}').start()
         except BaseException as e:
-            self._set_job(running=False, error=str(e), finished_at=time.time())
-            self._job_lock.release()
-            self.jobs.finish(job['id'], error=f'could not start ({type(e).__name__})', phase=None)
+            self._job.mark_finished(error=str(e))
+            self._job.release(error=f'could not start ({type(e).__name__})', phase=None)
             raise
         return {'started': True, 'started_at': started_at, 'job_id': job['id']}
 
