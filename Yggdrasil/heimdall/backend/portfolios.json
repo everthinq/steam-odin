@@ -4,7 +4,7 @@
       "id": "fbf692611b3c",
       "name": "everthinklol",
       "created_at": "2026-07-21T13:40:18.177768+00:00",
-      "updated_at": "2026-11-06T16:21:29.312573+00:00",
+      "updated_at": "2026-11-06T19:54:29.528075+00:00",
       "transactions": [
         {
           "id": "3ea474874554",
@@ -12279,11 +12279,11 @@
           "id": "c5361528f060",
           "item_name": "Glock-18 | Green Line (Minimal Wear)",
           "type": "sell",
-          "qty": 27,
+          "qty": 30,
           "price": 0.86,
           "platform": "cs.money.trade",
           "date": "2026-11-04T12:00:00",
-          "note": "+13%",
+          "note": "20+27 I need to resell it on cs.money.trade",
           "fee_percent": 0.0,
           "is_arbitrage": true,
           "created_at": "2026-11-04T10:48:11.549265+00:00"
@@ -12352,6 +12352,19 @@
           "fee_percent": 0.0,
           "is_arbitrage": false,
           "created_at": "2026-11-06T16:21:29.312564+00:00"
+        },
+        {
+          "id": "46324186a780",
+          "item_name": "Buckshot | NSWC SEAL",
+          "type": "buy",
+          "qty": 1,
+          "price": 6.82,
+          "platform": "buff.market",
+          "date": "2026-11-06T21:30:00",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": false,
+          "created_at": "2026-11-06T19:30:32.722220+00:00"
         }
       ]
     },
@@ -14310,7 +14323,7 @@
       "id": "99c18756f9ee",
       "name": "everthinklol1",
       "created_at": "2026-07-21T14:49:46.392883+00:00",
-      "updated_at": "2026-11-04T21:56:36.768136+00:00",
+      "updated_at": "2026-11-06T19:52:05.863701+00:00",
       "transactions": [
         {
           "id": "ed83a19ba6bc",
@@ -18860,7 +18873,7 @@
           "id": "d10ef6e9a2b2",
           "item_name": "Recoil Case",
           "type": "buy",
-          "qty": 187,
+          "qty": 499,
           "price": 0.17,
           "platform": "csfloat",
           "date": "2026-11-04T23:55:00",
@@ -18868,6 +18881,19 @@
           "fee_percent": 0.0,
           "is_arbitrage": false,
           "created_at": "2026-11-04T21:56:36.768085+00:00"
+        },
+        {
+          "id": "f6713e0471f4",
+          "item_name": "Glock-18 | Green Line (Minimal Wear)",
+          "type": "buy",
+          "qty": 27,
+          "price": 0.75,
+          "platform": "csfloat",
+          "date": "2026-11-06T21:51:00",
+          "note": "I need to resell it on cs.money.trade",
+          "fee_percent": 0.0,
+          "is_arbitrage": false,
+          "created_at": "2026-11-06T19:51:33.272985+00:00"
         }
       ]
     },
