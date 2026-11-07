@@ -56,6 +56,8 @@ import { useMoveDelay } from '../../utils/useMoveDelay';
 import { useTransferSelection } from '../../utils/useTransferSelection';
 import RenameCasketDialog from '../../components/transfer/RenameCasketDialog';
 import { useNowSeconds } from '../../utils/priceAge';
+import InfoTip from '../../components/gjallarhorn/InfoTip';
+import { TRADE_STATUS_HINT } from '../../utils/tradeStatus';
 
 const TRANSFER_HEADER_BTN =
     'inline-flex items-center justify-center gap-2 h-10 px-4 rounded-lg text-sm font-medium transition-all shrink-0';
@@ -1012,19 +1014,16 @@ const RatatoskrTransfer = () => {
                                 rowGroup.onTradeHold ?? itemsHaveTradeHold(rowGroup.items);
                             const label = formatTradeHoldLabel(rowGroup.items);
                             return (
-                                <span
-                                    className={`text-xs tabular-nums ${onHold
-                                        ? 'text-orange-300 font-semibold'
-                                        : 'text-slate-400'
-                                        }`}
-                                    title={
-                                        onHold
-                                            ? `Trade hold — unlocks in ${label}`
-                                            : 'No trade hold'
-                                    }
-                                >
-                                    {label}
-                                </span>
+                                <InfoTip tip={onHold ? TRADE_STATUS_HINT.tradeHold(label) : TRADE_STATUS_HINT.tradable}>
+                                    <span
+                                        className={`text-xs tabular-nums ${onHold
+                                            ? 'text-orange-300 font-semibold'
+                                            : 'text-slate-400'
+                                            }`}
+                                    >
+                                        {label}
+                                    </span>
+                                </InfoTip>
                             );
                         };
 
@@ -1101,27 +1100,24 @@ const RatatoskrTransfer = () => {
                                                 </span>
                                                 <SteamMarketLink itemName={lineGroup.item_name} />
                                                 {lineGroup.tradeProtected ? (
-                                                    <span
-                                                        className="shrink-0 px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wide bg-red-500/20 text-red-300 border border-red-500/30"
-                                                        title="Trade protected (received in a trade): cannot be traded, sold or put into a Storage Unit until the protection ends"
-                                                    >
-                                                        Trade protected · {formatTradeHoldLabel(lineGroup.items)}
-                                                    </span>
+                                                    <InfoTip className="shrink-0" tip={TRADE_STATUS_HINT.tradeProtected(formatTradeHoldLabel(lineGroup.items))}>
+                                                        <span className="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wide bg-red-500/20 text-red-300 border border-red-500/30 cursor-help">
+                                                            Trade protected · {formatTradeHoldLabel(lineGroup.items)}
+                                                        </span>
+                                                    </InfoTip>
                                                 ) : lineGroup.onTradeHold && (
-                                                    <span
-                                                        className="shrink-0 px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wide bg-orange-500/25 text-orange-300 border border-orange-500/30"
-                                                        title="Trade hold (e.g. a Steam Market purchase): cannot be traded or sold yet, but can go into a Storage Unit"
-                                                    >
-                                                        Trade hold · {formatTradeHoldLabel(lineGroup.items)}
-                                                    </span>
+                                                    <InfoTip className="shrink-0" tip={TRADE_STATUS_HINT.tradeHold(formatTradeHoldLabel(lineGroup.items))}>
+                                                        <span className="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wide bg-orange-500/25 text-orange-300 border border-orange-500/30 cursor-help">
+                                                            Trade hold · {formatTradeHoldLabel(lineGroup.items)}
+                                                        </span>
+                                                    </InfoTip>
                                                 )}
                                                 {!lineGroup.onTradeHold && lineGroup.holdSplit && (
-                                                    <span
-                                                        className="shrink-0 px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wide bg-emerald-500/15 text-emerald-300 border border-emerald-500/30"
-                                                        title="These copies can be traded now; the copies on trade hold have a line of their own"
-                                                    >
-                                                        Tradable now
-                                                    </span>
+                                                    <InfoTip className="shrink-0" tip={TRADE_STATUS_HINT.tradable}>
+                                                        <span className="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wide bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 cursor-help">
+                                                            Tradable now
+                                                        </span>
+                                                    </InfoTip>
                                                 )}
                                                 {lineGroup.unstorable && (
                                                     <span className="shrink-0 px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wide bg-white/5 text-slate-400 border border-white/10">
@@ -1208,9 +1204,11 @@ const RatatoskrTransfer = () => {
                                                         <p className="text-[10px] text-slate-600">
                                                             {variant.qty} in stack
                                                             {variant.onTradeHold && (
-                                                                <span className="text-orange-400/90 ml-1">
-                                                                    · trade hold {formatTradeHoldLabel(variant.items)}
-                                                                </span>
+                                                                <InfoTip className="ml-1" tip={TRADE_STATUS_HINT.tradeHold(formatTradeHoldLabel(variant.items))}>
+                                                                    <span className="text-orange-400/90 cursor-help">
+                                                                        · trade hold {formatTradeHoldLabel(variant.items)}
+                                                                    </span>
+                                                                </InfoTip>
                                                             )}
                                                         </p>
                                                     </div>

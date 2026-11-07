@@ -4,6 +4,8 @@ import storageUnitImage from '../assets/ratatoskr/storage-unit.png';
 import SteamMarketLink from './SteamMarketLink';
 import TransferProgressBar from './TransferProgressBar';
 import { getItemImageUrl } from '../utils/ratatoskrImages';
+import InfoTip from './gjallarhorn/InfoTip';
+import { TRADE_STATUS_HINT } from '../utils/tradeStatus';
 
 const ItemThumb = ({ item }) => (
     <img
@@ -83,7 +85,7 @@ const TransferQueueModal = ({
                                     {locationLabel}: {entry.storageName || storageName}
                                     <span className="text-slate-400 ml-2">× {entry.queueQty}</span>
                                     {entry.tradeHold && (
-                                        <span className="text-orange-400/90 ml-2">· trade hold {entry.tradeHold}</span>
+                                        <InfoTip className="ml-2" tip={TRADE_STATUS_HINT.tradeHold(entry.tradeHold)}><span className="text-orange-400/90 cursor-help">· trade hold {entry.tradeHold}</span></InfoTip>
                                     )}
                                 </p>
                             </div>
