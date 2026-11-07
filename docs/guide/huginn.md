@@ -60,7 +60,10 @@ hover the mark for why. It is a mark only: nothing is hidden or left out.
    profile you trade on): its price tables are then downloaded in the background
    every 5 minutes, and the profile opens by itself in about a second, with prices
    at most that old. Active profiles have a pin and are listed first under
-   **Active** in the picker. **Fetch live data** still downloads fresh prices.
+   **Active** in the picker. **Fetch live data** (**Re-fetch** once prices are
+   shown) still downloads fresh prices, except a table downloaded less than a
+   minute ago, which it reuses: pressed right after the background download, it
+   answers at once with the same prices.
    Next to the button, **prices downloaded N minutes ago** says how old the shown
    prices are (hover for each table); **Newer prices ready · show** appears when
    the background download has replaced them.

@@ -64,6 +64,10 @@ the CSV export repeat the hold. The page checks the holds every minute: copies
 whose hold ends while the page is open move to the "Tradable now" row by
 themselves.
 
+Hover any of these labels (the green, orange and red badges, the small
+"· trade hold" text under a stack, the hold time in the queue) for a short
+explanation of what you can do with the item and when.
+
 **Show items that can't be stored (N)** (To mode):
 untradable items — service medals, veteran and operation coins, Loyalty Badge,
 Global Offensive Badge, the default music kit (Music Kit | Valve, CS:GO) — can
