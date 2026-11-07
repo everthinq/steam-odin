@@ -4,7 +4,7 @@
       "id": "fbf692611b3c",
       "name": "everthinklol",
       "created_at": "2026-07-21T13:40:18.177768+00:00",
-      "updated_at": "2026-11-07T10:57:15.152201+00:00",
+      "updated_at": "2026-11-07T11:53:13.918697+00:00",
       "transactions": [
         {
           "id": "3ea474874554",
@@ -12279,7 +12279,7 @@
           "id": "c5361528f060",
           "item_name": "Glock-18 | Green Line (Minimal Wear)",
           "type": "sell",
-          "qty": 31,
+          "qty": 32,
           "price": 0.86,
           "platform": "cs.money.trade",
           "date": "2026-11-04T12:00:00",
@@ -12352,6 +12352,19 @@
           "fee_percent": 0.0,
           "is_arbitrage": false,
           "created_at": "2026-11-06T16:21:29.312564+00:00"
+        },
+        {
+          "id": "346c1ce6a190",
+          "item_name": "Fever Case",
+          "type": "buy",
+          "qty": 3,
+          "price": 0.47,
+          "platform": "cs.money.trade",
+          "date": "2026-11-07T13:53:00",
+          "note": "",
+          "fee_percent": 0.0,
+          "is_arbitrage": false,
+          "created_at": "2026-11-07T11:53:13.918651+00:00"
         }
       ]
     },
